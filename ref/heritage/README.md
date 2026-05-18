@@ -15,7 +15,8 @@ To regenerate after adding/changing XML:
 
     python tools/extract_designer_sections.py ref/heritage ref/heritage/heritage_designer_sections.json
 
-Note: the user's own MorphDesigner authoring (`hedz.xml`, `tb.xml`,
-`morph0q100.xml`, `morph100q100.xml`, `hedz0.xml`) lives only in the
-fuller `Templates/Filter` set, not here. Carry those separately into a
-`user_authored/` subfolder if they are needed as calibration targets.
+Note: debug/scratch templates are deliberately excluded. Anything named
+`hedz*`, `tb*`, `morph*q*`, bare numbers (`100`, `50`, `3`), or short
+junk strings (`d`, `w`, `sd`, `ssssss`) is a debug preset — not vendor
+material, not a calibration target. They live only in the fuller
+`Templates/Filter` set and are not carried.
