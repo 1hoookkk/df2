@@ -1,0 +1,24 @@
+pub mod agc;
+pub mod cartridge;
+pub mod cascade;
+pub mod cluster;
+pub mod cvsd_input;
+pub mod desk_drive;
+pub mod emu_resonator;
+pub mod engine;
+pub mod ffi;
+pub mod function_generator;
+pub mod hedz_golden;
+pub mod hedz_rom;
+pub mod motor;
+pub mod qsound_spatial;
+pub mod role;
+pub mod trench_matrix;
+
+pub use agc::agc_step;
+pub use cartridge::{Cartridge, CornerData};
+pub use cascade::{Cascade, EncodedCoeffs, BLOCK_SIZE, NUM_COEFFS, NUM_STAGES, TOTAL_STAGES};
+pub use cluster::{Cluster, ClusterPlan, ClusterStage, InterferenceLink, StageFunction};
+pub use engine::{DebugToggles, FilterEngine, InputMode, SpatialMode};
+pub use motor::{ForceCurve, Motor, MotorId};
+pub use role::Role;

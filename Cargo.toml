@@ -1,0 +1,7 @@
+[workspace]
+members = ["trench-core"]
+resolver = "2"
+
+# Dependencies compile at full optimization; your crate stays debug-fast
+[profile.dev.package."*"]
+opt-level = 3

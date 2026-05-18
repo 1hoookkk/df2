@@ -1,0 +1,552 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>DF-II UI Studio</title>
+<style>
+  :root {
+    --bg: #0d0e10;
+    --panel: #1a1b1e;
+    --line: #2a2c30;
+    --text: #d4d6da;
+    --dim: #888a8e;
+    --accent: #c8895a;
+  }
+  * { box-sizing: border-box; }
+  body { margin: 0; background: var(--bg); color: var(--text);
+         font: 13px/1.4 -apple-system, "Segoe UI", system-ui, sans-serif;
+         display: grid; grid-template-columns: 1fr 380px; min-height: 100vh; }
+  h1 { font-size: 14px; letter-spacing: 2px; text-transform: uppercase;
+       color: var(--accent); border-bottom: 1px solid var(--line);
+       padding-bottom: 8px; margin: 0 0 12px; }
+  h2 { font-size: 11px; letter-spacing: 1.5px; text-transform: uppercase;
+       color: var(--dim); margin: 18px 0 8px; }
+  .left { padding: 20px; }
+  .right { padding: 20px; background: var(--panel); border-left: 1px solid var(--line);
+           overflow-y: auto; max-height: 100vh; }
+
+  .toolbar { display: flex; gap: 12px; align-items: center; margin-bottom: 14px; }
+  .toolbar label { font-size: 11px; color: var(--dim); }
+  .toolbar input[type=range] { width: 160px; }
+  .toolbar button { background: var(--panel); color: var(--text);
+                    border: 1px solid var(--line); padding: 6px 10px;
+                    font-size: 11px; cursor: pointer; letter-spacing: 1px; }
+  .toolbar button:hover { border-color: var(--accent); }
+
+  .canvas-wrap { position: relative; display: inline-block;
+                 border: 1px solid var(--line); }
+  .canvas-wrap img { display: block; user-select: none; -webkit-user-drag: none; }
+
+  .region { position: absolute; border: 2px solid; box-sizing: border-box;
+            cursor: move; pointer-events: auto; }
+  .region.hidden-outline { border-color: transparent !important; }
+  .region .tag { position: absolute; top: -20px; left: 0;
+                 font-size: 10px; padding: 1px 6px; letter-spacing: 1px;
+                 color: #000; font-weight: bold; user-select: none; }
+  .handle { position: absolute; width: 10px; height: 10px;
+            background: white; border: 1px solid black; }
+  .handle.tl { top: -5px; left: -5px; cursor: nw-resize; }
+  .handle.tr { top: -5px; right: -5px; cursor: ne-resize; }
+  .handle.bl { bottom: -5px; left: -5px; cursor: sw-resize; }
+  .handle.br { bottom: -5px; right: -5px; cursor: se-resize; }
+
+  /* Cap preview = filled rect with cap PNG */
+  .cap-preview { position: absolute; pointer-events: none;
+                 background-size: 100% 100%; }
+
+  .region-block { padding: 8px 10px; margin-bottom: 6px;
+                  background: var(--bg); border: 1px solid var(--line);
+                  border-left: 4px solid;}
+  .region-block .name { font-size: 11px; letter-spacing: 1.5px;
+                        text-transform: uppercase;
+                        display: flex; align-items: center; gap: 6px; }
+  .region-block .name .iconBtn { background: transparent;
+                                  color: var(--dim); border: 1px solid var(--line);
+                                  width: 22px; height: 22px; cursor: pointer;
+                                  font-size: 14px; line-height: 1; padding: 0;
+                                  border-radius: 0; }
+  .region-block .name .iconBtn.delBtn { margin-left: auto; }
+  .region-block .name .delBtn:hover { color: #ff6655; border-color: #ff6655; }
+  .region-block .name .resetBtn:hover { color: var(--accent); border-color: var(--accent); }
+  .restore-strip { padding: 8px 10px; background: var(--bg);
+                   border: 1px dashed var(--line); margin-bottom: 12px;
+                   font-size: 11px; }
+  .restore-strip .restoreBtn { display: inline-block; margin: 2px 4px 2px 0;
+                                background: transparent; color: var(--text);
+                                border: 1px solid var(--line); padding: 3px 8px;
+                                cursor: pointer; font-size: 11px;
+                                font-family: ui-monospace, monospace; }
+  .restore-strip .restoreBtn:hover { border-color: var(--accent); color: var(--accent); }
+  .undo-toast { position: fixed; bottom: 24px; left: 24px;
+                background: var(--accent); color: #000; padding: 8px 14px;
+                font-size: 12px; letter-spacing: 1px; cursor: pointer;
+                animation: undoFade 5s linear forwards; z-index: 100; }
+  @keyframes undoFade {
+    0%   { opacity: 1; }
+    85%  { opacity: 1; }
+    100% { opacity: 0; transform: translateY(10px); }
+  }
+  .region .delete-handle { position: absolute; top: -10px; right: -10px;
+                           width: 20px; height: 20px; background: #222;
+                           color: #fff; border: 1px solid #555; cursor: pointer;
+                           font-size: 14px; line-height: 18px; text-align: center;
+                           display: none; }
+  .region:hover .delete-handle { display: block; }
+  .region .delete-handle:hover { background: #ff6655; }
+  .region-block .coords { display: grid;
+                          grid-template-columns: repeat(4, 1fr); gap: 4px;
+                          margin-top: 6px; }
+  .region-block .coords label { font-size: 10px; color: var(--dim);
+                                 font-family: ui-monospace, monospace; }
+  .region-block .coords input { width: 100%; background: var(--panel);
+                                 color: var(--text); border: 1px solid var(--line);
+                                 padding: 3px 5px; font-family: ui-monospace, monospace;
+                                 font-size: 11px; }
+
+  .preview-row { display: flex; align-items: center; gap: 10px;
+                 margin-bottom: 8px; }
+  .preview-row label { min-width: 60px; font-family: ui-monospace, monospace;
+                       letter-spacing: 1px; font-size: 11px; color: var(--dim); }
+  .preview-row input[type=range] { flex: 1; }
+  .preview-row .val { font-family: ui-monospace, monospace;
+                      width: 36px; text-align: right;
+                      color: var(--accent); font-weight: bold; }
+
+  pre { background: #000; color: #b0d4c0; padding: 12px;
+        font: 11px/1.45 ui-monospace, monospace; overflow: auto;
+        border: 1px solid var(--line); max-height: 280px; }
+
+  .swatch { display: inline-block; width: 12px; height: 12px;
+            vertical-align: middle; margin-right: 6px; border: 1px solid #000; }
+</style>
+</head>
+<body>
+
+<div class="left">
+  <h1>DF-II UI Studio</h1>
+
+  <div class="toolbar">
+    <label>Zoom <input id="zoom" type="range" min="0.18" max="0.6" step="0.02" value="0.34"></label>
+    <span id="zoomVal">34%</span>
+    <button id="toggleOutlines">Outlines</button>
+    <button id="addRegionBtn">+ Add region</button>
+    <button id="resetBtn">Reset to defaults</button>
+    <button id="saveJsonBtn" style="background:var(--accent);color:#000;font-weight:bold">Save → runtime_layout.json (live)</button>
+    <button id="exportBtn">Copy C++ → clipboard</button>
+  </div>
+
+  <div class="canvas-wrap" id="canvas">
+    <img id="chassis" src="../../assets/images/chassis.png">
+  </div>
+</div>
+
+<div class="right">
+  <h2>Regions (source pixels)</h2>
+  <div id="restoreStrip"></div>
+  <div id="regions"></div>
+
+  <h2>Preview values</h2>
+  <div class="preview-row">
+    <label>MORPH</label>
+    <input id="morphSlider" type="range" min="0" max="1" step="0.001" value="0.54">
+    <span class="val" id="morphVal">54</span>
+  </div>
+  <div class="preview-row">
+    <label>Q</label>
+    <input id="qSlider" type="range" min="0" max="1" step="0.001" value="0.31">
+    <span class="val" id="qVal">31</span>
+  </div>
+
+  <h2>Exported C++</h2>
+  <pre id="exportOut">Click "Copy C++ → clipboard" to generate</pre>
+</div>
+
+<script>
+'use strict';
+
+// Initial values from current source/TrenchChassisLayout.h
+const DEFAULTS = {
+  typeSlot:  { x:  382, y:  248, w: 1420, h:   90, color: '#e8a37c', kind: 'rect',  label: 'TYPE SLOT' },
+  display:   { x:  160, y:  400, w: 1730, h: 1150, color: '#5bd0c0', kind: 'rect',  label: 'DISPLAY' },
+  morphSlot: { x:  197, y: 1641, w: 1322, h:  124, color: '#c8b68a', kind: 'rect',  label: 'MORPH SLOT' },
+  morphCell: { x: 1626, y: 1661, w:  192, h:  108, color: '#7894a8', kind: 'rect',  label: 'MORPH CELL' },
+  qSlot:     { x:  197, y: 1963, w: 1321, h:  125, color: '#c8b68a', kind: 'rect',  label: 'Q SLOT' },
+  qCell:     { x: 1617, y: 1981, w:  203, h:  112, color: '#7894a8', kind: 'rect',  label: 'Q CELL' },
+  morphCap:  { x:    0, y:    0, w:  200, h:  108, color: '#d4c4a0', kind: 'cap',   label: 'MORPH CAP', parent: 'morphSlot' },
+  qCap:      { x:    0, y:    0, w:  200, h:  108, color: '#d4c4a0', kind: 'cap',   label: 'Q CAP',     parent: 'qSlot' },
+};
+
+let regions = loadState();
+let zoom = 0.34;
+let outlinesHidden = false;
+
+function loadState() {
+  const saved = localStorage.getItem('df2_studio_v1');
+  if (saved) {
+    try { return JSON.parse(saved); } catch (e) {}
+  }
+  return JSON.parse(JSON.stringify(DEFAULTS));
+}
+function save() { localStorage.setItem('df2_studio_v1', JSON.stringify(regions)); }
+
+function updateCapsFromSliders() {
+  const mv = +document.getElementById('morphSlider').value;
+  const qv = +document.getElementById('qSlider').value;
+  regions.morphCap.x = Math.round(regions.morphSlot.x + mv * (regions.morphSlot.w - regions.morphCap.w));
+  regions.morphCap.y = Math.round(regions.morphSlot.y + (regions.morphSlot.h - regions.morphCap.h) / 2);
+  regions.qCap.x     = Math.round(regions.qSlot.x     + qv * (regions.qSlot.w     - regions.qCap.w));
+  regions.qCap.y     = Math.round(regions.qSlot.y     + (regions.qSlot.h - regions.qCap.h) / 2);
+  document.getElementById('morphVal').textContent = Math.round(mv * 100);
+  document.getElementById('qVal').textContent     = Math.round(qv * 100);
+}
+
+function render() {
+  const canvas = document.getElementById('canvas');
+  const img    = document.getElementById('chassis');
+  img.style.width  = (2048 * zoom) + 'px';
+  img.style.height = (2911 * zoom) + 'px';
+
+  canvas.querySelectorAll('.region').forEach(e => e.remove());
+
+  updateCapsFromSliders();
+
+  for (const name in regions) {
+    const r = regions[name];
+    const el = document.createElement('div');
+    el.className = 'region' + (outlinesHidden ? ' hidden-outline' : '');
+    el.style.left  = (r.x * zoom) + 'px';
+    el.style.top   = (r.y * zoom) + 'px';
+    el.style.width = (r.w * zoom) + 'px';
+    el.style.height= (r.h * zoom) + 'px';
+    el.style.borderColor = r.color;
+    if (r.kind === 'cap') {
+      el.style.background    = `${r.color}55`;
+      el.style.borderStyle   = 'dashed';
+    }
+    el.dataset.name = name;
+
+    const tag = document.createElement('div');
+    tag.className = 'tag';
+    tag.textContent = r.label;
+    tag.style.background = r.color;
+    el.appendChild(tag);
+
+    ['tl','tr','bl','br'].forEach(h => {
+      const handle = document.createElement('div');
+      handle.className = 'handle ' + h;
+      handle.dataset.handle = h;
+      el.appendChild(handle);
+    });
+
+    // Per-region delete handle (visible on hover)
+    const delHandle = document.createElement('div');
+    delHandle.className = 'delete-handle';
+    delHandle.textContent = '×';
+    delHandle.title = 'Delete ' + r.label;
+    delHandle.dataset.deleteRegion = name;
+    el.appendChild(delHandle);
+
+    canvas.appendChild(el);
+  }
+
+  renderCoords();
+  save();
+}
+
+function renderCoords() {
+  const panel = document.getElementById('regions');
+  panel.innerHTML = '';
+  for (const name in regions) {
+    const r = regions[name];
+    const block = document.createElement('div');
+    block.className = 'region-block';
+    block.style.borderLeftColor = r.color;
+    const hasDefault = DEFAULTS[name] !== undefined;
+    const resetBtn = hasDefault
+        ? `<button class="iconBtn resetBtn" data-reset="${name}" title="Reset to default">↻</button>`
+        : '';
+    block.innerHTML = `
+      <div class="name">
+        <span class="swatch" style="background:${r.color}"></span>
+        <span>${r.label}</span>
+        <span style="color:var(--dim);font-weight:normal">${r.kind}</span>
+        ${resetBtn}
+        <button class="iconBtn delBtn" data-delete="${name}" title="Delete">×</button>
+      </div>
+      <div class="coords">
+        <label>x <input type="number" data-name="${name}" data-field="x" value="${r.x}"></label>
+        <label>y <input type="number" data-name="${name}" data-field="y" value="${r.y}"></label>
+        <label>w <input type="number" data-name="${name}" data-field="w" value="${r.w}"></label>
+        <label>h <input type="number" data-name="${name}" data-field="h" value="${r.h}"></label>
+      </div>`;
+    panel.appendChild(block);
+  }
+  panel.querySelectorAll('input').forEach(inp => {
+    inp.oninput = (e) => {
+      const n = e.target.dataset.name;
+      const f = e.target.dataset.field;
+      regions[n][f] = +e.target.value;
+      render();
+    };
+  });
+  panel.querySelectorAll('[data-delete]').forEach(btn => {
+    btn.onclick = (e) => deleteRegion(e.target.dataset.delete);
+  });
+  panel.querySelectorAll('[data-reset]').forEach(btn => {
+    btn.onclick = (e) => resetRegion(e.target.dataset.reset);
+  });
+  renderRestoreStrip();
+}
+
+function renderRestoreStrip() {
+  const strip = document.getElementById('restoreStrip');
+  const missing = Object.keys(DEFAULTS).filter(k => !regions[k]);
+  if (missing.length === 0) { strip.innerHTML = ''; strip.style.display = 'none'; return; }
+  strip.style.display = 'block';
+  strip.innerHTML = `<span style="color:var(--dim);margin-right:6px">Restore deleted:</span>` +
+    missing.map(k => `<button class="restoreBtn" data-restore="${k}">+ ${DEFAULTS[k].label}</button>`).join('');
+  strip.querySelectorAll('[data-restore]').forEach(btn => {
+    btn.onclick = (e) => {
+      regions[e.target.dataset.restore] = JSON.parse(JSON.stringify(DEFAULTS[e.target.dataset.restore]));
+      render();
+    };
+  });
+}
+
+function resetRegion(name) {
+  if (!DEFAULTS[name]) return;
+  regions[name] = JSON.parse(JSON.stringify(DEFAULTS[name]));
+  render();
+}
+
+function deleteRegion(name) {
+  if (!regions[name]) return;
+  if (!confirm(`Delete ${regions[name].label}?`)) return;
+  delete regions[name];
+  render();
+}
+
+function addRegion() {
+  const label = prompt('Region name (e.g. "modSlot", "tapeMeter"):');
+  if (!label) return;
+  const key = label.replace(/[^a-zA-Z0-9]/g, '');
+  if (!key || regions[key]) {
+    alert('Invalid or duplicate name.');
+    return;
+  }
+  // Random pastel color for visual distinction
+  const hue = Math.floor(Math.random() * 360);
+  const color = `hsl(${hue}, 60%, 70%)`;
+  regions[key] = {
+    x: 400, y: 400, w: 300, h: 100,
+    color: hslToHex(hue, 60, 70),
+    kind: 'rect',
+    label: label.toUpperCase()
+  };
+  render();
+}
+
+function hslToHex(h, s, l) {
+  s /= 100; l /= 100;
+  const k = n => (n + h / 30) % 12;
+  const a = s * Math.min(l, 1 - l);
+  const f = n => Math.round(255 * (l - a * Math.max(-1, Math.min(k(n) - 3, Math.min(9 - k(n), 1))))).toString(16).padStart(2, '0');
+  return '#' + f(0) + f(8) + f(4);
+}
+
+// ---- drag + resize ----
+let drag = null;
+document.addEventListener('mousedown', (e) => {
+  // Click-to-delete via the canvas-side × handle
+  if (e.target.classList.contains('delete-handle')) {
+    e.preventDefault();
+    deleteRegion(e.target.dataset.deleteRegion);
+    return;
+  }
+  const handle = e.target.closest('.handle');
+  const region = e.target.closest('.region');
+  if (!region) return;
+  e.preventDefault();
+  drag = {
+    type: handle ? 'resize' : 'move',
+    handle: handle?.dataset.handle,
+    name: region.dataset.name,
+    startX: e.clientX, startY: e.clientY,
+    orig: { ...regions[region.dataset.name] }
+  };
+});
+document.addEventListener('mousemove', (e) => {
+  if (!drag) return;
+  const dx = (e.clientX - drag.startX) / zoom;
+  const dy = (e.clientY - drag.startY) / zoom;
+  const r = regions[drag.name];
+  const o = drag.orig;
+  if (drag.type === 'move') {
+    r.x = Math.round(o.x + dx);
+    r.y = Math.round(o.y + dy);
+  } else {
+    const h = drag.handle;
+    if (h.includes('l')) { r.x = Math.round(o.x + dx); r.w = Math.max(20, Math.round(o.w - dx)); }
+    if (h.includes('t')) { r.y = Math.round(o.y + dy); r.h = Math.max(20, Math.round(o.h - dy)); }
+    if (h.includes('r')) { r.w = Math.max(20, Math.round(o.w + dx)); }
+    if (h.includes('b')) { r.h = Math.max(20, Math.round(o.h + dy)); }
+  }
+  render();
+});
+document.addEventListener('mouseup', () => { drag = null; });
+
+// ---- toolbar ----
+document.getElementById('zoom').oninput = (e) => {
+  zoom = +e.target.value;
+  document.getElementById('zoomVal').textContent = Math.round(zoom * 100) + '%';
+  render();
+};
+document.getElementById('toggleOutlines').onclick = () => {
+  outlinesHidden = !outlinesHidden;
+  render();
+};
+let undoSnapshot = null;
+function showUndoToast() {
+  const old = document.querySelector('.undo-toast');
+  if (old) old.remove();
+  const toast = document.createElement('div');
+  toast.className = 'undo-toast';
+  toast.textContent = '↶ UNDO reset';
+  toast.onclick = () => {
+    if (undoSnapshot) {
+      regions = undoSnapshot;
+      undoSnapshot = null;
+      render();
+    }
+    toast.remove();
+  };
+  document.body.appendChild(toast);
+  setTimeout(() => toast.remove(), 5000);
+}
+
+document.getElementById('resetBtn').onclick = () => {
+  undoSnapshot = JSON.parse(JSON.stringify(regions));
+  regions = JSON.parse(JSON.stringify(DEFAULTS));
+  render();
+  showUndoToast();
+};
+document.getElementById('addRegionBtn').onclick = addRegion;
+document.addEventListener('keydown', (e) => {
+  // Delete or Backspace on focused canvas removes hovered region (handled by × handle instead)
+  // Just here as a no-op stub if we want keyboard delete later
+});
+document.getElementById('morphSlider').oninput = render;
+document.getElementById('qSlider').oninput = render;
+
+// ---- export ----
+function generateCpp() {
+  const fn = (name, src) => {
+    const r = regions[src];
+    if (!r) return `    // ${name}: deleted in studio`;
+    return `    inline juce::Rectangle<float> ${name}() noexcept { return { ${r.x.toFixed(1)}f, ${r.y.toFixed(1)}f, ${r.w.toFixed(1)}f, ${r.h.toFixed(1)}f }; }`;
+  };
+  const cap = (name, src) => regions[src] ? `    inline constexpr float ${name} = ${regions[src][name.includes('W') ? 'w' : 'h']}.0f;` : `    // ${name}: deleted in studio`;
+  return `// Generated by Source/GUI/ui_studio.html — paste into source/TrenchChassisLayout.h
+
+namespace trench::layout
+{
+    inline constexpr float kSourceW = 2048.0f;
+    inline constexpr float kSourceH = 2911.0f;
+
+${fn('typeSlotSrc',  'typeSlot')}
+${fn('displaySrc',   'display')}
+${fn('morphSlotSrc', 'morphSlot')}
+${fn('morphCellSrc', 'morphCell')}
+${fn('qSlotSrc',     'qSlot')}
+${fn('qCellSrc',     'qCell')}
+
+${cap('kMorphCapWSrc', 'morphCap')}
+${cap('kMorphCapHSrc', 'morphCap')}
+${cap('kQCapWSrc',     'qCap')}
+${cap('kQCapHSrc',     'qCap')}
+}`;
+}
+// ---- Save JSON → runtime_layout.json (hot-reload target) ----
+let layoutFileHandle = null;
+async function saveJson(opts = {}) {
+  const json = JSON.stringify({
+    _comment:  "Generated by Source/GUI/ui_studio.html. The JUCE plugin file-watches this and hot-reloads.",
+    editor:    { w: 500, h: 710 },
+    source:    { w: 2048, h: 2911 },
+    typeSlot:  regions.typeSlot  ? rectOf(regions.typeSlot)  : null,
+    display:   regions.display   ? rectOf(regions.display)   : null,
+    morphSlot: regions.morphSlot ? rectOf(regions.morphSlot) : null,
+    qSlot:     regions.qSlot     ? rectOf(regions.qSlot)     : null,
+    morphCap:  regions.morphCap  ? { w: regions.morphCap.w, h: regions.morphCap.h } : null,
+    qCap:      regions.qCap      ? { w: regions.qCap.w,     h: regions.qCap.h }     : null,
+  }, null, 2);
+
+  // Path 1: File System Access API (Chrome/Edge) — direct silent overwrite once picker accepted
+  if ('showSaveFilePicker' in window) {
+    try {
+      if (!layoutFileHandle) {
+        layoutFileHandle = await window.showSaveFilePicker({
+          suggestedName: 'runtime_layout.json',
+          types: [{ description: 'Layout JSON', accept: { 'application/json': ['.json'] } }]
+        });
+      }
+      const writable = await layoutFileHandle.createWritable();
+      await writable.write(json);
+      await writable.close();
+      flash('Saved → plugin reloading...');
+      return;
+    } catch (e) {
+      if (e?.name === 'AbortError') return;        // user cancelled picker
+      console.warn('FS Access failed, falling back to download:', e);
+    }
+  }
+  // Path 2: classic download fallback (Firefox / Safari)
+  const blob = new Blob([json], { type: 'application/json' });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url; a.download = 'runtime_layout.json';
+  a.click();
+  URL.revokeObjectURL(url);
+  flash('Downloaded — move to assets/runtime_layout.json');
+}
+
+function rectOf(r) { return { x: r.x, y: r.y, w: r.w, h: r.h }; }
+
+function flash(msg) {
+  const t = document.createElement('div');
+  t.className = 'undo-toast';
+  t.style.background = '#2a8c5a';
+  t.style.color = '#fff';
+  t.textContent = msg;
+  document.body.appendChild(t);
+  setTimeout(() => t.remove(), 2200);
+}
+
+document.getElementById('saveJsonBtn').onclick = () => saveJson();
+
+// Auto-save (debounced) — every region drag/edit pushes to plugin within 600ms
+let autoSaveTimer = null;
+function scheduleAutoSave() {
+  if (!layoutFileHandle) return;   // only auto-save once user has picked a file
+  if (autoSaveTimer) clearTimeout(autoSaveTimer);
+  autoSaveTimer = setTimeout(() => saveJson({ silent: true }), 600);
+}
+// Hook into render() to trigger autosave
+const originalSave = save;
+save = function() { originalSave(); scheduleAutoSave(); };
+
+document.getElementById('exportBtn').onclick = () => {
+  const code = generateCpp();
+  document.getElementById('exportOut').textContent = code;
+  navigator.clipboard.writeText(code).then(
+    () => { document.getElementById('exportBtn').textContent = 'Copied!'; setTimeout(() => document.getElementById('exportBtn').textContent = 'Copy C++ → clipboard', 1200); },
+    () => { /* clipboard blocked — text is still visible in pre */ }
+  );
+};
+
+// ---- init ----
+document.getElementById('chassis').onload = render;
+if (document.getElementById('chassis').complete) render();
+</script>
+</body>
+</html>

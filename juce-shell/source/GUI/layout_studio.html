@@ -1,0 +1,330 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>DF-II Layout Studio</title>
+<style>
+  :root {
+    --bg: #0d0e10;
+    --panel: #1a1b1e;
+    --line: #2a2c30;
+    --text: #d4d6da;
+    --dim: #888a8e;
+    --accent: #c8895a;
+  }
+  * { box-sizing: border-box; }
+  body { margin:0; background:var(--bg); color:var(--text);
+         font:13px/1.4 -apple-system, "Segoe UI", system-ui, sans-serif;
+         display:grid; grid-template-columns:1fr 360px; min-height:100vh; }
+  h1 { font-size:14px; letter-spacing:2px; text-transform:uppercase;
+       color:var(--accent); border-bottom:1px solid var(--line);
+       padding-bottom:8px; margin:0 0 12px; }
+  h2 { font-size:11px; letter-spacing:1.5px; text-transform:uppercase;
+       color:var(--dim); margin:18px 0 8px; }
+  .left { padding:20px; }
+  .right { padding:20px; background:var(--panel); border-left:1px solid var(--line);
+           overflow-y:auto; max-height:100vh; }
+  .toolbar { display:flex; gap:12px; align-items:center; margin-bottom:14px; flex-wrap:wrap; }
+  .toolbar label { font-size:11px; color:var(--dim); }
+  .toolbar input[type=range] { width:160px; }
+  .toolbar input[type=text] { background:var(--panel); color:var(--text);
+                              border:1px solid var(--line); padding:4px 8px; width:240px;
+                              font-family:ui-monospace,monospace; font-size:11px; }
+  button { background:var(--panel); color:var(--text);
+           border:1px solid var(--line); padding:6px 10px;
+           font-size:11px; cursor:pointer; letter-spacing:1px; }
+  button:hover { border-color:var(--accent); }
+  button.primary { background:var(--accent); color:#000; font-weight:bold; }
+  .canvas-wrap { position:relative; display:inline-block; border:1px solid var(--line); }
+  .canvas-wrap img { display:block; user-select:none; -webkit-user-drag:none; }
+  .region { position:absolute; border:2px solid; box-sizing:border-box;
+            cursor:move; pointer-events:auto; }
+  .region.knob { border-radius:50%; }
+  .region .tag { position:absolute; top:-20px; left:0;
+                 font-size:10px; padding:1px 6px; letter-spacing:1px;
+                 color:#000; font-weight:bold; user-select:none; }
+  .handle { position:absolute; width:10px; height:10px;
+            background:white; border:1px solid black; }
+  .handle.br { bottom:-5px; right:-5px; cursor:se-resize; }
+  .handle.r  { top:50%; right:-5px; transform:translateY(-50%); cursor:ew-resize; }
+  .row { padding:8px 10px; margin-bottom:6px; background:var(--bg);
+         border:1px solid var(--line); border-left:4px solid; }
+  .row .name { font-size:11px; letter-spacing:1.5px; text-transform:uppercase; margin-bottom:6px; }
+  .coords { display:grid; grid-template-columns:repeat(4,1fr); gap:6px; }
+  .coords label { font-size:10px; color:var(--dim); }
+  .coords input { width:100%; background:var(--bg); color:var(--text);
+                  border:1px solid var(--line); padding:3px 6px;
+                  font-family:ui-monospace,monospace; font-size:11px; }
+  pre { background:#000; color:#9be38a; padding:10px;
+        font-family:ui-monospace,monospace; font-size:11px;
+        white-space:pre-wrap; word-break:break-all;
+        border:1px solid var(--line); }
+</style>
+</head>
+<body>
+
+<div class="left">
+  <h1>DF-II Layout Studio</h1>
+  <div class="toolbar">
+    <label>Image <input id="imgPath" type="text" value="../../assets/images/chassis.png"></label>
+    <button id="reloadImg">Reload</button>
+  </div>
+  <div class="toolbar">
+    <label>Zoom <input id="zoom" type="range" min="0.2" max="1.0" step="0.05" value="0.5"></label>
+    <span id="zoomVal">50%</span>
+    <button id="addRectBtn">+ Rect</button>
+    <button id="addKnobBtn">+ Knob</button>
+    <button id="resetBtn">Reset regions</button>
+    <button id="copyJsonBtn" class="primary">Copy layout.json</button>
+  </div>
+  <div class="canvas-wrap" id="canvas">
+    <img id="chassis" src="../../assets/images/chassis.png">
+  </div>
+</div>
+
+<div class="right">
+  <h2>Image (natural)</h2>
+  <div id="imgInfo" style="font-family:ui-monospace,monospace; font-size:11px; color:var(--dim);">loading...</div>
+
+  <h2>Regions (source pixels)</h2>
+  <div id="regions"></div>
+
+  <h2>layout.json</h2>
+  <pre id="jsonOut"></pre>
+</div>
+
+<script>
+'use strict';
+
+const DEFAULTS = () => ({
+  display: { x: 80, y: 145, w: 775, h: 445, kind:'rect', color:'#5bd0c0', label:'DISPLAY' },
+  morph:   { cx: 350, cy: 740, r: 50,       kind:'knob', color:'#e8a37c', label:'MORPH' },
+  q:       { cx: 350, cy: 870, r: 50,       kind:'knob', color:'#7894a8', label:'Q' },
+});
+
+let regions = loadState();
+let zoom = 0.5;
+let natW = 941, natH = 1672;
+
+function loadState() {
+  try {
+    const saved = JSON.parse(localStorage.getItem('df2_layout_studio_v1'));
+    if (saved && saved.display && saved.morph && saved.q) return saved;
+  } catch (e) {}
+  return DEFAULTS();
+}
+function save() { localStorage.setItem('df2_layout_studio_v1', JSON.stringify(regions)); }
+
+function render() {
+  const canvas = document.getElementById('canvas');
+  const img    = document.getElementById('chassis');
+  img.style.width  = (natW * zoom) + 'px';
+  img.style.height = (natH * zoom) + 'px';
+  canvas.querySelectorAll('.region').forEach(e => e.remove());
+
+  for (const name in regions) {
+    const r = regions[name];
+    const el = document.createElement('div');
+    el.dataset.name = name;
+    el.style.borderColor = r.color;
+
+    if (r.kind === 'rect') {
+      el.className = 'region';
+      el.style.left   = (r.x * zoom) + 'px';
+      el.style.top    = (r.y * zoom) + 'px';
+      el.style.width  = (r.w * zoom) + 'px';
+      el.style.height = (r.h * zoom) + 'px';
+      ['br'].forEach(h => {
+        const handle = document.createElement('div');
+        handle.className = 'handle ' + h;
+        handle.dataset.handle = h;
+        el.appendChild(handle);
+      });
+    } else { // knob
+      el.className = 'region knob';
+      const d = r.r * 2 * zoom;
+      el.style.left   = ((r.cx - r.r) * zoom) + 'px';
+      el.style.top    = ((r.cy - r.r) * zoom) + 'px';
+      el.style.width  = d + 'px';
+      el.style.height = d + 'px';
+      const handle = document.createElement('div');
+      handle.className = 'handle r';
+      handle.dataset.handle = 'r';
+      el.appendChild(handle);
+    }
+
+    const tag = document.createElement('div');
+    tag.className = 'tag';
+    tag.textContent = r.label;
+    tag.style.background = r.color;
+    el.appendChild(tag);
+    canvas.appendChild(el);
+  }
+  renderPanel();
+  renderJson();
+  save();
+}
+
+function renderPanel() {
+  const panel = document.getElementById('regions');
+  panel.innerHTML = '';
+  for (const name in regions) {
+    const r = regions[name];
+    const block = document.createElement('div');
+    block.className = 'row';
+    block.style.borderLeftColor = r.color;
+    const nameRow = `
+      <div class="name" style="display:flex;align-items:center;gap:8px;color:${r.color}">
+        <span>${r.label} (${r.kind})</span>
+        <button data-del="${name}" style="margin-left:auto;width:22px;height:22px;padding:0;
+          background:transparent;color:#ff6655;border:1px solid #ff6655;cursor:pointer;
+          font-size:14px;line-height:1">×</button>
+      </div>`;
+    if (r.kind === 'rect') {
+      block.innerHTML = nameRow + `
+        <div class="coords">
+          <label>x <input type="number" data-name="${name}" data-field="x" value="${r.x}"></label>
+          <label>y <input type="number" data-name="${name}" data-field="y" value="${r.y}"></label>
+          <label>w <input type="number" data-name="${name}" data-field="w" value="${r.w}"></label>
+          <label>h <input type="number" data-name="${name}" data-field="h" value="${r.h}"></label>
+        </div>`;
+    } else {
+      block.innerHTML = nameRow + `
+        <div class="coords">
+          <label>cx <input type="number" data-name="${name}" data-field="cx" value="${r.cx}"></label>
+          <label>cy <input type="number" data-name="${name}" data-field="cy" value="${r.cy}"></label>
+          <label>r  <input type="number" data-name="${name}" data-field="r"  value="${r.r}"></label>
+          <label></label>
+        </div>`;
+    }
+    panel.appendChild(block);
+  }
+  panel.querySelectorAll('input').forEach(inp => {
+    inp.oninput = (e) => {
+      const n = e.target.dataset.name;
+      const f = e.target.dataset.field;
+      regions[n][f] = +e.target.value;
+      render();
+    };
+  });
+  panel.querySelectorAll('[data-del]').forEach(btn => {
+    btn.onclick = (e) => {
+      const n = e.target.dataset.del;
+      delete regions[n];
+      render();
+    };
+  });
+}
+
+function renderJson() {
+  const regionsOut = {};
+  for (const name in regions) {
+    const r = regions[name];
+    if (r.kind === 'rect') regionsOut[name] = { x:r.x, y:r.y, w:r.w, h:r.h };
+    else                   regionsOut[name] = { cx:r.cx, cy:r.cy, r:r.r };
+  }
+  const out = { schema: 1, chassis: { width: natW, height: natH }, regions: regionsOut };
+  document.getElementById('jsonOut').textContent = JSON.stringify(out, null, 2);
+}
+
+// ---- drag + resize ----
+let drag = null;
+document.addEventListener('mousedown', (e) => {
+  const region = e.target.closest('.region');
+  if (!region) return;
+  const name = region.dataset.name;
+  const r = regions[name];
+  const handle = e.target.closest('.handle');
+  drag = {
+    name, kind: r.kind, mode: handle ? handle.dataset.handle : 'move',
+    startX: e.clientX, startY: e.clientY,
+    init: JSON.parse(JSON.stringify(r))
+  };
+  e.preventDefault();
+});
+document.addEventListener('mousemove', (e) => {
+  if (!drag) return;
+  const dx = (e.clientX - drag.startX) / zoom;
+  const dy = (e.clientY - drag.startY) / zoom;
+  const r = regions[drag.name];
+  const init = drag.init;
+  if (drag.kind === 'rect') {
+    if (drag.mode === 'move') {
+      r.x = Math.round(init.x + dx);
+      r.y = Math.round(init.y + dy);
+    } else if (drag.mode === 'br') {
+      r.w = Math.max(20, Math.round(init.w + dx));
+      r.h = Math.max(20, Math.round(init.h + dy));
+    }
+  } else { // knob
+    if (drag.mode === 'move') {
+      r.cx = Math.round(init.cx + dx);
+      r.cy = Math.round(init.cy + dy);
+    } else if (drag.mode === 'r') {
+      r.r = Math.max(5, Math.round(init.r + dx));
+    }
+  }
+  render();
+});
+document.addEventListener('mouseup', () => { drag = null; });
+
+document.getElementById('zoom').oninput = (e) => {
+  zoom = +e.target.value;
+  document.getElementById('zoomVal').textContent = Math.round(zoom*100) + '%';
+  render();
+};
+document.getElementById('resetBtn').onclick = () => {
+  if (!confirm('Reset all regions to defaults?')) return;
+  regions = DEFAULTS();
+  render();
+};
+document.getElementById('copyJsonBtn').onclick = async () => {
+  await navigator.clipboard.writeText(document.getElementById('jsonOut').textContent);
+  const b = document.getElementById('copyJsonBtn');
+  const t = b.textContent;
+  b.textContent = 'Copied!';
+  setTimeout(() => b.textContent = t, 1200);
+};
+function randomHexColor() {
+  const h = Math.floor(Math.random()*360);
+  const s = 0.6, l = 0.7;
+  const k = n => (n + h/30) % 12;
+  const a = s * Math.min(l, 1-l);
+  const f = n => Math.round(255*(l - a*Math.max(-1, Math.min(k(n)-3, Math.min(9-k(n), 1))))).toString(16).padStart(2,'0');
+  return '#' + f(0) + f(8) + f(4);
+}
+document.getElementById('addRectBtn').onclick = () => {
+  const name = prompt('Region name (key, e.g. typeSlot):');
+  if (!name) return;
+  const key = name.replace(/[^a-zA-Z0-9_]/g, '');
+  if (!key || regions[key]) { alert('Invalid or duplicate name.'); return; }
+  regions[key] = { x: Math.round(natW*0.2), y: Math.round(natH*0.2),
+                   w: Math.round(natW*0.3), h: Math.round(natH*0.08),
+                   kind:'rect', color: randomHexColor(), label: key.toUpperCase() };
+  render();
+};
+document.getElementById('addKnobBtn').onclick = () => {
+  const name = prompt('Knob name (key, e.g. slamDrive):');
+  if (!name) return;
+  const key = name.replace(/[^a-zA-Z0-9_]/g, '');
+  if (!key || regions[key]) { alert('Invalid or duplicate name.'); return; }
+  regions[key] = { cx: Math.round(natW*0.5), cy: Math.round(natH*0.5), r: 50,
+                   kind:'knob', color: randomHexColor(), label: key.toUpperCase() };
+  render();
+};
+document.getElementById('reloadImg').onclick = () => {
+  const img = document.getElementById('chassis');
+  img.src = document.getElementById('imgPath').value + '?t=' + Date.now();
+};
+
+// Wait for image to load to know natural dimensions
+document.getElementById('chassis').addEventListener('load', () => {
+  const img = document.getElementById('chassis');
+  natW = img.naturalWidth;
+  natH = img.naturalHeight;
+  document.getElementById('imgInfo').textContent = `${natW} × ${natH}`;
+  render();
+});
+</script>
+</body>
+</html>

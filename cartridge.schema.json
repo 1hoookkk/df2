@@ -1,0 +1,88 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://trench/cartridge.schema.json",
+  "title": "TRENCH compiled-v1 cartridge",
+  "description": "Wire format for cartridges consumed by the JUCE plugin. Authoritative loader: trench-core/src/cartridge.rs::Cartridge::from_json. Validated by ./check.",
+  "type": "object",
+  "required": ["format", "keyframes"],
+  "additionalProperties": true,
+  "properties": {
+    "format": { "type": "string", "const": "compiled-v1" },
+    "name":   { "type": "string", "minLength": 1 },
+    "sampleRate": { "type": "number", "exclusiveMinimum": 0 },
+    "keyframes": {
+      "type": "array",
+      "minItems": 4,
+      "items": { "$ref": "#/$defs/keyframe" },
+      "contains": { "properties": { "label": { "const": "M0_Q0"     } }, "required": ["label"] },
+      "allOf": [
+        { "contains": { "properties": { "label": { "const": "M0_Q100"   } }, "required": ["label"] } },
+        { "contains": { "properties": { "label": { "const": "M100_Q0"   } }, "required": ["label"] } },
+        { "contains": { "properties": { "label": { "const": "M100_Q100" } }, "required": ["label"] } }
+      ]
+    },
+    "spatial_profile": { "$ref": "#/$defs/spatial_profile" }
+  },
+  "$defs": {
+    "keyframe": {
+      "type": "object",
+      "required": ["label", "stages"],
+      "properties": {
+        "label": { "type": "string", "enum": ["M0_Q0", "M0_Q100", "M100_Q0", "M100_Q100"] },
+        "morph": { "type": "number" },
+        "q":     { "type": "number" },
+        "boost": { "type": "number" },
+        "stages": {
+          "type": "array",
+          "minItems": 12,
+          "maxItems": 12,
+          "items": { "$ref": "#/$defs/stage" }
+        }
+      }
+    },
+    "stage": {
+      "type": "object",
+      "required": ["c0", "c1", "c2", "c3", "c4"],
+      "properties": {
+        "c0": { "type": "number" },
+        "c1": { "type": "number" },
+        "c2": { "type": "number" },
+        "c3": { "type": "number" },
+        "c4": { "type": "number" }
+      }
+    },
+    "spatial_profile": {
+      "type": "object",
+      "description": "Typed QSound-style spatial profile. Feature orders for the coefficient arrays are documented in docs/archive/qsound_spatial.md §\"Canonical Recon Model\". Mirrored bit-for-bit by trench-core Rust and the JUCE C++ loader.",
+      "required": ["azimuth", "distance", "elevation", "itd_coeffs", "ild_coeffs", "band_coeffs"],
+      "additionalProperties": false,
+      "properties": {
+        "azimuth":   { "type": "number" },
+        "distance":  { "type": "number" },
+        "elevation": { "type": "number" },
+        "itd_coeffs": { "type": "array", "items": { "type": "number" }, "minItems": 6, "maxItems": 6 },
+        "ild_coeffs": { "type": "array", "items": { "type": "number" }, "minItems": 6, "maxItems": 6 },
+        "band_coeffs": { "$ref": "#/$defs/band_coeffs" }
+      }
+    },
+    "band_coeffs": {
+      "type": "object",
+      "required": ["l", "r"],
+      "additionalProperties": false,
+      "properties": {
+        "l": { "$ref": "#/$defs/band_channel_coeffs" },
+        "r": { "$ref": "#/$defs/band_channel_coeffs" }
+      }
+    },
+    "band_channel_coeffs": {
+      "type": "object",
+      "required": ["low", "mid", "high"],
+      "additionalProperties": false,
+      "properties": {
+        "low":  { "type": "array", "items": { "type": "number" }, "minItems": 12, "maxItems": 12 },
+        "mid":  { "type": "array", "items": { "type": "number" }, "minItems": 12, "maxItems": 12 },
+        "high": { "type": "array", "items": { "type": "number" }, "minItems": 12, "maxItems": 12 }
+      }
+    }
+  }
+}
