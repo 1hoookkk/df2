@@ -35,22 +35,24 @@ source. Every extract carries a `_provenance` header and
 extracts; they never copy extracted coefficients. No extraction is made
 without a named null test it supports.
 
-### QSound source set carry
+### QSound lab classification
 
-- QCreator/QMixer source set carried from
-  `C:\Users\hooki\trench_re_vault\analysis\qsound_lab\qcreator_extracted_auto`
-  to `ref/ghidra_extracts/qsound/qcreator_1998_source_set/`.
-- Form: QCreator 1.0 / QMixer.dll extracted installer payload, help/content
-  files, demo WAVs, and extraction manifest. This is not yet a clean E-mu
-  QSound capture and does not retire the TODO constants in
-  `trench-core/src/qsound_spatial.rs`.
-- Current QSound status: source material located; authoritative ITD scalar,
-  low/high shelf corners, ILD law, ITD law, and band-law tables still need
-  extraction or matched clean capture proof.
+`C:\Users\hooki\trench_re_vault\analysis\qsound_lab\INVENTORY.md` is the
+current classification pass. It labels files as primary or derivative and
+records the numeric/hex/WAV candidate searches. No QSound files are promoted
+into `ref/` yet.
 
-QSound spatial null test target:
-  Source: `ref/ghidra_extracts/qsound/qcreator_1998_source_set/` plus any
-  future clean E-mu/QSound captures or Ghidra table extracts.
+Current QSound status:
+- QCreator/QMixer vendor binaries, docs, extracted payloads, and demo WAVs
+  exist in the lab folder.
+- No file currently qualifies as a `qsound_spatial.rs` null target because
+  no candidate names matched ITD/ILD/distance/azimuth parameters or proves
+  shelf corners, ITD scalar, or band-law coefficients.
+- The TODO constants in `trench-core/src/qsound_spatial.rs` remain live.
+
+QSound spatial null test target remains planned, not sourced:
+  Source: future promoted primary sources under `ref/qsound/` or
+  `ref/ghidra_extracts/qsound/`.
   Targets:
     - ITD samples-per-law-unit constant replacing the current TODO scalar.
     - Low/high shelf corner Hz replacing current engineering defaults.
@@ -100,11 +102,6 @@ QSound spatial null test target:
 - `cascade.rs` ↔ Rossum biquad equivalence — Rust unit test; blocks
   meaningful null tests against E-mu reference.
 - `hedz_rom.rs` feature-gating — first runtime work next session.
-- `tools/heritage_coeffs.py` has broken imports — it `import`s
-  `pyruntime.encode` / `pyruntime.stage_params`, which were not carried
-  (the `pyruntime` package belongs to the divergent `trenchwork_clean`
-  repo). The file does not run standalone. Decide: vendor the needed
-  `pyruntime` modules, or rewrite `heritage_coeffs.py` self-contained.
 - Carry-over quarantines (see `dev/tmp/inventory.md`): canonical
   wet-render set undefined; P2K count 43/35/35 conflict;
   `emu_zplane_filter_types.xml` is a manual transcription;
@@ -121,6 +118,24 @@ QSound spatial null test target:
   (`heritage-designer-sections-v2`); the NotebookLM JSON is not carried.
   The old `template_count: 83` = 69 vendor + ~14 user-authored scratch
   files (the latter live only in the fuller `Templates/Filter` set).
+
+- `tools/heritage_coeffs.py` import fix: resolved. The three modules it
+  needs (`constants.py`, `stage_params.py`, `encode.py`) are vendored
+  into `tools/pyruntime/`. `heritage_coeffs.py` now runs standalone
+  (type1/2/3 compile verified).
+- Frame-bank source decided: the 69 vendor Filter XMLs in `ref/heritage/`
+  compiled through `heritage_coeffs.py` are the bank. The Orbit/Planet
+  Phatt ROM rip is cross-validation only — `rom_deep_scan` mis-segments
+  blocks and hardcodes 5 names; full ROM-directory RE is deferred (not
+  on the critical path; XML gives 69 named filters cleanly).
+
+## Future capability (post-v1)
+
+- Morpheus 3D cube morphing (8-corner, function-generator-driven): a
+  separate filter engine, not an extension of df2's frozen 4-corner
+  runtime. Separate RE (Morpheus hardware, not EosAudioEngine.dll).
+  Evaluate for v2. Closed for v1 — does not change the v1 E-mu sound,
+  which is the P2K Morph×Q filters plus the four authored bodies.
 
 ## Shipping bodies status
 
