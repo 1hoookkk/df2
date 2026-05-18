@@ -137,6 +137,19 @@ QSound spatial null test target remains planned, not sourced:
   Evaluate for v2. Closed for v1 — does not change the v1 E-mu sound,
   which is the P2K Morph×Q filters plus the four authored bodies.
 
+## Design decisions
+
+- **Runtime vs authoring split (2026-05-18).** The runtime stays the
+  frozen, patent-faithful E-mu Z-plane cascade — that character *is* the
+  product; a modern engine (Bark-bilinear warp, allpass-substituted
+  delays, tube-model vocals) would sound good but would no longer sound
+  like E-mu, and is out of scope for df2 (it would be a separate
+  product). Modernization is allowed only on the **authoring side**:
+  Filter Factory's frame fitter may use perceptually-weighted Prony /
+  ARMA fitting (Bark axis for mids, ERB-weighted for low frequencies).
+  That produces ordinary biquad coefficients for the frozen cascade —
+  smart authoring, dumb faithful runtime. No runtime change.
+
 ## Shipping bodies status
 
 | Body              | Authored | Null pass | Audible pass | Notes |
