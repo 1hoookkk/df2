@@ -35,6 +35,31 @@ source. Every extract carries a `_provenance` header and
 extracts; they never copy extracted coefficients. No extraction is made
 without a named null test it supports.
 
+### QSound source set carry
+
+- QCreator/QMixer source set carried from
+  `C:\Users\hooki\trench_re_vault\analysis\qsound_lab\qcreator_extracted_auto`
+  to `ref/ghidra_extracts/qsound/qcreator_1998_source_set/`.
+- Form: QCreator 1.0 / QMixer.dll extracted installer payload, help/content
+  files, demo WAVs, and extraction manifest. This is not yet a clean E-mu
+  QSound capture and does not retire the TODO constants in
+  `trench-core/src/qsound_spatial.rs`.
+- Current QSound status: source material located; authoritative ITD scalar,
+  low/high shelf corners, ILD law, ITD law, and band-law tables still need
+  extraction or matched clean capture proof.
+
+QSound spatial null test target:
+  Source: `ref/ghidra_extracts/qsound/qcreator_1998_source_set/` plus any
+  future clean E-mu/QSound captures or Ghidra table extracts.
+  Targets:
+    - ITD samples-per-law-unit constant replacing the current TODO scalar.
+    - Low/high shelf corner Hz replacing current engineering defaults.
+    - ITD law coefficients and ILD law coefficients for `SpatialProfile`.
+    - Left/right low/mid/high band-law coefficient tables.
+  Verification: df2 stereo output through `qsound_spatial.rs` must null
+    against measured/extracted QSound output at matched ITD/ILD/distance
+    parameters to <= -60 dB across the +/-60 degree azimuth sweep.
+
 ### Verified RE findings
 
 - 5 computed filter classes: CPhantomMorphLP / MorphLPX / Morph2 /
@@ -75,12 +100,27 @@ without a named null test it supports.
 - `cascade.rs` ↔ Rossum biquad equivalence — Rust unit test; blocks
   meaningful null tests against E-mu reference.
 - `hedz_rom.rs` feature-gating — first runtime work next session.
+- `tools/heritage_coeffs.py` has broken imports — it `import`s
+  `pyruntime.encode` / `pyruntime.stage_params`, which were not carried
+  (the `pyruntime` package belongs to the divergent `trenchwork_clean`
+  repo). The file does not run standalone. Decide: vendor the needed
+  `pyruntime` modules, or rewrite `heritage_coeffs.py` self-contained.
 - Carry-over quarantines (see `dev/tmp/inventory.md`): canonical
   wet-render set undefined; P2K count 43/35/35 conflict;
-  `heritage_designer_sections.json` NotebookLM-derived;
   `emu_zplane_filter_types.xml` is a manual transcription;
   `juce-shell/source` is forge-era; `talking_hedz_x3_surfaces` JSON
   provenance unclear.
+
+### Resolved (2026-05-18)
+
+- Quarantine #3 (`heritage_designer_sections.json` NotebookLM-derived):
+  resolved. Genuine E-mu vendor Filter XML located in `Emulator X
+  Family / Templates (2) / Filter` (69 templates) and carried to
+  `ref/heritage/`. `heritage_designer_sections.json` regenerated from
+  the XML via `tools/extract_designer_sections.py`
+  (`heritage-designer-sections-v2`); the NotebookLM JSON is not carried.
+  The old `template_count: 83` = 69 vendor + ~14 user-authored scratch
+  files (the latter live only in the fuller `Templates/Filter` set).
 
 ## Shipping bodies status
 

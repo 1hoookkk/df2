@@ -8,10 +8,13 @@
 ## Rules
 
 - Never modify cascade topology, interpolation order, or cartridge format.
-- No RBJ cookbook formulas in shipped cartridge coefficients. Filter
-  Factory may use RBJ peaking as an authoring primitive provided the
-  result nulls against the heritage realization. The spatial post-stage
-  (`qsound_spatial.rs`) is exempt — not the character path.
+- No RBJ cookbook formulas in shipped cartridge coefficients (the
+  morph/Q character path). Filter Factory may use RBJ peaking as an
+  authoring primitive provided the result nulls against the heritage
+  realization. The QSound spatial post-stage uses RBJ shelf math only as
+  the coefficient-construction primitive for its low/high shelves, with
+  shelf gains driven by QSound RE band-law tables. That is measured
+  E-mu/QSound behavior, not freelance RBJ usage.
 - Never save AI chat output back as a repo file or notebook source.
 - Clean Room: capture E-mu binary coefficients for reference only; author
   df2 frames that match behavior (null test, not coefficient copy).

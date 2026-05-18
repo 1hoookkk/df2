@@ -1,0 +1,123 @@
+:Base qcreator.hlp>Main
+1 General Information
+2 Introduction=Introduction@qcreator.hlp>Main
+2 QCreator Specifications and Requirements=QCreatorSpecificationsandRequirements@qcreator.hlp>Main
+2 Trademarks=Trademarks@qcreator.hlp>Main
+2 Register Your Product!=RegisterYourProduct.@qcreator.hlp>Main
+2 Acknowledgements=Acknowledgements@qcreator.hlp>Main
+2 Uninstallation=Uninstallation@qcreator.hlp>Main
+2 Technical Support=TechnicalSupport@qcreator.hlp>Main
+1 Getting Started
+2 How to Find the Information You Need=HowtoFindtheInformationYouNeed@qcreator.hlp>Main
+1 Using QCreator
+2 QCreator Overview=QCreatorOverview@qcreator.hlp>Main
+2 Interface Basics=InterfaceBasics@qcreator.hlp>Main
+2 (Waveform) Overview=.Waveform.Overview@qcreator.hlp>Main
+2 Key Diagram=KeyDiagram@qcreator.hlp>Main
+2 Status Bar=StatusBar@qcreator.hlp>Main
+2 File Basics: Save vs. Export=FileBasics.Savevs.Export@qcreator.hlp>Main
+2 QCreator Tutorial...
+3 QCreator Tutorial=QCreatorTutorial@qcreator.hlp>Main
+4 Learn QCreator=LearnQCreator@qcreator.hlp>Proc
+1 Command Reference
+2 File Menu...
+3 File Menu=FileMenu@qcreator.hlp>Main
+3 File: Open=File.Open@qcreator.hlp>Main
+3 File: Close=File.Close@qcreator.hlp>Main
+3 File: Save=File.Save@qcreator.hlp>Main
+3 File: Save As=File.SaveAs@qcreator.hlp>Main
+3 File: Revert=File.Revert@qcreator.hlp>Main
+3 File: Export Stereo File=File.ExportStereoFile@qcreator.hlp>Main
+3 File: Most Recently Opened File (List)=File.MostRecentlyOpenedFile.List.@qcreator.hlp>Main
+3 File: Exit=File.Exit@qcreator.hlp>Main
+2 Edit Menu...
+3 Edit Menu=EditMenu@qcreator.hlp>Main
+3 Edit: Undo=Edit.Undo@qcreator.hlp>Main
+3 Edit: Cut=Edit.Cut@qcreator.hlp>Main
+3 Edit: Copy=Edit.Copy@qcreator.hlp>Main
+3 Edit: Paste=Edit.Paste@qcreator.hlp>Main
+3 Edit: Delete=Edit.Delete@qcreator.hlp>Main
+3 Edit: Select All=Edit.SelectAll@qcreator.hlp>Main
+3 Edit: Scroll File Window During Playback=Edit.ScrollFileWindowDuringPlayback@qcreator.hlp>Main
+3 Edit: Move Cursor After Playback=Edit.MoveCursorAfterPlayback@qcreator.hlp>Main
+3 Edit: Loop Selection While Playing=Edit.LoopSelectionWhilePlaying@qcreator.hlp>Main
+2 View Menu...
+3 View Menu=ViewMenu@qcreator.hlp>Main
+3 View: Zoom In=View.ZoomIn@qcreator.hlp>Main
+3 View: Zoom Out=View.ZoomOut@qcreator.hlp>Main
+3 View: Zoom to Selection=View.ZoomtoSelection@qcreator.hlp>Main
+3 View: Show All=View.ShowAll@qcreator.hlp>Main
+3 View: Toolbar=View.Toolbar@qcreator.hlp>Main
+3 View: Transport=View.Transport@qcreator.hlp>Main
+3 View: Info Button=View.InfoButton@qcreator.hlp>Main
+3 View: Overview=View.Overview@qcreator.hlp>Main
+3 View: Status Bar=View.StatusBar@qcreator.hlp>Main
+2 Window Menu...
+3 Window Menu=WindowMenu@qcreator.hlp>Main
+3 Cascade Windows=CascadeWindows@qcreator.hlp>Main
+3 Tile Windows=TileWindows@qcreator.hlp>Main
+3 Arrange Icons (in Window)=ArrangeIcons.inWindow.@qcreator.hlp>Main
+2 Help Menu...
+3 Help Menu=HelpMenu@qcreator.hlp>Main
+3 Help: Help Topics=Help.HelpTopics@qcreator.hlp>Main
+3 Help: About QCreator=Help.AboutQCreator@qcreator.hlp>Main
+2 Context-Sensitive (Right-Click) Menu...
+3 Context-Sensitive (Right-Click) Menu=Context.Sensitive.Right.Click.Menu@qcreator.hlp>Main
+2 Tool Bar Reference...
+3 Tool Bar Reference=ToolBarReference@qcreator.hlp>Main
+3 Tool Bar: File Open Button=ToolBar.FileOpenButton@qcreator.hlp>Main
+3 Tool Bar: File Save Button=ToolBar.FileSaveButton@qcreator.hlp>Main
+3 Tool Bar: Edit Pan Tool Selector=ToolBar.EditPanToolSelector@qcreator.hlp>Main
+3 Tool Bar: Selection Caret Tool Selector=ToolBar.SelectionCaretToolSelector@qcreator.hlp>Main
+3 Tool Bar: Delete in Range Button=ToolBar.DeleteinRangeButton@qcreator.hlp>Main
+3 Tool Bar: Zoom In Button=ToolBar.ZoomInButton@qcreator.hlp>Main
+3 Tool Bar: Zoom Out Button=ToolBar.ZoomOutButton@qcreator.hlp>Main
+3 Tool Bar: Show All (Button)=ToolBar.ShowAll.Button.@qcreator.hlp>Main
+3 Tool Bar: Zoom Selection (Button)=ToolBar.ZoomSelection.Button.@qcreator.hlp>Main
+3 Tool Bar: (Context Sensitive) Help Button=ToolBar..ContextSensitive.HelpButton@qcreator.hlp>Main
+2 Transport...
+3 Transport=Transport@qcreator.hlp>Main
+3 Transport: Stop Button=Transport.StopButton@qcreator.hlp>Main
+3 Transport: Return to Zero Button=Transport.ReturntoZeroButton@qcreator.hlp>Main
+3 Transport: Play Button=Transport.PlayButton@qcreator.hlp>Main
+2 Info Button...
+3 Info Button=InfoButton@qcreator.hlp>Main
+2 Keyboard Shortcuts...
+3 Keyboard Shortcuts=KeyboardShortcuts@qcreator.hlp>Main
+3 Standard Windows® Keyboard Shortcuts=StandardWindowsrKeyboardShortcuts@qcreator.hlp>Main
+3 QCreator Keyboard Shortcuts=QCreatorKeyboardShortcuts@qcreator.hlp>Main
+1 Resources
+2 Where to Get Sound Files=WheretoGetSoundFiles@qcreator.hlp>Main
+2 Making and Editing Your Own Sound Files...
+3 Making and Editing Your Own Sound Files=MakingandEditingYourOwnSoundFiles@qcreator.hlp>Main
+3 Windows® Sound Recorder and Volume Control...
+4 Windows® Sound Recorder and Volume Control=WindowsrSoundRecorderandVolumeControl@qcreator.hlp>Main
+4 Convert Compressed Files with Sound Recorder=ConvertCompressedFileswithSoundRecorder@qcreator.hlp>Proc
+1 Troubleshooting Guide
+2 No Sound=NoSound@qcreator.hlp>Main
+2 Only a Click is Heard When Playing the File=OnlyaClickisHeardWhenPlayingtheFile@qcreator.hlp>Main
+2 No QSound Effect=NoQSoundEffect@qcreator.hlp>Main
+2 Can't Zoom=Can.tZoom@qcreator.hlp>Main
+2 Error Message Reference=ErrorMessageReference@qcreator.hlp>Main
+2 I Give Up!=IGiveUp.@qcreator.hlp>Main
+1 Background Reference
+2 Audio Basics=AudioBasics@qcreator.hlp>Main
+2 Audio in the Electronic Domain=AudiointheElectronicDomain@qcreator.hlp>Main
+2 Digital Audio Basics=DigitalAudioBasics@qcreator.hlp>Main
+2 Audio Formats: A Question Of Channels=AudioFormats.AQuestionOfChannels@qcreator.hlp>Main
+2 QSound®: the Technology...
+3 QSound®: the Technology=QSoundr.theTechnology@qcreator.hlp>Main
+3 A Word About Speakers and Headphones=AWordAboutSpeakersandHeadphones@qcreator.hlp>Main
+2 An Introduction to Sound Localization...
+3 An Introduction to Sound Localization=AnIntroductiontoSoundLocalization@qcreator.hlp>Main
+2 Getting the Most From QSound 3D Audio...
+3 Getting the Most From QSound 3D Audio=GettingtheMostFromQSound3DAudio@qcreator.hlp>Main
+3 Maintaining Image Integrity=MaintainingImageIntegrity@qcreator.hlp>Main
+3 Monitoring QSound=MonitoringQSound@qcreator.hlp>Main
+3 Using the Syscheck.wav File to Test Your Setup=UsingtheSyscheck.wavFiletoTestYourSetup@qcreator.hlp>Main
+2 QSound Labs, Inc....
+3 QSound Labs, Inc.=QSoundLabs.Inc.@qcreator.hlp>Main
+3 A Unique Approach to 3D Audio=AUniqueApproachto3DAudio@qcreator.hlp>Main
+3 Many Technologies, Many Products=ManyTechnologies.ManyProducts@qcreator.hlp>Main
+1 Glossary of Terms...
+2 Glossary of Terms=GlossaryOfTerms.D2H@qcreator.hlp>Main

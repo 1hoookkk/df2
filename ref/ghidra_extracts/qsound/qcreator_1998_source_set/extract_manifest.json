@@ -1,0 +1,117 @@
+{
+  "setup_pkg": "C:\\Users\\hooki\\trenchwork\\analysis\\qsound_lab\\installer_drop\\setup.pkg",
+  "qcmdr_z": "C:\\Users\\hooki\\trenchwork\\analysis\\qsound_lab\\installer_drop\\qcmdr.z",
+  "qcmdr_size": 1732519,
+  "entries": [
+    {
+      "directory": "",
+      "name": "_LICENSE.TXT",
+      "relative_path": "_LICENSE.TXT",
+      "offset": 255,
+      "packed_size": 3825,
+      "unpacked_size": 8492,
+      "sha256": "b16f46cbe43db8c6972570f6c9a640c458a2a2d6ca4521c591e4cfb8ddc50d95",
+      "footer_name_offset": 1731952
+    },
+    {
+      "directory": "",
+      "name": "qcreator.cnt",
+      "relative_path": "qcreator.cnt",
+      "offset": 4080,
+      "packed_size": 2076,
+      "unpacked_size": 6835,
+      "sha256": "c2b038fb6c66c5df29728be70ccfe830a679fdf952318744bdb07965c1bc2b1d",
+      "footer_name_offset": 1732007
+    },
+    {
+      "directory": "",
+      "name": "Qcreator.exe",
+      "relative_path": "Qcreator.exe",
+      "offset": 6156,
+      "packed_size": 551296,
+      "unpacked_size": 867840,
+      "sha256": "365cae84988c5d22db340af9ae2786fa99a935d233cf0fde751d93ac6c9052b3",
+      "footer_name_offset": 1732062
+    },
+    {
+      "directory": "",
+      "name": "QCREATOR.HLP",
+      "relative_path": "QCREATOR.HLP",
+      "offset": 557452,
+      "packed_size": 198823,
+      "unpacked_size": 260455,
+      "sha256": "9c1ac1ef250c16acdb4ef73337903121a13f980e303429d700de22068785bf87",
+      "footer_name_offset": 1732117
+    },
+    {
+      "directory": "",
+      "name": "QMixer.dll",
+      "relative_path": "QMixer.dll",
+      "offset": 756275,
+      "packed_size": 104509,
+      "unpacked_size": 198144,
+      "sha256": "0d3784fad66e05de38253861efcdfda200da4eb60c154ce23955b4a2945b110e",
+      "footer_name_offset": 1732172
+    },
+    {
+      "directory": "",
+      "name": "Readme.txt",
+      "relative_path": "Readme.txt",
+      "offset": 860784,
+      "packed_size": 1386,
+      "unpacked_size": 2559,
+      "sha256": "4890f633604319157f970100128219ae514d4330608beff3284dfa7448948ff4",
+      "footer_name_offset": 1732225
+    },
+    {
+      "directory": "Demos",
+      "name": "Demo Readme.doc",
+      "relative_path": "Demos/Demo Readme.doc",
+      "offset": 862170,
+      "packed_size": 1615,
+      "unpacked_size": 6144,
+      "sha256": "01caa7ff8cee4f947c7eaa6626a8fa7e22c2e2d7d88e0ae038fa2653fed52b6d",
+      "footer_name_offset": 1732278
+    },
+    {
+      "directory": "Demos",
+      "name": "Demo1.wav",
+      "relative_path": "Demos/Demo1.wav",
+      "offset": 863785,
+      "packed_size": 278213,
+      "unpacked_size": 270516,
+      "sha256": "04f98ef0a07e90d7b533e7666c57a7bfe643656f9104370d2b6b771701441a8a",
+      "footer_name_offset": 1732336
+    },
+    {
+      "directory": "Demos",
+      "name": "Demo2.wav",
+      "relative_path": "Demos/Demo2.wav",
+      "offset": 1141998,
+      "packed_size": 307499,
+      "unpacked_size": 333390,
+      "sha256": "4cfca7724b24d46e6c4d5b1a1eb9385e33fd66cb3ab0b2dd948088d0ce846f55",
+      "footer_name_offset": 1732388
+    },
+    {
+      "directory": "sndfiles",
+      "name": "Syscheck.wav",
+      "relative_path": "sndfiles/Syscheck.wav",
+      "offset": 1449497,
+      "packed_size": 218585,
+      "unpacked_size": 278216,
+      "sha256": "60df535d848935d341ce2b01a935d5784f071ff51d288f52cd5d5626361747b8",
+      "footer_name_offset": 1732440
+    },
+    {
+      "directory": "sndfiles",
+      "name": "Test123.wav",
+      "relative_path": "sndfiles/Test123.wav",
+      "offset": 1668082,
+      "packed_size": 63794,
+      "unpacked_size": 74258,
+      "sha256": "92780ff36171b3e884a230032342e28ae1b76847453c021761493988c9d4e4a9",
+      "footer_name_offset": 1732495
+    }
+  ]
+}
