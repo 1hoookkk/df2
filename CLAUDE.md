@@ -12,9 +12,11 @@
   morph/Q character path). Filter Factory may use RBJ peaking as an
   authoring primitive provided the result nulls against the heritage
   realization. The QSound spatial post-stage uses RBJ shelf math only as
-  the coefficient-construction primitive for its low/high shelves, with
-  shelf gains driven by QSound RE band-law tables. That is measured
-  E-mu/QSound behavior, not freelance RBJ usage.
+  the coefficient-construction primitive for its low/high shelves. Shelf
+  gains, corner frequencies, and ITD/ILD constants become authoritative
+  only when promoted primary QSound sources prove them; until then the
+  `qsound_spatial.rs` TODO constants remain engineering defaults, not
+  character claims.
 - Never save AI chat output back as a repo file or notebook source.
 - Clean Room: capture E-mu binary coefficients for reference only; author
   df2 frames that match behavior (null test, not coefficient copy).
