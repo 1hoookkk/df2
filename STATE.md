@@ -1431,6 +1431,32 @@ What was rejected and why:
   front-end: superseded for IR captures. Stays for measurements
   where only program material exists (no clean dirac/sweep).
 
+Verified the output cartridge loads through the Rust core
+(`Cartridge::from_json` → 4 corners, finite M50/Q50 interpolation,
+distinct corners) and that `tools/player.html` handles the 6-real +
+6-passthrough stage layout (it counts active stages by walking until a
+passthrough; Rust takes `.take(NUM_STAGES=6)`). The 12-stage write
+matches the existing Forge-authored bodies; ROM reference uses bare 6;
+both load. Audition path (Task 3) is unblocked end-to-end.
+
+Added a morph-trajectory audit to `capture_ir_to_cartridge.py`
+(runs on the canonical packed u16 morph-first path, not float bilinear).
+Three independently-validated metrics, each labeled by the failure mode
+it catches:
+- **Per-stage pole-frequency migration** across the 4 corners. A
+  pole-identity swap (a stage slot holding different physical
+  resonances at different corners) shows as a >20× migration ratio.
+  Validated: injecting a stage-1↔stage-4 swap in one corner flags
+  exactly stages 1 and 4 at 160× vs the clean 8.5× baseline. NOTE: a
+  swap produces a *continuous* u16-lerp trajectory (the pole sweeps
+  smoothly across the spectrum), so the discontinuity metric below
+  does NOT catch swaps — the migration table is the swap detector.
+- **Center gain sag**: broadband energy at M50/Q50 vs the corner mean.
+  Flags <−6 dB (the "hole in the middle" Tyson flagged in the flight
+  check — a resonance canceling mid-morph).
+- **Discontinuity sweep**: spectral L2 step between consecutive M points
+  along the Q0/Q1 edges. Catches genuine step jumps (ratio >4× median).
+
 Open for next session:
 1. Tyson does a real DAW capture: bounce
    `tools/make_dirac.py --out captures/dirac.wav` through a mixer

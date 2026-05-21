@@ -406,6 +406,104 @@ def stages_to_kernel_rows(stages: np.ndarray) -> np.ndarray:
     return np.vstack([stages.astype(np.float64), extra])
 
 
+def morph_trajectory_audit(
+    kernels: dict[str, np.ndarray], dry: np.ndarray, sr: float,
+    boost: float, n_steps: int = 11,
+) -> dict:
+    """Pre-audition check for morph 'tearing' from pole-identity mismatch.
+
+    Two measurements, both on the canonical packed u16 morph-first path
+    (what the player actually does — packed_oracle), not float bilinear:
+
+    1. Per-stage pole-frequency table across the 4 corners. If two
+       adjacent stages' frequency ranges overlap, the per-corner
+       ascending-frequency sort may have assigned the same physical
+       resonance to different stage slots in different corners — the
+       morph then lerps between two different actors and tears.
+
+    2. Packed-interpolation smoothness sweep: walk M 0→1 along the Q=0
+       and Q=1 edges, render the dirac through each interpolated cascade,
+       and measure the spectral L2 distance between consecutive steps. A
+       tear shows up as a distance spike well above the median step.
+    """
+    from tools.coefficient_field_bakeoff import kernel_to_words, packed_oracle  # noqa
+
+    # ── 1. per-stage pole frequencies across corners ────────────────────────
+    n_stages = kernels[CORNER_KEYS[0]].shape[0]
+    freq_table = np.zeros((n_stages, len(CORNER_KEYS)))
+    for ci, key in enumerate(CORNER_KEYS):
+        for si in range(n_stages):
+            c2, c3 = kernels[key][si, 2], kernels[key][si, 3]
+            a1, a2 = c2 - 2.0, 1.0 - c3
+            freq_table[si, ci] = _pole_freq(a1, a2, sr)
+
+    # per-stage frequency migration ratio across corners. A legitimate
+    # actor migrates a few× in M; a pole-identity swap (same stage slot
+    # holding different physical resonances at different corners) shows up
+    # as a huge ratio because the u16 lerp drags that pole clear across
+    # the spectrum. Floor the denominator at 20 Hz so DC poles don't blow up.
+    migration = []
+    for si in range(n_stages):
+        hi = float(freq_table[si].max())
+        lo = max(float(freq_table[si].min()), 20.0)
+        ratio = hi / lo
+        migration.append(ratio)
+
+    # ── 2. packed-interp smoothness along the two M edges ───────────────────
+    corner_words = {
+        "A": kernel_to_words(kernels["M0_Q0"]),
+        "B": kernel_to_words(kernels["M100_Q0"]),
+        "C": kernel_to_words(kernels["M0_Q100"]),
+        "D": kernel_to_words(kernels["M100_Q100"]),
+    }
+
+    def spectrum(coeffs: np.ndarray) -> np.ndarray:
+        rendered = cascade_render(dry.astype(np.float64), coeffs, "cascade", boost)
+        ir, _ = align_to_impulse(dry, rendered)
+        ir = trim_ir(ir, floor_db=-120.0, min_samples=2048)
+        n = 4096
+        spec = np.abs(np.fft.rfft(ir[:n], n=n))
+        return 20.0 * np.log10(spec + 1e-9)
+
+    edge_jumps = {}
+    corner_energy = []
+    for q_edge in (0.0, 1.0):
+        ms = np.linspace(0.0, 1.0, n_steps)
+        specs = [spectrum(packed_oracle(corner_words, float(m), q_edge)) for m in ms]
+        dists = [float(np.sqrt(np.mean((specs[i + 1] - specs[i]) ** 2)))
+                 for i in range(len(specs) - 1)]
+        med = float(np.median(dists)) if dists else 0.0
+        worst = float(np.max(dists)) if dists else 0.0
+        worst_at = int(np.argmax(dists)) if dists else 0
+        ratio = worst / med if med > 1e-9 else float("inf")
+        edge_jumps[f"Q{int(q_edge*100)}"] = {
+            "median_step_db": med, "worst_step_db": worst,
+            "worst_between": (float(ms[worst_at]), float(ms[worst_at + 1])),
+            "ratio": ratio,
+        }
+
+    # ── center gain-sag: broadband energy at M50/Q50 vs the 4 corners ───────
+    def broadband_db(coeffs: np.ndarray) -> float:
+        rendered = cascade_render(dry.astype(np.float64), coeffs, "cascade", boost)
+        ir, _ = align_to_impulse(dry, rendered)
+        ir = trim_ir(ir, floor_db=-120.0, min_samples=2048)
+        return 10.0 * np.log10(float(np.sum(ir.astype(np.float64) ** 2)) + 1e-30)
+
+    corner_e = [broadband_db(kernels[k]) for k in CORNER_KEYS]
+    center_e = broadband_db(packed_oracle(corner_words, 0.5, 0.5))
+    mean_corner_e = float(np.mean(corner_e))
+    center_sag_db = center_e - mean_corner_e   # negative = center quieter than corners
+
+    return {
+        "freq_table": freq_table.tolist(),
+        "migration": migration,
+        "edge_jumps": edge_jumps,
+        "corner_energy_db": corner_e,
+        "center_energy_db": center_e,
+        "center_sag_db": center_sag_db,
+    }
+
+
 def slugify(name: str) -> str:
     s = re.sub(r"[^a-zA-Z0-9]+", "_", name.strip()).strip("_").lower()
     return s or "untitled"
@@ -510,6 +608,41 @@ def main() -> int:
         verify.append((key, null, transient, gate))
         print(f"  {key:9}  IR null={null:+7.2f} dB  peak_err={transient['peak_error_db']:+6.2f} dB"
               f"  peak_shift={transient['peak_index_shift']:+4d}  [{gate}]")
+
+    # ── morph-trajectory audit (tear / pole-identity check) ─────────────────
+    print()
+    print("Morph trajectory audit (canonical packed u16 interpolation):")
+    morph = morph_trajectory_audit(kernels, dry, sr, args.boost)
+    print("  per-stage pole freq (Hz) by corner [M0Q0  M100Q0  M0Q100  M100Q100]  migration:")
+    swap_flags = []
+    for si, row in enumerate(morph["freq_table"]):
+        mig = morph["migration"][si]
+        mark = "  <-- SWAP?" if mig > 20.0 else ""
+        if mig > 20.0:
+            swap_flags.append(si)
+        print(f"    stage {si}: " + "  ".join(f"{f:8.1f}" for f in row) +
+              f"   {mig:6.1f}×{mark}")
+    # (a) pole-identity swap — large per-stage migration (sweep is continuous,
+    #     so the smoothness metric will NOT catch this; the table does)
+    if swap_flags:
+        print(f"  ! stages {swap_flags} migrate >20× — likely a pole-identity swap")
+        print(f"    (same slot holding different resonances at different corners).")
+        print(f"    The morph will sweep that pole across the spectrum. Recapture")
+        print(f"    or re-pair if that's not the intended motion.")
+    else:
+        print("  ok: per-stage migration moderate (no identity-swap signature)")
+    # (b) center gain sag — "volume dips weirdly in the center"
+    sag = morph["center_sag_db"]
+    sag_flag = "SAG" if sag < -6.0 else "ok"
+    print(f"  center (M50/Q50) energy vs corner mean: {sag:+.2f} dB  [{sag_flag}]")
+    if sag < -6.0:
+        print("    ! center is >6 dB quieter than the corners — a resonance is")
+        print("      canceling mid-morph. Often the audible 'hole in the middle'.")
+    # (c) discontinuity — genuine step jumps along the M edges
+    for edge, j in morph["edge_jumps"].items():
+        flag = "JUMP" if j["ratio"] > 4.0 else "smooth"
+        print(f"  morph edge {edge}: worst step {j['worst_step_db']:.2f} dB "
+              f"(median {j['median_step_db']:.2f}, ratio {j['ratio']:.1f}×)  [{flag}]")
 
     # ── pack to cartridge JSON ──────────────────────────────────────────────
     print()
