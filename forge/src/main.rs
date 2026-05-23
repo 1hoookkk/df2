@@ -18,9 +18,10 @@ use trench_core::cartridge::CornerData;
 
 use dsp::{
     condition_fit_window, corner_to_biquads, cpp_df2t_output, detect_onset, display_name,
-    fit_corner_arma_from_window, load_wav_as_mono_f64, magnitude_response, samples_for_ms,
-    source_envelope, two_anchor_preview, z_plane_points, ComplexPoint, FitDiagnostics, FitOptions,
-    FitQuality, AUTHORING_RATE, DEFAULT_WINDOW_MS, PASSTHROUGH, POLE_ZERO_COUNT,
+    load_wav_as_mono_f64, magnitude_response, samples_for_ms, source_envelope,
+    spectral_residual_db, two_anchor_preview, z_plane_points, ComplexPoint, FitDiagnostics,
+    FitQuality, AUTHORING_RATE, DEFAULT_WINDOW_MS, FIT_BLOCK_DB, FIT_WARN_DB, PASSTHROUGH,
+    POLE_ZERO_COUNT,
 };
 
 // ── State ─────────────────────────────────────────────────────────────────────
@@ -247,16 +248,22 @@ impl App {
         }
 
         let fit_window = condition_fit_window(raw, dither);
-        let fit = fit_corner_arma_from_window(
-            &fit_window,
-            state.sample_rate,
-            rate,
-            FitOptions::default(),
-        );
-        let corner = fit.corner;
-        let residual = fit.diagnostics.post_pack_residual_db;
-        let quality = fit.quality;
-        let diagnostics = fit.diagnostics;
+        // Restored to the 2026-05-22 Talking-Hedz-matching fitter. The ARMA path
+        // (fit_corner_arma_from_window) regressed the match; lpc::fit_corner is
+        // the working one — Levinson LPC + Durand-Kerner roots + spectral-valley
+        // zeros. The residual badge below is cosmetic; the corner is the fit.
+        let corner = trench_core::lpc::fit_corner(&fit_window, state.sample_rate, rate);
+        let residual = spectral_residual_db(&fit_window, state.sample_rate, &corner, rate);
+        let quality = if !residual.is_finite()
+            || residual > FIT_BLOCK_DB
+            || corner.iter().flatten().any(|c| !c.is_finite())
+        {
+            FitQuality::Blocked
+        } else if residual > FIT_WARN_DB {
+            FitQuality::Review
+        } else {
+            FitQuality::Ready
+        };
         let (poles, zeros) = z_plane_points(&corner);
 
         state.extraction = ExtractionResults {
@@ -265,11 +272,11 @@ impl App {
             zeros,
             magnitude_response: magnitude_response(&corner, rate),
             source_db: source_envelope(&fit_window, state.sample_rate),
-            target_db: diagnostics.simplified_target_db.clone(),
+            target_db: Vec::new(),
             cpp_df2t_output: cpp_df2t_output(&corner),
             residual_db: residual,
             quality,
-            diagnostics,
+            diagnostics: FitDiagnostics::default(),
         };
     }
 

@@ -18,13 +18,10 @@ use crate::cascade::{NUM_COEFFS, NUM_STAGES};
 // air/RIP actor instead of being capped off at 7 kHz.
 const ANALYSIS_SR: f64 = 22050.0;
 const LPC_ORDER: usize = 14;
-// No pre-emphasis. Speech LPC uses ~0.97 to cancel the glottal source tilt and
-// expose vocal-tract formants — but it has a zero near DC, so it attenuates a
-// dark sound's low formant by ~20 dB (e.g. /oo/'s 300 Hz F1 is gutted to a
-// phantom 700 Hz blob). The Forge captures a sound's spectral COLOUR as heard,
-// not its vocal-tract transfer function, so it fits the envelope flat. Verified:
-// dark vowels go from 1/3 to 3/3 formants captured, bright vowels unchanged.
-const PRE_EMPH: f64 = 0.0;
+// Standard speech pre-emphasis — the value the 2026-05-22 fit used when a dropped
+// vowel matched Talking Hedz (the gate). A 0.0 experiment captured dark-vowel
+// lows better in isolation but regressed that match, so it's reverted.
+const PRE_EMPH: f64 = 0.97;
 const FRAME_MS: f64 = 25.0;
 const HOP_MS: f64 = 10.0;
 const PEAK_RMS_TOL_DB: f64 = 3.0;
