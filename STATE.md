@@ -129,6 +129,136 @@ fixed to −95.41 dB. The *correct* kernel of the proposal (index-locked actor
 identity across corners + midpoint in the cost function) stands as the documented
 next task; the surfacing of it is this midpoint scope.
 
+## Session note (2026-05-23) — Forge 4-corner Morph×Q authoring
+
+Forge was a flattened 1-D LOW→HIGH crossfade (2 audio anchors, a single morph
+rail, corners 2/3 duplicated from 0/1). Rebuilt it into the true 2-D Morph×Q
+grid the runtime already supports — **no runtime, cartridge-format, or
+interpolation-order change** (`PackedCorners::interpolate` already takes both
+morph and q; `compiled-v1` already carries 4 keyframes). Tyson directed this and
+explicitly corrected the earlier pasted spec: path-crossing is now *allowed*, not
+forbidden.
+
+What changed (Forge only):
+- `forge/src/dsp.rs`: added `body_preview(corners, morph, q)` (the live 2-D
+  preview through the proven packed-u16 path), `canonical_anchor` (sort the M0_Q0
+  anchor's six stages low→high for ROOT…RIP labelling only — a cascade is a
+  product, so the summed response is unchanged), `align_to_anchor` (re-index a
+  corner's six stages onto the anchor's actors by **minimum total pole-distance
+  correspondence**, brute-forced over all 720 permutations), and `fit_body` +
+  `BodyFit` (headless 4-window fit → align → midpoint + residual vs a wet target).
+  Removed the 1-D `two_anchor_preview`.
+- `forge/src/main.rs`: `anchor_audio` 2→4 slots; `anchor_morph` → `preview_morph`
+  + `preview_q`; added `assembled_body(require_all)` (gather the 4 corners, anchor
+  on M0_Q0, align the others, crossings allowed; fallback C→A, D→B); rewired
+  `stage_corner` / `anchor_preview_corner` / `candidate_midpoint`; `export_body`
+  serializes the four discrete actor-aligned corners with **no LOW/HIGH
+  duplication fallback** (all four required); `next_empty_anchor`; reset clears all
+  four. `CORNER_LABELS = [M0·Q0, M100·Q0, M0·Q100, M100·Q100]`.
+- `forge/src/surface.rs`: replaced the 1-D `morph_rail`/`rail_end` with a
+  `morph_q_pad` (4 corner loader chips + an XY puck you drag over Morph×Q) and
+  `corner_chip`/`corner_dot`; THE SHAPE now crossfades the 4 corner targets by
+  bilinear weight at the puck; PLAY needs ≥1 corner, SAVE needs all four.
+- `forge/src/inspect.rs`: LOW/HIGH selector + ASSIGN became 4-corner; the midpoint
+  scope (decoded `interpolate(0.5,0.5)` vs verbatim-ROM Hedz truth + 6 actors) is
+  unchanged.
+
+The actor correspondence is the only non-trivial new math, and it is honestly a
+**smoothness heuristic, not a recoverer of the ROM F1/F2 swap**: from two isolated
+corners, "which 220 Hz pole is F1-dropped vs F2-at-rest" is genuinely ambiguous in
+the spectrum. It picks the lowest-movement pairing (does NOT frequency-sort, does
+NOT reject crossings — the 2026-05-20 ROM audit's stage-1/5 cross stays
+representable), and the midpoint scope is the final judge: if the auto-pairing is
+wrong the middle looks/sounds wrong and the author swaps a corner. The earlier
+"frequency-sort + reject-on-crossing" spec remains rejected; this followed the
+corrected directive.
+
+Verification: `cargo test -p trench-forge` = 13 passed (10 prior + 3 new:
+`align_recovers_shuffled_actor_order`, `canonical_anchor_sorts_low_to_high`,
+`fit_body_four_corners_resolves_finite_midpoint`). `cargo check -p trench-forge`
+clean (only pre-existing ARMA-path / theme dead-code warnings). NOT yet
+ear-verified by Tyson; the running `trench-forge.exe` must be closed before a fresh
+binary links. The live per-corner fit is still `trench_core::lpc::fit_corner`
+(`PRE_EMPH=0.97`) — unchanged; the parked ARMA path is untouched.
+
+## Session note (2026-05-23) — Forge: P2k_003 fixture + vintage front-end + actor readout
+
+Three Forge features on top of the 4-corner rebuild. All Forge-only; **no runtime,
+cartridge-format, or interpolation change.** `cargo test -p trench-forge` = 14
+passed (+1 guard); `cargo check` clean.
+
+1. **P2k_003 second calibration fixture (the "match or beat P2K" target).**
+   `tools/bake_p2k_reference.py` bakes a heritage skin (datasets `corners` format)
+   into `ref/p2k_skins/P2k_003.kernels.json` (4 corners × 6 kernel stages,
+   reference-only, never shipped). It reuses **only `stage_to_kernel`** — the
+   validated {a1,r,val1,val2,val3}→kernel recombination that already bakes Talking
+   Hedz — NOT the untested XML Type-2/3 firmware compiler, because the skin JSON is
+   already coefficient data. Baked poles match the 2026-05-23 audit exactly (M0_Q0 =
+   59 Hz + a 10.3–16.3 kHz crown; M100_Q100 spreads to 316 Hz–9.3 kHz). Source
+   `P2k_003.json` copied into `ref/p2k_skins/` for self-contained provenance.
+   `dsp::load_reference_corners` + `dsp::p2k003_ref_midpoint`; `App.ref_truth`
+   (`RefTruth::{Hedz,P2k003}`) + `App.reference_midpoint`; the INSPECT midpoint scope
+   gained a HEDZ / P2k_003 truth selector. **Honesty:** this is the JSON-derived
+   (6-dp) path — faithful as a visual/audition truth to author against, NOT
+   bit-accurate like the Hedz ROM-bytes midpoint, so it's a "match/beat" target, not
+   a −60 dB null gate.
+
+2. **Vintage sampler front-end wired into the fit.** `preprocess.rs` was built but
+   dormant; now `AnchorAudio.pre: VintagePreset` (per corner, default CLEAN) and
+   `refit_anchor` runs `preprocess::apply` (degrade at the source rate) **before**
+   windowing/fit, so AAF-off aliasing folds into the band and the fit bakes the lo-fi
+   "scar". INSPECT has a `SAMPLER` cycle (CLEAN / SP-1200 / MPC60 / S900 / FAIRLIGHT /
+   MIRAGE); changing it re-fits + re-assigns that corner. CLEAN is identity → the
+   Hedz/clean path is unaffected.
+
+3. **Per-actor readout in INSPECT.** `dsp::actor_readout` → ROOT…RIP `freq / Q / gain`
+   (Q = f/bandwidth, gain = the actor's magnitude at its pole), shown as a colour-keyed
+   table. Back-room only — the product surface still shows the SHAPE + named actors,
+   never the numbers.
+
+## Session note (2026-05-23) — Forge live fitter → deterministic ARMA pole-zero
+
+The live fit was all-pole LPC + a nearest-valley zero hack → broad low-pass blobs
+that can't carve the anti-formant notches / bitey upper teeth of X3 frames (DJ
+Alkaline). Replaced it with a **deterministic ARMA pole-zero fitter** —
+`trench-core/src/arma.rs`, `fit_corner_arma`. Method: FFT magnitude → 1/12-oct
+smoothed envelope → **minimum-phase** complex target (cepstrum) → **Sanathanan–
+Koerner / Steiglitz–McBride** iteration (6 passes) solving a weighted complex
+least-squares for numerator `B(z)` and denominator `A(z)` (order 12 = six
+biquads) → root both → realize. A *deterministic translator*: each pass is one
+linear solve, **no penalties, no per-stage constraints, no internal energy
+shaping** (Tyson's rule). Pure Rust, no deps (own radix-2 FFT, Gaussian-elim
+solver, Durand-Kerner roots).
+
+Wired into `forge/src/main.rs::refit_anchor` as the live fitter, with the LPC path
+(auto-tilt) as the fallback if ARMA returns a degenerate result — so the live path
+can only improve on LPC, never regress below it. On `vowel_oo` the ARMA fit places
+poles in the low body (215/429/643 Hz) + real zeros (306/521/914) + upper teeth —
+the structure the LPC blob missed.
+
+**The gap a test caught (recorded so we know):** the first realization *selected
+the six "strongest" poles and dropped unpaired zeros*. That broke the identity
+`cascade == B/A` — the realized response was no longer the fitted transfer
+function, so it lost the 3.2 kHz peak and shallowed the 1.5 kHz notch on the test
+filter. Fix: `to_quadratics` groups **every** denominator root and **every**
+numerator root into six second-order sections (conjugate pairs + leftover reals),
+so the product is exactly `B/A` (section ordering only affects conditioning).
+After the fix the test recovers the deep notch and both peaks; gain-independent
+shape RMS 2.5 dB (< 4 dB gate).
+
+**Known minor (not "fixed" — would violate the no-shaping rule):** order-12
+over-modeling of a simpler source can leave a spurious narrow pole-zero doublet
+that peak-normalisation grabs, giving a uniform level offset. Gain artifact, not
+shape; revisit normalisation only if audible.
+
+Also this session: `auto_pre_emph`/`hf_fraction` (deterministic brightness tilt
+for the LPC fallback — dark sources keep their low body); the proposed TILT slider
+and the RoleMask (constrain stages) + serial-unity-gain (shape energy) directives
+were **declined** per Tyson's "deterministic translator, no penalties/constraints/
+energy-shaping; pick sources, listen, change sources." `cargo test -p trench-core
+arma::` = 2 passed; `cargo test -p trench-forge` = 15 passed. NOT yet ear-verified.
+**Next agreed task: the UI rewrite (Tyson chose fit-first).**
+
 ## Current focus
 
 > **SUPERSEDED (2026-05-19) — read "Active session" below first.** This

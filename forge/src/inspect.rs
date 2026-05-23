@@ -13,9 +13,6 @@ use crate::dsp::{
 use crate::theme::{self, with_alpha, CAUTION, INK, INK_FAINT, INK_SOFT};
 use crate::App;
 
-const LOW_COL: egui::Color32 = INK_SOFT;
-const HIGH_COL: egui::Color32 = INK;
-
 impl App {
     pub fn show_inspect_window(&mut self, ctx: &egui::Context) {
         let mut open = self.inspect_open;
@@ -26,24 +23,17 @@ impl App {
             .frame(egui::Frame::window(&ctx.style()).fill(theme::PAPER))
             .show(ctx, |ui| {
                 ui.horizontal(|ui| {
-                    ui.label(RichText::new("end").color(INK_SOFT).size(11.0));
-                    if ui
-                        .add(egui::SelectableLabel::new(
-                            self.inspect_anchor == 0,
-                            RichText::new("LOW").color(LOW_COL).strong(),
-                        ))
-                        .clicked()
-                    {
-                        self.inspect_anchor = 0;
-                    }
-                    if ui
-                        .add(egui::SelectableLabel::new(
-                            self.inspect_anchor == 1,
-                            RichText::new("HIGH").color(HIGH_COL).strong(),
-                        ))
-                        .clicked()
-                    {
-                        self.inspect_anchor = 1;
+                    ui.label(RichText::new("corner").color(INK_SOFT).size(11.0));
+                    for slot in 0..4 {
+                        if ui
+                            .add(egui::SelectableLabel::new(
+                                self.inspect_anchor == slot,
+                                RichText::new(crate::CORNER_LABELS[slot]).color(INK).strong(),
+                            ))
+                            .clicked()
+                        {
+                            self.inspect_anchor = slot;
+                        }
                     }
                 });
                 ui.separator();
@@ -121,23 +111,84 @@ impl App {
 
             ui.add_space(8.0);
 
-            ui.label(RichText::new("ASSIGN TO").color(INK_SOFT).size(10.0));
-            ui.columns(2, |cols| {
-                for (slot, lbl) in [(0usize, "LOW"), (1, "HIGH")] {
-                    let col = &mut cols[slot];
-                    if col
-                        .add_enabled(
-                            quality.can_assign() && has_audio,
-                            egui::Button::new(RichText::new(lbl).color(INK).strong())
-                                .min_size(egui::vec2(col.available_width(), 32.0))
+            ui.label(RichText::new("ASSIGN TO CORNER").color(INK_SOFT).size(10.0));
+            for row in 0..2 {
+                ui.columns(2, |cols| {
+                    for c in 0..2 {
+                        let slot = row * 2 + c;
+                        let col = &mut cols[c];
+                        if col
+                            .add_enabled(
+                                quality.can_assign() && has_audio,
+                                egui::Button::new(
+                                    RichText::new(crate::CORNER_LABELS[slot]).color(INK).strong(),
+                                )
+                                .min_size(egui::vec2(col.available_width(), 30.0))
                                 .fill(theme::PAPER_LOW),
-                        )
-                        .clicked()
-                    {
-                        self.assign_to_slot(anchor, slot);
+                            )
+                            .clicked()
+                        {
+                            self.assign_to_slot(anchor, slot);
+                        }
                     }
+                });
+            }
+
+            ui.add_space(10.0);
+            // Vintage sampler front-end — degrade this corner's source before the
+            // fit. AAF-off presets fold aliasing into the band (the "scar").
+            let cur_pre = self.anchor_audio[anchor]
+                .as_ref()
+                .map(|s| s.pre)
+                .unwrap_or(crate::preprocess::VintagePreset::None);
+            ui.horizontal(|ui| {
+                ui.label(RichText::new("SAMPLER").color(INK_SOFT).size(10.0));
+                if ui
+                    .add_enabled(
+                        has_audio,
+                        egui::Button::new(RichText::new(cur_pre.label()).color(INK).strong())
+                            .min_size(egui::vec2(120.0, 26.0))
+                            .fill(theme::PAPER_LOW),
+                    )
+                    .clicked()
+                {
+                    let all = crate::preprocess::VintagePreset::ALL;
+                    let idx = all.iter().position(|p| *p == cur_pre).unwrap_or(0);
+                    let next = all[(idx + 1) % all.len()];
+                    if let Some(s) = self.anchor_audio[anchor].as_mut() {
+                        s.pre = next;
+                    }
+                    self.refit_anchor(anchor);
+                    self.assign_to_slot(anchor, anchor);
                 }
             });
+
+            ui.add_space(10.0);
+            ui.label(RichText::new("ACTORS · freq / Q / gain").color(INK_SOFT).size(10.0));
+            match self.anchor_audio[anchor].as_ref().map(|s| s.extraction.corner) {
+                Some(c) => {
+                    let sr = self.internal_resample_rate as f64;
+                    for (i, &(f, q, g)) in crate::dsp::actor_readout(&c, sr).iter().enumerate() {
+                        let line = if f.is_finite() {
+                            let qs = if q.is_finite() && q < 9_999.0 {
+                                format!("{q:>5.1}")
+                            } else {
+                                " high".to_owned()
+                            };
+                            format!(
+                                "{:<5} {f:>6.0}Hz  Q{qs}  {g:>+5.1}dB",
+                                theme::ACTOR_NAMES[i]
+                            )
+                        } else {
+                            format!("{:<5}    —", theme::ACTOR_NAMES[i])
+                        };
+                        ui.label(RichText::new(line).color(theme::ACTORS[i]).monospace().size(11.0));
+                    }
+                }
+                None => {
+                    ui.label(RichText::new("load a sound").color(INK_FAINT).size(10.0));
+                }
+            }
         });
     }
 
@@ -183,26 +234,47 @@ impl App {
     /// amber is the authored body's middle, and the six named actors decompose it
     /// so the gap can be read per actor — which one is misplaced, not just that the
     /// sum is off. The runtime packed-u16 interpolation produces both middles.
-    fn inspect_midpoint_scope(&self, ui: &mut egui::Ui) {
+    fn inspect_midpoint_scope(&mut self, ui: &mut egui::Ui) {
         let rate = self.internal_resample_rate as f64;
         let x_max = (rate * 0.5).max(10_000.0);
-        let reference = self.hedz_ref_midpoint;
-        let candidate = self.candidate_midpoint();
 
         ui.horizontal(|ui| {
             ui.label(RichText::new("MIDPOINT · M50/Q50 — where the fit tells").color(INK_SOFT).size(10.0));
-            match (reference.is_some(), candidate.is_some()) {
-                (true, true) => {
-                    ui.label(RichText::new("· green = Hedz ROM truth · amber = your body").color(INK_SOFT).size(10.0));
-                }
-                (true, false) => {
-                    ui.label(RichText::new("· Hedz ROM truth — author four corners to compare").color(INK_SOFT).size(10.0));
-                }
-                (false, _) => {
-                    ui.label(RichText::new("· ROM reference not in this checkout").color(CAUTION).size(10.0));
+            ui.add_space(10.0);
+            ui.label(RichText::new("truth").color(INK_SOFT).size(10.0));
+            for truth in [crate::RefTruth::Hedz, crate::RefTruth::P2k003] {
+                let has = match truth {
+                    crate::RefTruth::Hedz => self.hedz_ref_midpoint.is_some(),
+                    crate::RefTruth::P2k003 => self.p2k003_ref_midpoint.is_some(),
+                };
+                let sel = self.ref_truth == truth;
+                if ui
+                    .add_enabled(
+                        has,
+                        egui::SelectableLabel::new(
+                            sel,
+                            RichText::new(truth.label()).color(INK).strong(),
+                        ),
+                    )
+                    .clicked()
+                {
+                    self.ref_truth = truth;
                 }
             }
         });
+
+        let reference = self.reference_midpoint();
+        let candidate = self.candidate_midpoint();
+        let truth_name = self.ref_truth.label();
+        ui.label(
+            RichText::new(match (reference.is_some(), candidate.is_some()) {
+                (true, true) => "green = heritage truth · amber = your body",
+                (true, false) => "heritage truth — author the four corners to compare",
+                (false, _) => "this reference isn't in the checkout",
+            })
+            .color(if reference.is_some() { INK_SOFT } else { CAUTION })
+            .size(10.0),
+        );
 
         Plot::new("inspect_midpoint_scope")
             .height(ui.available_height().max(240.0))
@@ -254,7 +326,7 @@ impl App {
                         Line::new(PlotPoints::from(magnitude_response(&r, rate)))
                             .color(theme::TARGET)
                             .width(2.4)
-                            .name("Hedz M50/Q50"),
+                            .name(truth_name),
                     );
                 }
 

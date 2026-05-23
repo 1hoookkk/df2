@@ -4,13 +4,27 @@ Audit of the standalone authoring app (`forge/`, the Filter Factory) and the
 `trench-core` pieces it leans on. Written to make the machinery — and the
 "black magic" — apparent, then build from there.
 
+> **Update (2026-05-23).** Corrections since this was written:
+> (a) the live per-corner fit is now the **deterministic ARMA pole-zero fitter**
+> `trench_core::arma::fit_corner_arma` (min-phase target + Sanathanan–Koerner
+> least-squares → B(z)/A(z) → six biquads), which places real zeros (anti-formant
+> notches / bitey teeth) that all-pole LPC can't. `trench_core::lpc::fit_corner_pe`
+> (LPC + auto brightness tilt) is the fallback when ARMA is degenerate. The
+> penalty-based stylised ARMA path in §1 steps 5–8 stays **parked off the live
+> path** (it violates the "no penalties" rule), kept for reference;
+> (b) the app is now a true **4-corner Morph×Q** authoring grid, not a 1-D
+> LOW/HIGH crossfade. Rows below tagged *(was 2-corner)* are superseded by the
+> 4-corner model: four discrete audio anchors (M0·Q0 / M100·Q0 / M0·Q100 /
+> M100·Q100), a 2-D puck, crossing-allowed actor correspondence anchored on M0·Q0,
+> and four discrete corners exported (no duplication). Runtime/format unchanged.
+
 ---
 
 ## 0. What it is, in one sentence
 
-**Capture a sound → reduce it to 6 resonances (one "corner") → set two corners
-as LOW and HIGH → morph between them in the frozen E-mu packed-coefficient space
-→ audition → save a cartridge.**
+**Capture a sound → reduce it to 6 resonances (one "corner") → drop a sound into
+each of the 4 Morph×Q corners → roam the morph/Q space in the frozen E-mu
+packed-coefficient grid → audition → save a cartridge.**
 
 Everything else is plumbing around that sentence.
 
@@ -33,10 +47,10 @@ Trace one dropped WAV all the way through. `file:fn` shows where each step lives
 | 9 | Result is Ready / Review / Blocked. Only Ready auto-assigns; Review stays visible for slice/fitter diagnosis | `FitQuality::can_assign` | — |
 | 10 | Inspect reports raw source, stylised target, fit peaks/valleys, residual, post-pack residual, max pack drift, formant error, per-stage role/frequency/radius/zero, and review/block reason | `inspect::inspect_controls` | — |
 | → | Result = one **CORNER**: 6 kernel biquads `[c0..c4]` | `ExtractionResults.corner` | — |
-| 11 | Two corners (LOW, HIGH) → **packed u16 minifloat** words | `minifloat::PackedCorners::from_corner_data` | — |
-| 12 | **Morph**: bilinear lerp of the packed words (morph→A/B & C/D, then Q) → decoded kernel corner | `minifloat::PackedCorners::interpolate` | — |
+| 11 | Four corners → **packed u16 minifloat** words. The non-anchor corners are first re-indexed onto the M0·Q0 anchor's actors (`dsp::align_to_anchor`, crossing-allowed) so stage *i* is the same actor at every corner | `minifloat::PackedCorners::from_corner_data` | — |
+| 12 | **Morph×Q**: bilinear lerp of the packed words (morph→A/B & C/D, then Q) → decoded kernel corner | `minifloat::PackedCorners::interpolate(morph, q)` | — |
 | 13 | Audition: DF2T biquad cascade on the audio thread, run at 39062.5 via linear resampling, coefficients ramped (click-free) | `audio::Voice::sample` | device SR ↔ 39062.5 |
-| 14 | Save: `compiled-v1` JSON, 4 keyframes × 12 stages (A/B duplicated into C/D) | `App::export_two_anchor_body` | — |
+| 14 | Save: `compiled-v1` JSON, 4 keyframes × 12 stages — the four **discrete** actor-aligned corners, all four required (no A/B→C/D duplication) | `App::export_body` | — |
 
 ---
 
@@ -66,12 +80,12 @@ they're worth surfacing as the app's identity, not hiding.
 | Control / function | What it does | Status |
 |---|---|---|
 | `+ ADD SOUND` / LOAD FILE | File dialog → load → fit → auto-assign | **Works** |
-| Drag-drop | Drops onto first empty end | **Works**, but can't target A vs B (no visible frames) |
+| Drag-drop | Drops onto the next empty corner (M0·Q0→M100·Q0→M0·Q100→M100·Q100) | **Works**; per-corner load chips on the pad let you target a specific corner |
 | `CAPTURE` (DAW loopback) | `build_input_stream` on the default *output* device for WASAPI loopback | **Unverified / high-risk** — cpal loopback on an output device is fragile; likely the first thing that fails |
 | Onset / 100 ms window | Auto-pick the fit region | **Works**, naive — first transient + fixed 100 ms; bad for non-steady material |
 | Slice position + REFIT (Inspect) | Move the fit window, re-fit | **Works** |
 | Auto-assign (spectral + formant gate) | Assign only if post-pack residual and formant lock are Ready | **Works** — Review no longer silently assigns |
-| Morph rail | Lerp LOW↔HIGH | **Works** (after the gain-spread fix) |
+| Morph×Q pad *(was Morph rail)* | Drag a puck over the 4-corner Morph(X)×Q(Y) space; THE SHAPE crossfades the corner targets by bilinear weight | **Works** |
 | `PLAY` / `STOP` | Audition the morph | **Works but pink-noise only** — auditioning *your* loop is built in `audio.rs` (`set_sample`/`set_use_sample`) but never wired to the UI |
 | `SAVE` | Write `compiled-v1` to `~/Documents/TRENCH/authoring_slot.json` | **Works**, but nothing consumes it yet (no player) — dead-ends |
 | `RESET` | Clear everything | **Works** |
@@ -80,7 +94,9 @@ they're worth surfacing as the app's identity, not hiding.
 | Audio level | Fixed at 0.4 | No UI control |
 | Scope buffer | Recent output samples for a live trace | Computed in `audio.rs`, **unused** |
 | Corner inventory | Recall/reuse saved corners | **Not built** |
-| Named actors | Surface the 6 resonances as Root/Body/Mouth/Scar/Edge/Rip | **Not built** — the magic is invisible |
+| Named actors | Surface the 6 resonances as Root/Body/Mouth/Scar/Edge/Rip | **Built** — named markers ride THE SHAPE, the midpoint scope decomposes the middle into the 6 actor curves, and INSPECT shows the per-actor `freq / Q / gain` readout (`dsp::actor_readout`) |
+| Vintage front-end | Degrade the source (bit/rate reduce, AAF-off aliasing) before the fit so the corner inherits lo-fi character | **Built / wired** — `preprocess.rs` now runs in `refit_anchor`; per-corner `SAMPLER` cycle in INSPECT (CLEAN / SP-1200 / MPC60 / S900 / FAIRLIGHT / MIRAGE). CLEAN = identity |
+| Heritage truth (midpoint scope) | Draw a real P2K skin's M50/Q50 as the green target to author against | **Built** — HEDZ (ROM, bit-accurate) or P2k_003 (JSON-derived, visual/audition truth) via the scope's truth selector |
 
 ---
 

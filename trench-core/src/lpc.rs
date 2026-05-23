@@ -370,7 +370,16 @@ fn valley_freqs(a: &[f64]) -> Vec<f64> {
 /// Fit a recorded sound to one corner: six pole-zero biquads (resonance +
 /// adjacent anti-resonance) re-homed at the runtime rate, in kernel form.
 pub fn fit_corner(samples: &[f64], sr_in: f64, runtime_sr: f64) -> CornerData {
-    let Some((a, poles)) = analyze_lpc(samples, sr_in) else {
+    fit_corner_pe(samples, sr_in, runtime_sr, PRE_EMPH)
+}
+
+/// As `fit_corner`, with an explicit brightness tilt (pre-emphasis applied before
+/// the LPC). Lower tilt keeps a dark source's low-formant body — the F1 a high
+/// tilt trades away for a spurious air-band pole — while higher tilt spreads
+/// bright material across the band. The Forge sets this per corner from the
+/// source's measured brightness, with a manual override in INSPECT.
+pub fn fit_corner_pe(samples: &[f64], sr_in: f64, runtime_sr: f64, pre_emph: f64) -> CornerData {
+    let Some((a, poles)) = analyze_lpc_pe(samples, sr_in, pre_emph, LPC_ORDER, false) else {
         return [PASSTHROUGH; NUM_STAGES];
     };
     let zeros = valley_freqs(&a);

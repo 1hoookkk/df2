@@ -13,7 +13,7 @@ use crate::{capture, theme, App};
 
 impl App {
     pub fn show_product_surface(&mut self, ctx: &egui::Context) {
-        let capturing = self.is_capturing(0) || self.is_capturing(1);
+        let capturing = self.capture.is_some();
 
         egui::TopBottomPanel::top("forge_header")
             .frame(field_frame(20.0, 8.0))
@@ -21,12 +21,8 @@ impl App {
 
         if !capturing {
             egui::TopBottomPanel::bottom("forge_controls")
-                .frame(field_frame(12.0, 22.0))
-                .show(ctx, |ui| {
-                    self.morph_rail(ui);
-                    ui.add_space(16.0);
-                    self.transport(ui);
-                });
+                .frame(field_frame(12.0, 18.0))
+                .show(ctx, |ui| self.transport(ui));
         }
 
         egui::CentralPanel::default()
@@ -35,8 +31,15 @@ impl App {
                 if capturing {
                     self.capture_stage(ui);
                 } else {
-                    let h = ui.available_height();
-                    self.shape_stage(ui, h);
+                    // THE SHAPE stays the hero up top; the Morph×Q authoring pad
+                    // sits beneath it (drop a sound into each corner, drag the
+                    // puck to roam the 4-corner space).
+                    let total = ui.available_height();
+                    let shape_h = (total * 0.58).max(150.0);
+                    self.shape_stage(ui, shape_h);
+                    ui.add_space(6.0);
+                    let pad_h = (total - shape_h - 12.0).max(150.0);
+                    self.morph_q_pad(ui, pad_h);
                 }
             });
     }
@@ -56,7 +59,7 @@ impl App {
                 }
                 ui.add_space(18.0);
                 if text_link(ui, "CAPTURE", theme::INK_SOFT).clicked() {
-                    let target = if self.corner_slots[0].is_none() { 0 } else { 1 };
+                    let target = self.next_empty_anchor();
                     self.start_capture(target);
                 }
                 if !self.status.is_empty() {
@@ -171,10 +174,19 @@ impl App {
             }
             painter.add(Shape::mesh(mesh));
 
-            // green TARGET(s) — peak-aligned to the fit; alpha follows how close
-            // the morph is to that end, so it crossfades as you drag the rail.
-            let both = self.corner_slots[0].is_some() && self.corner_slots[1].is_some();
-            for slot in 0..2 {
+            // green TARGET(s) — peak-aligned to the fit; each corner's opacity
+            // follows its bilinear weight at the puck, so the targets crossfade
+            // as you roam the Morph×Q pad.
+            let loaded = self.anchor_audio.iter().filter(|a| a.is_some()).count();
+            let m = self.preview_morph as f64;
+            let q = self.preview_q as f64;
+            let weight = [
+                (1.0 - m) * (1.0 - q), // M0_Q0
+                m * (1.0 - q),         // M100_Q0
+                (1.0 - m) * q,         // M0_Q100
+                m * q,                 // M100_Q100
+            ];
+            for slot in 0..4 {
                 let Some(a) = self.anchor_audio[slot].as_ref() else {
                     continue;
                 };
@@ -190,13 +202,8 @@ impl App {
                     continue;
                 }
                 let offset = fit_peak - src_peak;
-                let prox = if slot == 0 {
-                    1.0 - self.anchor_morph
-                } else {
-                    self.anchor_morph
-                };
-                let alpha = if both {
-                    (50.0 + 165.0 * prox) as u8
+                let alpha = if loaded > 1 {
+                    (45.0 + 175.0 * weight[slot]) as u8
                 } else {
                     220
                 };
@@ -256,142 +263,150 @@ impl App {
             painter.text(
                 rect.center(),
                 Align2::CENTER_CENTER,
-                "DROP TWO SOUNDS — LOW AND HIGH",
+                "DROP A SOUND INTO EACH CORNER",
                 FontId::new(14.0, FontFamily::Proportional),
                 theme::INK_SOFT,
             );
         }
     }
 
-    // ── Morph rail — the 1-D A→B move ─────────────────────────────────────────
-    fn morph_rail(&mut self, ui: &mut egui::Ui) {
-        let ready = self.corner_slots[0].is_some() && self.corner_slots[1].is_some();
-        let end_w = 150.0;
-
+    // ── Morph × Q pad — the 2-D authoring surface ─────────────────────────────
+    // Four corners (drop a sound into each), one puck you drag to roam the
+    // Morph (X) × Q (Y) space. THE SHAPE above shows the body at the puck.
+    fn morph_q_pad(&mut self, ui: &mut egui::Ui, height: f32) {
+        // corner loader chips — M0·Q0  M100·Q0  M0·Q100  M100·Q100
         ui.horizontal(|ui| {
-            ui.allocate_ui_with_layout(
-                Vec2::new(end_w, 52.0),
-                Layout::top_down(Align::Min),
-                |ui| self.rail_end(ui, 0, "LOW", false),
-            );
-
-            let track_w = (ui.available_width() - end_w).max(120.0);
-            let (track, painter) = ui.allocate_painter(
-                Vec2::new(track_w, 52.0),
-                if ready {
-                    Sense::click_and_drag()
-                } else {
-                    Sense::hover()
-                },
-            );
-            let r = track.rect;
-            let cy = r.center().y;
-            let h = 8.0;
-            let bar = egui::Rect::from_min_max(
-                Pos2::new(r.left(), cy - h * 0.5),
-                Pos2::new(r.right(), cy + h * 0.5),
-            );
-            painter.rect_filled(bar, egui::Rounding::same(2.0), theme::PAPER_LOW);
-
-            if ready {
-                let hx = r.left() + self.anchor_morph * r.width();
-                let fill = egui::Rect::from_min_max(
-                    Pos2::new(r.left(), cy - h * 0.5),
-                    Pos2::new(hx, cy + h * 0.5),
-                );
-                painter.rect_filled(fill, egui::Rounding::same(2.0), theme::VERM);
-                let s = 11.0;
-                painter.add(egui::Shape::convex_polygon(
-                    vec![
-                        Pos2::new(hx, cy - s),
-                        Pos2::new(hx + s * 0.72, cy),
-                        Pos2::new(hx, cy + s),
-                        Pos2::new(hx - s * 0.72, cy),
-                    ],
-                    theme::INK,
-                    Stroke::new(2.0, theme::PAPER),
-                ));
-                if track.clicked() || track.dragged() {
-                    if let Some(p) = track.interact_pointer_pos() {
-                        self.anchor_morph = ((p.x - r.left()) / r.width()).clamp(0.0, 1.0);
-                    }
-                }
-            } else {
-                painter.text(
-                    r.center(),
-                    Align2::CENTER_CENTER,
-                    "load both ends",
-                    FontId::new(11.0, FontFamily::Proportional),
-                    theme::INK_FAINT,
-                );
+            let chip_w = (ui.available_width() - 24.0) / 4.0;
+            for slot in 0..4 {
+                self.corner_chip(ui, slot, chip_w);
             }
-
-            ui.allocate_ui_with_layout(
-                Vec2::new(end_w, 52.0),
-                Layout::top_down(Align::Max),
-                |ui| self.rail_end(ui, 1, "HIGH", true),
-            );
         });
+        ui.add_space(4.0);
+
+        let pad_h = (height - 42.0).max(90.0);
+        let (resp, painter) =
+            ui.allocate_painter(Vec2::new(ui.available_width(), pad_h), Sense::click_and_drag());
+        let full = resp.rect;
+        let side = full.height().min(full.width()).max(80.0);
+        let pad = egui::Rect::from_center_size(full.center(), Vec2::splat(side));
+
+        // field + frame + mid crosshairs
+        painter.rect_filled(pad, egui::Rounding::same(3.0), theme::PAPER_DIM);
+        painter.rect_stroke(pad, egui::Rounding::same(3.0), Stroke::new(1.0, theme::INK_FAINT));
+        painter.line_segment(
+            [Pos2::new(pad.center().x, pad.top()), Pos2::new(pad.center().x, pad.bottom())],
+            Stroke::new(1.0, theme::with_alpha(theme::INK_FAINT, 110)),
+        );
+        painter.line_segment(
+            [Pos2::new(pad.left(), pad.center().y), Pos2::new(pad.right(), pad.center().y)],
+            Stroke::new(1.0, theme::with_alpha(theme::INK_FAINT, 110)),
+        );
+        painter.text(
+            Pos2::new(pad.center().x, pad.bottom() + 1.0),
+            Align2::CENTER_TOP,
+            "MORPH →",
+            FontId::new(9.0, FontFamily::Monospace),
+            theme::INK_SOFT,
+        );
+        painter.text(
+            Pos2::new(pad.left() - 3.0, pad.center().y),
+            Align2::RIGHT_CENTER,
+            "Q ↓",
+            FontId::new(9.0, FontFamily::Monospace),
+            theme::INK_SOFT,
+        );
+
+        // corner status dots — TL=M0·Q0, TR=M100·Q0, BL=M0·Q100, BR=M100·Q100
+        for (pos, slot, align) in [
+            (pad.left_top(), 0usize, Align2::LEFT_TOP),
+            (pad.right_top(), 1, Align2::RIGHT_TOP),
+            (pad.left_bottom(), 2, Align2::LEFT_BOTTOM),
+            (pad.right_bottom(), 3, Align2::RIGHT_BOTTOM),
+        ] {
+            let inset = Vec2::new(
+                if align.x() == Align::Min { 8.0 } else { -8.0 },
+                if align.y() == Align::Min { 8.0 } else { -8.0 },
+            );
+            painter.circle_filled(pos + inset, 3.5, self.corner_dot(slot));
+        }
+
+        // drag anywhere on the pad to move the puck
+        if (resp.dragged() || resp.clicked()) && pad.width() > 1.0 && pad.height() > 1.0 {
+            if let Some(p) = resp.interact_pointer_pos() {
+                self.preview_morph = ((p.x - pad.left()) / pad.width()).clamp(0.0, 1.0);
+                self.preview_q = ((p.y - pad.top()) / pad.height()).clamp(0.0, 1.0);
+            }
+        }
+
+        // puck — vermillion ring once the M0·Q0 anchor exists (morph is live)
+        let px = egui::lerp(pad.left()..=pad.right(), self.preview_morph);
+        let py = egui::lerp(pad.top()..=pad.bottom(), self.preview_q);
+        let ring = if self.corner_slots[0].is_some() {
+            theme::VERM
+        } else {
+            theme::INK_FAINT
+        };
+        painter.circle_filled(Pos2::new(px, py), 6.0, theme::INK);
+        painter.circle_stroke(Pos2::new(px, py), 7.5, Stroke::new(2.0, ring));
     }
 
-    fn rail_end(&mut self, ui: &mut egui::Ui, anchor: usize, label: &str, right: bool) {
-        let align = if right { Align::Max } else { Align::Min };
-        ui.with_layout(Layout::top_down(align), |ui| {
-            ui.label(RichText::new(label).color(theme::INK).size(13.0).strong());
-
-            if let Some(slot) = self.corner_slots[anchor].as_ref() {
-                let name = trim_label(&slot.source, 16);
-                let bad = !matches!(slot.quality, crate::dsp::FitQuality::Ready);
-                let color = if bad { theme::CAUTION } else { theme::INK_SOFT };
-                if text_link(ui, &name, color).clicked() {
-                    self.load_anchor_button(anchor);
-                }
-                let (tick, p) = ui.allocate_painter(Vec2::new(54.0, 4.0), Sense::hover());
-                let tr = tick.rect;
-                let x0 = if right { tr.right() - 38.0 } else { tr.left() };
-                p.rect_filled(
-                    egui::Rect::from_min_size(
-                        Pos2::new(x0, tr.center().y - 1.0),
-                        Vec2::new(38.0, 2.0),
-                    ),
-                    egui::Rounding::ZERO,
-                    if bad { theme::CAUTION } else { theme::VERM },
-                );
-            } else if self.anchor_audio[anchor].is_some() {
-                if text_link(ui, "needs a cleaner slice", theme::CAUTION).clicked() {
-                    self.inspect_open = true;
-                    self.inspect_anchor = anchor;
-                }
-            } else {
-                // A clear, obvious load target — not a tiny text link.
-                let add = egui::Button::new(
-                    RichText::new("+ ADD SOUND").color(theme::INK).size(12.0).strong(),
-                )
-                .fill(theme::PAPER_LOW)
-                .stroke(Stroke::new(1.0, theme::INK_FAINT))
-                .min_size(Vec2::new(132.0, 30.0))
-                .rounding(2.0);
-                if ui.add(add).clicked() {
-                    self.load_anchor_button(anchor);
-                }
+    /// One corner loader: "M0·Q0" + the sound's name (or + ADD), tinted by fit
+    /// quality. Click loads/replaces that corner; if a sound is loaded but its
+    /// fit needs a cleaner slice, it opens INSPECT on that corner instead.
+    fn corner_chip(&mut self, ui: &mut egui::Ui, slot: usize, width: f32) {
+        let loaded = self.anchor_audio[slot].is_some();
+        // Resolve everything we need to a bool/owned value so no borrow of
+        // self.corner_slots is held across the &mut self click handlers below.
+        let (line2, col, assigned) = match self.corner_slots[slot].as_ref() {
+            Some(s) if matches!(s.quality, crate::dsp::FitQuality::Ready) => {
+                (trim_label(&s.source, 12), theme::INK, true)
             }
-        });
+            Some(s) => (trim_label(&s.source, 12), theme::CAUTION, true),
+            None if loaded => ("needs slice".to_owned(), theme::CAUTION, false),
+            None => ("+ ADD".to_owned(), theme::INK_SOFT, false),
+        };
+        let text = format!("{}\n{}", crate::CORNER_LABELS[slot], line2);
+        let btn = egui::Button::new(RichText::new(text).color(col).size(10.0))
+            .fill(theme::PAPER_LOW)
+            .stroke(Stroke::new(1.0, theme::INK_FAINT))
+            .min_size(Vec2::new(width.max(56.0), 34.0))
+            .rounding(2.0);
+        if ui.add(btn).clicked() {
+            if loaded && !assigned {
+                self.inspect_open = true;
+                self.inspect_anchor = slot;
+            } else {
+                self.load_anchor_button(slot);
+            }
+        }
+    }
+
+    /// The status colour for a corner: green Ready, amber loaded-but-not-clean,
+    /// faint empty.
+    fn corner_dot(&self, slot: usize) -> Color32 {
+        match self.corner_slots[slot].as_ref() {
+            Some(s) if matches!(s.quality, crate::dsp::FitQuality::Ready) => theme::TARGET,
+            Some(_) => theme::CAUTION,
+            None if self.anchor_audio[slot].is_some() => theme::CAUTION,
+            None => theme::INK_FAINT,
+        }
     }
 
     // ── Transport ──────────────────────────────────────────────────────────────
     fn transport(&mut self, ui: &mut egui::Ui) {
-        let ready = self.corner_slots[0].is_some() && self.corner_slots[1].is_some();
+        let play_ready = self.stage_corner().is_some();
+        let save_ready = self.corner_slots.iter().all(|s| s.is_some());
         let playing = self.audio.as_ref().map(|a| a.is_playing()).unwrap_or(false);
 
         ui.horizontal(|ui| {
             let label = if playing { "STOP" } else { "PLAY" };
-            if solid_button(ui, label, ready).clicked() {
+            if solid_button(ui, label, play_ready).clicked() {
                 if let Some(a) = &self.audio {
                     a.set_playing(!playing);
                 }
             }
             ui.add_space(12.0);
-            if outline_button(ui, "SAVE", ready).clicked() {
+            if outline_button(ui, "SAVE", save_ready).clicked() {
                 self.save_body();
             }
 

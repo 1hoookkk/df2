@@ -17,12 +17,33 @@ use eframe::egui;
 use trench_core::cartridge::CornerData;
 
 use dsp::{
-    body_midpoint, condition_fit_window, corner_to_biquads, cpp_df2t_output, detect_onset,
-    display_name, hedz_rom_midpoint, load_wav_as_mono_f64, magnitude_response, samples_for_ms,
-    source_envelope, spectral_residual_db, two_anchor_preview, z_plane_points, ComplexPoint,
-    FitDiagnostics, FitQuality, AUTHORING_RATE, DEFAULT_WINDOW_MS, FIT_BLOCK_DB, FIT_WARN_DB,
-    PASSTHROUGH, POLE_ZERO_COUNT,
+    align_to_anchor, body_midpoint, body_preview, canonical_anchor, condition_fit_window,
+    corner_to_biquads, cpp_df2t_output, detect_onset, display_name, hedz_rom_midpoint,
+    load_wav_as_mono_f64, magnitude_response, p2k003_ref_midpoint, samples_for_ms, source_envelope,
+    spectral_residual_db, z_plane_points, ComplexPoint, FitDiagnostics, FitQuality, AUTHORING_RATE,
+    DEFAULT_WINDOW_MS, FIT_BLOCK_DB, FIT_WARN_DB, PASSTHROUGH, POLE_ZERO_COUNT,
 };
+use preprocess::VintagePreset;
+
+/// The four corners of the morph/Q grid, in `PackedCorners` index order.
+pub const CORNER_LABELS: [&str; 4] = ["M0·Q0", "M100·Q0", "M0·Q100", "M100·Q100"];
+
+/// Which heritage skin the midpoint scope draws as the green "truth" to author
+/// against (reference/dev only).
+#[derive(Clone, Copy, PartialEq, Eq)]
+pub enum RefTruth {
+    Hedz,
+    P2k003,
+}
+
+impl RefTruth {
+    pub fn label(self) -> &'static str {
+        match self {
+            RefTruth::Hedz => "HEDZ",
+            RefTruth::P2k003 => "P2k_003",
+        }
+    }
+}
 
 // ── State ─────────────────────────────────────────────────────────────────────
 
@@ -74,15 +95,22 @@ pub struct AnchorAudio {
     pub sample_rate: f64,
     pub start_trim: usize,
     pub window_len: usize,
+    /// Vintage-sampler degradation applied to this corner's source before the
+    /// fit, so the captured filter inherits the lo-fi character (AAF-off
+    /// aliasing → the "scar"). Default CLEAN.
+    pub pre: VintagePreset,
     pub extraction: ExtractionResults,
 }
 
 pub struct App {
-    pub anchor_audio: [Option<AnchorAudio>; 2],
+    pub anchor_audio: [Option<AnchorAudio>; 4],
     pub internal_resample_rate: f32,
     pub zero_dither_truncation: bool,
     pub corner_slots: [Option<AssignedCorner>; 4],
-    pub anchor_morph: f32,
+    /// The 2-D authoring puck: MORPH on X (0 = M0, 1 = M100), Q on Y (0 at the
+    /// top row, 1 at the bottom row — matching the M0_Q0 / M0_Q100 corner layout).
+    pub preview_morph: f32,
+    pub preview_q: f32,
     pub audio: Option<audio::Audio>,
     pub audio_level: f32,
     pub inspect_open: bool,
@@ -100,16 +128,22 @@ pub struct App {
     /// verbatim 240-byte ROM block. The inspect midpoint scope draws the authored
     /// body's middle against it. None if the reference block isn't in this checkout.
     pub hedz_ref_midpoint: Option<CornerData>,
+    /// The P2k_003 ("6 Pole Lowpass") heritage skin at M50/Q50 — a second
+    /// calibration truth. None if its baked reference isn't in this checkout.
+    pub p2k003_ref_midpoint: Option<CornerData>,
+    /// Which heritage truth the midpoint scope currently draws.
+    pub ref_truth: RefTruth,
 }
 
 impl Default for App {
     fn default() -> Self {
         Self {
-            anchor_audio: [None, None],
+            anchor_audio: core::array::from_fn(|_| None),
             internal_resample_rate: AUTHORING_RATE as f32,
             zero_dither_truncation: false,
             corner_slots: core::array::from_fn(|_| None),
-            anchor_morph: 0.5,
+            preview_morph: 0.5,
+            preview_q: 0.5,
             audio: audio::start(),
             audio_level: 0.4,
             inspect_open: false,
@@ -122,6 +156,8 @@ impl Default for App {
             view_corner: None,
             view_fit: Vec::new(),
             hedz_ref_midpoint: hedz_rom_midpoint(),
+            p2k003_ref_midpoint: p2k003_ref_midpoint(),
+            ref_truth: RefTruth::Hedz,
         }
     }
 }
@@ -133,21 +169,20 @@ impl App {
         self.start.elapsed().as_secs_f32()
     }
 
-    /// The corner the mouth + audition reflect right now: the live morph if both
-    /// ends are set, else whichever single end (assigned or just loaded) exists.
+    /// The corner the mouth + audition reflect right now: the live morph/Q
+    /// position if a body exists, else whichever single corner (assigned or just
+    /// loaded) exists, so a lone dropped sound is still audible/visible.
     pub fn stage_corner(&self) -> Option<CornerData> {
         if let Some(p) = self.anchor_preview_corner() {
             return Some(p);
         }
-        if let Some(s) = self.corner_slots[0]
-            .as_ref()
-            .or(self.corner_slots[1].as_ref())
-        {
-            return Some(s.corner);
+        for slot in self.corner_slots.iter().flatten() {
+            return Some(slot.corner);
         }
-        self.anchor_audio[0]
-            .as_ref()
-            .or(self.anchor_audio[1].as_ref())
+        self.anchor_audio
+            .iter()
+            .flatten()
+            .next()
             .map(|a| a.extraction.corner)
     }
 
@@ -172,6 +207,7 @@ impl App {
                     sample_rate,
                     start_trim,
                     window_len,
+                    pre: VintagePreset::None,
                     extraction: ExtractionResults::empty(self.internal_resample_rate as f64),
                 });
                 self.refit_anchor(anchor);
@@ -227,14 +263,11 @@ impl App {
             sample_rate,
             start_trim,
             window_len,
+            pre: VintagePreset::None,
             extraction: ExtractionResults::empty(self.internal_resample_rate as f64),
         });
         self.refit_anchor(anchor);
         self.auto_assign(anchor);
-    }
-
-    pub fn is_capturing(&self, anchor: usize) -> bool {
-        self.capture.is_some() && self.capture_anchor == anchor
     }
 
     pub fn refit_anchor(&mut self, anchor: usize) {
@@ -252,12 +285,21 @@ impl App {
             return;
         }
 
-        let fit_window = condition_fit_window(raw, dither);
-        // Restored to the 2026-05-22 Talking-Hedz-matching fitter. The ARMA path
-        // (fit_corner_arma_from_window) regressed the match; lpc::fit_corner is
-        // the working one — Levinson LPC + Durand-Kerner roots + spectral-valley
-        // zeros. The residual badge below is cosmetic; the corner is the fit.
-        let corner = trench_core::lpc::fit_corner(&fit_window, state.sample_rate, rate);
+        // Vintage-sampler front-end: degrade the source at its own rate BEFORE
+        // modelling, so AAF-off aliasing folds into the band and the fit bakes the
+        // lo-fi character in (CLEAN = identity). Then window + fit.
+        let degraded = preprocess::apply(raw, state.sample_rate, &state.pre.settings());
+        let fit_window = condition_fit_window(&degraded, dither);
+        // Deterministic ARMA pole-zero fit — a frequency-domain least-squares solve
+        // (no penalties, no stage constraints) that places real ZEROS, so it carves
+        // the anti-formant notches / bitey upper teeth (DJ Alkaline-style) all-pole
+        // LPC physically can't. Falls back to the LPC fit if ARMA returns a
+        // degenerate result, so the live path can only improve on LPC, never regress.
+        let corner = trench_core::arma::fit_corner_arma(&fit_window, state.sample_rate, rate)
+            .unwrap_or_else(|| {
+                let pe = dsp::auto_pre_emph(&fit_window, state.sample_rate);
+                trench_core::lpc::fit_corner_pe(&fit_window, state.sample_rate, rate, pe)
+            });
         let residual = spectral_residual_db(&fit_window, state.sample_rate, &corner, rate);
         let quality = if !residual.is_finite()
             || residual > FIT_BLOCK_DB
@@ -301,22 +343,59 @@ impl App {
         self.save_status = None;
     }
 
+    /// Gather the four corners into a body with coherent actor indices. M0_Q0
+    /// (slot 0) is the actor anchor; the other corners are re-indexed to it by
+    /// least-movement correspondence (crossings allowed — never frequency-sorted).
+    /// Missing corners fall back like the exporter (C→A, D→B). `require_all`
+    /// returns None unless all four corners are assigned (export); otherwise only
+    /// the M0_Q0 anchor is required (live preview / midpoint scope).
+    fn assembled_body(&self, require_all: bool) -> Option<[CornerData; 4]> {
+        if require_all && self.corner_slots.iter().any(|s| s.is_none()) {
+            return None;
+        }
+        let sr = self.internal_resample_rate as f64;
+        let anchor = canonical_anchor(&self.corner_slots[0].as_ref()?.corner, sr);
+        let raw = |slot: usize, fallback: &CornerData| {
+            self.corner_slots[slot]
+                .as_ref()
+                .map(|s| s.corner)
+                .unwrap_or(*fallback)
+        };
+        let b = raw(1, &anchor);
+        let c = raw(2, &anchor);
+        let d = raw(3, &b);
+        Some([
+            anchor,
+            align_to_anchor(&anchor, &b, sr),
+            align_to_anchor(&anchor, &c, sr),
+            align_to_anchor(&anchor, &d, sr),
+        ])
+    }
+
+    /// The live morph/Q preview — the assembled body sampled at the puck through
+    /// the real packed-u16 interpolation. Needs at least the M0_Q0 anchor.
     pub fn anchor_preview_corner(&self) -> Option<CornerData> {
-        let low = self.corner_slots[0].as_ref()?.corner;
-        let high = self.corner_slots[1].as_ref()?.corner;
-        Some(two_anchor_preview(&low, &high, self.anchor_morph))
+        let body = self.assembled_body(false)?;
+        Some(body_preview(&body, self.preview_morph, self.preview_q))
     }
 
     /// The authored body's M50/Q50 midpoint — the candidate the calibration scope
-    /// judges. Built from the four assigned corners through the real packed-u16
-    /// interpolation; slots 2/3 fall back to LOW/HIGH exactly like the exporter,
-    /// so a two-end body still resolves a midpoint.
+    /// judges. Built from the assembled (actor-aligned) corners through the real
+    /// packed-u16 interpolation. Needs at least two corners to be a real body.
     pub fn candidate_midpoint(&self) -> Option<CornerData> {
-        let low = self.corner_slots[0].as_ref()?.corner;
-        let high = self.corner_slots[1].as_ref()?.corner;
-        let c = self.corner_slots[2].as_ref().map(|s| s.corner).unwrap_or(low);
-        let d = self.corner_slots[3].as_ref().map(|s| s.corner).unwrap_or(high);
-        Some(body_midpoint(&[low, high, c, d]))
+        if self.corner_slots.iter().flatten().count() < 2 {
+            return None;
+        }
+        let body = self.assembled_body(false)?;
+        Some(body_midpoint(&body))
+    }
+
+    /// The heritage truth the midpoint scope draws, per the current selection.
+    pub fn reference_midpoint(&self) -> Option<CornerData> {
+        match self.ref_truth {
+            RefTruth::Hedz => self.hedz_ref_midpoint,
+            RefTruth::P2k003 => self.p2k003_ref_midpoint,
+        }
     }
 
     fn active_audio_corner(&self) -> CornerData {
@@ -331,11 +410,20 @@ impl App {
         }
     }
 
+    /// The next corner a dropped/captured sound should fill: the first empty one
+    /// (M0_Q0 → M100_Q0 → M0_Q100 → M100_Q100), or M0_Q0 if the body is full.
+    pub fn next_empty_anchor(&self) -> usize {
+        self.anchor_audio
+            .iter()
+            .position(|a| a.is_none())
+            .unwrap_or(0)
+    }
+
     fn take_dropped_files(&mut self, ctx: &egui::Context) {
         let dropped = ctx.input(|i| i.raw.dropped_files.clone());
         for file in dropped {
             if let Some(path) = file.path {
-                let target = if self.corner_slots[0].is_none() { 0 } else { 1 };
+                let target = self.next_empty_anchor();
                 self.load_anchor_path(target, path);
                 break;
             }
@@ -343,9 +431,10 @@ impl App {
     }
 
     pub fn reset_body(&mut self) {
-        self.anchor_audio = [None, None];
+        self.anchor_audio = core::array::from_fn(|_| None);
         self.corner_slots = core::array::from_fn(|_| None);
-        self.anchor_morph = 0.5;
+        self.preview_morph = 0.5;
+        self.preview_q = 0.5;
         self.save_status = None;
         if let Some(audio) = &self.audio {
             audio.set_playing(false);
@@ -353,8 +442,8 @@ impl App {
     }
 
     pub fn save_body(&mut self) {
-        let Some(json) = self.export_two_anchor_body() else {
-            self.save_status = Some("load both ends before saving".to_owned());
+        let Some(json) = self.export_body() else {
+            self.save_status = Some("load all four corners before saving".to_owned());
             return;
         };
         let home = std::env::var("USERPROFILE")
@@ -373,21 +462,18 @@ impl App {
         }
     }
 
-    fn export_two_anchor_body(&self) -> Option<String> {
-        let low = self.corner_slots[0].as_ref()?;
-        let high = self.corner_slots[1].as_ref()?;
-        let corners = [
-            low.corner,
-            high.corner,
-            self.corner_slots[2]
-                .as_ref()
-                .map(|s| s.corner)
-                .unwrap_or(low.corner),
-            self.corner_slots[3]
-                .as_ref()
-                .map(|s| s.corner)
-                .unwrap_or(high.corner),
-        ];
+    /// Serialize the four discrete, actor-aligned corners into the existing
+    /// `compiled-v1` keyframe format. All four corners are required — no LOW/HIGH
+    /// duplication fallback. The format itself is unchanged (it already carries
+    /// four keyframes); only the source of corners 2/3 changes from duplicates to
+    /// the real M0_Q100 / M100_Q100 fits.
+    fn export_body(&self) -> Option<String> {
+        let corners = self.assembled_body(true)?;
+        let name = {
+            let first = self.corner_slots[0].as_ref().map(|s| s.source.as_str()).unwrap_or("?");
+            let last = self.corner_slots[3].as_ref().map(|s| s.source.as_str()).unwrap_or("?");
+            format!("{first} → {last}")
+        };
         let labels = ["M0_Q0", "M100_Q0", "M0_Q100", "M100_Q100"];
         let mut keyframes = Vec::new();
         for (label, corner) in labels.iter().zip(corners) {
@@ -408,7 +494,7 @@ impl App {
         Some(
             serde_json::json!({
                 "format": "compiled-v1",
-                "name": format!("{} — {}", low.source, high.source),
+                "name": name,
                 "sampleRate": AUTHORING_RATE,
                 "stages": 12,
                 "keyframes": keyframes

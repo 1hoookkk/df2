@@ -2,6 +2,7 @@
 pub mod minifloat;
 
 pub mod agc;
+pub mod arma;
 pub mod cartridge;
 pub mod cascade;
 pub mod cluster;

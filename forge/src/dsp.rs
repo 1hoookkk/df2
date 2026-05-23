@@ -1553,11 +1553,232 @@ pub fn hedz_rom_midpoint() -> Option<CornerData> {
         .map(|p| p.interpolate(0.5_f32, 0.5_f32))
 }
 
-// ── Interpolation / audio glue ──────────────────────────────────────────────
+/// Load a baked heritage-skin reference: a `.kernels.json` of 4 corners × 6
+/// kernel stages (`tools/bake_p2k_reference.py` output), in PackedCorners index
+/// order. Reference/dev only — never shipped; None if the file isn't present.
+pub fn load_reference_corners(path: &Path) -> Option<[CornerData; 4]> {
+    let text = std::fs::read_to_string(path).ok()?;
+    let v: serde_json::Value = serde_json::from_str(&text).ok()?;
+    let corners = v.get("corners")?.as_array()?;
+    if corners.len() < 4 {
+        return None;
+    }
+    let mut out = [[PASSTHROUGH; POLE_ZERO_COUNT]; 4];
+    for (ci, corner) in corners.iter().take(4).enumerate() {
+        let stages = corner.as_array()?;
+        for (si, stage) in stages.iter().take(POLE_ZERO_COUNT).enumerate() {
+            let coeffs = stage.as_array()?;
+            for k in 0..5 {
+                out[ci][si][k] = coeffs.get(k)?.as_f64()?;
+            }
+        }
+    }
+    Some(out)
+}
 
-pub fn two_anchor_preview(low: &CornerData, high: &CornerData, morph: f32) -> CornerData {
-    let body = [*low, *high, *low, *high];
-    PackedCorners::from_corner_data(&body).interpolate(morph.clamp(0.0, 1.0), 0.0)
+/// The P2k_003 ("6 Pole Lowpass") heritage skin at its M50/Q50 midpoint, through
+/// the real packed-u16 interpolation — a second calibration truth alongside
+/// Talking Hedz for the "match or beat P2K" read. None if the baked reference
+/// isn't in this checkout.
+pub fn p2k003_ref_midpoint() -> Option<CornerData> {
+    const REF: &str = concat!(
+        env!("CARGO_MANIFEST_DIR"),
+        "/../ref/p2k_skins/P2k_003.kernels.json"
+    );
+    let corners = load_reference_corners(Path::new(REF))?;
+    Some(body_midpoint(&corners))
+}
+
+/// Per-actor `(freq Hz, Q, gain dB)` for a corner, indexed ROOT…RIP. Q is
+/// `f / bandwidth` (bandwidth `= -sr/π·ln r`); gain is the actor's own magnitude
+/// at its pole frequency. Passthrough actors return NaNs. This is the INSPECT
+/// clinical readout — back-room only, never the product surface.
+pub fn actor_readout(corner: &CornerData, sample_rate: f64) -> [(f64, f64, f64); POLE_ZERO_COUNT] {
+    core::array::from_fn(|i| {
+        let stage = &corner[i];
+        if is_passthrough(stage) {
+            return (f64::NAN, f64::NAN, f64::NAN);
+        }
+        let f = stage_frequency(stage, sample_rate);
+        let [_, _, _, _, a2] = kernel_to_biquad(stage);
+        let r = a2.max(0.0).sqrt().min(0.999_999);
+        let bw = -sample_rate / PI * r.ln(); // r < 1 → bw > 0
+        let q = if bw > 1.0e-6 { f / bw } else { f64::INFINITY };
+        let gain = stage_mag_db(stage, f.max(20.0), sample_rate);
+        (f, q, gain)
+    })
+}
+
+/// Fraction of a window's energy above ~2.5 kHz (amplitude domain), via a
+/// one-pole highpass — the brightness signal the fit's tilt is chosen from.
+pub fn hf_fraction(window: &[f64], sample_rate: f64) -> f64 {
+    if window.len() < 8 {
+        return 0.5;
+    }
+    let fc = 2_500.0_f64.min(sample_rate * 0.45);
+    let dt = 1.0 / sample_rate;
+    let rc = 1.0 / (TAU * fc);
+    let alpha = rc / (rc + dt);
+    let mut hp_prev = 0.0;
+    let mut x_prev = window[0];
+    let mut hi = 0.0f64;
+    let mut tot = 1.0e-30f64;
+    for &x in &window[1..] {
+        let hp = alpha * (hp_prev + x - x_prev);
+        hp_prev = hp;
+        x_prev = x;
+        hi += hp * hp;
+        tot += x * x;
+    }
+    (hi / tot).sqrt()
+}
+
+/// Choose the fit's brightness tilt (pre-emphasis, in [0, 0.97]) from the
+/// source's high-frequency fraction. Dark sources (a vowel's body in the
+/// low-mids) get little tilt so their low formant (F1) survives instead of being
+/// traded for a spurious air-band pole; bright material gets the full speech tilt
+/// so the six actors spread across the band. The Forge sets this per corner on
+/// load; the INSPECT TILT control overrides it.
+pub fn auto_pre_emph(window: &[f64], sample_rate: f64) -> f64 {
+    let frac = hf_fraction(window, sample_rate);
+    let t = ((frac - 0.10) / (0.32 - 0.10)).clamp(0.0, 1.0);
+    0.97 * (t * t * (3.0 - 2.0 * t))
+}
+
+// ── Body assembly / interpolation / audio glue ───────────────────────────────
+
+/// A four-corner body previewed at an arbitrary morph/Q position through the
+/// real packed-u16 bilinear (the proven, bit-accurate runtime path) — not a
+/// decoded-float blend. The 2-D authoring pad reads this as the puck moves and
+/// the audio thread hears it. Corner order: M0_Q0, M100_Q0, M0_Q100, M100_Q100.
+pub fn body_preview(corners: &[CornerData; 4], morph: f32, q: f32) -> CornerData {
+    PackedCorners::from_corner_data(corners).interpolate(morph.clamp(0.0, 1.0), q.clamp(0.0, 1.0))
+}
+
+/// Pole frequency (log) and radius for one kernel stage — the coordinates the
+/// cross-corner actor correspondence matches on. Passthrough/degenerate stages
+/// fold to a finite high-frequency, zero-radius sentinel so they pair with each
+/// other (cost 0) rather than producing NaN.
+fn stage_pole_coords(stage: &[f64; 5], sample_rate: f64) -> (f64, f64) {
+    let raw = stage_frequency(stage, sample_rate);
+    let f = if raw.is_finite() {
+        raw.clamp(20.0, sample_rate)
+    } else {
+        sample_rate
+    };
+    let a2 = (1.0 - stage[3]).clamp(0.0, 0.999_9);
+    (f.ln(), a2.sqrt())
+}
+
+fn actor_match_cost(anchor: &[f64; 5], other: &[f64; 5], sample_rate: f64) -> f64 {
+    let (af, ar) = stage_pole_coords(anchor, sample_rate);
+    let (of, or) = stage_pole_coords(other, sample_rate);
+    (af - of).abs() + 0.5 * (ar - or).abs()
+}
+
+/// Visit every permutation of six indices (Heap's algorithm, 720 total).
+fn for_each_perm6(mut visit: impl FnMut(&[usize; 6])) {
+    let mut a = [0usize, 1, 2, 3, 4, 5];
+    let mut c = [0usize; 6];
+    visit(&a);
+    let mut i = 0;
+    while i < 6 {
+        if c[i] < i {
+            if i % 2 == 0 {
+                a.swap(0, i);
+            } else {
+                a.swap(c[i], i);
+            }
+            visit(&a);
+            c[i] += 1;
+            i = 0;
+        } else {
+            c[i] = 0;
+            i += 1;
+        }
+    }
+}
+
+/// Sort the anchor corner's six stages low→high by pole frequency so the actor
+/// names (ROOT…RIP) read in pitch order at the M0/Q0 reference. Anchor-only and
+/// purely for labelling: a cascade is a product, so the summed response is
+/// unchanged — this only fixes the body's reference actor order.
+pub fn canonical_anchor(corner: &CornerData, sample_rate: f64) -> CornerData {
+    let mut idx = [0usize, 1, 2, 3, 4, 5];
+    idx.sort_by(|&i, &j| {
+        stage_frequency(&corner[i], sample_rate)
+            .partial_cmp(&stage_frequency(&corner[j], sample_rate))
+            .unwrap_or(Ordering::Equal)
+    });
+    core::array::from_fn(|i| corner[idx[i]])
+}
+
+/// Re-index `other`'s six stages to the actor identities of `anchor` by the
+/// minimum total pole-distance correspondence. The runtime blends stage i↔i, so
+/// this is what keeps the morph/Q glide coherent. It does NOT sort by frequency
+/// and does NOT forbid crossings — between two corners an actor may glide past
+/// another; we only pick the lowest-movement pairing. (From two isolated corners
+/// an F1/F2 swap is genuinely ambiguous, so this is a smoothness heuristic and
+/// the midpoint scope is the final judge.)
+pub fn align_to_anchor(anchor: &CornerData, other: &CornerData, sample_rate: f64) -> CornerData {
+    let mut best = [0usize, 1, 2, 3, 4, 5];
+    let mut best_cost = f64::INFINITY;
+    for_each_perm6(|perm| {
+        let mut cost = 0.0;
+        for i in 0..POLE_ZERO_COUNT {
+            cost += actor_match_cost(&anchor[i], &other[perm[i]], sample_rate);
+        }
+        if cost < best_cost {
+            best_cost = cost;
+            best = *perm;
+        }
+    });
+    core::array::from_fn(|i| other[best[i]])
+}
+
+/// A fitted four-corner body: corners with stage indices aligned to a shared
+/// actor identity (so index-paired interpolation glides coherently), the decoded
+/// M50/Q50 middle, and the midpoint's spectral residual against a supplied wet
+/// target (NaN when none is given).
+#[derive(Clone)]
+pub struct BodyFit {
+    pub corners: [CornerData; 4],
+    pub midpoint: CornerData,
+    pub midpoint_residual_db: f64,
+}
+
+/// Fit a full four-corner body from up to four source windows (order:
+/// M0_Q0, M100_Q0, M0_Q100, M100_Q100). Each present window is fit by the proven
+/// `lpc::fit_corner`; corner 0 (M0_Q0) is the actor anchor and the other corners
+/// are aligned to it (crossings allowed). Missing corners fall back like the
+/// exporter (C→A, D→B). Returns None if the M0_Q0 anchor window is absent.
+pub fn fit_body(
+    windows: [Option<&[f64]>; 4],
+    source_srs: [f64; 4],
+    runtime_sr: f64,
+    midpoint_target: Option<(&[f64], f64)>,
+) -> Option<BodyFit> {
+    let fit = |i: usize| windows[i].map(|w| lpc::fit_corner(w, source_srs[i], runtime_sr));
+    let anchor = canonical_anchor(&fit(0)?, runtime_sr);
+    let b = fit(1).unwrap_or(anchor);
+    let c = fit(2).unwrap_or(anchor);
+    let d = fit(3).unwrap_or(b);
+    let corners = [
+        anchor,
+        align_to_anchor(&anchor, &b, runtime_sr),
+        align_to_anchor(&anchor, &c, runtime_sr),
+        align_to_anchor(&anchor, &d, runtime_sr),
+    ];
+    let midpoint = body_midpoint(&corners);
+    let midpoint_residual_db = match midpoint_target {
+        Some((w, sr)) => spectral_residual_db(w, sr, &midpoint, runtime_sr),
+        None => f64::NAN,
+    };
+    Some(BodyFit {
+        corners,
+        midpoint,
+        midpoint_residual_db,
+    })
 }
 
 /// Per-stage biquad coefficients [b0, b1, b2, a1, a2] for the audio thread.
@@ -1761,6 +1982,189 @@ mod tests {
             .collect();
         let err = spectral_residual_db(&ir, sr, &corner, sr);
         assert!(err < FIT_WARN_DB, "spectral err={err}");
+    }
+
+    // ── 4-corner body authoring ──────────────────────────────────────────────
+
+    /// A corner with resonant poles at the given frequencies (≤0 → passthrough).
+    fn resonant_corner(freqs: [f64; 6], sr: f64) -> CornerData {
+        let mut corner = [PASSTHROUGH; POLE_ZERO_COUNT];
+        for (i, &f) in freqs.iter().enumerate() {
+            if f <= 0.0 {
+                continue;
+            }
+            let r = 0.95;
+            let theta = TAU * f / sr;
+            corner[i] = biquad_to_kernel([1.0 - r, 0.0, 0.0, -2.0 * r * theta.cos(), r * r]);
+        }
+        corner
+    }
+
+    #[test]
+    fn align_recovers_shuffled_actor_order() {
+        // The correspondence must re-index a corner whose stages arrive in a
+        // scrambled order back onto the anchor's actors — by identity, not by a
+        // global frequency sort — so index-paired interpolation stays coherent.
+        let sr = AUTHORING_RATE;
+        let anchor = resonant_corner([180.0, 420.0, 900.0, 1800.0, 3600.0, 7000.0], sr);
+        let scrambled = resonant_corner([3700.0, 185.0, 7100.0, 880.0, 430.0, 1820.0], sr);
+        let aligned = align_to_anchor(&anchor, &scrambled, sr);
+        for i in 0..POLE_ZERO_COUNT {
+            let fa = stage_frequency(&anchor[i], sr);
+            let fr = stage_frequency(&aligned[i], sr);
+            assert!(
+                (fa.ln() - fr.ln()).abs() < 0.15,
+                "actor {i}: anchor {fa:.0}Hz vs aligned {fr:.0}Hz"
+            );
+        }
+    }
+
+    #[test]
+    fn canonical_anchor_sorts_low_to_high() {
+        let sr = AUTHORING_RATE;
+        let scrambled = resonant_corner([3600.0, 180.0, 7000.0, 900.0, 420.0, 1800.0], sr);
+        let sorted = canonical_anchor(&scrambled, sr);
+        for i in 0..POLE_ZERO_COUNT - 1 {
+            assert!(
+                stage_frequency(&sorted[i], sr) <= stage_frequency(&sorted[i + 1], sr),
+                "anchor actors must read low→high"
+            );
+        }
+    }
+
+    #[test]
+    fn fit_body_four_corners_resolves_finite_midpoint() {
+        // deterministic noise → two resonators → one source window, fed to all
+        // four corners. The assembled body's midpoint must be a real, finite
+        // filter (not a collapse) and the residual must be measurable.
+        let sr = AUTHORING_RATE;
+        let mut seed = 0x1234_5678u32;
+        let mut rng = || {
+            seed = seed.wrapping_mul(1_664_525).wrapping_add(1_013_904_223);
+            (seed >> 8) as f64 / (1u32 << 24) as f64 * 2.0 - 1.0
+        };
+        let drive: Vec<f64> = (0..8192).map(|_| rng()).collect();
+        let res = resonant_corner([300.0, 1500.0, 0.0, 0.0, 0.0, 0.0], sr);
+        let bq: Vec<[f64; 5]> = res.iter().map(kernel_to_biquad).collect();
+        let mut state = [[0.0_f64; 2]; POLE_ZERO_COUNT];
+        let window: Vec<f64> = drive
+            .iter()
+            .map(|&x| {
+                let mut s = x;
+                for (i, [b0, b1, b2, a1, a2]) in bq.iter().copied().enumerate() {
+                    let y = b0 * s + state[i][0];
+                    state[i][0] = b1 * s - a1 * y + state[i][1];
+                    state[i][1] = b2 * s - a2 * y;
+                    s = y;
+                }
+                s
+            })
+            .collect();
+
+        let body = fit_body(
+            [Some(&window), Some(&window), Some(&window), Some(&window)],
+            [sr; 4],
+            sr,
+            Some((&window, sr)),
+        )
+        .expect("M0_Q0 anchor present");
+
+        assert!(
+            body.corners.iter().all(|c| !c.iter().all(is_passthrough)),
+            "every assembled corner must be a real filter"
+        );
+        assert!(
+            body.midpoint.iter().flatten().all(|c| c.is_finite()),
+            "midpoint must be finite"
+        );
+        assert!(
+            !body.midpoint.iter().all(is_passthrough),
+            "midpoint should not collapse to passthrough"
+        );
+        assert!(
+            body.midpoint_residual_db.is_finite(),
+            "midpoint residual must be finite, got {}",
+            body.midpoint_residual_db
+        );
+    }
+
+    /// Diagnostic (not a gate): where do the six actors actually land for a dark
+    /// vowel through the LIVE fit, and how does pre-emphasis move them? Run:
+    /// cargo test -p trench-forge dump_oo_conditioning -- --nocapture
+    #[test]
+    fn dump_oo_conditioning() {
+        let dir = env!("CARGO_MANIFEST_DIR");
+        let path = std::path::Path::new(dir).join("test_sounds").join("vowel_oo.wav");
+        let Ok((samples, sr)) = load_wav_as_mono_f64(&path) else {
+            println!("(missing vowel_oo)");
+            return;
+        };
+        let onset = detect_onset(&samples, sr);
+        let wlen = samples_for_ms(sr, DEFAULT_WINDOW_MS);
+        let start = onset.min(samples.len().saturating_sub(wlen));
+        let win = condition_fit_window(&samples[start..(start + wlen).min(samples.len())], false);
+
+        println!(
+            "  brightness frac={:.3} → auto pre_emph={:.2}",
+            hf_fraction(&win, sr),
+            auto_pre_emph(&win, sr)
+        );
+        let live = trench_core::lpc::fit_corner(&win, sr, AUTHORING_RATE);
+        let actors: Vec<String> = live
+            .iter()
+            .map(|s| {
+                if is_passthrough(s) {
+                    "—".to_owned()
+                } else {
+                    format!("{:.0}Hz", stage_frequency(s, AUTHORING_RATE))
+                }
+            })
+            .collect();
+        println!("\nLPC fit_corner (pre_emph 0.97) actors: {}", actors.join("  "));
+
+        match trench_core::arma::fit_corner_arma(&win, sr, AUTHORING_RATE) {
+            Some(c) => {
+                let pz: Vec<String> = c
+                    .iter()
+                    .map(|s| {
+                        if is_passthrough(s) {
+                            "—".to_owned()
+                        } else {
+                            let zf = zero_frequency(s, AUTHORING_RATE);
+                            let z = if zf.is_finite() { format!("z{zf:.0}") } else { "z–".to_owned() };
+                            format!("p{:.0}/{z}", stage_frequency(s, AUTHORING_RATE))
+                        }
+                    })
+                    .collect();
+                println!("LIVE ARMA fit (pole/zero Hz): {}", pz.join("  "));
+            }
+            None => println!("LIVE ARMA fit: degenerate → LPC fallback"),
+        }
+
+        for pe in [0.0, 0.3, 0.5, 0.7, 0.9, 0.97] {
+            let (poles, _) = trench_core::lpc::extract_poles_and_valleys_pe(&samples, sr, pe, 0);
+            let fs: Vec<String> = poles.iter().map(|p| format!("{:.0}", p.freq_hz)).collect();
+            println!("  pre_emph {pe:>4}: poles {}", fs.join(", "));
+        }
+    }
+
+    #[test]
+    fn p2k003_reference_midpoint_is_sane() {
+        // The baked heritage reference, if present, must decode to a real,
+        // finite midpoint filter (it's a "match or beat" truth, not decoration).
+        match p2k003_ref_midpoint() {
+            Some(mid) => {
+                assert!(
+                    mid.iter().flatten().all(|c| c.is_finite()),
+                    "P2k_003 midpoint must be finite"
+                );
+                assert!(
+                    !mid.iter().all(is_passthrough),
+                    "P2k_003 midpoint must be a real filter"
+                );
+            }
+            None => eprintln!("(P2k_003 reference not in this checkout — skipped)"),
+        }
     }
 
     fn synthetic_freq_grid() -> Vec<f64> {
