@@ -1,539 +1,617 @@
+//! Filter Factory — the whole app, one file.
+//!
+//! First principles: the product is a 4-corner Morph×Q filter. Authoring is just
+//! defining the four corners. So the entire job here is —
+//!
+//!   drop a sound into each corner → fit it to six biquads → roam morph×Q → hear it.
+//!
+//! No assign step, no quality gates, no inspect room. A dropped sound *is* that
+//! corner. If the result is wrong, change the source. The fit (deterministic ARMA
+//! pole-zero, in trench-core) and the runtime interpolation are the engine; this
+//! file is only the surface and the glue.
+
 #![cfg_attr(all(windows, not(debug_assertions)), windows_subsystem = "windows")]
 
-#[allow(dead_code)]
 mod audio;
 mod capture;
 mod dsp;
-mod inspect;
-#[allow(dead_code)]
-mod preprocess;
-mod surface;
-mod theme;
 
 use std::path::PathBuf;
 use std::time::Instant;
 
 use eframe::egui;
+use egui::{
+    Align, Align2, Color32, FontFamily, FontId, Layout, Pos2, RichText, Sense, Shape, Stroke, Vec2,
+};
 use trench_core::cartridge::CornerData;
 
 use dsp::{
-    align_to_anchor, body_midpoint, body_preview, canonical_anchor, condition_fit_window,
-    corner_to_biquads, cpp_df2t_output, detect_onset, display_name, hedz_rom_midpoint,
-    load_wav_as_mono_f64, magnitude_response, p2k003_ref_midpoint, samples_for_ms, source_envelope,
-    spectral_residual_db, z_plane_points, ComplexPoint, FitDiagnostics, FitQuality, AUTHORING_RATE,
-    DEFAULT_WINDOW_MS, FIT_BLOCK_DB, FIT_WARN_DB, PASSTHROUGH, POLE_ZERO_COUNT,
+    body_preview, condition_fit_window, corner_to_biquads, detect_onset, display_name, fit_window,
+    is_passthrough, load_wav_as_mono_f64, magnitude_response, samples_for_ms, source_envelope,
+    stage_frequency, trim_label, AUTHORING_RATE, DEFAULT_WINDOW_MS,
 };
-use preprocess::VintagePreset;
 
-/// The four corners of the morph/Q grid, in `PackedCorners` index order.
-pub const CORNER_LABELS: [&str; 4] = ["M0·Q0", "M100·Q0", "M0·Q100", "M100·Q100"];
+// ── palette — a dark instrument scope ─────────────────────────────────────────
+const FIELD: Color32 = Color32::from_rgb(14, 16, 15);
+const PANEL: Color32 = Color32::from_rgb(36, 40, 37);
+const INK: Color32 = Color32::from_rgb(216, 221, 212);
+const INK_SOFT: Color32 = Color32::from_rgb(130, 140, 130);
+const FAINT: Color32 = Color32::from_rgb(58, 65, 60);
+const VERM: Color32 = Color32::from_rgb(228, 78, 46);
+const GREEN: Color32 = Color32::from_rgb(74, 222, 128); // the source you dropped
+const AMBER: Color32 = Color32::from_rgb(232, 150, 58); // the fit the six actors built
+const ACTOR_COL: [Color32; 6] = [
+    Color32::from_rgb(86, 156, 232),
+    Color32::from_rgb(58, 200, 184),
+    Color32::from_rgb(150, 120, 232),
+    Color32::from_rgb(224, 196, 76),
+    Color32::from_rgb(240, 110, 70),
+    Color32::from_rgb(228, 96, 168),
+];
+const ACTOR_NAMES: [&str; 6] = ["ROOT", "BODY", "MOUTH", "SCAR", "EDGE", "RIP"];
+/// Corners in PackedCorners index order: TL, TR, BL, BR of the pad.
+const CORNERS: [&str; 4] = ["M0·Q0", "M100·Q0", "M0·Q100", "M100·Q100"];
 
-/// Which heritage skin the midpoint scope draws as the green "truth" to author
-/// against (reference/dev only).
-#[derive(Clone, Copy, PartialEq, Eq)]
-pub enum RefTruth {
-    Hedz,
-    P2k003,
+fn alpha(c: Color32, a: u8) -> Color32 {
+    Color32::from_rgba_unmultiplied(c.r(), c.g(), c.b(), a)
 }
 
-impl RefTruth {
-    pub fn label(self) -> &'static str {
-        match self {
-            RefTruth::Hedz => "HEDZ",
-            RefTruth::P2k003 => "P2k_003",
-        }
-    }
+// ── one authored corner ───────────────────────────────────────────────────────
+struct Corner {
+    name: String,
+    fit: CornerData,
+    /// the dropped sound's own spectral envelope `[freq, dB]`, for the green ghost
+    src_db: Vec<[f64; 2]>,
 }
 
-// ── State ─────────────────────────────────────────────────────────────────────
-
-#[derive(Clone)]
-pub struct ExtractionResults {
-    pub corner: CornerData,
-    pub poles: [ComplexPoint; POLE_ZERO_COUNT],
-    pub zeros: [ComplexPoint; POLE_ZERO_COUNT],
-    pub magnitude_response: Vec<[f64; 2]>,
-    /// The source sound's own spectral envelope `[freq, dB]` — overlaid behind
-    /// the fit so the parse quality is visible.
-    pub source_db: Vec<[f64; 2]>,
-    pub target_db: Vec<[f64; 2]>,
-    pub cpp_df2t_output: String,
-    pub residual_db: f64,
-    pub quality: FitQuality,
-    pub diagnostics: FitDiagnostics,
-}
-
-impl ExtractionResults {
-    fn empty(sample_rate: f64) -> Self {
-        let corner = [PASSTHROUGH; POLE_ZERO_COUNT];
-        Self {
-            corner,
-            poles: [ComplexPoint::default(); POLE_ZERO_COUNT],
-            zeros: [ComplexPoint::default(); POLE_ZERO_COUNT],
-            magnitude_response: magnitude_response(&corner, sample_rate),
-            source_db: Vec::new(),
-            target_db: Vec::new(),
-            cpp_df2t_output: cpp_df2t_output(&corner),
-            residual_db: f64::NAN,
-            quality: FitQuality::Blocked,
-            diagnostics: FitDiagnostics::default(),
-        }
-    }
-}
-
-#[derive(Clone)]
-pub struct AssignedCorner {
-    pub source: String,
-    pub corner: CornerData,
-    pub residual_db: f64,
-    pub quality: FitQuality,
-}
-
-pub struct AnchorAudio {
-    pub buffer: Vec<f64>,
-    pub path: PathBuf,
-    pub sample_rate: f64,
-    pub start_trim: usize,
-    pub window_len: usize,
-    /// Vintage-sampler degradation applied to this corner's source before the
-    /// fit, so the captured filter inherits the lo-fi character (AAF-off
-    /// aliasing → the "scar"). Default CLEAN.
-    pub pre: VintagePreset,
-    pub extraction: ExtractionResults,
-}
-
-pub struct App {
-    pub anchor_audio: [Option<AnchorAudio>; 4],
-    pub internal_resample_rate: f32,
-    pub zero_dither_truncation: bool,
-    pub corner_slots: [Option<AssignedCorner>; 4],
-    /// The 2-D authoring puck: MORPH on X (0 = M0, 1 = M100), Q on Y (0 at the
-    /// top row, 1 at the bottom row — matching the M0_Q0 / M0_Q100 corner layout).
-    pub preview_morph: f32,
-    pub preview_q: f32,
-    pub audio: Option<audio::Audio>,
-    pub audio_level: f32,
-    pub inspect_open: bool,
-    pub inspect_anchor: usize,
-    pub save_status: Option<String>,
-    pub status: String,
-    pub capture: Option<capture::Capture>,
-    pub capture_anchor: usize,
-    pub start: Instant,
-    /// Render cache: the fit response is recomputed only when the staged corner
-    /// actually changes (morph drag, new fit), not every breathing frame.
-    pub view_corner: Option<CornerData>,
-    pub view_fit: Vec<[f64; 2]>,
-    /// The Talking Hedz calibration truth at M50/Q50, decoded once from the
-    /// verbatim 240-byte ROM block. The inspect midpoint scope draws the authored
-    /// body's middle against it. None if the reference block isn't in this checkout.
-    pub hedz_ref_midpoint: Option<CornerData>,
-    /// The P2k_003 ("6 Pole Lowpass") heritage skin at M50/Q50 — a second
-    /// calibration truth. None if its baked reference isn't in this checkout.
-    pub p2k003_ref_midpoint: Option<CornerData>,
-    /// Which heritage truth the midpoint scope currently draws.
-    pub ref_truth: RefTruth,
+// ── state ─────────────────────────────────────────────────────────────────────
+struct App {
+    corners: [Option<Corner>; 4],
+    morph: f32,   // 0 = M0 (left), 1 = M100 (right)
+    q: f32,       // 0 = Q0 (top), 1 = Q100 (bottom) — the puck position
+    q_sharp: f32, // how much sharper the high-Q row is (auto-derived from Q0)
+    audio: Option<audio::Audio>,
+    capture: Option<capture::Capture>,
+    capture_target: usize,
+    start: Instant,
+    status: String,
+    save_status: String,
+    // recompute the 540-bin response only when the shown corner actually changes
+    view_corner: Option<CornerData>,
+    view_fit: Vec<[f64; 2]>,
 }
 
 impl Default for App {
     fn default() -> Self {
         Self {
-            anchor_audio: core::array::from_fn(|_| None),
-            internal_resample_rate: AUTHORING_RATE as f32,
-            zero_dither_truncation: false,
-            corner_slots: core::array::from_fn(|_| None),
-            preview_morph: 0.5,
-            preview_q: 0.5,
+            corners: core::array::from_fn(|_| None),
+            morph: 0.5,
+            q: 0.5,
+            q_sharp: 0.6,
             audio: audio::start(),
-            audio_level: 0.4,
-            inspect_open: false,
-            inspect_anchor: 0,
-            save_status: None,
-            status: String::new(),
             capture: None,
-            capture_anchor: 0,
+            capture_target: 0,
             start: Instant::now(),
+            status: String::new(),
+            save_status: String::new(),
             view_corner: None,
             view_fit: Vec::new(),
-            hedz_ref_midpoint: hedz_rom_midpoint(),
-            p2k003_ref_midpoint: p2k003_ref_midpoint(),
-            ref_truth: RefTruth::Hedz,
         }
     }
 }
 
-// ── Business logic ──────────────────────────────────────────────────────────
-
 impl App {
-    pub fn elapsed(&self) -> f32 {
+    fn elapsed(&self) -> f32 {
         self.start.elapsed().as_secs_f32()
     }
 
-    /// The corner the mouth + audition reflect right now: the live morph/Q
-    /// position if a body exists, else whichever single corner (assigned or just
-    /// loaded) exists, so a lone dropped sound is still audible/visible.
-    pub fn stage_corner(&self) -> Option<CornerData> {
-        if let Some(p) = self.anchor_preview_corner() {
-            return Some(p);
-        }
-        for slot in self.corner_slots.iter().flatten() {
-            return Some(slot.corner);
-        }
-        self.anchor_audio
-            .iter()
-            .flatten()
-            .next()
-            .map(|a| a.extraction.corner)
+    fn next_empty(&self) -> usize {
+        self.corners.iter().position(|c| c.is_none()).unwrap_or(0)
     }
 
-    pub fn load_anchor_button(&mut self, anchor: usize) {
+    fn count(&self) -> usize {
+        self.corners.iter().flatten().count()
+    }
+
+    fn pick_file(&mut self, i: usize) {
         if let Some(path) = rfd::FileDialog::new()
             .add_filter("Wave Audio", &["wav"])
             .pick_file()
         {
-            self.load_anchor_path(anchor, path);
+            self.load(i, path);
         }
     }
 
-    fn load_anchor_path(&mut self, anchor: usize, path: PathBuf) {
+    fn load(&mut self, i: usize, path: PathBuf) {
         match load_wav_as_mono_f64(&path) {
-            Ok((samples, sample_rate)) => {
-                let onset = detect_onset(&samples, sample_rate);
-                let window_len = samples_for_ms(sample_rate, DEFAULT_WINDOW_MS);
-                let start_trim = onset.min(samples.len().saturating_sub(window_len));
-                self.anchor_audio[anchor] = Some(AnchorAudio {
-                    buffer: samples,
-                    path,
-                    sample_rate,
-                    start_trim,
-                    window_len,
-                    pre: VintagePreset::None,
-                    extraction: ExtractionResults::empty(self.internal_resample_rate as f64),
-                });
-                self.refit_anchor(anchor);
-                self.auto_assign(anchor);
+            Ok((samples, sr)) => {
+                self.corners[i] = Some(fit_corner(&samples, sr, display_name(&path)));
+                self.view_corner = None; // force a redraw
             }
-            Err(err) => self.status = format!("load failed: {err}"),
+            Err(e) => self.status = format!("load failed: {e}"),
         }
     }
 
-    /// Collapse the old explicit ASSIGN step for Ready fits only. Review and
-    /// Blocked parses stay visible for inspection but do not silently assign.
-    fn auto_assign(&mut self, anchor: usize) {
-        let ok = self.anchor_audio[anchor]
-            .as_ref()
-            .map(|s| s.extraction.quality.can_assign())
-            .unwrap_or(false);
-        if ok {
-            self.assign_to_slot(anchor, anchor);
-        }
-    }
-
-    pub fn start_capture(&mut self, anchor: usize) {
-        self.capture = None;
+    fn start_capture(&mut self, i: usize) {
         match capture::Capture::start() {
             Ok(cap) => {
                 self.capture = Some(cap);
-                self.capture_anchor = anchor;
+                self.capture_target = i;
             }
-            Err(err) => self.status = format!("capture failed: {err}"),
+            Err(e) => self.status = format!("capture failed: {e}"),
         }
     }
 
-    pub fn finish_capture(&mut self) {
+    fn finish_capture(&mut self) {
         let Some(cap) = self.capture.take() else {
             return;
         };
-        let anchor = self.capture_anchor;
+        let i = self.capture_target;
         let samples = cap.drain_mono_f64();
-        let sample_rate = cap.sample_rate;
+        let sr = cap.sample_rate;
         drop(cap);
-
         if samples.len() < 64 {
-            self.status = "capture produced no audio — is something playing?".to_owned();
+            self.status = "capture produced no audio — was something playing?".to_owned();
             return;
         }
-        let path = std::env::temp_dir().join(format!("trench_capture_{anchor}.wav"));
-        let onset = detect_onset(&samples, sample_rate);
-        let window_len = samples_for_ms(sample_rate, DEFAULT_WINDOW_MS);
-        let start_trim = onset.min(samples.len().saturating_sub(window_len));
-        self.anchor_audio[anchor] = Some(AnchorAudio {
-            buffer: samples,
-            path,
-            sample_rate,
-            start_trim,
-            window_len,
-            pre: VintagePreset::None,
-            extraction: ExtractionResults::empty(self.internal_resample_rate as f64),
-        });
-        self.refit_anchor(anchor);
-        self.auto_assign(anchor);
+        self.corners[i] = Some(fit_corner(&samples, sr, format!("capture {}", CORNERS[i])));
+        self.view_corner = None;
     }
 
-    pub fn refit_anchor(&mut self, anchor: usize) {
-        let rate = self.internal_resample_rate as f64;
-        let dither = self.zero_dither_truncation;
-        let Some(state) = self.anchor_audio[anchor].as_mut() else {
-            return;
-        };
-
-        let start = state.start_trim.min(state.buffer.len());
-        let end = (state.start_trim + state.window_len).min(state.buffer.len());
-        let raw = &state.buffer[start..end];
-        if raw.len() < 16 {
-            state.extraction = ExtractionResults::empty(rate);
-            return;
-        }
-
-        // Vintage-sampler front-end: degrade the source at its own rate BEFORE
-        // modelling, so AAF-off aliasing folds into the band and the fit bakes the
-        // lo-fi character in (CLEAN = identity). Then window + fit.
-        let degraded = preprocess::apply(raw, state.sample_rate, &state.pre.settings());
-        let fit_window = condition_fit_window(&degraded, dither);
-        // Deterministic ARMA pole-zero fit — a frequency-domain least-squares solve
-        // (no penalties, no stage constraints) that places real ZEROS, so it carves
-        // the anti-formant notches / bitey upper teeth (DJ Alkaline-style) all-pole
-        // LPC physically can't. Falls back to the LPC fit if ARMA returns a
-        // degenerate result, so the live path can only improve on LPC, never regress.
-        let corner = trench_core::arma::fit_corner_arma(&fit_window, state.sample_rate, rate)
-            .unwrap_or_else(|| {
-                let pe = dsp::auto_pre_emph(&fit_window, state.sample_rate);
-                trench_core::lpc::fit_corner_pe(&fit_window, state.sample_rate, rate, pe)
-            });
-        let residual = spectral_residual_db(&fit_window, state.sample_rate, &corner, rate);
-        let quality = if !residual.is_finite()
-            || residual > FIT_BLOCK_DB
-            || corner.iter().flatten().any(|c| !c.is_finite())
-        {
-            FitQuality::Blocked
-        } else if residual > FIT_WARN_DB {
-            FitQuality::Review
-        } else {
-            FitQuality::Ready
-        };
-        let (poles, zeros) = z_plane_points(&corner);
-
-        state.extraction = ExtractionResults {
-            corner,
-            poles,
-            zeros,
-            magnitude_response: magnitude_response(&corner, rate),
-            source_db: source_envelope(&fit_window, state.sample_rate),
-            target_db: Vec::new(),
-            cpp_df2t_output: cpp_df2t_output(&corner),
-            residual_db: residual,
-            quality,
-            diagnostics: FitDiagnostics::default(),
-        };
-    }
-
-    pub fn assign_to_slot(&mut self, anchor: usize, slot: usize) {
-        let Some(state) = self.anchor_audio[anchor].as_ref() else {
-            return;
-        };
-        if !state.extraction.quality.can_assign() {
-            return;
-        }
-        self.corner_slots[slot] = Some(AssignedCorner {
-            source: display_name(&state.path),
-            corner: state.extraction.corner,
-            residual_db: state.extraction.residual_db,
-            quality: state.extraction.quality,
-        });
-        self.save_status = None;
-    }
-
-    /// Gather the four corners into a body with coherent actor indices. M0_Q0
-    /// (slot 0) is the actor anchor; the other corners are re-indexed to it by
-    /// least-movement correspondence (crossings allowed — never frequency-sorted).
-    /// Missing corners fall back like the exporter (C→A, D→B). `require_all`
-    /// returns None unless all four corners are assigned (export); otherwise only
-    /// the M0_Q0 anchor is required (live preview / midpoint scope).
-    fn assembled_body(&self, require_all: bool) -> Option<[CornerData; 4]> {
-        if require_all && self.corner_slots.iter().any(|s| s.is_none()) {
-            return None;
-        }
-        let sr = self.internal_resample_rate as f64;
-        let anchor = canonical_anchor(&self.corner_slots[0].as_ref()?.corner, sr);
-        let raw = |slot: usize, fallback: &CornerData| {
-            self.corner_slots[slot]
+    /// The four corners assembled into a coherent body. M0·Q0 (or the first loaded
+    /// corner) is the actor anchor; the others are re-indexed to it so the
+    /// index-paired interpolation glides. The **high-Q row is auto-derived** from
+    /// the low-Q row by raising pole radius (`q_sharp`) — that's what Q is — unless
+    /// you drop a different source into a Q100 corner to override it.
+    fn body(&self) -> Option<[CornerData; 4]> {
+        let anchor_src = self.corners[0]
+            .as_ref()
+            .or_else(|| self.corners.iter().flatten().next())?;
+        let anchor = dsp::canonical_anchor(&anchor_src.fit, AUTHORING_RATE);
+        let aligned = |i: usize| {
+            self.corners[i]
                 .as_ref()
-                .map(|s| s.corner)
-                .unwrap_or(*fallback)
+                .map(|c| dsp::align_to_anchor(&anchor, &c.fit, AUTHORING_RATE))
         };
-        let b = raw(1, &anchor);
-        let c = raw(2, &anchor);
-        let d = raw(3, &b);
-        Some([
-            anchor,
-            align_to_anchor(&anchor, &b, sr),
-            align_to_anchor(&anchor, &c, sr),
-            align_to_anchor(&anchor, &d, sr),
-        ])
+        let m0 = aligned(0).unwrap_or(anchor);
+        let m100 = aligned(1).unwrap_or(anchor);
+        let amt = self.q_sharp as f64;
+        let m0_q100 = aligned(2).unwrap_or_else(|| dsp::sharpen_corner(&m0, amt, AUTHORING_RATE));
+        let m100_q100 = aligned(3).unwrap_or_else(|| dsp::sharpen_corner(&m100, amt, AUTHORING_RATE));
+        Some([m0, m100, m0_q100, m100_q100])
     }
 
-    /// The live morph/Q preview — the assembled body sampled at the puck through
-    /// the real packed-u16 interpolation. Needs at least the M0_Q0 anchor.
-    pub fn anchor_preview_corner(&self) -> Option<CornerData> {
-        let body = self.assembled_body(false)?;
-        Some(body_preview(&body, self.preview_morph, self.preview_q))
+    /// The corner the scope draws and the audio plays: the body at the puck.
+    fn shown(&self) -> Option<CornerData> {
+        Some(body_preview(&self.body()?, self.morph, self.q))
     }
 
-    /// The authored body's M50/Q50 midpoint — the candidate the calibration scope
-    /// judges. Built from the assembled (actor-aligned) corners through the real
-    /// packed-u16 interpolation. Needs at least two corners to be a real body.
-    pub fn candidate_midpoint(&self) -> Option<CornerData> {
-        if self.corner_slots.iter().flatten().count() < 2 {
-            return None;
-        }
-        let body = self.assembled_body(false)?;
-        Some(body_midpoint(&body))
-    }
-
-    /// The heritage truth the midpoint scope draws, per the current selection.
-    pub fn reference_midpoint(&self) -> Option<CornerData> {
-        match self.ref_truth {
-            RefTruth::Hedz => self.hedz_ref_midpoint,
-            RefTruth::P2k003 => self.p2k003_ref_midpoint,
+    fn reset(&mut self) {
+        self.corners = core::array::from_fn(|_| None);
+        self.morph = 0.5;
+        self.q = 0.5;
+        self.save_status.clear();
+        self.view_corner = None;
+        if let Some(a) = &self.audio {
+            a.set_playing(false);
         }
     }
 
-    fn active_audio_corner(&self) -> CornerData {
-        self.stage_corner()
-            .unwrap_or_else(|| ExtractionResults::empty(AUTHORING_RATE).corner)
-    }
-
-    fn set_audio_target(&self) {
-        if let Some(audio) = &self.audio {
-            audio.set_target(corner_to_biquads(&self.active_audio_corner()));
-            audio.set_level(self.audio_level);
+    fn save(&mut self) {
+        let Some(body) = self.body() else {
+            self.save_status = "drop a sound first".to_owned();
+            return;
+        };
+        let json = export_body(&body, &self.corners);
+        let home = std::env::var("USERPROFILE")
+            .or_else(|_| std::env::var("HOME"))
+            .unwrap_or_default();
+        let path = PathBuf::from(home)
+            .join("Documents")
+            .join("TRENCH")
+            .join("authoring_slot.json");
+        if let Some(p) = path.parent() {
+            let _ = std::fs::create_dir_all(p);
         }
+        self.save_status = match std::fs::write(&path, json) {
+            Ok(_) => "saved to authoring slot".to_owned(),
+            Err(e) => format!("save failed: {e}"),
+        };
     }
 
-    /// The next corner a dropped/captured sound should fill: the first empty one
-    /// (M0_Q0 → M100_Q0 → M0_Q100 → M100_Q100), or M0_Q0 if the body is full.
-    pub fn next_empty_anchor(&self) -> usize {
-        self.anchor_audio
-            .iter()
-            .position(|a| a.is_none())
-            .unwrap_or(0)
-    }
-
-    fn take_dropped_files(&mut self, ctx: &egui::Context) {
+    fn take_drops(&mut self, ctx: &egui::Context) {
         let dropped = ctx.input(|i| i.raw.dropped_files.clone());
-        for file in dropped {
-            if let Some(path) = file.path {
-                let target = self.next_empty_anchor();
-                self.load_anchor_path(target, path);
+        for f in dropped {
+            if let Some(path) = f.path {
+                let i = self.next_empty();
+                self.load(i, path);
                 break;
             }
         }
     }
 
-    pub fn reset_body(&mut self) {
-        self.anchor_audio = core::array::from_fn(|_| None);
-        self.corner_slots = core::array::from_fn(|_| None);
-        self.preview_morph = 0.5;
-        self.preview_q = 0.5;
-        self.save_status = None;
-        if let Some(audio) = &self.audio {
-            audio.set_playing(false);
-        }
-    }
-
-    pub fn save_body(&mut self) {
-        let Some(json) = self.export_body() else {
-            self.save_status = Some("load all four corners before saving".to_owned());
-            return;
-        };
-        let home = std::env::var("USERPROFILE")
-            .or_else(|_| std::env::var("HOME"))
-            .unwrap_or_default();
-        let slot = PathBuf::from(home)
-            .join("Documents")
-            .join("TRENCH")
-            .join("authoring_slot.json");
-        if let Some(parent) = slot.parent() {
-            let _ = std::fs::create_dir_all(parent);
-        }
-        match std::fs::write(&slot, json) {
-            Ok(_) => self.save_status = Some("saved to authoring slot".to_owned()),
-            Err(err) => self.save_status = Some(format!("save failed: {err}")),
-        }
-    }
-
-    /// Serialize the four discrete, actor-aligned corners into the existing
-    /// `compiled-v1` keyframe format. All four corners are required — no LOW/HIGH
-    /// duplication fallback. The format itself is unchanged (it already carries
-    /// four keyframes); only the source of corners 2/3 changes from duplicates to
-    /// the real M0_Q100 / M100_Q100 fits.
-    fn export_body(&self) -> Option<String> {
-        let corners = self.assembled_body(true)?;
-        let name = {
-            let first = self.corner_slots[0].as_ref().map(|s| s.source.as_str()).unwrap_or("?");
-            let last = self.corner_slots[3].as_ref().map(|s| s.source.as_str()).unwrap_or("?");
-            format!("{first} → {last}")
-        };
-        let labels = ["M0_Q0", "M100_Q0", "M0_Q100", "M100_Q100"];
-        let mut keyframes = Vec::new();
-        for (label, corner) in labels.iter().zip(corners) {
-            let mut stages = Vec::new();
-            for stage in corner {
-                stages.push(serde_json::json!({
-                    "c0": stage[0], "c1": stage[1], "c2": stage[2],
-                    "c3": stage[3], "c4": stage[4]
-                }));
+    fn push_audio(&mut self) {
+        if let Some(a) = &self.audio {
+            if let Some(c) = self.shown() {
+                a.set_target(corner_to_biquads(&c));
             }
-            for _ in POLE_ZERO_COUNT..12 {
-                stages.push(serde_json::json!({
-                    "c0": 2.0, "c1": 1.0, "c2": 2.0, "c3": 1.0, "c4": 1.0
-                }));
-            }
-            keyframes.push(serde_json::json!({"label": label, "boost": 1.0, "stages": stages}));
         }
-        Some(
-            serde_json::json!({
-                "format": "compiled-v1",
-                "name": name,
-                "sampleRate": AUTHORING_RATE,
-                "stages": 12,
-                "keyframes": keyframes
-            })
-            .to_string(),
-        )
     }
 }
 
-// ── eframe glue ─────────────────────────────────────────────────────────────
+/// Window a recorded sound around its onset and fit it to one corner.
+fn fit_corner(samples: &[f64], sr: f64, name: String) -> Corner {
+    let onset = detect_onset(samples, sr);
+    let wlen = samples_for_ms(sr, DEFAULT_WINDOW_MS);
+    let start = onset.min(samples.len().saturating_sub(wlen));
+    let end = (start + wlen).min(samples.len());
+    let win = condition_fit_window(&samples[start..end], false);
+    Corner {
+        fit: fit_window(&win, sr),
+        src_db: source_envelope(&win, sr),
+        name,
+    }
+}
 
+fn export_body(body: &[CornerData; 4], corners: &[Option<Corner>; 4]) -> String {
+    let name = {
+        let names: Vec<&str> = corners
+            .iter()
+            .filter_map(|c| c.as_ref().map(|c| c.name.as_str()))
+            .collect();
+        names.join(" · ")
+    };
+    let labels = ["M0_Q0", "M100_Q0", "M0_Q100", "M100_Q100"];
+    let keyframes: Vec<_> = labels
+        .iter()
+        .zip(body)
+        .map(|(label, corner)| {
+            let mut stages: Vec<_> = corner
+                .iter()
+                .map(|s| {
+                    serde_json::json!({"c0":s[0],"c1":s[1],"c2":s[2],"c3":s[3],"c4":s[4]})
+                })
+                .collect();
+            for _ in 6..12 {
+                stages.push(serde_json::json!({"c0":2.0,"c1":1.0,"c2":2.0,"c3":1.0,"c4":1.0}));
+            }
+            serde_json::json!({"label": label, "boost": 1.0, "stages": stages})
+        })
+        .collect();
+    serde_json::json!({
+        "format": "compiled-v1",
+        "name": name,
+        "sampleRate": AUTHORING_RATE,
+        "stages": 12,
+        "keyframes": keyframes,
+    })
+    .to_string()
+}
+
+// ── UI ──────────────────────────────────────────────────────────────────────
 impl eframe::App for App {
     fn update(&mut self, ctx: &egui::Context, _frame: &mut eframe::Frame) {
-        let capture_done = self
+        if self
             .capture
             .as_ref()
             .map(|c| c.elapsed_secs() >= capture::CAPTURE_SECS)
-            .unwrap_or(false);
-        if capture_done {
+            .unwrap_or(false)
+        {
             self.finish_capture();
         }
+        self.take_drops(ctx);
+        self.push_audio();
 
-        self.take_dropped_files(ctx);
-        self.set_audio_target();
-        self.show_product_surface(ctx);
-        if self.inspect_open {
-            self.show_inspect_window(ctx);
+        let capturing = self.capture.is_some();
+        egui::TopBottomPanel::top("head")
+            .frame(frame(18.0, 8.0))
+            .show(ctx, |ui| self.header(ui));
+        if !capturing {
+            egui::TopBottomPanel::bottom("foot")
+                .frame(frame(12.0, 16.0))
+                .show(ctx, |ui| self.transport(ui));
         }
-
-        // The mouth breathes; keep a steady ~60fps so it stays alive.
+        egui::CentralPanel::default()
+            .frame(frame(6.0, 6.0))
+            .show(ctx, |ui| {
+                if capturing {
+                    self.capture_view(ui);
+                } else {
+                    let h = ui.available_height();
+                    let shape_h = (h * 0.58).max(150.0);
+                    self.shape(ui, shape_h);
+                    ui.add_space(6.0);
+                    self.pad(ui, (h - shape_h - 12.0).max(150.0));
+                }
+            });
         ctx.request_repaint_after(std::time::Duration::from_millis(16));
     }
+}
+
+impl App {
+    fn header(&mut self, ui: &mut egui::Ui) {
+        ui.horizontal(|ui| {
+            ui.label(RichText::new("FILTER FACTORY").color(INK).size(16.0).strong());
+            ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
+                if link(ui, "CAPTURE").clicked() {
+                    let i = self.next_empty();
+                    self.start_capture(i);
+                }
+                if !self.status.is_empty() {
+                    ui.add_space(14.0);
+                    ui.label(RichText::new(&self.status).color(INK_SOFT).size(10.0));
+                }
+            });
+        });
+    }
+
+    // THE SHAPE — green source(s) read against the amber fit; six named actors ride
+    // along. The one thing to watch.
+    fn shape(&mut self, ui: &mut egui::Ui, height: f32) {
+        let (resp, p) = ui.allocate_painter(Vec2::new(ui.available_width(), height), Sense::hover());
+        let rect = resp.rect;
+        let inner = rect.shrink2(Vec2::new(14.0, 26.0));
+        let base = inner.bottom();
+        let t = self.elapsed();
+        let breath = 1.0 + 0.02 * (t * 1.1).sin();
+        let meter = self.audio.as_ref().filter(|a| a.is_playing()).map(|a| a.meter()).unwrap_or(0.0);
+        let amp = (breath + meter * 0.14) as f32;
+
+        let nyq = (AUTHORING_RATE * 0.5).max(10_000.0);
+        let span = (nyq / 20.0).ln();
+        let x_for = |f: f64| egui::lerp(inner.left()..=inner.right(), ((f / 20.0).max(1.0).ln() / span).clamp(0.0, 1.0) as f32);
+        let y_for = |db: f64| egui::lerp(inner.bottom()..=inner.top(), (((db as f32) + 48.0) / 72.0).clamp(0.0, 1.0));
+
+        // grid
+        for &(f, lbl) in &[(100.0, "100"), (1_000.0, "1k"), (10_000.0, "10k")] {
+            let x = x_for(f);
+            p.line_segment([Pos2::new(x, inner.top()), Pos2::new(x, base)], Stroke::new(1.0, FAINT));
+            p.text(Pos2::new(x, base + 8.0), Align2::CENTER_TOP, lbl, FontId::new(10.0, FontFamily::Monospace), INK_SOFT);
+        }
+        for frac in [0.34_f32, 0.67] {
+            let y = egui::lerp(inner.top()..=base, frac);
+            p.line_segment([Pos2::new(inner.left(), y), Pos2::new(inner.right(), y)], Stroke::new(1.0, alpha(FAINT, 60)));
+        }
+
+        if let Some(c) = self.shown() {
+            if self.view_corner != Some(c) {
+                self.view_fit = magnitude_response(&c, AUTHORING_RATE);
+                self.view_corner = Some(c);
+            }
+            let fit_peak = self.view_fit.iter().map(|[_, d]| *d).fold(f64::NEG_INFINITY, f64::max);
+
+            // amber fit fill + line
+            let top: Vec<Pos2> = self.view_fit.iter().map(|[f, d]| Pos2::new(x_for(*f), y_for(*d * amp as f64))).collect();
+            let mut mesh = egui::Mesh::default();
+            let fill = alpha(AMBER, 34);
+            for q in &top {
+                mesh.colored_vertex(*q, fill);
+                mesh.colored_vertex(Pos2::new(q.x, base), fill);
+            }
+            for i in 0..top.len().saturating_sub(1) {
+                let a = (2 * i) as u32;
+                mesh.add_triangle(a, a + 1, a + 2);
+                mesh.add_triangle(a + 1, a + 3, a + 2);
+            }
+            p.add(Shape::mesh(mesh));
+
+            // green source ghosts — opacity follows the bilinear weight at the puck
+            let m = self.morph as f64;
+            let qq = self.q as f64;
+            let w = [(1.0 - m) * (1.0 - qq), m * (1.0 - qq), (1.0 - m) * qq, m * qq];
+            let multi = self.count() > 1;
+            for (i, corner) in self.corners.iter().enumerate() {
+                let Some(corner) = corner else { continue };
+                if corner.src_db.len() < 2 {
+                    continue;
+                }
+                let src_peak = corner.src_db.iter().map(|[_, d]| *d).fold(f64::NEG_INFINITY, f64::max);
+                if !src_peak.is_finite() || !fit_peak.is_finite() {
+                    continue;
+                }
+                let off = fit_peak - src_peak;
+                let a = if multi { (45.0 + 175.0 * w[i]) as u8 } else { 210 };
+                let pts: Vec<Pos2> = corner.src_db.iter().map(|[f, d]| Pos2::new(x_for(*f), y_for((*d + off) * amp as f64))).collect();
+                p.add(Shape::line(pts, Stroke::new(2.0, alpha(GREEN, a))));
+            }
+
+            p.add(Shape::line(top, Stroke::new(2.4, AMBER)));
+
+            // six actors as named tick markers
+            for (i, stage) in c.iter().enumerate().take(6) {
+                if is_passthrough(stage) {
+                    continue;
+                }
+                let f = stage_frequency(stage, AUTHORING_RATE);
+                if !f.is_finite() || f < 20.0 {
+                    continue;
+                }
+                let x = x_for(f);
+                let col = ACTOR_COL[i];
+                p.line_segment([Pos2::new(x, inner.top() + 10.0), Pos2::new(x, base)], Stroke::new(1.0, alpha(col, 70)));
+                p.circle_filled(Pos2::new(x, inner.top() + 8.0), 3.5, col);
+                p.text(Pos2::new(x, inner.top() - 3.0), Align2::CENTER_BOTTOM, ACTOR_NAMES[i], FontId::new(9.0, FontFamily::Proportional), alpha(col, 220));
+            }
+        } else {
+            p.text(rect.center(), Align2::CENTER_CENTER, "DROP A SOUND INTO EACH CORNER", FontId::new(14.0, FontFamily::Proportional), INK_SOFT);
+        }
+        p.line_segment([Pos2::new(inner.left(), base), Pos2::new(inner.right(), base)], Stroke::new(1.5, FAINT));
+    }
+
+    // Morph × Q pad — drop a sound into each corner, drag the puck to roam.
+    fn pad(&mut self, ui: &mut egui::Ui, height: f32) {
+        ui.horizontal(|ui| {
+            let w = (ui.available_width() - 24.0) / 4.0;
+            for i in 0..4 {
+                self.chip(ui, i, w);
+            }
+        });
+        ui.add_space(4.0);
+
+        let pad_h = (height - 42.0).max(90.0);
+        let (resp, p) = ui.allocate_painter(Vec2::new(ui.available_width(), pad_h), Sense::click_and_drag());
+        let full = resp.rect;
+        let side = full.height().min(full.width()).max(80.0);
+        let pad = egui::Rect::from_center_size(full.center(), Vec2::splat(side));
+
+        p.rect_filled(pad, egui::Rounding::same(3.0), PANEL);
+        p.rect_stroke(pad, egui::Rounding::same(3.0), Stroke::new(1.0, FAINT));
+        p.line_segment([Pos2::new(pad.center().x, pad.top()), Pos2::new(pad.center().x, pad.bottom())], Stroke::new(1.0, alpha(FAINT, 110)));
+        p.line_segment([Pos2::new(pad.left(), pad.center().y), Pos2::new(pad.right(), pad.center().y)], Stroke::new(1.0, alpha(FAINT, 110)));
+        p.text(Pos2::new(pad.center().x, pad.bottom() + 1.0), Align2::CENTER_TOP, "MORPH →", FontId::new(9.0, FontFamily::Monospace), INK_SOFT);
+        p.text(Pos2::new(pad.left() - 3.0, pad.center().y), Align2::RIGHT_CENTER, "Q ↓", FontId::new(9.0, FontFamily::Monospace), INK_SOFT);
+
+        for (pos, i, ax, ay) in [
+            (pad.left_top(), 0usize, 8.0, 8.0),
+            (pad.right_top(), 1, -8.0, 8.0),
+            (pad.left_bottom(), 2, 8.0, -8.0),
+            (pad.right_bottom(), 3, -8.0, -8.0),
+        ] {
+            let dot = if self.corners[i].is_some() { GREEN } else { FAINT };
+            p.circle_filled(pos + Vec2::new(ax, ay), 3.5, dot);
+        }
+
+        if (resp.dragged() || resp.clicked()) && pad.width() > 1.0 {
+            if let Some(pt) = resp.interact_pointer_pos() {
+                self.morph = ((pt.x - pad.left()) / pad.width()).clamp(0.0, 1.0);
+                self.q = ((pt.y - pad.top()) / pad.height()).clamp(0.0, 1.0);
+                self.view_corner = None;
+            }
+        }
+        let px = egui::lerp(pad.left()..=pad.right(), self.morph);
+        let py = egui::lerp(pad.top()..=pad.bottom(), self.q);
+        let ring = if self.count() > 0 { VERM } else { FAINT };
+        p.circle_filled(Pos2::new(px, py), 6.0, INK);
+        p.circle_stroke(Pos2::new(px, py), 7.5, Stroke::new(2.0, ring));
+    }
+
+    fn chip(&mut self, ui: &mut egui::Ui, i: usize, w: f32) {
+        let line2 = match &self.corners[i] {
+            Some(c) => trim_label(&c.name, 12),
+            None if i >= 2 => "auto".to_owned(), // high-Q corner auto-derived from low-Q
+            None => "+ ADD".to_owned(),
+        };
+        let col = if self.corners[i].is_some() { INK } else { INK_SOFT };
+        let btn = egui::Button::new(RichText::new(format!("{}\n{}", CORNERS[i], line2)).color(col).size(10.0))
+            .fill(PANEL)
+            .stroke(Stroke::new(1.0, FAINT))
+            .min_size(Vec2::new(w.max(56.0), 34.0))
+            .rounding(2.0);
+        if ui.add(btn).clicked() {
+            self.pick_file(i);
+        }
+    }
+
+    fn transport(&mut self, ui: &mut egui::Ui) {
+        let ready = self.count() > 0;
+        let playing = self.audio.as_ref().map(|a| a.is_playing()).unwrap_or(false);
+        ui.horizontal(|ui| {
+            if button(ui, if playing { "STOP" } else { "PLAY" }, true, ready).clicked() {
+                if let Some(a) = &self.audio {
+                    a.set_playing(!playing);
+                }
+            }
+            ui.add_space(10.0);
+            if button(ui, "SAVE", false, ready).clicked() {
+                self.save();
+            }
+            ui.add_space(18.0);
+            ui.label(RichText::new("Q").color(INK_SOFT).size(11.0));
+            let mut qs = self.q_sharp;
+            if ui
+                .add_sized([150.0, 18.0], egui::Slider::new(&mut qs, 0.0..=1.0).show_value(false))
+                .changed()
+            {
+                self.q_sharp = qs;
+                self.view_corner = None;
+            }
+            ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
+                if link(ui, "RESET").clicked() {
+                    self.reset();
+                }
+                if !self.save_status.is_empty() {
+                    ui.add_space(14.0);
+                    ui.label(RichText::new(&self.save_status).color(INK_SOFT).size(10.0));
+                }
+            });
+        });
+    }
+
+    fn capture_view(&mut self, ui: &mut egui::Ui) {
+        let (elapsed, total) = self
+            .capture
+            .as_ref()
+            .map(|c| (c.elapsed_secs(), capture::CAPTURE_SECS))
+            .unwrap_or((0.0, capture::CAPTURE_SECS));
+        let (resp, p) = ui.allocate_painter(Vec2::new(ui.available_width(), ui.available_height() - 18.0), Sense::hover());
+        let r = resp.rect;
+        let pulse = (elapsed * 2.0) as u32 % 2 == 0;
+        p.circle_filled(Pos2::new(r.center().x, r.center().y - 36.0), 10.0, if pulse { VERM } else { alpha(VERM, 70) });
+        p.text(r.center(), Align2::CENTER_CENTER, "PLAY YOUR SOUND IN THE DAW NOW", FontId::new(15.0, FontFamily::Proportional), INK);
+        p.text(Pos2::new(r.center().x, r.center().y + 26.0), Align2::CENTER_CENTER, format!("{elapsed:.1}s / {total:.0}s"), FontId::new(11.0, FontFamily::Monospace), INK_SOFT);
+        ui.with_layout(Layout::top_down(Align::Center), |ui| {
+            if link(ui, "STOP").clicked() {
+                self.finish_capture();
+            }
+        });
+    }
+}
+
+// ── small widgets ─────────────────────────────────────────────────────────────
+fn frame(top: f32, bottom: f32) -> egui::Frame {
+    egui::Frame::none().fill(FIELD).inner_margin(egui::Margin { left: 40.0, right: 40.0, top, bottom })
+}
+
+fn link(ui: &mut egui::Ui, label: &str) -> egui::Response {
+    ui.add(egui::Button::new(RichText::new(label).color(INK_SOFT).size(11.0)).fill(Color32::TRANSPARENT).frame(false))
+}
+
+fn button(ui: &mut egui::Ui, label: &str, solid: bool, enabled: bool) -> egui::Response {
+    let (fill, fg) = match (solid, enabled) {
+        (true, true) => (VERM, FIELD),
+        (true, false) => (PANEL, FAINT),
+        (false, true) => (Color32::TRANSPARENT, INK),
+        (false, false) => (Color32::TRANSPARENT, FAINT),
+    };
+    let mut b = egui::Button::new(RichText::new(label).color(fg).size(14.0).strong())
+        .fill(fill)
+        .min_size(Vec2::new(104.0, 36.0))
+        .rounding(2.0);
+    if !solid {
+        b = b.stroke(Stroke::new(1.5, fg));
+    }
+    ui.add_enabled(enabled, b)
+}
+
+// ── theme + entry ─────────────────────────────────────────────────────────────
+fn install_theme(ctx: &egui::Context) {
+    let mut fonts = egui::FontDefinitions::default();
+    let read = |paths: &[&str]| -> Option<Vec<u8>> { paths.iter().find_map(|p| std::fs::read(p).ok()) };
+    if let Some(b) = read(&["C:/Windows/Fonts/bahnschrift.ttf", "C:/Windows/Fonts/segoeui.ttf"]) {
+        fonts.font_data.insert("disp".into(), egui::FontData::from_owned(b));
+        fonts.families.entry(FontFamily::Proportional).or_default().insert(0, "disp".into());
+    }
+    if let Some(b) = read(&["C:/Windows/Fonts/CascadiaMono.ttf", "C:/Windows/Fonts/consola.ttf"]) {
+        fonts.font_data.insert("mono".into(), egui::FontData::from_owned(b));
+        fonts.families.entry(FontFamily::Monospace).or_default().insert(0, "mono".into());
+    }
+    ctx.set_fonts(fonts);
+
+    let mut v = egui::Visuals::dark();
+    v.panel_fill = FIELD;
+    v.override_text_color = Some(INK);
+    v.widgets.inactive.bg_fill = PANEL;
+    v.widgets.inactive.weak_bg_fill = PANEL;
+    v.widgets.hovered.bg_fill = PANEL;
+    v.widgets.hovered.weak_bg_fill = PANEL;
+    ctx.set_visuals(v);
 }
 
 fn main() -> eframe::Result<()> {
     let options = eframe::NativeOptions {
         viewport: egui::ViewportBuilder::default()
-            .with_inner_size([1_040.0, 860.0])
-            .with_min_inner_size([860.0, 680.0])
+            .with_inner_size([1_000.0, 800.0])
+            .with_min_inner_size([820.0, 640.0])
             .with_title("Filter Factory")
             .with_drag_and_drop(true),
         ..Default::default()
@@ -542,18 +620,8 @@ fn main() -> eframe::Result<()> {
         "Filter Factory",
         options,
         Box::new(|cc| {
-            theme::install(&cc.egui_ctx);
-            let mut app = App::default();
-            // Optional: TRENCH_FORGE_DEMO="low.wav;high.wav" preloads two ends
-            // (used for screenshots / visual checks; off by default).
-            if let Ok(demo) = std::env::var("TRENCH_FORGE_DEMO") {
-                let mut it = demo.split(';');
-                if let (Some(a), Some(b)) = (it.next(), it.next()) {
-                    app.load_anchor_path(0, PathBuf::from(a));
-                    app.load_anchor_path(1, PathBuf::from(b));
-                }
-            }
-            Ok(Box::new(app))
+            install_theme(&cc.egui_ctx);
+            Ok(Box::new(App::default()))
         }),
     )
 }

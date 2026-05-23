@@ -65,9 +65,6 @@ impl Cx {
     fn abs2(self) -> f64 {
         self.re * self.re + self.im * self.im
     }
-    fn angle(self) -> f64 {
-        self.im.atan2(self.re)
-    }
     fn div(self, o: Cx) -> Cx {
         let d = o.abs2().max(1e-300);
         Cx::new((self.re * o.re + self.im * o.im) / d, (self.im * o.re - self.re * o.im) / d)
