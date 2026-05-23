@@ -1,0 +1,15 @@
+body_path,corner_TL_F1,corner_TL_F2,corner_TR_F1,corner_TR_F2,corner_BL_F1,corner_BL_F2,corner_BR_F1,corner_BR_F2,notes
+ah_to_ee,730,1090,270,2290,850,1220,310,2790,male top row + female bottom row; canonical Small Talk Ah-Ee path
+oo_to_ee,300,870,270,2290,370,950,310,2790,close vowel rotation; only F2 moves; F1 stays low
+ah_to_oo,730,1090,300,870,850,1220,370,950,back vowel slide; F1 collapses; F2 stays back
+ae_to_ih,660,1720,390,1990,860,2050,430,2480,front-vowel slide; minimal F2 change; F1 collapses
+yawn_to_shriek,400,800,1100,3100,750,1200,1000,1500,yawn (pharyngeal open) to infant cry corner; opens then peaks
+schwa_to_er,500,1500,490,1350,560,1700,500,1640,subtle rhotic emergence; F3 drop separately
+m_to_a,250,1200,730,1090,250,1500,850,1220,nasal release to open vowel; F1 jumps up
+clear_l_to_dark_l,360,1300,400,800,360,1300,400,800,clear to dark L; F2 collapse only
+fry_to_singers_formant,350,1100,750,1150,800,1700,1000,1500,fry low to operatic singers formant; F3 cluster shifts
+AusE_ae_to_RP_ah,690,1530,720,1180,660,1010,720,1180,Australian had to RP bath; back-shift
+fricative_TH_to_S,200,3000,200,4500,200,5500,200,6500,sibilant slide; F1 fixed at zero; F2 chases peak
+nasal_chain_m_to_ng,250,1200,250,2000,250,1500,250,2000,nasal sequence; F1 locked low; F2 traverses
+whisper_to_growl,800,1100,350,1100,800,1100,350,1100,formant cluster maintained; voice source removed
+infant_cry_to_elderly,1100,3100,720,1180,1100,3100,720,1180,full lifespan formant arc; child treble to old-man bass
