@@ -17,11 +17,11 @@ use eframe::egui;
 use trench_core::cartridge::CornerData;
 
 use dsp::{
-    condition_fit_window, corner_to_biquads, cpp_df2t_output, detect_onset, display_name,
-    load_wav_as_mono_f64, magnitude_response, samples_for_ms, source_envelope,
-    spectral_residual_db, two_anchor_preview, z_plane_points, ComplexPoint, FitDiagnostics,
-    FitQuality, AUTHORING_RATE, DEFAULT_WINDOW_MS, FIT_BLOCK_DB, FIT_WARN_DB, PASSTHROUGH,
-    POLE_ZERO_COUNT,
+    body_midpoint, condition_fit_window, corner_to_biquads, cpp_df2t_output, detect_onset,
+    display_name, hedz_rom_midpoint, load_wav_as_mono_f64, magnitude_response, samples_for_ms,
+    source_envelope, spectral_residual_db, two_anchor_preview, z_plane_points, ComplexPoint,
+    FitDiagnostics, FitQuality, AUTHORING_RATE, DEFAULT_WINDOW_MS, FIT_BLOCK_DB, FIT_WARN_DB,
+    PASSTHROUGH, POLE_ZERO_COUNT,
 };
 
 // ── State ─────────────────────────────────────────────────────────────────────
@@ -96,6 +96,10 @@ pub struct App {
     /// actually changes (morph drag, new fit), not every breathing frame.
     pub view_corner: Option<CornerData>,
     pub view_fit: Vec<[f64; 2]>,
+    /// The Talking Hedz calibration truth at M50/Q50, decoded once from the
+    /// verbatim 240-byte ROM block. The inspect midpoint scope draws the authored
+    /// body's middle against it. None if the reference block isn't in this checkout.
+    pub hedz_ref_midpoint: Option<CornerData>,
 }
 
 impl Default for App {
@@ -117,6 +121,7 @@ impl Default for App {
             start: Instant::now(),
             view_corner: None,
             view_fit: Vec::new(),
+            hedz_ref_midpoint: hedz_rom_midpoint(),
         }
     }
 }
@@ -300,6 +305,18 @@ impl App {
         let low = self.corner_slots[0].as_ref()?.corner;
         let high = self.corner_slots[1].as_ref()?.corner;
         Some(two_anchor_preview(&low, &high, self.anchor_morph))
+    }
+
+    /// The authored body's M50/Q50 midpoint — the candidate the calibration scope
+    /// judges. Built from the four assigned corners through the real packed-u16
+    /// interpolation; slots 2/3 fall back to LOW/HIGH exactly like the exporter,
+    /// so a two-end body still resolves a midpoint.
+    pub fn candidate_midpoint(&self) -> Option<CornerData> {
+        let low = self.corner_slots[0].as_ref()?.corner;
+        let high = self.corner_slots[1].as_ref()?.corner;
+        let c = self.corner_slots[2].as_ref().map(|s| s.corner).unwrap_or(low);
+        let d = self.corner_slots[3].as_ref().map(|s| s.corner).unwrap_or(high);
+        Some(body_midpoint(&[low, high, c, d]))
     }
 
     fn active_audio_corner(&self) -> CornerData {

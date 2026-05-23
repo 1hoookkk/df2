@@ -86,6 +86,49 @@ Existing `trench-core` warnings remain. Current limitation is mainly the
 analysis/landmark gate and local optimizer; pack drift is effectively zero in
 the tested cases.
 
+## Session note (2026-05-23) — Forge midpoint scope (the complex plot)
+
+The Inspect magnitude panel was a single frozen-corner overlay (one green source
+line, one amber fit line). That plot cannot tell whether a fit is good, because
+**corners always look fitted** — the discriminator is the morph/Q midpoint
+(STATE: decoded-float nulls −0.07 dB at M50/Q50, packed-u16 + verbatim ROM nulls
+−95.41 dB). Replaced it with a **midpoint scope** in `forge/src/inspect.rs`
+(`inspect_midpoint_scope`):
+
+- **Green** = the Talking Hedz calibration truth at M50/Q50, decoded from the
+  **verbatim** 240-byte ROM block (`dev/tmp/cheat_engine_dump/skin13_corners_rom.bin`)
+  via `PackedCorners::from_rom_bytes` → `interpolate(0.5, 0.5)`. Not the 6-dp JSON
+  (that path caps at −53.75 dB). Loaded once into `App.hedz_ref_midpoint`
+  (`hedz_rom_midpoint()` in `dsp.rs`); `None` if the block isn't in the checkout
+  (reference/dev only, never shipped).
+- **Amber** = the authored body's middle: the four assigned corner slots
+  (`[M0_Q0, M100_Q0, M0_Q100, M100_Q100]`) through the real packed-u16
+  interpolation (`body_midpoint` / `App.candidate_midpoint`, slots 2/3 fall back
+  to LOW/HIGH like the exporter). The morph trajectory itself is unchanged and
+  unquestioned — this only *displays* the proven interpolation at the midpoint.
+- **Six actor curves** (`actor_magnitude_responses` in `dsp.rs`) decompose
+  whichever middle is shown (candidate if present, else the ROM truth) into
+  ROOT/BODY/MOUTH/SCAR/EDGE/RIP, so the gap reads per actor — *which* actor is
+  misplaced, not just that the sum is off. Plus a lab-gear grid (decade verticals,
+  dB horizontals) and a legend.
+
+New `dsp.rs` helpers: `stage_mag_db` (one stage's dB; `cascade_mag_db` now sums
+it), `actor_magnitude_responses`, `body_midpoint`, `hedz_rom_midpoint`. No runtime
+cascade, cartridge format, or interpolation-order change. `cargo check -p
+trench-forge` is clean (only pre-existing warnings). NOTE: the running forge held
+`trench-forge.exe`, so a fresh binary needs the app closed before it links.
+
+Rejected this session (verified against STATE/ROM data): a pasted proposal to add
+**frequency-sorting + reject-on-crossing** to the fitter descent. The 2026-05-20
+ROM stage-layout audit already falsified it — Hedz stages 1 and 5 (F1/F2) cross in
+frequency along morph (1006↔227 Hz vs 225↔2020 Hz) and the interpolator pairs by
+stage **index**, so a freq-ordered constraint would forbid real ROM behaviour. The
+proposal's −0.69 dB "path-crossing" cause is also wrong: the measured midpoint
+failure was −0.07 dB and was the decoded-float-vs-packed interpolation domain, now
+fixed to −95.41 dB. The *correct* kernel of the proposal (index-locked actor
+identity across corners + midpoint in the cost function) stands as the documented
+next task; the surfacing of it is this midpoint scope.
+
 ## Current focus
 
 > **SUPERSEDED (2026-05-19) — read "Active session" below first.** This

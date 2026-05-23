@@ -1486,21 +1486,71 @@ pub fn magnitude_response(corner: &CornerData, sample_rate: f64) -> Vec<[f64; 2]
 }
 
 pub fn cascade_mag_db(corner: &CornerData, frequency: f64, sample_rate: f64) -> f64 {
+    corner
+        .iter()
+        .map(|stage| stage_mag_db(stage, frequency, sample_rate))
+        .sum()
+}
+
+/// One stage's magnitude in dB. `cascade_mag_db` is the sum of this over stages,
+/// so plotting each stage separately decomposes the response into its actors.
+pub fn stage_mag_db(stage: &[f64; 5], frequency: f64, sample_rate: f64) -> f64 {
     let angle = TAU * frequency / sample_rate.max(1.0);
     let (cos1, sin1) = (angle.cos(), angle.sin());
     let (cos2, sin2) = ((2.0 * angle).cos(), (2.0 * angle).sin());
-    let mut db = 0.0;
-    for stage in corner {
-        let [b0, b1, b2, a1, a2] = kernel_to_biquad(stage);
-        let nr = b0 + b1 * cos1 + b2 * cos2;
-        let ni = -b1 * sin1 - b2 * sin2;
-        let dr = 1.0 + a1 * cos1 + a2 * cos2;
-        let di = -a1 * sin1 - a2 * sin2;
-        let num = nr * nr + ni * ni;
-        let den = dr * dr + di * di;
-        db += 10.0 * ((num + 1.0e-30) / (den + 1.0e-30)).log10();
-    }
-    db
+    let [b0, b1, b2, a1, a2] = kernel_to_biquad(stage);
+    let nr = b0 + b1 * cos1 + b2 * cos2;
+    let ni = -b1 * sin1 - b2 * sin2;
+    let dr = 1.0 + a1 * cos1 + a2 * cos2;
+    let di = -a1 * sin1 - a2 * sin2;
+    let num = nr * nr + ni * ni;
+    let den = dr * dr + di * di;
+    10.0 * ((num + 1.0e-30) / (den + 1.0e-30)).log10()
+}
+
+/// The six named actors (ROOT…RIP = the first six stages), each as its own dB
+/// curve on the same log-frequency grid `magnitude_response` uses. Summed, these
+/// equal the full response; drawn separately, they show which actor owns which
+/// part of the shape — and, at the midpoint, which one is misplaced.
+pub fn actor_magnitude_responses(
+    corner: &CornerData,
+    sample_rate: f64,
+) -> [Vec<[f64; 2]>; POLE_ZERO_COUNT] {
+    let nyquist = (sample_rate * 0.5).max(10_000.0);
+    core::array::from_fn(|stage| {
+        let kernel = corner[stage];
+        (0..RESPONSE_BINS)
+            .map(|i| {
+                let t = i as f64 / (RESPONSE_BINS - 1) as f64;
+                let freq = 20.0 * (nyquist / 20.0).powf(t);
+                [freq, stage_mag_db(&kernel, freq, sample_rate).clamp(-48.0, 24.0)]
+            })
+            .collect()
+    })
+}
+
+/// A four-corner body's response at the morph/Q midpoint, through the real
+/// packed-u16 bilinear (the proven, bit-accurate runtime path) — not a
+/// decoded-float blend. This is the position that tells whether the corners were
+/// authored coherently: at the corners any fit looks right, only the middle exposes it.
+pub fn body_midpoint(corners: &[CornerData; 4]) -> CornerData {
+    PackedCorners::from_corner_data(corners).interpolate(0.5_f32, 0.5_f32)
+}
+
+/// The Talking Hedz calibration truth at M50/Q50, decoded from the **verbatim**
+/// 240-byte E-mu ROM block (skin 13) — `from_rom_bytes`, not the 6-dp JSON that
+/// caps at −53.75 dB. This is the −95.41 dB bit-accurate midpoint the authored
+/// body is judged against. Reference/dev only — never ships; returns None if the
+/// block isn't present in this checkout.
+pub fn hedz_rom_midpoint() -> Option<CornerData> {
+    const ROM: &str = concat!(
+        env!("CARGO_MANIFEST_DIR"),
+        "/../dev/tmp/cheat_engine_dump/skin13_corners_rom.bin"
+    );
+    let bytes = std::fs::read(ROM).ok()?;
+    PackedCorners::from_rom_bytes(&bytes)
+        .ok()
+        .map(|p| p.interpolate(0.5_f32, 0.5_f32))
 }
 
 // ── Interpolation / audio glue ──────────────────────────────────────────────

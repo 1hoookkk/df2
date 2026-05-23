@@ -4,10 +4,13 @@
 
 use eframe::egui;
 use egui::RichText;
-use egui_plot::{Line, Plot, PlotPoints, VLine};
+use egui_plot::{Legend, Line, Plot, PlotPoints, VLine};
 
-use crate::dsp::{display_name, downsample_plot, format_residual, magnitude_response, FitQuality};
-use crate::theme::{self, with_alpha, CAUTION, INK, INK_SOFT};
+use crate::dsp::{
+    actor_magnitude_responses, display_name, downsample_plot, format_residual, magnitude_response,
+    FitQuality,
+};
+use crate::theme::{self, with_alpha, CAUTION, INK, INK_FAINT, INK_SOFT};
 use crate::App;
 
 const LOW_COL: egui::Color32 = INK_SOFT;
@@ -50,7 +53,7 @@ impl App {
                     self.inspect_waveform(&mut columns[1]);
                 });
                 ui.add_space(10.0);
-                theme::panel_frame().show(ui, |ui| self.inspect_magnitude(ui));
+                theme::panel_frame().show(ui, |ui| self.inspect_midpoint_scope(ui));
             });
         self.inspect_open = open;
     }
@@ -174,20 +177,42 @@ impl App {
         });
     }
 
-    fn inspect_magnitude(&self, ui: &mut egui::Ui) {
-        let anchor = self.inspect_anchor;
-        let preview = self.anchor_preview_corner();
+    /// The midpoint scope — M50/Q50, the position that tells. Corners always look
+    /// fitted; the middle is where a wrong fit shows itself (decoded-float nulls
+    /// −0.07 dB there, packed ROM −95.41 dB). Green is the verbatim-ROM Hedz truth,
+    /// amber is the authored body's middle, and the six named actors decompose it
+    /// so the gap can be read per actor — which one is misplaced, not just that the
+    /// sum is off. The runtime packed-u16 interpolation produces both middles.
+    fn inspect_midpoint_scope(&self, ui: &mut egui::Ui) {
         let rate = self.internal_resample_rate as f64;
-        ui.label(RichText::new("FIT vs TARGET — log frequency").color(INK_SOFT).size(10.0));
+        let x_max = (rate * 0.5).max(10_000.0);
+        let reference = self.hedz_ref_midpoint;
+        let candidate = self.candidate_midpoint();
 
-        Plot::new("inspect_magnitude")
-            .height(ui.available_height().max(220.0))
+        ui.horizontal(|ui| {
+            ui.label(RichText::new("MIDPOINT · M50/Q50 — where the fit tells").color(INK_SOFT).size(10.0));
+            match (reference.is_some(), candidate.is_some()) {
+                (true, true) => {
+                    ui.label(RichText::new("· green = Hedz ROM truth · amber = your body").color(INK_SOFT).size(10.0));
+                }
+                (true, false) => {
+                    ui.label(RichText::new("· Hedz ROM truth — author four corners to compare").color(INK_SOFT).size(10.0));
+                }
+                (false, _) => {
+                    ui.label(RichText::new("· ROM reference not in this checkout").color(CAUTION).size(10.0));
+                }
+            }
+        });
+
+        Plot::new("inspect_midpoint_scope")
+            .height(ui.available_height().max(240.0))
             .include_x(20.0)
-            .include_x((rate * 0.5).max(10_000.0))
+            .include_x(x_max)
             .include_y(-48.0)
             .include_y(24.0)
             .show_axes([false, false])
             .show_grid([false, false])
+            .legend(Legend::default())
             .x_axis_formatter(|m, _| {
                 if m.value >= 1_000.0 {
                     format!("{:.0}k", m.value / 1_000.0)
@@ -196,26 +221,48 @@ impl App {
                 }
             })
             .show(ui, |p| {
-                let response = preview
-                    .map(|c| magnitude_response(&c, rate))
-                    .or_else(|| {
-                        self.anchor_audio[anchor]
-                            .as_ref()
-                            .map(|s| s.extraction.magnitude_response.clone())
-                    })
-                    .unwrap_or_default();
-                if let Some(extraction) = self.anchor_audio[anchor].as_ref().map(|s| &s.extraction) {
-                    if !extraction.source_db.is_empty() {
+                // Lab-gear grid: log-decade verticals, dB horizontals.
+                for f in [100.0, 1_000.0, 10_000.0] {
+                    p.vline(VLine::new(f).color(INK_FAINT).width(1.0));
+                }
+                for g in [0.0, -12.0, -24.0, -36.0] {
+                    p.line(
+                        Line::new(PlotPoints::from(vec![[20.0, g], [x_max, g]]))
+                            .color(INK_FAINT)
+                            .width(1.0),
+                    );
+                }
+
+                // The six actors of whichever middle we have — the candidate when
+                // present (read its gaps against the green truth), else the truth's
+                // own anatomy to author toward.
+                if let Some(c) = candidate.or(reference) {
+                    let actors = actor_magnitude_responses(&c, rate);
+                    for (i, curve) in actors.iter().enumerate() {
                         p.line(
-                            Line::new(PlotPoints::from(extraction.source_db.clone()))
-                                .color(with_alpha(theme::TARGET, 200))
-                                .width(1.8),
+                            Line::new(PlotPoints::from(curve.clone()))
+                                .color(with_alpha(theme::ACTORS[i], 170))
+                                .width(1.2)
+                                .name(theme::ACTOR_NAMES[i]),
                         );
                     }
                 }
-                if !response.is_empty() {
-                    p.line(Line::new(PlotPoints::from(response.clone())).color(with_alpha(theme::FIT, 70)).width(6.0));
-                    p.line(Line::new(PlotPoints::from(response)).color(theme::FIT).width(1.8));
+
+                // Green — the E-mu verbatim-ROM truth silhouette.
+                if let Some(r) = reference {
+                    p.line(
+                        Line::new(PlotPoints::from(magnitude_response(&r, rate)))
+                            .color(theme::TARGET)
+                            .width(2.4)
+                            .name("Hedz M50/Q50"),
+                    );
+                }
+
+                // Amber — the authored body's middle (glow + core).
+                if let Some(c) = candidate {
+                    let resp = magnitude_response(&c, rate);
+                    p.line(Line::new(PlotPoints::from(resp.clone())).color(with_alpha(theme::FIT, 70)).width(6.0));
+                    p.line(Line::new(PlotPoints::from(resp)).color(theme::FIT).width(1.8).name("your body"));
                 }
             });
     }
