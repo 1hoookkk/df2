@@ -1760,3 +1760,77 @@ needed) and loads the slot the Forge writes. Attempted as a stretch this
 session — see session log for outcome.
 
 Latest session log: `SESSION_LOG/2026-05-21.md`.
+
+---
+
+## Session note (2026-05-23) — RECOVERY: forge committed to git; fit reverted to Hedz-matching `lpc::fit_corner`
+
+**The disease, fixed.** `forge/` had NEVER been committed — every overwrite (the
+05-22 rich UI, this session's churn) was unrecoverable. Now in git, branch
+`forge-recovery`:
+- `e01be83` floor — forge/ + `trench-core/src/lpc.rs` & `minifloat.rs` (were
+  untracked) + all in-progress work.
+- `4e320ba` — curated ARMA source pack (`dev/tmp/arma_source_pack`, incl.
+  `corners_audio_only`), force-added past the `dev/` gitignore.
+- `0e0ab30` — fit revert (below).
+Branch NOT merged to master (Tyson's call to fast-forward). **Commit forge from
+now on — this was the root cause of all loss.**
+
+**Fit reverted to the working fitter.** Mid-session the live fit had been
+switched (by ANOTHER editor/agent, not this Claude) from `lpc::fit_corner` to an
+ARMA path (`dsp::fit_corner_arma_from_window` + a `FitDiagnostics` system).
+Tyson: the ARMA path is "fully broken"; on 05-22 a dropped vowel matched Talking
+Hedz exactly using `lpc::fit_corner`. Reverted `forge/src/main.rs refit_anchor`
+→ `trench_core::lpc::fit_corner`; `lpc.rs PRE_EMPH` 0.0 → **0.97** (the 05-22
+value). Compiles clean. **NOT yet ear-verified by Tyson** — gate pending: close
+the running app (it locks the .exe), rerun, drop a vowel, confirm the Hedz match.
+The ARMA fit + FitDiagnostics code REMAIN in dsp.rs (just off the live path).
+
+**Reverted experiment / discard these measurements.** A `PRE_EMPH = 0.0` change
+captured dark-vowel lows better in isolation (oo F1 300 Hz, 1/3→3/3) but
+regressed the Hedz match — reverted. Auditioning is the gate, not formant-capture
+count. Also: this session's `build_corner_pole_zero` pole-radius/zero readings
+were of a now-superseded path — ignore them.
+
+**UI: the rich 05-22 surface is GONE; rebuild from screenshots.** The working
+05-22 UI (PERFORM pad MORPH×CAVITY, GIVE A SOUND green-on-THE-SHAPE, NOISE/SAMPLE
+*wired*, capture-from attack→tail, FIT INTO CORNER, DEPTH+WILD) is not in git and
+NOT in VS Code/Cursor Local History (forge .rs were written via Claude tools,
+never editor-saved — verified). Only two screenshots survive:
+`~/OneDrive/Pictures/Screenshots/Screenshot 2026-05-21 214346.png` and
+`...2026-05-22 100156.png`. Rebuild from those.
+This session's UI is a DIFFERENT dark "scope" rebuild: `theme.rs` dark palette
+(killed the sand theme), `surface.rs` = THE SHAPE (green target / amber fit) +
+1-D LOW→HIGH rail + PLAY/SAVE/RESET + named-actor markers + cached response.
+Inspect stripped to load/slice/quality-line/fit-vs-target/assign (removed the
+numeric dump, z-plane, C++ export, advanced corners).
+
+**Added, NOT wired:** `forge/src/preprocess.rs` — vintage-sampler source
+degradation: bit reduce (8/12/16 + TPDF dither), rate reduce with AAF toggle
+(off = aliasing / "harmonic enhancement" / bright-cluster; on = clean / dark),
+presets SP-1200 / MPC60 / S900 / Fairlight / Mirage. Core tested (3 pass).
+Replaces the `zero_dither_truncation` stub once wired into the fit path + UI.
+
+**NEXT (Tyson's last directive — NOT started): a corner BANK in the GUI.** Load a
+pickable bank of corners from `dev/tmp/arma_source_pack/corners_audio_only/`
+(see its `MANIFEST.md`): `nmr/` (5 FIDs @8278 Hz), `plasma/` (15 space-wave),
+`kb6/` (129 hardware wavs — EMU Proteus1/3/SP-12, Ensoniq Mirage, Yamaha RX-11),
+`soho/` (2 helioseismology), `formants/` (`vocal_formant_corners.csv` 73 rows;
+`trench_4corner_body_candidates.csv` 14 morph paths TL/TR/BL/BR). Division of
+labour Tyson restated: **he curates/uploads the material; Claude writes the code**
+that reads the bank and presents corners to assign.
+
+**Character model clarified (Tyson, this session):** two morph logics —
+*Talking Hedz* = few widely-spaced poles + DEEP zeros (vowel morph); *DJ Alkaline*
+= tight HF pole cluster, HIGH radius, NO zeros (brightness-cluster morph). Both
+should emerge from FAITHFUL capture (notch depth from the source's real valley
+depth; pole radius from the true bandwidth — Q "faithful only", no artificial
+push). The heritage "Q" knob is a SECOND MORPH AXIS (Q0↔Q100 corners), NOT a
+resonance scaler — each corner is already a full 6-actor shape at any Q.
+(Unresolved: Tyson said the Forge morph should be 1-D A→B, but the 05-22 working
+UI was 2-D MORPH×CAVITY — reconcile when rebuilding the UI.)
+
+**Ownership flag:** confirm who owns the ARMA fit + diagnostics in dsp.rs before
+any further fit edits — they appeared mid-session from another editor/agent.
+
+Latest session log: `SESSION_LOG/2026-05-23.md`.
