@@ -9,6 +9,83 @@ Do not edit by hand unless correcting Claude.
 
 ---
 
+## State correction (2026-05-23)
+
+- Live repo reality: root `Cargo.toml` is now a Cargo workspace with
+  `members = ["trench-core", "forge"]`. Older Forge notes that say there
+  is no root workspace are historical and superseded.
+
+## Session note (2026-05-23) — Forge ARMA fitter replaces LPC final path
+
+Forge's upload-to-corner fitter no longer uses LPC pole/nearest-valley
+sections as the final answer. `forge/src/dsp.rs` now adds
+`fit_corner_arma_from_window(window, source_sr, runtime_sr, options) ->
+FitResult`: LPC provides initial candidates only, then a coordinate-descent
+ARMA refinement optimizes six active pole-zero sections against a smoothed,
+perceptually weighted source envelope. Every candidate is stabilized,
+conformed to the packed minifloat range, encoded with
+`PackedCorners::from_corner_data`, decoded at the same corner, and scored
+post-pack. The score includes weighted residual, formant peak error, max
+pack drift, and impossible-notch penalties.
+
+`forge/src/main.rs::refit_anchor` now calls the ARMA fitter. `Review` fits
+no longer auto-assign; only `Ready` can assign to LOW/HIGH or hidden C/D.
+Inspect now reports source peak frequencies, fitted peak frequencies,
+pre/post-pack residual, formant error, max pack drift, and the review/block
+reason. The product surface layout and runtime cascade/cartridge/interp
+topology were not changed.
+
+Diagnostics from `cargo test -p trench-forge dump_real_fit_pipeline --
+--nocapture`:
+- `vowel_oo.wav`: Ready, residual/post-pack residual 7.3 dB, formant
+  error 0.64, max pack drift 0.00000. Source peaks 296/384/462/748/934 Hz;
+  fitted peaks 296/343/398/462/836 Hz.
+- `vowel_eh.wav`: Review, residual/post-pack residual 6.0 dB, formant
+  error 1.31, max pack drift 0.00000. Source peaks 296/462/577/748/836 Hz;
+  fitted peaks 384/445/516/599/695 Hz. This no longer collapses into a
+  broad low-pass blob, but is still analysis/peak-lock limited rather than
+  pack-range limited.
+
+This initial ARMA pass was superseded by the stylised-target pass below; the
+current focused tests and verification count are listed there. No runtime
+topology or cartridge changes were made.
+
+## Session note (2026-05-23) — Forge stylised low-Q target extraction
+
+Forge no longer treats a recording as a literal response curve for the fitter.
+`forge/src/dsp.rs` now inserts a stylised target layer between
+`source_envelope`/window analysis and the six-stage ARMA refinement:
+`stylized_target_from_raw` heavily smooths the analysis envelope, preserves
+broad tilt, extracts major landmarks below 8 kHz, keeps important valleys, and
+reduces the high band to a small number of teeth/scar peaks. The default
+`TargetMode::LowQGraphic` clamps the fitter toward broad pole radii, moderate
+zero bite, and no ultra-narrow or single-stage-dominated frame.
+
+The fitter still optimizes the actual six pole-zero cascade, but it now scores
+against the simplified target after the `PackedCorners::from_corner_data`
+round-trip. Formant gating ignores decorative high-scar peaks above the
+formant band; those peaks remain diagnostic/target features but do not force
+vowel auto-assignment. Inspect now overlays raw source, simplified target, and
+post-pack fit, and lists detected peaks/valleys plus per-stage
+role/frequency/radius/zero diagnostics.
+
+Diagnostics from `cargo test -p trench-forge dump_real_fit_pipeline --
+--nocapture` after this change:
+- `vowel_oo.wav`: Review, residual/post-pack 5.2 dB, formant error 1.83,
+  pack drift 0.00000; source peaks 237/331/413/516/934/8326 Hz, fit peaks
+  255/319/398/498/4955 Hz.
+- `vowel_eh.wav`: Review, residual/post-pack 2.8 dB, formant error 1.08,
+  pack drift 0.00000; source peaks 237/413/516/645/836/8326 Hz, fit peaks
+  275/343/429/536/669 Hz.
+
+Focused tests now cover: DJ-Alkaline-like graphic low-Q target extraction,
+vowel-like landmark preservation, post-pack closeness to the simplified
+target, and Ready-only auto-assign. Verification: `cargo fmt -p
+trench-forge` passed and `cargo test -p trench-forge` passed: 10 tests.
+Existing `trench-core` warnings remain. Current limitation is mainly the
+analysis/landmark gate and local optimizer; pack drift is effectively zero in
+the tested cases.
+
 ## Current focus
 
 > **SUPERSEDED (2026-05-19) — read "Active session" below first.** This
@@ -1471,3 +1548,215 @@ Open for next session:
 4. df2 forge plugin (the mixer-channel JUCE wrap that subprocesses
    into `capture_ir_to_cartridge.py`) and df2 player sample-import
    slot are JUCE workstreams — not blocking the audition test.
+
+---
+
+## Session note (2026-05-21) — UI abstraction second opinion
+
+No runtime, cartridge, topology, or authoring-pipeline code changed.
+
+Tyson clarified that choosing the four musical corners is not the hard
+part: he can pick the states directly ("Ah to Ee", etc.). The UI problem
+should therefore be framed around preserving actor identity, auditing the
+in-between morph surface, and making the result recordable/auditionable,
+not around helping the tool choose the four endpoints.
+
+Second-opinion direction:
+- First surface: browser-based capture/audition dashboard with a large
+  recordable z-plane view, morph/Q scrub pad, response overlay, and
+  actor/role trajectory diagnostics.
+- Direct pole/zero editing is valuable as a camera/debug view, but should
+  not be the first authoring primitive for body creation. The first
+  authoring primitive is "capture or select four corners, then verify
+  the morph."
+- Resonance/role handles are the practical edit surface: Root, Body,
+  Mouth, Scar, Edge, Rip. Z-plane points remain visible so the truth is
+  never hidden.
+- Browser/WebGPU or WebGL is the right first visual stack for content and
+  iteration. Native Rust/wgpu belongs later if the forge/player workflow
+  needs a packaged app or DAW-facing surface.
+- Stability should be hard-constrained for poles and audited for gain,
+  center sag, excessive migration, and discontinuities.
+
+---
+
+## Session note (2026-05-21) — browser morph-audition tool + architecture pivot
+
+Code changed: `tools/morph_audition.html` (new). `tools/player.html`
+left untouched. No runtime / cartridge / topology / Rust / JUCE code
+changed.
+
+**Built `tools/morph_audition.html`** — first browser morph-audition
+surface. Hero z-plane canvas (poles ✕, zeros ○, per-actor trajectory
+trails, eased live M/Q marker), response curve, M/Q pad, four-corner
+readouts, six named-actor lanes (Root/Body/Mouth/Scar/Edge/Rip), and a
+live audit panel (unstable pole ≥1, actor-swap migration >20×, center
+sag >6 dB, morph-edge discontinuity >4×, output peak >0.95).
+
+Fixed the audition oracle to be runtime-faithful:
+- MORPH-FIRST packed-u16 interp (A=M0_Q0, B=M100_Q0, C=M0_Q100,
+  D=M100_Q100; edge0=lerp(A,B,m), edge1=lerp(C,D,m), out=lerp(e0,e1,q)).
+  player.html was Q-first.
+- lerpU16 now int16-WRAPS (matches minifloat.rs / coefficient_field_
+  bakeoff.py); player.html clamped.
+- c4 packs as encode(c4/4), unpacks as 4·decode (the COMBINE_K scale
+  player.html dropped).
+- Verified vs Python: corner recovery within minifloat grid (~1e-4);
+  300k random lerp cases match the numpy reference exactly.
+
+Replaced the click-prone audio path. player.html rebuilt 6 IIRFilterNodes
+on every pad move → reset each high-Q resonator's state → continuous
+click storm ("playing destroys it"). New engine is a single AudioWorklet
+cascade that holds state and *ramps* coefficients (~6 ms) on M/Q change —
+no node rebuild, no reset. It runs the cascade at the E-mu rate
+(39062.5 Hz) for ALL bodies via linear resampling, so the host clock
+(44.1/48 k) no longer warps the response. All frequency-domain math now
+uses 39062.5 Hz. Validated offline: filtered gain matches the response
+curve within 0.03 dB through 3 kHz (≈2 dB linear-resampler rolloff near
+8 kHz), identity pitch test −0.03 dB, output tanh-limited + finite-guarded.
+
+UI vocabulary: the 6 pieces are surfaced as named actors only — "stages"
+and "slots" purged from the surface (a fixed abstracted budget, not
+individually-designed filters; Tyson's framing).
+
+**Architecture pivot — confirmed by Tyson (supersedes JUCE-frontend +
+Python-backend forge):**
+- The Forge (authoring) is a LOCAL WEB TOOL: HTML + WebGL (GPU-rendered
+  z-plane / response / spectrogram), with the DSP engine AND the ARMA
+  fitter compiled from Rust to WebAssembly. The ARMA solve runs in a
+  background worker, never on the audio thread (a real-time ARMA solve
+  would spike CPU and drop buffers).
+- The shipping df2 plugin is a thin JUCE wrapper around the SAME Rust
+  core (trench-core). One core, two frontends (Wasm Forge, JUCE plugin)
+  → zero math-translation error.
+- Python ARMA (`capture_ir_to_cartridge.py`: Prony + Steiglitz-McBride,
+  already null-test-validated) becomes the REFERENCE to port into Rust,
+  not the shipping engine.
+- GPU/WebGL for the visual layer is mandatory.
+
+Consequence: morph_audition.html reimplements the oracle/cascade in JS —
+a validated throwaway. Under the confirmed path that JS DSP is replaced
+by the Wasm core and the 2D canvas upgraded to WebGL. Because the JS
+oracle was checked against minifloat.rs, the Rust/Wasm port has a
+confirmed behavioral target.
+
+Next step (recommended): port Prony/StMcB + tf2sos factorization +
+minifloat pack into trench-core as `fit_corner(ir, sr) -> packed words`,
+unit-tested against the Python output (same IR → same kernels within
+tolerance / equal null depth). That one Rust function is the seam that
+serves both the Wasm Forge and the JUCE shipping plugin.
+
+---
+
+## Session note (2026-05-21, later) — architecture LOCKED: Pure Rust standalone .exe
+
+Supersedes the Wasm-split block immediately above. After evaluating a
+third proposal, Tyson locked the Forge as a **standalone Rust .exe** —
+no Wasm, no HTML/JS, no JUCE for the authoring tool:
+
+- **Forge = standalone .exe** built with **eframe + egui** (GPU-rendered
+  immediate-mode UI). It links `trench-core` directly (same process, no
+  marshaling), so the audition shows the exact runtime oracle. The ARMA
+  fitter is ported into Rust and runs off the audio thread.
+- **nih-plug is NOT used for the Forge.** It is reserved for the eventual
+  shipping df2 *player* (VST3/CLAP), which would reuse `trench-core` + the
+  same egui UI. The Forge itself only needs to be a .exe.
+- One Rust core (`trench-core`) underneath everything → zero
+  math-translation boundary. This is why this path beats the Wasm split:
+  the JS oracle in `morph_audition.html` needed 3 fixes to match
+  minifloat.rs; a single Rust DSP removes that class of bug entirely.
+
+Action started this session:
+- New `forge/` crate (sibling to trench-core, path-dep, `packed_interp`
+  feature; NO root workspace, so the existing juce-shell cargo build is
+  untouched). `forge/src/main.rs` is an eframe app that loads a cartridge
+  and draws the z-plane (poles ✕ / zeros ○, six named actors) from
+  `Cartridge::from_json` → `PackedCorners::interpolate` — the real core.
+- Build kicked off (`cargo build` in forge/). cpal audio and the
+  capture→ARMA-fit→corner loop are the next two tasks.
+
+`tools/morph_audition.html` remains a valid throwaway audition prototype;
+its validated JS oracle behavior is the behavioral target the Rust path
+already satisfies natively.
+
+Latest session log: `SESSION_LOG/2026-05-21.md`.
+
+---
+
+## Session note (2026-05-22) — Forge upload-to-corner extraction loop
+
+Tyson locked the standalone Rust Forge loop to "upload a transient, see
+the response and residual, click a corner." The app now wires that loop
+around the existing `trench_core::lpc::fit_corner` fitter instead of the
+temporary mock result path.
+
+- `forge/src/main.rs` now auto-detects upload onset, opens a Hann fit
+  window (50–200 ms exposed by position/length sliders and draggable
+  waveform markers), runs the existing six-actor Rust fit, reflects and
+  clamps fitted pole radii into `[0.5, 0.9985]`, sorts stages by pole
+  frequency, and re-normalizes the corner peak through `c4`.
+- Forge synths an impulse response back from the fitted kernel and
+  reports a gain-matched residual. Current UI gate: `≤ -24 dB` green,
+  `>-24 dB` yellow review but assignable, `>-8 dB` or non-finite red and
+  blocked.
+- The fitted response, six pole/zero actor points, DF2T C++ arrays, and
+  residual badge update live as the fit window moves.
+- The first authoring loop is now **two anchors**: assign `LOW A`, assign
+  `HIGH B`, drag the packed A→B morph preview, and audition that path on
+  the existing Forge noise audition engine. The response plot overlays A,
+  B, and the current packed preview.
+- Runtime format stays four-corner. C/D assignment is now hidden under
+  Advanced as the optional hidden axis; the primary preview duplicates
+  A/B across that axis until those corners have a job.
+- Capture conditioning remains tucked under Advanced: 16-bit
+  zero-dither truncation and the internal fit/output rate. Core upload
+  loading stays WAV/`hound` at this step.
+- **UI correction:** the technical extraction instrument is not the
+  product surface. Forge now opens as a dead-simple high-end body maker:
+  two anchor tiles (`LOW SOUND`, `HIGH SOUND`), one living shape canvas,
+  one Morph rail, `Play`, `Save`, and `Reset`.
+- The app handles onset/fit/residual mechanics invisibly. Messy or failed
+  fits open a plain slice picker; the residual number, z-plane, C++
+  arrays, hidden corners, and rate controls live behind `Inspect`.
+- `forge/Cargo.toml` adds `egui_plot` for plot viewports and `rfd` for
+  the file-load button.
+
+Latest session log: `SESSION_LOG/2026-05-22.md`.
+
+---
+
+## Session note (2026-05-21, night) — TRENCH Forge built end-to-end
+
+`forge/` is now a working standalone authoring `.exe`. Capture → fit →
+four-corner morph → audition → export, all native Rust.
+
+- **Fitter** `trench-core/src/lpc.rs`: Levinson-Durbin LPC + Durand-Kerner
+  rooting → poles; spectral-valley zeros → pole-zero biquads (the notches,
+  not just peaks). Analysis 22.05 kHz / order 14 / ≤10 kHz so the air/RIP
+  actor can fill. `normalize_corner_peak` now `pub`. Tests pass.
+- **Model: four INDEPENDENT corners** (drop any sound on any corner). The
+  2-endpoint+derived-cavity model was scrapped — it was the degenerate
+  (Q-duplicated) tier; P2K bodies are 4 distinct 60-byte banks. The engine's
+  bounded-u16 interpolation guarantees a stable, continuous morph between any
+  four, so corners can be completely different (verified:
+  `forge_cartridge_roundtrip` test — finite/stable across the surface).
+- **DEPTH + WILD dials**: depth pushes poles+zeros toward the unit circle
+  (gentle→Ear-Bender rails); wild reorders morph-end stages (cross-spectrum
+  migration = the Ear-Bender tear). Ear Bender = depth + migration on the
+  same 6-actor budget, NOT a fancier engine (confirmed from
+  `ref/heritage/Ear_Bender.csv`: +78 dB poles, −68 dB notches, stages tear
+  20 Hz→14 kHz across corners).
+- **Audio** `forge/src/audio.rs`: cpal, multi-format (f32/i16/u16/i32),
+  cascade at 39062.5 via linear resampling, ramped coeffs (click-free).
+  NEEDS Tyson ear-check — built, not audibly verified here.
+- **UI**: sound-space only (no z-plane/EMU/DSP). Hero = THE SHAPE + named
+  actors + crude **aliased** stepped "reactor" live trace (egui feathering
+  off). M/Q pad filled with morph terrain. SAVE writes compiled-v1 to
+  `~/Documents/TRENCH/authoring_slot.json` (player hot-reload slot).
+
+Open: **VST3 player**. juce-shell can't build here (no JUCE submodule / no
+MSVC). Path = nih-plug (pure Rust); it processes the DAW's audio (no source
+needed) and loads the slot the Forge writes. Attempted as a stretch this
+session — see session log for outcome.
+
+Latest session log: `SESSION_LOG/2026-05-21.md`.

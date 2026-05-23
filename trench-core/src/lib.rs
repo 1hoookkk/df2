@@ -1,3 +1,6 @@
+#[cfg(feature = "packed_interp")]
+pub mod minifloat;
+
 pub mod agc;
 pub mod cartridge;
 pub mod cascade;
@@ -10,6 +13,7 @@ pub mod ffi;
 pub mod function_generator;
 pub mod hedz_golden;
 pub mod hedz_rom;
+pub mod lpc;
 pub mod motor;
 pub mod qsound_spatial;
 pub mod role;

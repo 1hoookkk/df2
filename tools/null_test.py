@@ -67,15 +67,27 @@ def align(ref: np.ndarray, cand: np.ndarray, max_lag: int) -> tuple[np.ndarray, 
     return ref_aligned, cand_aligned, lag
 
 
-def null_depth_db(ref: np.ndarray, cand: np.ndarray) -> tuple[float, float, float]:
-    """Returns (null_dB, ref_rms_dB, residual_rms_dB)."""
+def null_depth_db(ref: np.ndarray, cand: np.ndarray,
+                  gain_match: bool = False) -> tuple[float, float, float, float]:
+    """Returns (null_dB, ref_rms_dB, residual_rms_dB, applied_gain).
+
+    With gain_match=True, scales cand by the least-squares best-fit gain
+    before computing the residual. Reports the applied gain so the caller
+    knows how far off the candidate level is.
+    """
     m = min(len(ref), len(cand))
     ref, cand = ref[:m], cand[:m]
+    gain = 1.0
+    if gain_match:
+        denom = float(np.dot(cand, cand))
+        if denom > 1e-30:
+            gain = float(np.dot(ref, cand) / denom)
+        cand = cand * gain
     residual = ref - cand
     ref_rms = np.sqrt(np.mean(ref**2)) + 1e-30
     res_rms = np.sqrt(np.mean(residual**2)) + 1e-30
     null_db = 20 * np.log10(res_rms / ref_rms)
-    return null_db, 20 * np.log10(ref_rms), 20 * np.log10(res_rms)
+    return null_db, 20 * np.log10(ref_rms), 20 * np.log10(res_rms), gain
 
 
 def main(argv: list[str]) -> int:
@@ -86,6 +98,9 @@ def main(argv: list[str]) -> int:
                    help="Max sample lag to search for alignment (default 2048).")
     p.add_argument("--threshold-db", type=float, default=-60.0,
                    help="Pass threshold in dB (default -60).")
+    p.add_argument("--gain-match", action="store_true",
+                   help="Apply best-fit gain to candidate before null. Reports "
+                        "the gain scalar so you know the level error.")
     args = p.parse_args(argv)
 
     sr_ref, ref = load_wav_mono(args.reference)
@@ -96,7 +111,7 @@ def main(argv: list[str]) -> int:
         return 2
 
     ref_aligned, cand_aligned, lag = align(ref, cand, args.max_lag)
-    null_db, ref_db, res_db = null_depth_db(ref_aligned, cand_aligned)
+    null_db, ref_db, res_db, gain = null_depth_db(ref_aligned, cand_aligned, args.gain_match)
 
     passed = null_db <= args.threshold_db
     status = "PASS" if passed else "FAIL"
@@ -105,6 +120,8 @@ def main(argv: list[str]) -> int:
     print(f"candidate:    {args.candidate}")
     print(f"sample rate:  {sr_ref} Hz")
     print(f"applied lag:  {lag} samples")
+    if args.gain_match:
+        print(f"gain match:   {gain:.6f}  ({20*np.log10(abs(gain)+1e-30):+.2f} dB)")
     print(f"reference RMS: {ref_db:+7.2f} dBFS")
     print(f"residual RMS:  {res_db:+7.2f} dBFS")
     print(f"null depth:    {null_db:+7.2f} dB  (threshold {args.threshold_db:+.1f} dB)")

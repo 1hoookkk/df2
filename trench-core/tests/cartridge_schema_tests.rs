@@ -2,9 +2,7 @@ use trench_core::cartridge::Cartridge;
 
 #[test]
 fn existing_cartridge_without_new_blocks_loads_with_safe_defaults() {
-    let json =
-        std::fs::read_to_string("../trench-juce/plugin/assets/cartridges/aluminum_siding.json")
-            .expect("read fixture");
+    let json = format!("{{ {stub} }}", stub = KEYFRAMES_STUB);
     let cart = Cartridge::from_json(&json).expect("parse");
     assert_eq!(cart.drive.input_gain_db, 0.0);
     assert_eq!(cart.drive.model, "mackie_1202");

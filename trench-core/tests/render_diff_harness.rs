@@ -51,13 +51,6 @@ const MORPH: f64 = 0.5;
 const Q: f64 = 0.5;
 const FIXTURE_RELPATH: &str = "tests/fixtures/hedz_reference_48k.wav";
 const INPUT_FIXTURE_RELPATH: &str = "tests/fixtures/chirp_input_48k.wav";
-// Render through the same JSON cartridge the shipping plugin embeds.
-// The render-diff gate must exercise the data both sides run against,
-// otherwise it measures data-source drift instead of implementation drift.
-// Path is relative to the test's cwd (`runtime/trench-core/`); the cartridge
-// lives at `cartridges/p2k/P2k_013.json` from repo root.
-const CARTRIDGE_RELPATH: &str = "../../cartridges/p2k/P2k_013.json";
-
 /// Linear-frequency chirp, phase-accumulated sample-by-sample so the
 /// phase integral matches exactly across runs and platforms. Output is
 /// the same whether built in debug or release — no FMA, no SIMD.
@@ -113,18 +106,9 @@ fn load_or_generate_input() -> Vec<f32> {
 }
 
 fn render_rust_reference() -> Vec<f32> {
-    let json = fs::read_to_string(CARTRIDGE_RELPATH).unwrap_or_else(|e| {
-        panic!(
-            "render_diff_harness: cannot read cartridge JSON at {}: {e}",
-            CARTRIDGE_RELPATH
-        )
-    });
-    let cart = Cartridge::from_json(&json)
-        .unwrap_or_else(|e| panic!("render_diff_harness: failed to parse cartridge JSON: {e}"));
-
     let mut engine = FilterEngine::new();
     engine.prepare(SAMPLE_RATE as f64);
-    engine.load_cartridge(cart);
+    engine.load_cartridge(Cartridge::hedz_rom());
     // FilterEngine is stereo (4-arg `process_block(left, right, morph, q)`).
     // The render-diff fixture is mono, so feed the same input on both
     // channels and emit the left channel. Spatial defaults to `Off`, so the

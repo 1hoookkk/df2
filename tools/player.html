@@ -1,0 +1,981 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<title>df2 player (prototype)</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@500;700;800&family=JetBrains+Mono:wght@500;700&display=swap" rel="stylesheet">
+<style>
+  :root {
+    /* 60 : 30 : 10 palette */
+    --bg:#14171f;          /* 60% — deep navy charcoal */
+    --panel:#1f242e;       /* 30% — mid steel */
+    --panel-2:#252b36;     /* 30% raised variant */
+    --panel-d:#0f1218;     /* 30% inset variant */
+    --accent:#ff9c1a;      /* 10% — bold amber, single accent */
+    --accent-d:#c97208;
+    --accent-hot:#ffc55a;
+
+    --fg:#e8ebf0;
+    --fg-2:#b8c0cc;
+    --dim:#6b7585;
+    --line:#2c3340;
+    --hairline:#0a0d12;
+
+    --good:#4ade80;
+    --hot:#ff4a3a;
+
+    /* role colors (only for the pole markers — used sparingly) */
+    --r-root:#9a8cff; --r-body:#5cb8ff; --r-mouth:#4adba0;
+    --r-scar:#ff9c1a; --r-edge:#ff6b3a; --r-rip:#ff5cb8;
+  }
+  *{box-sizing:border-box;margin:0;padding:0;
+    font-family:'Inter','SF Pro Display',system-ui,sans-serif;
+    -webkit-font-smoothing:antialiased}
+  .mono, code, td:not(:nth-child(-n+2)), .readout, .led, input[type=range]{
+    font-family:'JetBrains Mono','SF Mono',Consolas,monospace
+  }
+  html,body{background:var(--bg);color:var(--fg)}
+  body{
+    padding:10px;font-size:11px;line-height:1.4;letter-spacing:0.01em;
+    font-weight:500;
+    min-height:100vh;
+  }
+
+  /* ── PANELS ────────────────────────────────────────────────────────── */
+  .panel{
+    background:var(--panel);
+    border:1px solid var(--line);
+    border-radius:3px;
+    padding:8px 10px 10px;
+    position:relative;
+  }
+  .panel-title{
+    display:flex; align-items:center; gap:6px;
+    font-size:9px; font-weight:800; letter-spacing:0.22em;
+    color:var(--accent); text-transform:uppercase;
+    margin:0 0 8px;
+    padding-bottom:5px;
+    border-bottom:1px solid var(--line);
+  }
+  .panel-title .dot{
+    width:5px; height:5px; background:var(--accent);
+    border-radius:1px;
+  }
+
+  /* ── TOP HUD STRIP ────────────────────────────────────────────────── */
+  .hud{
+    display:flex; align-items:center; gap:12px;
+    padding:7px 12px;
+    background:var(--panel);
+    border:1px solid var(--line);
+    border-radius:3px;
+    margin-bottom:8px;
+  }
+  .hud .brand{
+    font-size:13px; font-weight:800; letter-spacing:0.18em;
+    color:var(--fg);
+  }
+  .hud .brand .accent{ color:var(--accent) }
+  .hud .sub{ font-size:9px; color:var(--dim); letter-spacing:0.14em; font-weight:700 }
+  .hud .stat{
+    margin-left:auto; display:flex; gap:10px; align-items:center;
+    font-size:9px; letter-spacing:0.14em; font-weight:700;
+    color:var(--dim); text-transform:uppercase;
+  }
+  .hud .stat .pill{
+    background:var(--panel-d);
+    border:1px solid var(--line);
+    padding:2px 7px; color:var(--fg);
+    margin-left:4px;
+    border-radius:2px;
+    font-family:'JetBrains Mono',monospace;
+    letter-spacing:0.08em;
+  }
+  .hud .stat .pill.good{ color:var(--good); border-color:rgba(74,222,128,0.3) }
+  .hud .stat .pill.amber{ color:var(--accent); border-color:rgba(255,156,26,0.3) }
+
+  /* ── LAYOUT GRID ──────────────────────────────────────────────────── */
+  .grid-main{
+    display:grid;
+    grid-template-columns: 220px 280px minmax(440px,1fr);
+    gap:8px;
+  }
+  .col-stack{ display:flex; flex-direction:column; gap:8px }
+
+  /* ── BUTTONS ──────────────────────────────────────────────────────── */
+  button{
+    background:var(--panel-2);
+    color:var(--fg-2);
+    border:1px solid var(--line);
+    border-radius:2px;
+    padding:5px 10px; cursor:pointer;
+    font-family:'Inter',sans-serif; font-size:10px; font-weight:800;
+    letter-spacing:0.10em; text-transform:uppercase;
+  }
+  button:hover{ color:var(--accent); border-color:var(--accent); }
+  button:active, button.on{
+    background:var(--accent); color:#000; border-color:var(--accent);
+  }
+  button:disabled{ opacity:0.3; cursor:not-allowed }
+  .btn-row{ display:flex; gap:4px; flex-wrap:wrap }
+  .rivet-bl, .rivet-br{ display:none }
+
+  /* ── INPUTS ───────────────────────────────────────────────────────── */
+  input[type=file]{ color:var(--dim); font-size:10px; width:100%; font-family:'Inter',sans-serif }
+  input[type=file]::file-selector-button{
+    background:var(--panel-d); color:var(--accent);
+    border:1px solid var(--line); padding:3px 7px;
+    font-family:'Inter',sans-serif; font-size:9px; font-weight:800;
+    cursor:pointer; margin-right:5px;
+    text-transform:uppercase; letter-spacing:0.12em; border-radius:2px;
+  }
+  input[type=range]{
+    -webkit-appearance:none; appearance:none;
+    width:100%; height:12px; background:transparent; cursor:pointer; margin:0
+  }
+  input[type=range]::-webkit-slider-runnable-track{
+    height:4px; background:var(--panel-d);
+    border:1px solid var(--line); border-radius:2px;
+  }
+  input[type=range]::-webkit-slider-thumb{
+    -webkit-appearance:none; appearance:none;
+    width:10px; height:12px; margin-top:-5px;
+    background:var(--accent);
+    border-radius:1px;
+  }
+
+  /* ── METER ────────────────────────────────────────────────────────── */
+  .meter{
+    display:block; width:100%; height:6px;
+    background:var(--panel-d);
+    border:1px solid var(--line);
+    border-radius:2px;
+    position:relative; overflow:hidden;
+  }
+  .meter .bar{
+    height:100%; background:
+      linear-gradient(to right, var(--good) 0%, var(--good) 70%, var(--accent) 70%, var(--accent) 90%, var(--hot) 90%);
+    width:0%;
+    transition:width 0.04s linear;
+  }
+
+  /* ── M/Q PAD ──────────────────────────────────────────────────────── */
+  .pad-wrap{
+    background:var(--panel-d);
+    border:1px solid var(--line);
+    border-radius:2px;
+    padding:6px;
+  }
+  .pad{
+    width:100%; aspect-ratio:1/1;
+    background:#0a0d12;
+    position:relative; cursor:crosshair; touch-action:none;
+    border:1px solid var(--hairline);
+  }
+  .pad .grid{
+    position:absolute; inset:0; pointer-events:none;
+    background-image:
+      linear-gradient(to right,  rgba(255,156,26,0.08) 1px, transparent 1px),
+      linear-gradient(to bottom, rgba(255,156,26,0.08) 1px, transparent 1px),
+      linear-gradient(to right,  rgba(255,255,255,0.025) 1px, transparent 1px),
+      linear-gradient(to bottom, rgba(255,255,255,0.025) 1px, transparent 1px);
+    background-size: 50% 50%, 50% 50%, 12.5% 12.5%, 12.5% 12.5%;
+  }
+  .pad .axes{ position:absolute; inset:0; pointer-events:none; }
+  .pad .axes::before, .pad .axes::after{
+    content:""; position:absolute; background:rgba(255,156,26,0.18);
+  }
+  .pad .axes::before{ left:50%; top:0; bottom:0; width:1px; transform:translateX(-50%) }
+  .pad .axes::after { top:50%; left:0; right:0; height:1px; transform:translateY(-50%) }
+  .pad .crosshair{
+    position:absolute; width:16px; height:16px;
+    border:2px solid var(--accent); transform:translate(-50%,-50%);
+    pointer-events:none; box-shadow:0 0 8px rgba(255,156,26,0.6);
+    background:radial-gradient(circle, rgba(255,156,26,0.2), transparent 70%);
+    border-radius:1px;
+  }
+  .pad .crosshair::before, .pad .crosshair::after{
+    content:""; position:absolute; background:var(--accent);
+  }
+  .pad .crosshair::before{ left:50%; top:-3px; bottom:-3px; width:1px; transform:translateX(-50%) }
+  .pad .crosshair::after { top:50%; left:-3px; right:-3px; height:1px; transform:translateY(-50%) }
+  .pad-label{
+    position:absolute; font-size:8px; color:var(--fg-2);
+    letter-spacing:0.14em; pointer-events:none; padding:2px 4px;
+    background:rgba(15,18,24,0.85); font-weight:800;
+    border-radius:1px;
+  }
+  .pad-label.tl{top:3px;left:3px} .pad-label.tr{top:3px;right:3px}
+  .pad-label.bl{bottom:3px;left:3px} .pad-label.br{bottom:3px;right:3px}
+
+  /* ── READOUTS ─────────────────────────────────────────────────────── */
+  .readout{
+    font-size:12px; letter-spacing:0.06em; color:var(--accent);
+    font-weight:700;
+  }
+  .led{ color:var(--good); letter-spacing:0.04em; font-weight:700 }
+  .led.amber{ color:var(--accent) }
+  .small{font-size:9px;color:var(--dim);letter-spacing:0.08em;font-weight:600}
+
+  /* ── TABLES ───────────────────────────────────────────────────────── */
+  table{border-collapse:collapse;font-size:10px;width:100%; letter-spacing:0.02em}
+  thead tr{ background:var(--panel-d) }
+  th{color:var(--dim);font-weight:800;
+     text-transform:uppercase;font-size:8px;letter-spacing:0.18em;
+     padding:4px 7px; text-align:left;
+     border-bottom:1px solid var(--line);
+     font-family:'Inter',sans-serif;
+  }
+  td{
+    padding:3px 7px; border-bottom:1px solid var(--hairline);
+    color:var(--fg); font-family:'JetBrains Mono',monospace;
+  }
+  td:nth-child(2){ font-family:'Inter',sans-serif; font-weight:700 }
+  tbody tr:nth-child(odd){ background:rgba(255,255,255,0.012) }
+  tbody tr:hover{ background:rgba(255,156,26,0.05) }
+
+  /* ── ERROR/STATUS ─────────────────────────────────────────────────── */
+  .err{color:var(--hot);font-size:9px;margin-top:5px;letter-spacing:0.06em;font-weight:700}
+  .ok{color:var(--good);font-size:9px;letter-spacing:0.06em;font-weight:700}
+
+  /* ── VIZ ──────────────────────────────────────────────────────────── */
+  canvas#viz{
+    background:#0a0d12;
+    border:1px solid var(--line);
+    border-radius:2px;
+    display:block; width:100%; height:auto;
+  }
+
+  /* ── DIAGNOSTIC STRIP ─────────────────────────────────────────────── */
+  .diag{
+    margin-top:8px;
+    padding:6px 12px;
+    background:var(--panel);
+    border:1px solid var(--line);
+    border-radius:3px;
+    font-size:9px; color:var(--dim); letter-spacing:0.16em;
+    text-transform:uppercase; font-weight:700;
+    display:flex; gap:18px; align-items:center;
+  }
+  .diag .dot{
+    display:inline-block; width:5px; height:5px; background:var(--good);
+    margin-right:6px; vertical-align:middle; border-radius:1px;
+  }
+</style>
+</head>
+<body>
+
+<!-- ─── HUD STRIP ─────────────────────────────────────────────────────── -->
+<div class="hud">
+  <div class="brand">DF2 // PLAYER</div>
+  <div class="sub">PROTOTYPE · U16 MINIFLOAT MORPH ENGINE</div>
+  <div class="stat">
+    <span>BODY <span class="pill amber" id="body-info">— NONE —</span></span>
+    <span>SR <span class="pill" id="sr-pill">—</span></span>
+    <span>STATE <span class="pill good" id="state-pill">READY</span></span>
+  </div>
+</div>
+
+<!-- ─── MAIN 3-COLUMN GRID ────────────────────────────────────────────── -->
+<div class="grid-main">
+
+  <!-- LEFT COLUMN ─── controls + vocabulary ─────────────────────────── -->
+  <div class="col-stack">
+
+    <div class="panel">
+      <div class="panel-title"><span class="dot"></span>CARTRIDGE</div>
+      <div class="btn-row" style="margin-bottom:6px">
+        <button id="example-st">SMALL TALK</button>
+        <button id="example-sk">KNOCKERZ</button>
+      </div>
+      <input type="file" id="cart-file" accept=".json,.cart.json">
+      <div id="cart-status" class="ok" style="margin-top:6px"></div>
+      <div id="cart-err" class="err"></div>
+      <div class="rivet-bl"></div><div class="rivet-br"></div>
+    </div>
+
+    <div class="panel">
+      <div class="panel-title"><span class="dot"></span>SOURCE</div>
+      <div class="btn-row">
+        <button id="src-noise" class="on">PINK</button>
+        <button id="src-sweep">SWEEP</button>
+        <button id="src-file">FILE</button>
+      </div>
+      <input type="file" id="src-upload" accept="audio/*" style="display:none">
+      <div id="src-filename" class="small" style="margin-top:4px"></div>
+      <div class="btn-row" style="margin-top:8px">
+        <button id="play-btn">▶ PLAY</button>
+        <button id="stop-btn" disabled>■ STOP</button>
+      </div>
+      <div style="margin-top:10px">
+        <div class="small" style="margin-bottom:3px">LEVEL</div>
+        <input type="range" id="level" min="0" max="100" value="40">
+      </div>
+      <div style="margin-top:6px">
+        <div class="small" style="margin-bottom:3px">OUTPUT</div>
+        <div class="meter"><div class="bar" id="meter-bar"></div></div>
+      </div>
+      <div class="rivet-bl"></div><div class="rivet-br"></div>
+    </div>
+
+    <div class="panel">
+      <div class="panel-title"><span class="dot"></span>VOCABULARY</div>
+      <table id="vocab-table">
+        <thead><tr><th>SLOT</th><th>ROLE</th><th>DESC</th></tr></thead>
+        <tbody id="vocab-rows"><tr><td colspan="3" class="small">— LOAD CARTRIDGE —</td></tr></tbody>
+      </table>
+      <div class="rivet-bl"></div><div class="rivet-br"></div>
+    </div>
+
+  </div>
+
+  <!-- CENTER COLUMN ─── M/Q targeting pad ─────────────────────────── -->
+  <div class="col-stack">
+    <div class="panel" style="display:flex;flex-direction:column">
+      <div class="panel-title"><span class="dot"></span>M · Q TARGET</div>
+      <div class="pad-wrap">
+        <div class="pad" id="pad">
+          <div class="grid"></div>
+          <div class="axes"></div>
+          <div class="pad-label tl">M0 · Q100</div>
+          <div class="pad-label tr">M100 · Q100</div>
+          <div class="pad-label bl">M0 · Q0</div>
+          <div class="pad-label br">M100 · Q0</div>
+          <div class="crosshair" id="ch" style="left:50%;top:50%"></div>
+        </div>
+      </div>
+      <div style="margin-top:8px;display:flex;justify-content:space-between;align-items:center">
+        <div class="readout" id="mq-readout">M=0.500   Q=0.500</div>
+        <div class="small">DRAG TO MORPH</div>
+      </div>
+      <div class="rivet-bl"></div><div class="rivet-br"></div>
+    </div>
+  </div>
+
+  <!-- RIGHT COLUMN ─── viz + slot table + vowel readout ──────────── -->
+  <div class="col-stack">
+    <div class="panel">
+      <div class="panel-title"><span class="dot"></span>CASCADE · FREQUENCY RESPONSE</div>
+      <canvas id="viz" width="720" height="240"></canvas>
+      <div class="small" style="margin-top:6px">
+        LOG FREQ AXIS · POLE MARKERS COLORED BY ROLE
+      </div>
+      <div id="vowel-readout" class="readout led amber" style="margin-top:8px;font-size:14px;min-height:18px"></div>
+      <div class="rivet-bl"></div><div class="rivet-br"></div>
+    </div>
+    <div class="panel">
+      <div class="panel-title"><span class="dot"></span>SLOT POLES</div>
+      <table id="slot-table">
+        <thead><tr><th>#</th><th>ROLE</th><th>FREQ Hz</th><th>RADIUS</th></tr></thead>
+        <tbody id="slot-rows"><tr><td colspan="4" class="small">— LOAD CARTRIDGE —</td></tr></tbody>
+      </table>
+      <div class="rivet-bl"></div><div class="rivet-br"></div>
+    </div>
+  </div>
+
+</div>
+
+<!-- ─── DIAGNOSTIC STRIP ──────────────────────────────────────────────── -->
+<div class="diag">
+  <span><span class="dot"></span>ENGINE OK</span>
+  <span>U16 LERP · Q-FIRST</span>
+  <span>6 STAGE CASCADE</span>
+  <span id="diag-extra">— IDLE —</span>
+</div>
+
+<script>
+// ─────────────────────────────────────────────────────────────────────────
+// MINIFLOAT CODEC — port of pyruntime/minifloat.py (bit-faithful)
+// ─────────────────────────────────────────────────────────────────────────
+const COMBINE_K = 4.0;
+
+function mfDecode(raw) {
+  raw = raw & 0xFFFF;
+  if (raw === 0xFFFF) return 1.0;
+  if (raw === 0x0000) return 0.0;
+  const u = raw + 1;
+  const exp = ((u >> 12) & 0xF) - 15;
+  const mant = u & 0xFFF;
+  if (exp < -14) return mant * (1.0 / 134217728.0);
+  return (mant | 0x1000) * (1.0 / 8192.0) * Math.pow(2.0, exp);
+}
+
+function mfEncode(value) {
+  const v = +value;
+  if (v >= 1.0) return 0xFFFF;
+  if (v <= 0.0) return 0x0000;
+  const denormMant = Math.round(v * 134217728.0);
+  if (denormMant > 0 && denormMant <= 0xFFF) return (denormMant - 1) & 0xFFFF;
+  const log2v = Math.log2(v);
+  let expStored = Math.min(Math.floor(log2v) + 1, 0);
+  if (expStored < -14) return 0x0000;
+  let biasedExp = expStored + 15;
+  let mantWithHidden = Math.round(v / Math.pow(2.0, expStored - 13));
+  if (mantWithHidden >= 0x2000) {
+    if (expStored < 0) {
+      biasedExp += 1;
+      mantWithHidden = Math.round(v / Math.pow(2.0, expStored + 1 - 13));
+      const mant = Math.min(mantWithHidden & 0xFFF, 0xFFF);
+      const u = (biasedExp << 12) | mant;
+      return (u - 1) & 0xFFFF;
+    }
+    return 0xFFFF;
+  }
+  const mant = Math.min(Math.max(mantWithHidden - 0x1000, 0), 0xFFF);
+  const u = (biasedExp << 12) | mant;
+  return (u - 1) & 0xFFFF;
+}
+
+// kernel [c0,c1,c2,c3,c4] → packed 5-u16 word tuple
+function packKernel(c) {
+  return [
+    mfEncode((c[0] - c[1]) / COMBINE_K),
+    mfEncode(c[1]),
+    mfEncode((c[2] - c[3]) / COMBINE_K),
+    mfEncode(c[3]),
+    mfEncode(c[4]),
+  ];
+}
+
+function lerpU16(a, b, t) {
+  return Math.max(0, Math.min(0xFFFF, (a & 0xFFFF) + Math.trunc(((b & 0xFFFF) - (a & 0xFFFF)) * t)));
+}
+
+// Q-first bilinear in u16 space, then decode → kernel
+function interpPacked(p_m0q0, p_m0q100, p_m100q0, p_m100q100, morph, q) {
+  const out = new Array(5);
+  for (let i = 0; i < 5; i++) {
+    const qm0 = lerpU16(p_m0q0[i],   p_m0q100[i],   q);
+    const qm1 = lerpU16(p_m100q0[i], p_m100q100[i], q);
+    out[i] = lerpU16(qm0, qm1, morph);
+  }
+  const d0 = mfDecode(out[0]);
+  const d1 = mfDecode(out[1]);
+  const d2 = mfDecode(out[2]);
+  const d3 = mfDecode(out[3]);
+  const d4 = mfDecode(out[4]);
+  return [
+    d0 * COMBINE_K + d1,  // c0
+    d1,                   // c1
+    d2 * COMBINE_K + d3,  // c2
+    d3,                   // c3
+    d4,                   // c4
+  ];
+}
+
+// kernel [c0..c4] → biquad (b0,b1,b2,a1,a2) per pyruntime/render.py:45-49
+function kernelToBiquad(k) {
+  const c0=k[0], c1=k[1], c2=k[2], c3=k[3], c4=k[4];
+  const a1 = c2 - 2.0;
+  const a2 = 1.0 - c3;
+  const b0 = c4;
+  const b1 = (c0 - 2.0) * c4;
+  const b2 = (1.0 - c1) * c4;
+  return { b0, b1, b2, a1, a2 };
+}
+
+// ─────────────────────────────────────────────────────────────────────────
+// CARTRIDGE LOADER
+// ─────────────────────────────────────────────────────────────────────────
+const CORNER_KEYS = ["M0_Q0", "M0_Q100", "M100_Q0", "M100_Q100"];
+let cartridge = null;
+let packedCorners = null;  // { M0_Q0: [stage0_words, stage1_words, ...], ... }
+let activeSlots = 6;
+
+function parseCartridge(json) {
+  const kfs = json.keyframes || [];
+  const byLabel = {};
+  for (const kf of kfs) byLabel[kf.label] = kf;
+  for (const k of CORNER_KEYS) if (!byLabel[k]) throw new Error(`cartridge missing corner: ${k}`);
+  // detect active slot count (non-passthrough)
+  const PASSTHROUGH = (s)=>(
+    Math.abs(s.c0-2)<1e-6 && Math.abs(s.c1-1)<1e-6 && Math.abs(s.c2-2)<1e-6 &&
+    Math.abs(s.c3-1)<1e-6 && Math.abs(s.c4-1)<1e-6);
+  let active = 0;
+  for (const s of byLabel.M0_Q0.stages) { if (!PASSTHROUGH(s)) active++; else break; }
+  activeSlots = active || 6;
+  const packed = {};
+  for (const k of CORNER_KEYS) {
+    packed[k] = byLabel[k].stages.slice(0, activeSlots).map(s =>
+      packKernel([s.c0, s.c1, s.c2, s.c3, s.c4]));
+  }
+  return packed;
+}
+
+function loadCartridge(json) {
+  cartridge = json;
+  packedCorners = parseCartridge(json);
+  document.getElementById("body-info").textContent =
+    `${json.name || "untitled"}  ·  ${activeSlots} active slots  ·  format=${json.format || "?"}`;
+  document.getElementById("cart-status").textContent =
+    `loaded ✓  (${CORNER_KEYS.length} corners × ${activeSlots} slots)`;
+  document.getElementById("cart-err").textContent = "";
+  // vocabulary table
+  const vocab = json.vocabulary || {};
+  const rows = document.getElementById("vocab-rows");
+  rows.innerHTML = "";
+  for (let i = 0; i < activeSlots; i++) {
+    const v = vocab[`slot_${i}`] || {};
+    const tr = document.createElement("tr");
+    tr.innerHTML = `<td>${i}</td><td>${v.label || "—"}</td><td class="small">${v.desc || ""}</td>`;
+    rows.appendChild(tr);
+  }
+  rebuildCascade();
+  drawResponse();
+}
+
+document.getElementById("cart-file").addEventListener("change", async (e) => {
+  const f = e.target.files[0]; if (!f) return;
+  try {
+    const text = await f.text();
+    loadCartridge(JSON.parse(text));
+  } catch (err) {
+    document.getElementById("cart-err").textContent = "load error: " + err.message;
+  }
+});
+function wireExample(btnId, name) {
+  const btn = document.getElementById(btnId);
+  if (!btn) return;
+  btn.addEventListener("click", async () => {
+    for (const url of [`../bodies/${name}.cart.json`, `bodies/${name}.cart.json`, `${name}.cart.json`]) {
+      try {
+        const r = await fetch(url);
+        if (r.ok) { loadCartridge(await r.json()); return; }
+      } catch {}
+    }
+    document.getElementById("cart-err").textContent =
+      "couldn't auto-fetch (browsers block file:// fetch). use the file picker.";
+  });
+}
+wireExample("example-st", "small_talk");
+wireExample("example-sk", "speaker_knockerz");
+
+// ─────────────────────────────────────────────────────────────────────────
+// WEB AUDIO CASCADE
+// ─────────────────────────────────────────────────────────────────────────
+let ctx = null;
+let sourceNode = null;
+let gainNode = null;
+let analyser = null;
+let stages = [];   // IIRFilterNodes, length = activeSlots
+let mqMorph = 0.5;
+let mqQ = 0.5;
+let currentSrc = "noise";
+let uploadedBuffer = null;
+let isPlaying = false;
+
+function ensureCtx() {
+  if (!ctx) {
+    ctx = new (window.AudioContext || window.webkitAudioContext)();
+    gainNode = ctx.createGain();
+    gainNode.gain.value = parseInt(document.getElementById("level").value)/100;
+    analyser = ctx.createAnalyser();
+    analyser.fftSize = 512;
+    gainNode.connect(analyser);
+    analyser.connect(ctx.destination);
+  }
+}
+
+function disconnectChain() {
+  if (sourceNode) try { sourceNode.disconnect(); } catch {}
+  for (const s of stages) try { s.disconnect(); } catch {}
+  stages = [];
+}
+
+function rebuildCascade() {
+  if (!ctx || !packedCorners) return;
+  // capture current source endpoint
+  const wasPlaying = isPlaying;
+  for (const s of stages) try { s.disconnect(); } catch {}
+  stages = [];
+
+  for (let i = 0; i < activeSlots; i++) {
+    const k = interpPacked(
+      packedCorners.M0_Q0[i],   packedCorners.M0_Q100[i],
+      packedCorners.M100_Q0[i], packedCorners.M100_Q100[i],
+      mqMorph, mqQ);
+    const bq = kernelToBiquad(k);
+    // Web Audio IIRFilterNode: feedforward=[b0,b1,b2] feedback=[1,a1,a2]
+    // Guard against pathological coefficients
+    const ff = [bq.b0||0, bq.b1||0, bq.b2||0];
+    const fb = [1.0, bq.a1||0, bq.a2||0];
+    if (!ff.every(Number.isFinite) || !fb.every(Number.isFinite)) {
+      console.warn("slot", i, "non-finite coeffs", bq); continue;
+    }
+    try {
+      const node = ctx.createIIRFilter(ff, fb);
+      stages.push(node);
+    } catch (err) {
+      console.warn("slot", i, "IIR rejected", err.message, bq);
+    }
+  }
+
+  // chain: source → stage0 → ... → stageN-1 → gain → analyser → destination
+  if (sourceNode) {
+    let prev = sourceNode;
+    try { prev.disconnect(); } catch {}
+    for (const s of stages) {
+      try { prev.connect(s); } catch (e) { console.warn(e); }
+      prev = s;
+    }
+    try { prev.connect(gainNode); } catch (e) { console.warn(e); }
+  }
+}
+
+function buildPinkNoise(seconds=4.0) {
+  const sr = ctx.sampleRate;
+  const len = Math.floor(sr * seconds);
+  const buf = ctx.createBuffer(1, len, sr);
+  const data = buf.getChannelData(0);
+  // Voss-McCartney pink noise approx
+  let b0=0,b1=0,b2=0,b3=0,b4=0,b5=0,b6=0;
+  for (let i = 0; i < len; i++) {
+    const white = Math.random() * 2 - 1;
+    b0 = 0.99886*b0 + white*0.0555179;
+    b1 = 0.99332*b1 + white*0.0750759;
+    b2 = 0.96900*b2 + white*0.1538520;
+    b3 = 0.86650*b3 + white*0.3104856;
+    b4 = 0.55000*b4 + white*0.5329522;
+    b5 = -0.7616*b5 - white*0.0168980;
+    data[i] = (b0+b1+b2+b3+b4+b5+b6 + white*0.5362) * 0.11;
+    b6 = white*0.115926;
+  }
+  return buf;
+}
+
+function buildSweep(seconds=4.0) {
+  const sr = ctx.sampleRate;
+  const len = Math.floor(sr * seconds);
+  const buf = ctx.createBuffer(1, len, sr);
+  const data = buf.getChannelData(0);
+  const f0 = 20, f1 = Math.min(sr/2.2, 18000);
+  // exponential sweep: instantaneous freq = f0 * (f1/f0)^(t/T)
+  let phase = 0;
+  for (let i = 0; i < len; i++) {
+    const t = i / sr;
+    const f = f0 * Math.pow(f1/f0, t/seconds);
+    phase += 2*Math.PI*f/sr;
+    data[i] = Math.sin(phase) * 0.5;
+  }
+  return buf;
+}
+
+async function startPlay() {
+  ensureCtx();
+  if (ctx.state === "suspended") await ctx.resume();
+  if (sourceNode) try { sourceNode.stop(); sourceNode.disconnect(); } catch {}
+
+  let buf;
+  if (currentSrc === "noise") buf = buildPinkNoise(8);
+  else if (currentSrc === "sweep") buf = buildSweep(6);
+  else if (currentSrc === "file" && uploadedBuffer) buf = uploadedBuffer;
+  else { alert("no source loaded"); return; }
+
+  sourceNode = ctx.createBufferSource();
+  sourceNode.buffer = buf;
+  sourceNode.loop = (currentSrc !== "sweep");
+
+  rebuildCascade();
+  if (stages.length > 0) {
+    let prev = sourceNode;
+    for (const s of stages) { prev.connect(s); prev = s; }
+    prev.connect(gainNode);
+  } else {
+    sourceNode.connect(gainNode);
+  }
+
+  sourceNode.start();
+  isPlaying = true;
+  document.getElementById("play-btn").disabled = true;
+  document.getElementById("stop-btn").disabled = false;
+  meterLoop();
+}
+
+function stopPlay() {
+  if (sourceNode) try { sourceNode.stop(); sourceNode.disconnect(); } catch {}
+  sourceNode = null;
+  isPlaying = false;
+  document.getElementById("play-btn").disabled = false;
+  document.getElementById("stop-btn").disabled = true;
+}
+
+document.getElementById("play-btn").addEventListener("click", startPlay);
+document.getElementById("stop-btn").addEventListener("click", stopPlay);
+document.getElementById("level").addEventListener("input", (e)=>{
+  if (gainNode) gainNode.gain.value = parseInt(e.target.value)/100;
+});
+
+// source selector
+for (const id of ["src-noise","src-sweep","src-file"]) {
+  document.getElementById(id).addEventListener("click", ()=>{
+    document.querySelectorAll("[id^=src-]").forEach(b=>b.classList.remove("on"));
+    document.getElementById(id).classList.add("on");
+    currentSrc = id.replace("src-","");
+    if (currentSrc === "file") document.getElementById("src-upload").click();
+  });
+}
+document.getElementById("src-upload").addEventListener("change", async (e)=>{
+  const f = e.target.files[0]; if (!f) return;
+  ensureCtx();
+  const arr = await f.arrayBuffer();
+  try {
+    uploadedBuffer = await ctx.decodeAudioData(arr);
+    document.getElementById("src-filename").textContent = `loaded: ${f.name}  (${uploadedBuffer.duration.toFixed(1)}s)`;
+  } catch (err) {
+    document.getElementById("src-filename").textContent = "decode error: " + err.message;
+  }
+});
+
+// level meter
+function meterLoop() {
+  if (!analyser) return;
+  const data = new Uint8Array(analyser.fftSize);
+  function step() {
+    analyser.getByteTimeDomainData(data);
+    let peak = 0;
+    for (let i = 0; i < data.length; i++) {
+      const v = Math.abs((data[i]-128)/128);
+      if (v > peak) peak = v;
+    }
+    const bar = document.getElementById("meter-bar");
+    bar.style.width = Math.min(100, peak*100) + "%";
+    bar.style.background = peak > 0.95 ? "var(--hot)" : "var(--good)";
+    if (isPlaying) requestAnimationFrame(step);
+    else bar.style.width = "0%";
+  }
+  step();
+}
+
+// ─────────────────────────────────────────────────────────────────────────
+// M/Q PAD
+// ─────────────────────────────────────────────────────────────────────────
+const pad = document.getElementById("pad");
+const ch = document.getElementById("ch");
+
+function updateMQ(mNorm, qNorm) {
+  mqMorph = Math.max(0, Math.min(1, mNorm));
+  mqQ = Math.max(0, Math.min(1, qNorm));
+  ch.style.left = (mqMorph*100) + "%";
+  ch.style.top = ((1-mqQ)*100) + "%";  // visual: Q increases upward
+  document.getElementById("mq-readout").textContent =
+    `M=${mqMorph.toFixed(3)}   Q=${mqQ.toFixed(3)}`;
+  rebuildCascade();
+  if (sourceNode) {
+    // reconnect chain after rebuild
+    try { sourceNode.disconnect(); } catch {}
+    let prev = sourceNode;
+    for (const s of stages) { try { prev.connect(s); prev = s; } catch (e){} }
+    try { prev.connect(gainNode); } catch {}
+  }
+  drawResponse();
+}
+
+let dragging = false;
+function padPointer(e) {
+  const rect = pad.getBoundingClientRect();
+  const x = (e.clientX - rect.left) / rect.width;
+  const y = 1 - (e.clientY - rect.top) / rect.height;
+  updateMQ(x, y);
+}
+pad.addEventListener("pointerdown", (e)=>{ dragging=true; pad.setPointerCapture(e.pointerId); padPointer(e); });
+pad.addEventListener("pointermove", (e)=>{ if (dragging) padPointer(e); });
+pad.addEventListener("pointerup",   (e)=>{ dragging=false; });
+
+// ─────────────────────────────────────────────────────────────────────────
+// POLE EXTRACTION & VOWEL LOOKUP
+// ─────────────────────────────────────────────────────────────────────────
+// Biquad denom: 1 + a1*z^-1 + a2*z^-2.  Poles are roots of z^2 + a1 z + a2.
+// For complex-conjugate pair: radius = sqrt(a2), angle = acos(-a1 / (2*radius)).
+function biquadPole(bq, sr) {
+  const a2 = bq.a2;
+  if (a2 <= 0 || a2 >= 1) return null;
+  const r = Math.sqrt(a2);
+  const arg = -bq.a1 / (2 * r);
+  if (!Number.isFinite(arg) || arg < -1 || arg > 1) return null;
+  const theta = Math.acos(arg);
+  return { freq: sr * theta / (2 * Math.PI), radius: r };
+}
+
+// Slot role colors — keyed to the universal vocabulary
+const ROLE_COLORS = {
+  "Root":  "#7a5cff",   // violet — sub
+  "Body":  "#3aa6ff",   // blue — F1
+  "Mouth": "#39d39c",   // teal — F2
+  "Scar":  "#d97b0e",   // amber — anti-formant
+  "Edge":  "#ff5e3a",   // orange-red — F3
+  "Rip":   "#ff3aa6",   // magenta — air
+};
+function slotColor(i) {
+  const v = (cartridge?.vocabulary || {})[`slot_${i}`];
+  return ROLE_COLORS[v?.label] || "#888";
+}
+function slotLabel(i) {
+  const v = (cartridge?.vocabulary || {})[`slot_${i}`];
+  return v?.label || `slot ${i}`;
+}
+
+// Peterson-Barney–ish vowel centroids (F1, F2) in Hz
+const VOWELS = [
+  { name: "Ee (heed)",  f1: 270,  f2: 2290 },
+  { name: "Ih (hid)",   f1: 390,  f2: 1990 },
+  { name: "Eh (head)",  f1: 530,  f2: 1840 },
+  { name: "Ae (had)",   f1: 660,  f2: 1720 },
+  { name: "Ah (hod)",   f1: 730,  f2: 1090 },
+  { name: "Aw (hawed)", f1: 570,  f2: 840  },
+  { name: "Oh (hoed)",  f1: 450,  f2: 850  },
+  { name: "Oo (who'd)", f1: 300,  f2: 870  },
+  { name: "Uh (hud)",   f1: 640,  f2: 1190 },
+  { name: "Er (heard)", f1: 490,  f2: 1350 },
+];
+function nearestVowel(f1, f2) {
+  // log-distance in F1-F2 plane (perceptually relevant)
+  let best = null, bestD = Infinity;
+  for (const v of VOWELS) {
+    const d = Math.pow(Math.log2(f1 / v.f1), 2) + Math.pow(Math.log2(f2 / v.f2), 2);
+    if (d < bestD) { bestD = d; best = v; }
+  }
+  return { vowel: best, dist: Math.sqrt(bestD) };
+}
+
+// ─────────────────────────────────────────────────────────────────────────
+// FREQUENCY RESPONSE VIZ + POLE MARKERS + READOUT
+// ─────────────────────────────────────────────────────────────────────────
+function drawResponse() {
+  if (!packedCorners) return;
+  const cv = document.getElementById("viz");
+  const cx = cv.getContext("2d");
+  const W = cv.width, H = cv.height;
+  cx.fillStyle = "#000";
+  cx.fillRect(0,0,W,H);
+  // grid
+  cx.strokeStyle = "#1c1c20"; cx.lineWidth = 1;
+  for (let i = 1; i < 10; i++) {
+    const x = Math.log10(i*100)/Math.log10(20000) * W;  // 100 to 20k
+    cx.beginPath(); cx.moveTo(x,0); cx.lineTo(x,H); cx.stroke();
+  }
+  // evaluate cascade at current M/Q
+  const sr = ctx ? ctx.sampleRate : 44100;
+  const npts = 400;
+  const mags = new Float32Array(npts);
+  let maxMag = -Infinity, minMag = Infinity;
+  // log-spaced freqs 20 .. sr/2
+  for (let i = 0; i < npts; i++) {
+    const f = 20 * Math.pow((sr/2)/20, i/(npts-1));
+    const w = 2*Math.PI*f/sr;
+    const cosw = Math.cos(w), cos2w = Math.cos(2*w);
+    const sinw = Math.sin(w), sin2w = Math.sin(2*w);
+    let totalDb = 0;
+    for (let s = 0; s < activeSlots; s++) {
+      const k = interpPacked(
+        packedCorners.M0_Q0[s],   packedCorners.M0_Q100[s],
+        packedCorners.M100_Q0[s], packedCorners.M100_Q100[s],
+        mqMorph, mqQ);
+      const bq = kernelToBiquad(k);
+      // |H(e^jw)| for biquad b0+b1 z^-1 +b2 z^-2 / (1+a1 z^-1+a2 z^-2)
+      const numRe = bq.b0 + bq.b1*cosw + bq.b2*cos2w;
+      const numIm = -bq.b1*sinw - bq.b2*sin2w;
+      const denRe = 1 + bq.a1*cosw + bq.a2*cos2w;
+      const denIm = -bq.a1*sinw - bq.a2*sin2w;
+      const numMag2 = numRe*numRe + numIm*numIm;
+      const denMag2 = denRe*denRe + denIm*denIm;
+      if (denMag2 < 1e-30) continue;
+      const mag2 = numMag2 / denMag2;
+      if (mag2 > 0) totalDb += 10*Math.log10(mag2);
+    }
+    mags[i] = totalDb;
+    if (totalDb > maxMag) maxMag = totalDb;
+    if (totalDb < minMag) minMag = totalDb;
+  }
+  // draw
+  const span = Math.max(20, maxMag - minMag);
+  cx.strokeStyle = "#d97b0e"; cx.lineWidth = 1.5;
+  cx.beginPath();
+  for (let i = 0; i < npts; i++) {
+    const f = 20 * Math.pow((sr/2)/20, i/(npts-1));
+    const x = Math.log10(f/20) / Math.log10((sr/2)/20) * W;
+    const y = H - ((mags[i] - minMag) / span) * (H-10) - 5;
+    if (i === 0) cx.moveTo(x,y); else cx.lineTo(x,y);
+  }
+  cx.stroke();
+  // freq labels
+  cx.fillStyle = "#666"; cx.font = "10px monospace";
+  for (const f of [100, 1000, 10000]) {
+    const x = Math.log10(f/20) / Math.log10((sr/2)/20) * W;
+    cx.fillText(f >= 1000 ? (f/1000)+"k" : f+"", x+2, H-3);
+  }
+  cx.fillStyle = "#666";
+  cx.fillText(`${maxMag.toFixed(1)} dB`, 4, 12);
+  cx.fillText(`${minMag.toFixed(1)} dB`, 4, H-15);
+
+  // ── POLE MARKERS ──────────────────────────────────────────────────
+  const poles = [];
+  for (let s = 0; s < activeSlots; s++) {
+    const k = interpPacked(
+      packedCorners.M0_Q0[s],   packedCorners.M0_Q100[s],
+      packedCorners.M100_Q0[s], packedCorners.M100_Q100[s],
+      mqMorph, mqQ);
+    const bq = kernelToBiquad(k);
+    const p = biquadPole(bq, sr);
+    poles.push(p);
+    if (!p || p.freq < 20 || p.freq > sr/2) continue;
+    const x = Math.log10(p.freq/20) / Math.log10((sr/2)/20) * W;
+    cx.strokeStyle = slotColor(s);
+    cx.lineWidth = 2;
+    cx.beginPath(); cx.moveTo(x, 18); cx.lineTo(x, H-18); cx.stroke();
+    // marker dot
+    cx.fillStyle = slotColor(s);
+    cx.beginPath(); cx.arc(x, 24 + s*6, 4, 0, Math.PI*2); cx.fill();
+    // label above the line
+    cx.fillStyle = slotColor(s);
+    cx.font = "10px monospace";
+    cx.fillText(slotLabel(s), x + 6, 24 + s*6 + 4);
+  }
+
+  // ── SLOT TABLE ────────────────────────────────────────────────────
+  const rows = document.getElementById("slot-rows");
+  if (rows) {
+    rows.innerHTML = "";
+    for (let s = 0; s < activeSlots; s++) {
+      const p = poles[s];
+      const tr = document.createElement("tr");
+      const col = slotColor(s);
+      tr.innerHTML =
+        `<td style="color:${col}">${s}</td>` +
+        `<td style="color:${col}">${slotLabel(s)}</td>` +
+        `<td>${p ? p.freq.toFixed(0) : "—"}</td>` +
+        `<td>${p ? p.radius.toFixed(3) : "—"}</td>`;
+      rows.appendChild(tr);
+    }
+  }
+
+  // ── VOWEL READOUT (only if Body + Mouth slots exist — vocal bodies) ─
+  const readout = document.getElementById("vowel-readout");
+  if (readout) {
+    const vocab = cartridge?.vocabulary || {};
+    let bodySlot = -1, mouthSlot = -1;
+    for (let i = 0; i < activeSlots; i++) {
+      if (vocab[`slot_${i}`]?.label === "Body")  bodySlot = i;
+      if (vocab[`slot_${i}`]?.label === "Mouth") mouthSlot = i;
+    }
+    if (bodySlot >= 0 && mouthSlot >= 0 && poles[bodySlot] && poles[mouthSlot]) {
+      const f1 = poles[bodySlot].freq;
+      const f2 = poles[mouthSlot].freq;
+      const { vowel, dist } = nearestVowel(f1, f2);
+      const proximity = Math.max(0, 1 - dist).toFixed(2);
+      readout.innerHTML =
+        `<span style="color:var(--accent)">~ ${vowel.name} </span>` +
+        `<span class="small">F1=${f1.toFixed(0)} F2=${f2.toFixed(0)}  (proximity ${proximity})</span>`;
+    } else {
+      readout.textContent = "";
+    }
+  }
+}
+
+// init: center pad
+updateMQ(0.5, 0.5);
+
+</script>
+</body>
+</html>

@@ -1,0 +1,161 @@
+# Speaker Knockerz — sub-pressure / cone profile
+# Universal vocabulary: Root/Body/Mouth/Scar/Edge/Rip
+# Authoring SR: 39062.5 Hz (df2 hardware-domain rate)
+#
+# Tuning intent:
+#   M axis  : open cone (M0) -> focused cone (M100). Body & Mouth tighten
+#             and rise slightly in freq; cone gets more "pointed."
+#   Q axis  : soft (Q0) -> sharp (Q100). Scar deepens, Edge bites harder,
+#             Rip rings longer. The whole body sharpens without changing
+#             the cone shape itself.
+#
+# First-pass numbers. Adjust by ear; recompile with:
+#   python tools/author_body.py bodies/speaker_knockerz.toml
+
+name        = "Speaker Knockerz"
+boost       = 4.0
+filter_type = 0
+
+[vocabulary]
+slot_0 = { label = "Root",  desc = "sub anchor"      }
+slot_1 = { label = "Body",  desc = "low mass"        }
+slot_2 = { label = "Mouth", desc = "cone formant"    }
+slot_3 = { label = "Scar",  desc = "notch / cut"     }
+slot_4 = { label = "Edge",  desc = "high-mid bite"   }
+slot_5 = { label = "Rip",   desc = "ultra-high air"  }
+
+# ─── M0_Q0  (open cone, soft) ──────────────────────────────────────────
+[[corner.M0_Q0.stages]]    # slot 0 — Root
+type     = "resonator"
+freq_hz  = 55.0
+radius   = 0.94
+val1     = 0.0
+[[corner.M0_Q0.stages]]    # slot 1 — Body
+type     = "resonator"
+freq_hz  = 180.0
+radius   = 0.85
+val1     = 0.0
+[[corner.M0_Q0.stages]]    # slot 2 — Mouth
+type     = "resonator"
+freq_hz  = 360.0
+radius   = 0.88
+val1     = 0.0
+[[corner.M0_Q0.stages]]    # slot 3 — Scar (notch)
+type          = "resonator_with_zero"
+freq_hz       = 1800.0
+radius        = 0.75
+val1          = 0.0
+zero_freq_hz  = 1800.0
+zero_radius   = 1.0
+[[corner.M0_Q0.stages]]    # slot 4 — Edge
+type     = "resonator"
+freq_hz  = 3800.0
+radius   = 0.78
+val1     = 0.0
+[[corner.M0_Q0.stages]]    # slot 5 — Rip
+type     = "resonator"
+freq_hz  = 9000.0
+radius   = 0.70
+val1     = 0.0
+
+# ─── M100_Q0  (focused cone, soft) ─────────────────────────────────────
+[[corner.M100_Q0.stages]]
+type     = "resonator"
+freq_hz  = 60.0
+radius   = 0.94
+val1     = 0.0
+[[corner.M100_Q0.stages]]
+type     = "resonator"
+freq_hz  = 260.0
+radius   = 0.88
+val1     = 0.0
+[[corner.M100_Q0.stages]]
+type     = "resonator"
+freq_hz  = 480.0
+radius   = 0.90
+val1     = 0.0
+[[corner.M100_Q0.stages]]
+type          = "resonator_with_zero"
+freq_hz       = 1800.0
+radius        = 0.78
+val1          = 0.0
+zero_freq_hz  = 1800.0
+zero_radius   = 1.0
+[[corner.M100_Q0.stages]]
+type     = "resonator"
+freq_hz  = 4200.0
+radius   = 0.80
+val1     = 0.0
+[[corner.M100_Q0.stages]]
+type     = "resonator"
+freq_hz  = 10500.0
+radius   = 0.74
+val1     = 0.0
+
+# ─── M0_Q100  (open cone, sharp) ───────────────────────────────────────
+[[corner.M0_Q100.stages]]
+type     = "resonator"
+freq_hz  = 55.0
+radius   = 0.96
+val1     = 0.0
+[[corner.M0_Q100.stages]]
+type     = "resonator"
+freq_hz  = 180.0
+radius   = 0.90
+val1     = 0.0
+[[corner.M0_Q100.stages]]
+type     = "resonator"
+freq_hz  = 360.0
+radius   = 0.93
+val1     = 0.0
+[[corner.M0_Q100.stages]]
+type          = "resonator_with_zero"
+freq_hz       = 1800.0
+radius        = 0.92
+val1          = 0.0
+zero_freq_hz  = 1800.0
+zero_radius   = 1.0
+[[corner.M0_Q100.stages]]
+type     = "resonator"
+freq_hz  = 3800.0
+radius   = 0.90
+val1     = 0.0
+[[corner.M0_Q100.stages]]
+type     = "resonator"
+freq_hz  = 9000.0
+radius   = 0.85
+val1     = 0.0
+
+# ─── M100_Q100  (focused cone, sharp) ──────────────────────────────────
+[[corner.M100_Q100.stages]]
+type     = "resonator"
+freq_hz  = 60.0
+radius   = 0.96
+val1     = 0.0
+[[corner.M100_Q100.stages]]
+type     = "resonator"
+freq_hz  = 260.0
+radius   = 0.92
+val1     = 0.0
+[[corner.M100_Q100.stages]]
+type     = "resonator"
+freq_hz  = 480.0
+radius   = 0.95
+val1     = 0.0
+[[corner.M100_Q100.stages]]
+type          = "resonator_with_zero"
+freq_hz       = 1800.0
+radius        = 0.94
+val1          = 0.0
+zero_freq_hz  = 1800.0
+zero_radius   = 1.0
+[[corner.M100_Q100.stages]]
+type     = "resonator"
+freq_hz  = 4200.0
+radius   = 0.92
+val1     = 0.0
+[[corner.M100_Q100.stages]]
+type     = "resonator"
+freq_hz  = 10500.0
+radius   = 0.88
+val1     = 0.0

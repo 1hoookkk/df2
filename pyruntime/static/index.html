@@ -1,0 +1,602 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>TRENCHWORK</title>
+<style>
+:root {
+    --face: #c0c0c0;
+    --light: #ffffff;
+    --mid: #808080;
+    --dark: #404040;
+    --black: #000000;
+    --title-a: #0a246a;
+    --title-b: #3a6ea5;
+    --void: #0a0e0a;
+    --trace: #33ff33;
+    --accent: #d97b0e;
+}
+* { box-sizing: border-box; user-select: none; margin: 0; padding: 0; }
+body {
+    background: var(--face);
+    color: #000;
+    font: 11px Tahoma, 'MS Sans Serif', sans-serif;
+    height: 100vh;
+    display: flex;
+    flex-direction: column;
+    overflow: hidden;
+}
+.bevel-out {
+    border: 2px solid;
+    border-color: var(--light) var(--dark) var(--dark) var(--light);
+}
+.bevel-in {
+    border: 2px solid;
+    border-color: var(--dark) var(--light) var(--light) var(--dark);
+}
+.title-bar {
+    background: linear-gradient(to right, var(--title-a), var(--title-b));
+    color: #fff; font-weight: bold; padding: 3px 6px;
+    display: flex; align-items: center; gap: 8px;
+}
+.title-bar .spacer { flex: 1; }
+.pill {
+    background: rgba(0,0,0,0.3); padding: 1px 6px;
+    font: 10px Consolas, monospace;
+}
+button {
+    font: 11px Tahoma, 'MS Sans Serif', sans-serif;
+    background: var(--face); padding: 4px 12px; cursor: pointer;
+    border: 2px solid;
+    border-color: var(--light) var(--dark) var(--dark) var(--light);
+}
+button:active {
+    border-color: var(--dark) var(--light) var(--light) var(--dark);
+    padding: 5px 11px 3px 13px;
+}
+button:disabled { color: var(--mid); }
+button.accent {
+    background: var(--accent); color: #fff;
+    border-color: #f0a030 #805000 #805000 #f0a030;
+    font-weight: bold;
+}
+select {
+    font: 11px Tahoma, 'MS Sans Serif', sans-serif;
+    background: #fff; border: 2px solid;
+    border-color: var(--dark) var(--light) var(--light) var(--dark);
+    padding: 2px 4px; width: 100%;
+}
+input[type=range] {
+    -webkit-appearance: none; appearance: none;
+    flex: 1; height: 18px; background: transparent;
+}
+input[type=range]::-webkit-slider-runnable-track {
+    height: 3px; background: var(--dark);
+    border-bottom: 1px solid var(--light);
+}
+input[type=range]::-webkit-slider-thumb {
+    -webkit-appearance: none; width: 10px; height: 16px; margin-top: -7px;
+    background: var(--face);
+    border: 2px solid; border-color: var(--light) var(--dark) var(--dark) var(--light);
+}
+.readout {
+    width: 32px; text-align: right;
+    font: 10px Consolas, monospace;
+    background: #fff; padding: 1px 3px;
+    border: 2px solid; border-color: var(--dark) var(--light) var(--light) var(--dark);
+}
+
+/* LAYOUT */
+.main {
+    flex: 1; display: grid;
+    grid-template-columns: 200px 1fr;
+    min-height: 0;
+}
+.sidebar {
+    background: var(--face); padding: 8px;
+    display: flex; flex-direction: column; gap: 8px;
+    border-right: 2px solid var(--dark);
+    overflow-y: auto;
+}
+.group {
+    background: var(--face); padding: 8px;
+    border: 2px solid; border-color: var(--light) var(--dark) var(--dark) var(--light);
+    display: flex; flex-direction: column; gap: 6px;
+}
+.group-title {
+    font: bold 10px Consolas, monospace; color: var(--dark);
+    letter-spacing: 1px;
+}
+.field { display: flex; flex-direction: column; gap: 2px; }
+.field-label { font: 9px Consolas, monospace; color: #555; }
+.slider-row { display: flex; align-items: center; gap: 6px; }
+.analysis-row {
+    display: flex; justify-content: space-between;
+    font: 10px Consolas, monospace; padding: 2px 0;
+    border-bottom: 1px solid #aaa;
+}
+.analysis-val { font-weight: bold; }
+
+.content {
+    display: flex; flex-direction: column; min-height: 0;
+}
+.scope-area {
+    flex: 1; position: relative; background: var(--void); min-height: 200px;
+    border: 2px solid; border-color: var(--dark) var(--light) var(--light) var(--dark);
+    margin: 8px 8px 0 8px;
+}
+.scope-area canvas { width: 100%; height: 100%; display: block; }
+.scope-overlay {
+    position: absolute; top: 6px; left: 8px; right: 8px;
+    display: flex; justify-content: space-between;
+    pointer-events: none; font: 10px Consolas, monospace; color: #4a8a4a;
+}
+.scope-tag {
+    background: rgba(0,0,0,0.5); padding: 2px 6px;
+}
+
+.controls-bar {
+    display: flex; gap: 8px; align-items: stretch;
+    padding: 8px; margin: 0;
+}
+.control-group {
+    flex: 1; display: flex; flex-direction: column; gap: 4px;
+    padding: 6px 8px;
+    border: 2px solid; border-color: var(--light) var(--dark) var(--dark) var(--light);
+}
+.sift-bar {
+    display: flex; gap: 4px; align-items: center;
+    padding: 0 8px 8px 8px;
+}
+.sift-bar .spacer { flex: 1; }
+.sift-info {
+    font: 10px Consolas, monospace; padding: 2px 8px;
+    background: #fff;
+    border: 2px solid; border-color: var(--dark) var(--light) var(--light) var(--dark);
+    min-width: 200px;
+}
+
+.status-bar {
+    padding: 3px 8px; font: 11px Tahoma, sans-serif;
+    border: 2px solid; border-color: var(--dark) var(--light) var(--light) var(--dark);
+    margin: 0 8px 4px 8px;
+}
+.status-bar.err { color: #b00; font-weight: bold; }
+</style>
+</head>
+<body>
+
+<div class="title-bar">
+    TRENCHWORK
+    <span class="pill">MORPH DESIGNER</span>
+    <span class="spacer"></span>
+    <span class="pill" id="body-label">no body</span>
+</div>
+
+<div class="main">
+    <div class="sidebar">
+        <div class="group">
+            <div class="group-title">SOURCE A</div>
+            <div class="field">
+                <select id="src-a" onchange="updateKeys('a')">
+                    <option value="vowel">vowel</option>
+                    <option value="nasal">nasal</option>
+                    <option value="landmark">landmark</option>
+                    <option value="bell">bell</option>
+                    <option value="electronic">electronic</option>
+                </select>
+            </div>
+            <div class="field">
+                <select id="key-a"></select>
+            </div>
+        </div>
+
+        <div class="group">
+            <div class="group-title">SOURCE B</div>
+            <div class="field">
+                <select id="src-b" onchange="updateKeys('b')">
+                    <option value="vowel">vowel</option>
+                    <option value="nasal">nasal</option>
+                    <option value="landmark">landmark</option>
+                    <option value="bell">bell</option>
+                    <option value="electronic">electronic</option>
+                </select>
+            </div>
+            <div class="field">
+                <select id="key-b"></select>
+            </div>
+        </div>
+
+        <div style="display:flex; flex-direction:column; gap:4px;">
+            <button onclick="generate()">GENERATE</button>
+            <button onclick="suggest()" id="btn-suggest">SUGGEST (AI)</button>
+        </div>
+
+        <div class="group">
+            <div class="group-title">ANALYSIS</div>
+            <div class="analysis-row">
+                <span>MOTION</span>
+                <span class="analysis-val" id="an-motion">--</span>
+            </div>
+            <div class="analysis-row">
+                <span>STAGES</span>
+                <span class="analysis-val" id="an-stages">--</span>
+            </div>
+            <div class="analysis-row">
+                <span>CROSSINGS</span>
+                <span class="analysis-val" id="an-cross">--</span>
+            </div>
+            <div class="analysis-row">
+                <span>TILT</span>
+                <span class="analysis-val" id="an-tilt">--</span>
+            </div>
+        </div>
+    </div>
+
+    <div class="content">
+        <div class="scope-area" id="scope-wrap">
+            <canvas id="scope"></canvas>
+            <div class="scope-overlay">
+                <span class="scope-tag" id="scope-label">M0 Q0</span>
+                <span class="scope-tag" id="scope-status">NO BODY</span>
+            </div>
+        </div>
+
+        <div class="controls-bar">
+            <div class="control-group">
+                <div class="field-label">MORPH</div>
+                <div class="slider-row">
+                    <input type="range" id="sl-morph" min="0" max="100" value="0" oninput="onSlider()">
+                    <div class="readout" id="ro-morph">0</div>
+                </div>
+            </div>
+            <div class="control-group">
+                <div class="field-label">Q</div>
+                <div class="slider-row">
+                    <input type="range" id="sl-q" min="0" max="100" value="0" oninput="onSlider()">
+                    <div class="readout" id="ro-q">0</div>
+                </div>
+            </div>
+            <div class="control-group">
+                <div class="field-label">DRIVE</div>
+                <div class="slider-row">
+                    <input type="range" id="sl-drive" min="0" max="100" value="50" oninput="onSlider()">
+                    <div class="readout" id="ro-drive">50</div>
+                </div>
+            </div>
+        </div>
+
+        <div class="sift-bar">
+            <button onclick="siftGenerate()">SIFT</button>
+            <button onclick="siftPrev()">&#9664;</button>
+            <button onclick="siftNext()">&#9654;</button>
+            <button onclick="siftSave()">SAVE</button>
+            <button onclick="siftTrash()">TRASH</button>
+            <div class="sift-info" id="sift-info">no candidates</div>
+            <div class="spacer"></div>
+            <button onclick="play()" id="btn-play">PLAY</button>
+            <button class="accent" onclick="pushLive()">LIVE</button>
+        </div>
+    </div>
+</div>
+
+<div class="status-bar" id="status">Pick two sources and hit GENERATE, or let AI SUGGEST.</div>
+
+<script>
+(function() {
+    var tables = {};
+    var currentBody = null;
+    var audioCtx = null;
+    var currentSource = null;
+    var playing = false;
+    var freqAxis = [], targetDb = [], currentDb = [];
+
+    // --- INIT: fetch sonic tables ---
+    fetch('/sonic-tables').then(r => r.json()).then(data => {
+        tables = data;
+        updateKeys('a');
+        updateKeys('b');
+        // Default: source B to different vowel
+        var kb = document.getElementById('key-b');
+        for (var i = 0; i < kb.options.length; i++) {
+            if (kb.options[i].value === 'oo') { kb.selectedIndex = i; break; }
+        }
+    });
+
+    window.updateKeys = function(side) {
+        var src = document.getElementById('src-' + side).value;
+        var sel = document.getElementById('key-' + side);
+        sel.innerHTML = '';
+        var keys = tables[src + 's'] || tables[src] || [];
+        if (!Array.isArray(keys)) keys = Object.keys(keys);
+        keys.forEach(function(k) {
+            var opt = document.createElement('option');
+            opt.value = k; opt.textContent = k;
+            sel.appendChild(opt);
+        });
+    };
+
+    function status(msg, err) {
+        var el = document.getElementById('status');
+        el.textContent = msg;
+        el.className = 'status-bar' + (err ? ' err' : '');
+    }
+
+    function morph01() { return parseInt(document.getElementById('sl-morph').value) / 100; }
+    function q01() { return parseInt(document.getElementById('sl-q').value) / 100; }
+    function drive01() { return parseInt(document.getElementById('sl-drive').value) / 100; }
+
+    window.onSlider = function() {
+        document.getElementById('ro-morph').textContent = document.getElementById('sl-morph').value;
+        document.getElementById('ro-q').textContent = document.getElementById('sl-q').value;
+        document.getElementById('ro-drive').textContent = document.getElementById('sl-drive').value;
+        document.getElementById('scope-label').textContent =
+            'M' + document.getElementById('sl-morph').value + ' Q' + document.getElementById('sl-q').value;
+        if (currentBody) updateScope();
+        if (playing) { renderDirty = true; scheduleRender(); }
+    };
+
+    // --- GENERATE ---
+    window.generate = function() {
+        var sa = document.getElementById('src-a').value;
+        var ka = document.getElementById('key-a').value;
+        var sb = document.getElementById('src-b').value;
+        var kb = document.getElementById('key-b').value;
+        var name = ka + '_to_' + kb;
+        status('Compiling ' + sa + ':' + ka + ' -> ' + sb + ':' + kb + '...');
+
+        fetch('/morph-target', {
+            method: 'POST',
+            headers: {'Content-Type': 'application/json'},
+            body: JSON.stringify({name: name, source_a: sa, key_a: ka, source_b: sb, key_b: kb})
+        }).then(r => { if (!r.ok) throw new Error('HTTP ' + r.status); return r.json(); })
+          .then(body => {
+              loadBody(body);
+              status(name + ' compiled. Move MORPH to hear the traverse.');
+          }).catch(e => status('Error: ' + e.message, true));
+    };
+
+    // --- SUGGEST (AI) ---
+    window.suggest = function() {
+        document.getElementById('btn-suggest').disabled = true;
+        status('Asking AI for a suggestion...');
+        fetch('/suggest', { method: 'POST' })
+            .then(r => { if (!r.ok) throw new Error('HTTP ' + r.status); return r.json(); })
+            .then(data => {
+                // Fill dropdowns
+                document.getElementById('src-a').value = data.source_a;
+                updateKeys('a');
+                setTimeout(function() {
+                    document.getElementById('key-a').value = data.key_a;
+                    document.getElementById('src-b').value = data.source_b;
+                    updateKeys('b');
+                    setTimeout(function() {
+                        document.getElementById('key-b').value = data.key_b;
+                        status('AI suggests: ' + (data.rationale || data.key_a + ' -> ' + data.key_b));
+                        generate();
+                    }, 50);
+                }, 50);
+            }).catch(e => status('Suggest error: ' + e.message, true))
+              .finally(() => { document.getElementById('btn-suggest').disabled = false; });
+    };
+
+    function loadBody(body) {
+        currentBody = body;
+        document.getElementById('body-label').textContent = body.name || 'body';
+        updateScope();
+        analyze(body);
+    }
+
+    // --- SCOPE ---
+    function updateScope() {
+        if (!currentBody) return;
+        fetch('/response', {
+            method: 'POST',
+            headers: {'Content-Type': 'application/json'},
+            body: JSON.stringify({body: currentBody, morph: morph01(), q: q01()})
+        }).then(r => r.json()).then(data => {
+            freqAxis = data.freqs || [];
+            targetDb = data.db || [];
+            if (currentDb.length !== targetDb.length) currentDb = targetDb.slice();
+            document.getElementById('scope-status').textContent = 'TRACE OK';
+        }).catch(() => {
+            document.getElementById('scope-status').textContent = 'TRACE ERR';
+        });
+    }
+
+    // --- ANALYSIS ---
+    function analyze(body) {
+        fetch('/analyze', {
+            method: 'POST',
+            headers: {'Content-Type': 'application/json'},
+            body: JSON.stringify({body: body})
+        }).then(r => r.json()).then(p => {
+            document.getElementById('an-motion').textContent =
+                p.morph_distance.mean_rms_db.toFixed(1) + ' dB';
+            document.getElementById('an-stages').textContent = p.active_stages;
+            document.getElementById('an-cross').textContent = p.crossings.m0_q0;
+            document.getElementById('an-tilt').textContent =
+                p.spectral_tilt_db.toFixed(1) + ' dB';
+        }).catch(() => {});
+    }
+
+    // --- SIFT ---
+    window.siftGenerate = function() {
+        status('Generating sift candidates...');
+        fetch('/sift/generate', {
+            method: 'POST',
+            headers: {'Content-Type': 'application/json'},
+            body: JSON.stringify({count: 20, name_prefix: 'sift', boost: 4.0})
+        }).then(r => r.json()).then(data => {
+            document.getElementById('sift-info').textContent =
+                (data.current + 1) + '/' + data.count + ': ' + data.name;
+            status('Sift: ' + data.count + ' candidates. Use arrows to cycle.');
+            fetchLiveBody();
+        }).catch(e => status('Sift error: ' + e.message, true));
+    };
+    window.siftNext = function() {
+        fetch('/sift/next', {method:'POST'}).then(r=>r.json()).then(data => {
+            document.getElementById('sift-info').textContent =
+                (data.current+1)+'/'+data.count+': '+data.name;
+            fetchLiveBody();
+        });
+    };
+    window.siftPrev = function() {
+        fetch('/sift/prev', {method:'POST'}).then(r=>r.json()).then(data => {
+            document.getElementById('sift-info').textContent =
+                (data.current+1)+'/'+data.count+': '+data.name;
+            fetchLiveBody();
+        });
+    };
+    window.siftSave = function() {
+        fetch('/sift/save', {method:'POST'}).then(r=>r.json()).then(data => {
+            status('Saved: ' + data.saved);
+        });
+    };
+    window.siftTrash = function() {
+        fetch('/sift/trash', {method:'POST'}).then(r=>r.json()).then(data => {
+            document.getElementById('sift-info').textContent =
+                data.count ? (data.current+1)+'/'+data.count+': '+data.name : 'empty';
+            if (data.count) fetchLiveBody();
+        });
+    };
+
+    function fetchLiveBody() {
+        // Load the actual body data so sliders and PLAY work
+        fetch('/sift/current').then(r => {
+            if (!r.ok) throw new Error('no candidate');
+            return r.json();
+        }).then(body => {
+            loadBody(body);
+        }).catch(() => {});
+    }
+
+    // --- PLAY ---
+    var renderBusy = false;
+    var renderDirty = false;
+    var renderTimer = null;
+
+    function doRender() {
+        if (!currentBody || !playing) return;
+        if (renderBusy) { renderDirty = true; return; }
+        renderBusy = true;
+        renderDirty = false;
+        status('Rendering M' + document.getElementById('sl-morph').value +
+               ' Q' + document.getElementById('sl-q').value + '...');
+        fetch('/render', {
+            method: 'POST',
+            headers: {'Content-Type': 'application/json'},
+            body: JSON.stringify({
+                body: currentBody, morph: morph01(), q: q01(),
+                mackie_amount: drive01(), duration: 2.0
+            })
+        }).then(r => r.json()).then(data => {
+            var bin = atob(data.audio_b64);
+            var buf = new ArrayBuffer(bin.length);
+            var view = new Uint8Array(buf);
+            for (var i = 0; i < bin.length; i++) view[i] = bin.charCodeAt(i);
+            if (!audioCtx) audioCtx = new AudioContext();
+            return audioCtx.decodeAudioData(buf).then(decoded => {
+                if (currentSource) try { currentSource.stop(); } catch(e){}
+                var src = audioCtx.createBufferSource();
+                src.buffer = decoded; src.loop = true;
+                src.connect(audioCtx.destination); src.start(0);
+                currentSource = src;
+                status('Playing (peak ' + data.peak_db.toFixed(1) + ' dB)');
+            });
+        }).catch(e => {
+            playing = false;
+            document.getElementById('btn-play').textContent = 'PLAY';
+            status('Render error: ' + e.message, true);
+        }).finally(() => {
+            renderBusy = false;
+            if (renderDirty && playing) scheduleRender();
+        });
+    }
+
+    function scheduleRender() {
+        clearTimeout(renderTimer);
+        renderTimer = setTimeout(doRender, 200);
+    }
+
+    window.play = function() {
+        if (!currentBody) { status('No body loaded.', true); return; }
+        playing = !playing;
+        document.getElementById('btn-play').textContent = playing ? 'STOP' : 'PLAY';
+        if (!playing) {
+            if (currentSource) { try { currentSource.stop(); } catch(e){} currentSource = null; }
+            status('Stopped.');
+            return;
+        }
+        doRender();
+    };
+
+    // --- PUSH LIVE ---
+    window.pushLive = function() {
+        if (!currentBody) { status('No body to push.', true); return; }
+        fetch('/export', {
+            method: 'POST',
+            headers: {'Content-Type': 'application/json'},
+            body: JSON.stringify({body: currentBody, name: currentBody.name || 'live'})
+        }).then(r => { if (!r.ok) throw new Error('HTTP '+r.status); return r.json(); })
+          .then(data => status('Exported to ' + data.path))
+          .catch(e => status('Export error: ' + e.message, true));
+    };
+
+    // --- SCOPE RENDERER ---
+    var scopeCanvas = document.getElementById('scope');
+    var scopeWrap = document.getElementById('scope-wrap');
+    var ctx = scopeCanvas.getContext('2d');
+    var FMIN=20, FMAX=19500, DBMIN=-48, DBMAX=30;
+    var logMin=Math.log10(FMIN), logRange=Math.log10(FMAX)-logMin, dbRange=DBMAX-DBMIN;
+
+    function resizeScope() {
+        scopeCanvas.width = scopeWrap.clientWidth;
+        scopeCanvas.height = scopeWrap.clientHeight;
+    }
+
+    function drawScope() {
+        var w=scopeCanvas.width, h=scopeCanvas.height;
+        if (!w||!h) { requestAnimationFrame(drawScope); return; }
+
+        ctx.fillStyle='#0a0e0a'; ctx.fillRect(0,0,w,h);
+
+        ctx.strokeStyle='#152015'; ctx.lineWidth=1; ctx.beginPath();
+        [24,12,0,-12,-24,-36,-48].forEach(db => {
+            var y=h-h*(db-DBMIN)/dbRange; ctx.moveTo(0,y); ctx.lineTo(w,y);
+        });
+        [100,1000,10000].forEach(f => {
+            var x=w*(Math.log10(f)-logMin)/logRange; ctx.moveTo(x,0); ctx.lineTo(x,h);
+        });
+        ctx.stroke();
+
+        ctx.fillStyle='#2a4a2a'; ctx.font='9px Consolas';
+        ['100','1k','10k'].forEach((l,i) => {
+            var x=w*(Math.log10([100,1000,10000][i])-logMin)/logRange;
+            ctx.fillText(l,x+2,h-3);
+        });
+        [0,-24].forEach(db => {
+            ctx.fillText(db+'dB',3, h-h*(db-DBMIN)/dbRange-3);
+        });
+
+        if (targetDb.length) {
+            ctx.beginPath(); ctx.strokeStyle='#33ff33'; ctx.lineWidth=1.5;
+            ctx.shadowBlur=3; ctx.shadowColor='#33ff33';
+            for (var i=0;i<targetDb.length;i++) {
+                currentDb[i]+=(targetDb[i]-currentDb[i])*0.25;
+                var x=w*(Math.log10(freqAxis[i])-logMin)/logRange;
+                var y=h-h*(Math.max(DBMIN,Math.min(DBMAX,currentDb[i]))-DBMIN)/dbRange;
+                if(i===0) ctx.moveTo(x,y); else ctx.lineTo(x,y);
+            }
+            ctx.stroke(); ctx.shadowBlur=0;
+        }
+        requestAnimationFrame(drawScope);
+    }
+
+    window.addEventListener('resize', resizeScope);
+    resizeScope(); drawScope();
+})();
+</script>
+</body>
+</html>

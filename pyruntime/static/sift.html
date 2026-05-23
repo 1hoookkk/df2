@@ -1,0 +1,375 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>FLT-MGR [AUDITION UNIT]</title>
+    <style>
+        :root {
+            --bg-deep: #050505;
+            --chassis-main: #323538;
+            --chassis-hi: #505459;
+            --chassis-lo: #151617;
+            --screen-bg: #091009;
+            --crt-green: #33ff33;
+            --crt-green-dim: #115511;
+            --doom-red: #ff2222;
+            --btn-size: 36px;
+        }
+        * { box-sizing: border-box; user-select: none; }
+        body {
+            background-color: var(--bg-deep); color: var(--crt-green);
+            font-family: 'Courier New', Courier, monospace; font-weight: bold;
+            text-transform: uppercase; margin: 0; padding: 0;
+            display: flex; align-items: center; justify-content: center;
+            height: 100vh; overflow: hidden;
+        }
+        #chassis {
+            position: relative; background-color: var(--chassis-main); padding: 40px;
+            border-top: 8px solid var(--chassis-hi); border-left: 8px solid var(--chassis-hi);
+            border-right: 8px solid var(--chassis-lo); border-bottom: 8px solid var(--chassis-lo);
+            box-shadow: 15px 15px 0px rgba(0,0,0,0.8);
+            display: flex; flex-direction: column; gap: 20px;
+        }
+        .hardware-warning {
+            color: #111; background: #b2a84d; padding: 2px 8px; align-self: flex-start;
+            font-size: 11px; border: 2px inset #92882d; letter-spacing: 1px;
+        }
+        #mfd-assembly {
+            position: relative; background-color: #1a1a1a; padding: 15px;
+            border-top: 6px solid #000; border-left: 6px solid #000;
+            border-bottom: 6px solid #444; border-right: 6px solid #444;
+            display: grid; grid-template-columns: 50px 1fr 50px;
+            grid-template-rows: 50px 1fr 50px; gap: 10px;
+            align-items: center; justify-items: center;
+        }
+        .osb-col, .osb-row { display: flex; justify-content: space-around; }
+        .osb-col { flex-direction: column; height: 100%; grid-row: 2 / 3; }
+        .osb-row { width: 100%; grid-column: 2 / 3; }
+        .osb {
+            width: var(--btn-size); height: var(--btn-size); background-color: #222;
+            border-top: 4px solid #111; border-left: 4px solid #111;
+            border-bottom: 4px solid #555; border-right: 4px solid #555;
+        }
+        .osb.top, .osb.bottom { width: 50px; height: 25px; }
+        #screen {
+            position: relative; width: 700px; height: 500px;
+            background-color: var(--screen-bg); border: 6px inset #050505;
+            grid-column: 2 / 3; grid-row: 2 / 3; overflow: hidden;
+            display: flex; flex-direction: column;
+        }
+        #screen::after {
+            content: " "; position: absolute; top: 0; left: 0; right: 0; bottom: 0;
+            background: linear-gradient(rgba(18,16,16,0) 50%, rgba(0,0,0,0.25) 50%);
+            background-size: 100% 4px; pointer-events: none; z-index: 10;
+        }
+        .reticle-overlay {
+            position: absolute; top: 0; left: 0; right: 0; bottom: 0;
+            border: 2px solid var(--crt-green-dim);
+            background-image:
+                linear-gradient(var(--crt-green-dim) 1px, transparent 1px),
+                linear-gradient(90deg, var(--crt-green-dim) 1px, transparent 1px);
+            background-size: 50px 50px; background-position: center;
+            opacity: 0.3; z-index: 1; pointer-events: none;
+        }
+        .screen-ui {
+            position: absolute; z-index: 5; padding: 15px; width: 100%; height: 100%;
+            display: flex; flex-direction: column; justify-content: space-between;
+        }
+        .row { display: flex; justify-content: space-between; align-items: flex-start; }
+        .col { display: flex; flex-direction: column; gap: 5px; }
+        .data-block {
+            background: #000; padding: 2px 8px; border: 1px solid var(--crt-green);
+            font-size: 14px; text-shadow: 0px 0px 4px var(--crt-green);
+        }
+        .schematic-box {
+            font-size: 10px; line-height: 10px; white-space: pre;
+            color: var(--crt-green-dim); margin-top: 10px;
+        }
+        #ammo-bar { display: flex; gap: 4px; margin-top: 5px; }
+        .ammo-pip { width: 12px; height: 16px; background-color: var(--crt-green); border: 1px solid #000; }
+        .ammo-pip.empty { background-color: transparent; border: 1px solid var(--crt-green-dim); }
+        canvas {
+            position: absolute; top: 0; left: 0; z-index: 2;
+            width: 100%; height: 100%; filter: drop-shadow(0px 0px 6px var(--crt-green));
+        }
+        #flash-bang {
+            position: absolute; top: 0; left: 0; right: 0; bottom: 0; z-index: 100;
+            display: none; justify-content: center; align-items: center;
+            font-size: 80px; letter-spacing: 15px;
+            background-color: var(--crt-green); color: #000; text-shadow: none;
+        }
+        #mfd-assembly.saved #flash-bang { display: flex; background-color: var(--crt-green); color: #000; }
+        #mfd-assembly.saved canvas, #mfd-assembly.saved .screen-ui { display: none; }
+        #mfd-assembly.purged #flash-bang { display: flex; background-color: var(--doom-red); color: #000; }
+        #mfd-assembly.purged canvas, #mfd-assembly.purged .screen-ui { display: none; }
+        .input-hints {
+            align-self: center; font-size: 14px; color: #aaa;
+            letter-spacing: 2px; text-shadow: 1px 1px 0 #000;
+        }
+        .key-btn { background: #222; padding: 2px 6px; border: 2px outset #555; color: #fff; margin: 0 5px; }
+    </style>
+</head>
+<body>
+
+<div id="chassis">
+    <div class="hardware-warning">DO NOT EXCEED DSP LIMITS // CLASS IV AI MATERIAL ONLY</div>
+
+    <div id="mfd-assembly">
+        <div class="osb-row" style="grid-row: 1/2; grid-column: 2/3;">
+            <div class="osb top"></div><div class="osb top"></div>
+            <div class="osb top"></div><div class="osb top"></div>
+        </div>
+        <div class="osb-col" style="grid-column: 1/2;">
+            <div class="osb"></div><div class="osb"></div><div class="osb"></div><div class="osb"></div><div class="osb"></div>
+        </div>
+
+        <div id="screen">
+            <div class="reticle-overlay"></div>
+            <canvas id="oscope"></canvas>
+            <div id="flash-bang">SAVED</div>
+
+            <div class="screen-ui">
+                <div class="row">
+                    <div class="col">
+                        <span class="data-block" id="ui-flt-name">AWAITING BATCH</span>
+                        <span style="font-size: 12px; margin-top:4px;" id="ui-provenance">ARCH: SIFT_ENGINE</span>
+                    </div>
+                    <div class="col" style="text-align: right;">
+                        <span class="data-block"><span id="ui-idx">0</span> / <span id="ui-total">0</span></span>
+                        <span style="color:var(--doom-red); font-size:12px;" id="ui-warn">QUEUE EMPTY</span>
+                    </div>
+                </div>
+
+                <div class="row">
+                    <div class="col schematic-box" id="ui-schematic">
+TGT> STANDBY
+SGNL [          ]
+DRV> --------
+
+// AWAITING BATCH //
+// PRESS G TO GENERATE
+                    </div>
+
+                    <div class="col" style="align-items: flex-end;">
+                        <span class="data-block" style="background: var(--crt-green-dim); color:#000; padding-right:16px;">QUEUE</span>
+                        <div id="ammo-bar"></div>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <div class="osb-col" style="grid-column: 3/4;">
+            <div class="osb"></div><div class="osb"></div><div class="osb"></div><div class="osb"></div><div class="osb"></div>
+        </div>
+        <div class="osb-row" style="grid-row: 3/4; grid-column: 2/3;">
+            <div class="osb bottom"></div><div class="osb bottom"></div>
+            <div class="osb bottom"></div><div class="osb bottom"></div>
+        </div>
+    </div>
+
+    <div class="input-hints">
+        [ <span class="key-btn">G</span> GENERATE // <span class="key-btn">&larr;</span> TRASH // <span class="key-btn">&rarr;</span> NEXT // <span class="key-btn">S</span> SAVE // <span class="key-btn">D</span> PURGE ]
+    </div>
+</div>
+
+<script>
+    const canvas = document.getElementById('oscope');
+    const ctx = canvas.getContext('2d');
+    canvas.width = 700;
+    canvas.height = 500;
+
+    let freqs = [], dbs = [], targetDbs = [];
+    let animId = null;
+    let isProcessing = false;
+    let queueCount = 0;
+
+    const FMIN = Math.log10(20), FRANGE = Math.log10(20000) - Math.log10(20);
+    const DBMIN = -48, DBMAX = 30, DBRANGE = DBMAX - DBMIN;
+
+    // ── Scope drawing ──────────────────────────────────────────
+    function drawScope() {
+        const W = canvas.width, H = canvas.height;
+        ctx.fillStyle = 'rgba(9,16,9,0.25)';
+        ctx.fillRect(0, 0, W, H);
+
+        // Grid
+        ctx.strokeStyle = '#0d1f0d'; ctx.lineWidth = 1; ctx.beginPath();
+        [0, -12, -24, -36].forEach(function(db) {
+            var y = H - H * (db - DBMIN) / DBRANGE;
+            ctx.moveTo(0, y); ctx.lineTo(W, y);
+        });
+        [100, 1000, 10000].forEach(function(f) {
+            var x = W * (Math.log10(f) - FMIN) / FRANGE;
+            ctx.moveTo(x, 0); ctx.lineTo(x, H);
+        });
+        ctx.stroke();
+
+        // Trace
+        if (freqs.length > 0) {
+            // Animate toward target
+            for (var i = 0; i < dbs.length; i++) {
+                dbs[i] += (targetDbs[i] - dbs[i]) * 0.15;
+            }
+
+            ctx.beginPath();
+            ctx.strokeStyle = '#33ff33'; ctx.lineWidth = 2.5;
+            ctx.shadowBlur = 6; ctx.shadowColor = '#33ff33';
+            for (var i = 0; i < freqs.length; i++) {
+                var x = W * (Math.log10(freqs[i]) - FMIN) / FRANGE;
+                var y = H - H * (Math.max(DBMIN, Math.min(DBMAX, dbs[i])) - DBMIN) / DBRANGE;
+                if (i === 0) ctx.moveTo(x, y); else ctx.lineTo(x, y);
+            }
+            ctx.stroke();
+            ctx.shadowBlur = 0;
+
+            // Baseline
+            var zeroY = H - H * (0 - DBMIN) / DBRANGE;
+            ctx.strokeStyle = '#115511'; ctx.lineWidth = 1;
+            ctx.beginPath(); ctx.moveTo(0, zeroY); ctx.lineTo(W, zeroY); ctx.stroke();
+        }
+
+        animId = requestAnimationFrame(drawScope);
+    }
+
+    // ── Backend calls ──────────────────────────────────────────
+    function fetchStatus() {
+        fetch('/sift/status').then(r => r.json()).then(updateUI).catch(() => {});
+    }
+
+    function updateUI(data) {
+        queueCount = data.count;
+        document.getElementById('ui-idx').innerText = data.count > 0 ? data.current + 1 : 0;
+        document.getElementById('ui-total').innerText = data.count;
+        document.getElementById('ui-flt-name').innerText = data.name || 'QUEUE EMPTY';
+        document.getElementById('ui-flt-name').style.color = data.count > 0 ? 'var(--crt-green)' : 'var(--doom-red)';
+        document.getElementById('ui-warn').innerText = data.count > 0 ? 'SYS_OK' : 'QUEUE EMPTY';
+        document.getElementById('ui-warn').style.color = data.count > 0 ? 'var(--crt-green-dim)' : 'var(--doom-red)';
+        updateAmmoBar(data.count);
+        if (data.count > 0) fetchResponse();
+    }
+
+    function updateAmmoBar(count) {
+        var bar = document.getElementById('ammo-bar');
+        bar.innerHTML = '';
+        for (var i = 0; i < 10; i++) {
+            var pip = document.createElement('div');
+            pip.className = 'ammo-pip' + (i >= count ? ' empty' : '');
+            bar.appendChild(pip);
+        }
+    }
+
+    function fetchResponse() {
+        // Read current live body and get its response at morph=0.5, q=0.5
+        fetch('/live-response').then(r => r.json()).then(function(d) {
+            if (d.freqs && d.freqs.length) {
+                freqs = d.freqs;
+                targetDbs = d.db;
+                if (dbs.length !== targetDbs.length) dbs = targetDbs.slice();
+            }
+        }).catch(() => {});
+    }
+
+    function updateSchematic(data) {
+        var active = data.count > 0 ? data.count : 0;
+        document.getElementById('ui-schematic').innerText =
+            'TGT> ' + (data.name || 'NONE') + '\n' +
+            'SGNL [' + '|'.repeat(Math.min(active, 10)) + ' '.repeat(Math.max(0, 10-active)) + ']\n' +
+            'IDX> ' + (data.current+1) + ' OF ' + data.count + '\n\n' +
+            '// SIFT_ENGINE v1 //\n' +
+            '// ARROW KEYS CYCLE\n' +
+            '// S=SAVE  D=PURGE  G=GEN';
+    }
+
+    // ── Generate ───────────────────────────────────────────────
+    function doGenerate() {
+        if (isProcessing) return;
+        isProcessing = true;
+        document.getElementById('ui-flt-name').innerText = 'GENERATING...';
+
+        // Use a simple 3-stage seed
+        var seed = [
+            { type: 2, low_freq: 40, low_gain: 70, high_freq: 60, high_gain: 50 },
+            { type: 2, low_freq: 70, low_gain: 60, high_freq: 90, high_gain: 80 },
+            { type: 1, low_freq: 20, low_gain: 80, high_freq: 50, high_gain: 64 },
+        ];
+
+        fetch('/sift/generate', {
+            method: 'POST', headers: {'Content-Type': 'application/json'},
+            body: JSON.stringify({ base_sections: seed, count: 10 })
+        })
+        .then(r => r.json())
+        .then(function(data) {
+            isProcessing = false;
+            updateUI(data);
+            updateSchematic(data);
+        })
+        .catch(function() {
+            isProcessing = false;
+            document.getElementById('ui-flt-name').innerText = 'GEN FAILED';
+        });
+    }
+
+    // ── Snap actions (SAVE / PURGE / NEXT / PREV) ─────────────
+    function snapAction(action) {
+        if (isProcessing || queueCount === 0) return;
+        isProcessing = true;
+
+        var assembly = document.getElementById('mfd-assembly');
+        var flashText = document.getElementById('flash-bang');
+        var endpoint, flashClass, flashLabel;
+
+        if (action === 'save') {
+            endpoint = '/sift/save';
+            flashClass = 'saved'; flashLabel = 'SAVED';
+        } else if (action === 'purge') {
+            endpoint = '/sift/trash';
+            flashClass = 'purged'; flashLabel = 'PURGED';
+        } else if (action === 'next') {
+            endpoint = '/sift/next';
+            flashClass = null;
+        } else if (action === 'prev') {
+            endpoint = '/sift/prev';
+            flashClass = null;
+        }
+
+        if (flashClass) {
+            flashText.innerText = flashLabel;
+            assembly.classList.add(flashClass);
+            cancelAnimationFrame(animId);
+        }
+
+        fetch(endpoint, { method: 'POST' })
+        .then(r => r.json())
+        .then(function(data) {
+            setTimeout(function() {
+                assembly.classList.remove('saved', 'purged');
+                updateUI(data);
+                updateSchematic(data);
+                if (!animId || flashClass) drawScope();
+                isProcessing = false;
+            }, flashClass ? 180 : 0);
+        })
+        .catch(function() {
+            assembly.classList.remove('saved', 'purged');
+            isProcessing = false;
+            if (flashClass) drawScope();
+        });
+    }
+
+    // ── Keyboard ───────────────────────────────────────────────
+    window.addEventListener('keydown', function(e) {
+        if (e.code === 'KeyG') doGenerate();
+        else if (e.code === 'ArrowRight') snapAction('next');
+        else if (e.code === 'ArrowLeft') snapAction('prev');
+        else if (e.code === 'KeyS') snapAction('save');
+        else if (e.code === 'KeyD') snapAction('purge');
+    });
+
+    // ── Init ───────────────────────────────────────────────────
+    updateAmmoBar(0);
+    drawScope();
+    fetchStatus();
+</script>
+</body>
+</html>

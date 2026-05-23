@@ -111,6 +111,12 @@ struct CartridgeJson {
     #[serde(rename = "sampleRate")]
     sample_rate: f64,
     keyframes: Vec<KeyframeJson>,
+    #[serde(default)]
+    drive: Option<DriveBlock>,
+    #[serde(default, rename = "spatial_profile")]
+    spatial_profile: Option<SpatialProfile>,
+    #[serde(default, rename = "mod_fn")]
+    mod_fn: Option<ModFnBlock>,
 }
 
 fn default_sample_rate() -> f64 {
@@ -182,9 +188,9 @@ impl Cartridge {
             name: raw.name,
             corners: [c0, c1, c2, c3],
             boosts: [b0, b1, b2, b3],
-            drive: DriveBlock::default(),
-            spatial_profile: None, // Simplified for now
-            mod_fn: None,
+            drive: raw.drive.unwrap_or_default(),
+            spatial_profile: raw.spatial_profile,
+            mod_fn: raw.mod_fn,
         })
     }
 

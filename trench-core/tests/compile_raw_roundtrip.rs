@@ -1,4 +1,4 @@
-//! Round-trip gate: `authoring/compilers/compile_raw.py` output must load via
+//! Round-trip gate: `tools/compile_raw.py` output must load via
 //! `Cartridge::from_json`. This is a mechanical compiler from the internal
 //! raw-stage-v1 authoring surface to compiled-v1 JSON.
 
@@ -10,16 +10,12 @@ use trench_core::Cartridge;
 fn repo_root() -> PathBuf {
     PathBuf::from(env!("CARGO_MANIFEST_DIR"))
         .parent()
-        .and_then(|p| p.parent())
-        .expect("repo root above runtime/")
+        .expect("repo root above trench-core/")
         .to_path_buf()
 }
 
 fn run_compiler(raw_json: &str) -> (std::process::Output, String) {
-    let script = repo_root()
-        .join("authoring")
-        .join("compilers")
-        .join("compile_raw.py");
+    let script = repo_root().join("tools").join("compile_raw.py");
     let mut child = Command::new("python")
         .arg(&script)
         .arg("-")
@@ -45,19 +41,24 @@ fn run_compiler(raw_json: &str) -> (std::process::Output, String) {
 
 #[test]
 fn raw_surface_round_trips_through_rust_loader() {
+    // Radii are from q_radius_table.json (table indices 21, 22, 24, 25, 19).
+    // Every corner needs at least one pole above 6000 Hz (Gate 3: Nyquist anchor).
+    // All radii < 0.95 so Gate 4 (headroom tax) does not trigger with boost=1.0.
     let raw = r#"{
         "format": "raw-stage-v1",
         "name": "raw_roundtrip",
-        "boost": 4.0,
+        "boost": 1.0,
         "corners": {
             "M0_Q0": {
                 "stages": [
-                    {"kind": "allpole", "pole_freq_hz": 440.0, "radius": 0.95, "stage_gain": 0.70}
+                    {"kind": "allpole", "pole_freq_hz": 440.0, "radius": 0.9319477, "stage_gain": 0.70},
+                    {"kind": "allpole", "pole_freq_hz": 7800.0, "radius": 0.9415569, "stage_gain": 1.0}
                 ]
             },
             "M0_Q100": {
                 "stages": [
-                    {"kind": "zero_forced", "pole_freq_hz": 1200.0, "radius": 0.98, "stage_gain": 0.82}
+                    {"kind": "zero_forced", "pole_freq_hz": 1200.0, "radius": 0.9268074, "stage_gain": 0.82},
+                    {"kind": "allpole", "pole_freq_hz": 7800.0, "radius": 0.9415569, "stage_gain": 1.0}
                 ]
             },
             "M100_Q0": {
@@ -65,16 +66,18 @@ fn raw_surface_round_trips_through_rust_loader() {
                     {
                         "kind": "explicit_zero",
                         "pole_freq_hz": 900.0,
-                        "radius": 0.93,
+                        "radius": 0.9158688,
                         "stage_gain": 0.88,
                         "zero_freq_hz": 1800.0,
-                        "zero_radius": 0.70
-                    }
+                        "zero_radius": 0.6543083
+                    },
+                    {"kind": "allpole", "pole_freq_hz": 7800.0, "radius": 0.9415569, "stage_gain": 1.0}
                 ]
             },
             "M100_Q100": {
                 "stages": [
-                    {"kind": "zero_forced_offset", "pole_freq_hz": 3000.0, "radius": 0.96, "stage_gain": 0.75, "offset_semitones": 7.0}
+                    {"kind": "zero_forced_offset", "pole_freq_hz": 3000.0, "radius": 0.9100761, "stage_gain": 0.75, "offset_semitones": 7.0},
+                    {"kind": "allpole", "pole_freq_hz": 7800.0, "radius": 0.9415569, "stage_gain": 1.0}
                 ]
             }
         }
@@ -92,34 +95,39 @@ fn raw_surface_round_trips_through_rust_loader() {
 
     assert_eq!(cart.name, "raw_roundtrip");
     assert_eq!(cart.corners.len(), 4);
-    assert_eq!(cart.boosts, [4.0, 4.0, 4.0, 4.0]);
+    assert_eq!(cart.boosts, [1.0, 1.0, 1.0, 1.0]);
 }
 
 #[test]
 fn corner_stage_list_shorthand_round_trips_through_rust_loader() {
+    // Radii from q_radius_table.json (indices 25, 26, 27, 19).
+    // Each corner has a HF brace at 7800 Hz to satisfy Gate 3.
     let raw = r#"{
         "format": "raw-stage-v1",
         "name": "raw_corner_list",
         "authoring_sample_rate_hz": 39062.5,
         "corners": {
             "M0_Q0": [
-                {"kind": "zero_forced", "pole_freq_hz": 300.0, "radius": 0.82, "stage_gain": 1.0}
+                {"kind": "zero_forced", "pole_freq_hz": 300.0, "radius": 0.9100761, "stage_gain": 1.0},
+                {"kind": "allpole", "pole_freq_hz": 7800.0, "radius": 0.9415569, "stage_gain": 1.0}
             ],
             "M0_Q100": [
-                {"kind": "zero_forced_offset", "pole_freq_hz": 450.0, "radius": 0.77, "stage_gain": 1.05, "offset_semitones": 7.0}
+                {"kind": "zero_forced_offset", "pole_freq_hz": 450.0, "radius": 0.9040718, "stage_gain": 1.0, "offset_semitones": 7.0},
+                {"kind": "allpole", "pole_freq_hz": 7800.0, "radius": 0.9415569, "stage_gain": 1.0}
             ],
             "M100_Q0": [
                 {
                     "kind": "explicit_zero",
                     "pole_freq_hz": 700.0,
-                    "radius": 0.73,
+                    "radius": 0.8978615,
                     "stage_gain": 0.95,
                     "zero_freq_hz": 1200.0,
-                    "zero_radius": 0.66
-                }
+                    "zero_radius": 0.6543083
+                },
+                {"kind": "allpole", "pole_freq_hz": 7800.0, "radius": 0.9415569, "stage_gain": 1.0}
             ],
             "M100_Q100": [
-                {"kind": "passthrough"}
+                {"kind": "allpole", "pole_freq_hz": 7800.0, "radius": 0.9415569, "stage_gain": 1.0}
             ]
         }
     }"#;
@@ -143,10 +151,13 @@ fn unknown_stage_kind_is_rejected() {
     let raw = r#"{
         "format": "raw-stage-v1",
         "corners": {
-            "M0_Q0": {"stages": [{"kind": "mystery", "pole_freq_hz": 440.0, "radius": 0.95}]},
-            "M0_Q100": {"stages": []},
-            "M100_Q0": {"stages": []},
-            "M100_Q100": {"stages": []}
+            "M0_Q0": {"stages": [
+                {"kind": "mystery", "pole_freq_hz": 440.0, "radius": 0.9415569},
+                {"kind": "allpole", "pole_freq_hz": 7800.0, "radius": 0.9415569}
+            ]},
+            "M0_Q100": {"stages": [{"kind": "allpole", "pole_freq_hz": 7800.0, "radius": 0.9415569}]},
+            "M100_Q0": {"stages": [{"kind": "allpole", "pole_freq_hz": 7800.0, "radius": 0.9415569}]},
+            "M100_Q100": {"stages": [{"kind": "allpole", "pole_freq_hz": 7800.0, "radius": 0.9415569}]}
         }
     }"#;
 

@@ -175,6 +175,7 @@ fn load_cartridge(path: &PathBuf) -> Cartridge {
 }
 
 #[test]
+#[ignore = "requires absent old-repo cartridges/factory/vowels pill bank"]
 fn every_vowel_pill_classifies_as_itself() {
     let dir = factory_vowels_dir();
     assert!(

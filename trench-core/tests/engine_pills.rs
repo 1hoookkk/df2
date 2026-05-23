@@ -30,6 +30,7 @@ fn manifest_path() -> PathBuf {
 }
 
 #[test]
+#[ignore = "requires absent old-repo cartridges/factory manifest and baked phoneme pills"]
 fn every_engine_pill_loads() {
     let manifest_path = manifest_path();
     assert!(

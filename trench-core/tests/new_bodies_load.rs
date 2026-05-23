@@ -24,6 +24,7 @@ const BODY_FILES: &[(&str, &str)] = &[
 ];
 
 #[test]
+#[ignore = "requires absent old-repo juce-shell/assets/cartridges shipping body JSON"]
 fn all_new_bodies_parse() {
     for (name, path) in BODY_FILES {
         let json =
@@ -33,6 +34,7 @@ fn all_new_bodies_parse() {
 }
 
 #[test]
+#[ignore = "requires absent old-repo juce-shell/assets/cartridges shipping body JSON"]
 fn cartridges_interpolate_at_grid_corners_without_panic() {
     for (name, path) in BODY_FILES {
         let json = std::fs::read_to_string(path).unwrap();

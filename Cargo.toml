@@ -1,5 +1,5 @@
 [workspace]
-members = ["trench-core"]
+members = ["trench-core", "forge"]
 resolver = "2"
 
 # Dependencies compile at full optimization; your crate stays debug-fast

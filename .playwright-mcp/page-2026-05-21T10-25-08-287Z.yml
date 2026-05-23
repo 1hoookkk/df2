@@ -1,0 +1,132 @@
+- generic [active] [ref=e1]:
+  - generic [ref=e2]:
+    - generic [ref=e3]: DF2 // MORPH AUDITION
+    - generic [ref=e4]: Z-PLANE · ACTOR TRAJECTORY · MORPH-FIRST PACKED U16
+    - generic [ref=e5]:
+      - generic [ref=e6]: BODY Small Talk · 6 actors · named
+      - generic [ref=e7]: SR 39062.5 EMU
+      - generic [ref=e8]: STATE PLAYING
+  - generic [ref=e9]:
+    - generic [ref=e10]:
+      - generic [ref=e12]: Z-PLANE · POLES (✕) · ZEROS (○) · ACTOR TRAILS
+      - generic [ref=e16]: CASCADE FREQUENCY RESPONSE
+    - generic [ref=e19]:
+      - generic [ref=e20]:
+        - generic [ref=e21]: CARTRIDGE
+        - generic [ref=e23]:
+          - button "SMALL TALK" [ref=e24] [cursor=pointer]
+          - button "KNOCKERZ" [ref=e25] [cursor=pointer]
+          - button "CLEAN ROOM" [ref=e26] [cursor=pointer]
+        - button "Choose File" [ref=e27]
+        - generic [ref=e116]: loaded ✓ (6 actors, named)
+      - generic [ref=e28]:
+        - generic [ref=e29]: MORPH · CAVITY PAD
+        - generic [ref=e32]:
+          - generic: M0 · HI
+          - generic: M100 · HI
+          - generic: M0 · LO
+          - generic: M100 · LO
+        - generic [ref=e33]:
+          - generic [ref=e34]: M=0.500 Q=0.500
+          - generic [ref=e35]: DRAG TO MORPH
+      - generic [ref=e36]:
+        - generic [ref=e37]: FOUR CORNERS
+        - generic [ref=e39]:
+          - generic [ref=e40]:
+            - generic [ref=e41]: M0 · LO
+            - generic [ref=e42]: M0_Q0
+            - generic [ref=e117]: boost 3.00
+          - generic [ref=e43]:
+            - generic [ref=e44]: M100 · LO
+            - generic [ref=e45]: M100_Q0
+            - generic [ref=e118]: boost 3.00
+          - generic [ref=e46]:
+            - generic [ref=e47]: M0 · HI
+            - generic [ref=e48]: M0_Q100
+            - generic [ref=e119]: boost 3.00
+          - generic [ref=e49]:
+            - generic [ref=e50]: M100 · HI
+            - generic [ref=e51]: M100_Q100
+            - generic [ref=e120]: boost 3.00
+      - generic [ref=e52]:
+        - generic [ref=e53]: SOURCE
+        - generic [ref=e55]:
+          - button "PINK" [ref=e56] [cursor=pointer]
+          - button "SWEEP" [ref=e57] [cursor=pointer]
+          - button "SAMPLE" [ref=e58] [cursor=pointer]
+        - generic [ref=e59]:
+          - button "▶ PLAY" [disabled] [ref=e60]
+          - button "■ STOP" [ref=e61] [cursor=pointer]
+        - generic [ref=e62]:
+          - generic [ref=e63]: LEVEL
+          - slider [ref=e64] [cursor=pointer]: "40"
+        - generic [ref=e66]: OUTPUT
+      - generic [ref=e68]:
+        - generic [ref=e69]: SIX ACTORS
+        - table [ref=e71]:
+          - rowgroup [ref=e72]:
+            - row "ACTOR FREQ Hz R" [ref=e73]:
+              - columnheader "ACTOR" [ref=e74]
+              - columnheader "FREQ Hz" [ref=e75]
+              - columnheader "R" [ref=e76]
+          - rowgroup [ref=e77]:
+            - row "Root chest weight (sub) 107 0.890" [ref=e157]:
+              - cell "Root chest weight (sub)" [ref=e158]:
+                - text: Root
+                - generic [ref=e160]: chest weight (sub)
+              - cell "107" [ref=e161]
+              - cell "0.890" [ref=e162]
+            - row "Body F1 — throat / jaw 470 0.954" [ref=e163]:
+              - cell "Body F1 — throat / jaw" [ref=e164]:
+                - text: Body
+                - generic [ref=e166]: F1 — throat / jaw
+              - cell "470" [ref=e167]
+              - cell "0.954" [ref=e168]
+            - row "Mouth F2 — tongue position 1599 0.945" [ref=e169]:
+              - cell "Mouth F2 — tongue position" [ref=e170]:
+                - text: Mouth
+                - generic [ref=e172]: F2 — tongue position
+              - cell "1599" [ref=e173]
+              - cell "0.945" [ref=e174]
+            - row "Scar anti-formant notch 1857 0.848" [ref=e175]:
+              - cell "Scar anti-formant notch" [ref=e176]:
+                - text: Scar
+                - generic [ref=e178]: anti-formant notch
+              - cell "1857" [ref=e179]
+              - cell "0.848" [ref=e180]
+            - row "Edge F3 — face / presence 2740 0.935" [ref=e181]:
+              - cell "Edge F3 — face / presence" [ref=e182]:
+                - text: Edge
+                - generic [ref=e184]: F3 — face / presence
+              - cell "2740" [ref=e185]
+              - cell "0.935" [ref=e186]
+            - row "Rip air / breath shelf 9755 0.789" [ref=e187]:
+              - cell "Rip air / breath shelf" [ref=e188]:
+                - text: Rip
+                - generic [ref=e190]: air / breath shelf
+              - cell "9755" [ref=e191]
+              - cell "0.789" [ref=e192]
+      - generic [ref=e80]:
+        - generic [ref=e81]: AUDIT
+        - generic [ref=e83]:
+          - generic [ref=e86]:
+            - generic [ref=e87]: Unstable pole
+            - generic [ref=e88]: max R=0.970 — all poles inside circle
+          - generic [ref=e91]:
+            - generic [ref=e92]: Actor swap risk
+            - generic [ref=e93]: Body migrates 2.7× across corners
+          - generic [ref=e96]:
+            - generic [ref=e97]: Center sag
+            - generic [ref=e98]: center -21.7 dB vs corner mean -20.9 dB (Δ 0.8 dB)
+          - generic [ref=e101]:
+            - generic [ref=e102]: Discontinuity
+            - generic [ref=e103]: max morph-edge jump 3.5× median
+          - generic [ref=e106]:
+            - generic [ref=e107]: Excessive output
+            - generic [ref=e108]: peak 0.000
+  - generic [ref=e109]:
+    - generic [ref=e110]: ENGINE OK
+    - generic [ref=e112]: MORPH-FIRST PACKED U16
+    - generic [ref=e113]: A=M0_Q0 B=M100_Q0 C=M0_Q100 D=M100_Q100
+    - generic [ref=e114]: 6 ACTORS · ABSTRACTED BUDGET
+    - generic [ref=e115]: WORKLET @ 48000 → 39062.5 EMU

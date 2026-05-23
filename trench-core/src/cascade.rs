@@ -197,6 +197,27 @@ impl Default for Cascade {
 mod tests {
     use super::*;
 
+    fn rossum_reference(coeffs: &[f64; NUM_COEFFS], input: &[f64]) -> Vec<f64> {
+        let mut x1 = 0.0;
+        let mut x2 = 0.0;
+        let mut y1 = 0.0;
+        let mut y2 = 0.0;
+        let mut out = Vec::with_capacity(input.len());
+
+        for &x0 in input {
+            let y0 = coeffs[0] * x0 + coeffs[1] * x1 + coeffs[2] * x2
+                - coeffs[3] * y1
+                - coeffs[4] * y2;
+            out.push(y0);
+            x2 = x1;
+            x1 = x0;
+            y2 = y1;
+            y1 = y0;
+        }
+
+        out
+    }
+
     #[test]
     fn passthrough_is_identity() {
         let mut cascade = Cascade::new();
@@ -264,6 +285,68 @@ mod tests {
 
         assert_eq!(output, 0.0);
         assert!(cascade.take_instability_flag());
+        assert!(!cascade.take_instability_flag());
+    }
+
+    #[test]
+    fn df2t_stage_matches_rossum_biquad_difference_equation() {
+        let cases = [
+            [0.72, -0.31, 0.18, -1.112, 0.716],
+            [1.0, 0.0, 0.0, -0.842, 0.303],
+            [0.19, 0.27, 0.19, -1.438, 0.522],
+        ];
+        let input = [
+            1.0, -0.25, 0.125, 0.0, 0.5, -0.75, 0.375, -0.1875, 0.09375, 0.0,
+            -0.03125, 0.015625,
+        ];
+
+        for coeffs in cases {
+            let expected = rossum_reference(&coeffs, &input);
+            let mut stage = BiquadState::new();
+            stage.coeffs = coeffs;
+
+            for (i, (&x, &want)) in input.iter().zip(expected.iter()).enumerate() {
+                let (got, unstable) = stage.process_sample(x);
+                assert!(!unstable, "case {coeffs:?} went unstable at sample {i}");
+                assert!(
+                    (got - want).abs() <= 1e-12,
+                    "sample {i}: DF2T {got:.15e} != Rossum {want:.15e} for {coeffs:?}"
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn six_stage_cascade_matches_serial_rossum_biquads_without_ramping() {
+        let corner: CornerData = [
+            [0.90, -0.20, 0.08, -0.72, 0.20],
+            [1.05, 0.12, -0.04, -0.51, 0.15],
+            [0.82, 0.25, 0.10, -0.93, 0.36],
+            [1.00, -0.08, 0.03, -0.30, 0.08],
+            [0.76, 0.18, 0.06, -1.10, 0.49],
+            PASSTHROUGH_COEFFS,
+        ];
+        let input = [
+            0.0, 0.25, -0.5, 0.125, 0.75, -0.375, 0.1875, 0.0, -0.0625, 0.03125,
+        ];
+
+        let mut reference = input.to_vec();
+        for coeffs in &corner {
+            reference = rossum_reference(coeffs, &reference);
+        }
+
+        let mut cascade = Cascade::new();
+        for (stage, coeffs) in cascade.stages[..NUM_STAGES].iter_mut().zip(corner.iter()) {
+            stage.coeffs = *coeffs;
+        }
+
+        for (i, (&x, &want)) in input.iter().zip(reference.iter()).enumerate() {
+            let got = cascade.tick(x as f32) as f64;
+            assert!(
+                (got - want).abs() <= 1e-6,
+                "sample {i}: cascade {got:.15e} != serial Rossum {want:.15e}"
+            );
+        }
         assert!(!cascade.take_instability_flag());
     }
 }

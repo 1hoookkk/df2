@@ -1,0 +1,19 @@
+[package]
+name = "trench-forge"
+version = "0.1.0"
+edition = "2021"
+description = "TRENCH Forge — standalone authoring/audition app (z-plane, morph, ARMA capture)"
+
+[[bin]]
+name = "trench-forge"
+path = "src/main.rs"
+
+[dependencies]
+eframe = "0.29"
+egui = "0.29"
+egui_plot = "0.29"
+rfd = "0.15"
+serde_json = "1"
+hound = "3"
+cpal = "0.15"
+trench-core = { path = "../trench-core", features = ["packed_interp"] }

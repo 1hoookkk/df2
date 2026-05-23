@@ -342,6 +342,7 @@ fn build_corner_from_source(
 }
 
 #[test]
+#[ignore = "requires absent old-repo canonical_audio corpus; use talking_hedz_first_null for current capture gate"]
 fn rust_cascade_nulls_against_python_canonical_refs() {
     let root = trench_root();
     let ref_dir = root.join("reference/canonical_audio");

@@ -46,6 +46,7 @@ fn run_compiler(grid_json: &str) -> (std::process::Output, String) {
 }
 
 #[test]
+#[ignore = "requires absent old-repo authoring/compilers/compile_grid.py"]
 fn two_token_grid_round_trips_through_rust_loader() {
     let grid = r#"{
         "name": "ah_to_ee_roundtrip",
@@ -71,6 +72,7 @@ fn two_token_grid_round_trips_through_rust_loader() {
 }
 
 #[test]
+#[ignore = "requires absent old-repo authoring/compilers/compile_grid.py"]
 fn three_token_grid_is_rejected() {
     let grid = r#"{
         "grid": [
@@ -92,6 +94,7 @@ fn three_token_grid_is_rejected() {
 }
 
 #[test]
+#[ignore = "requires absent old-repo authoring/compilers/compile_grid.py"]
 fn unknown_token_is_rejected() {
     let grid = r#"{
         "grid": [
