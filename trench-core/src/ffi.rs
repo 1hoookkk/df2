@@ -1,4 +1,4 @@
-use crate::cartridge::Cartridge;
+use crate::cartridge::{Cartridge, BODY_BYTES};
 use crate::engine::{FilterEngine, InputMode, SpatialMode};
 use libc::{c_char, c_void};
 use std::ffi::CStr;
@@ -38,6 +38,37 @@ pub unsafe extern "C" fn trench_engine_load_cartridge(
     };
 
     match Cartridge::from_json(r_str) {
+        Ok(cart) => {
+            engine.load_cartridge(cart);
+            0
+        }
+        Err(_) => -3,
+    }
+}
+
+/// Load a body directly from raw bytes. Must be exactly 240 bytes
+/// (4 corners × 6 stages × 5 u16 words × 2 bytes). Routes through the same
+/// canonical `Cartridge::from_body_bytes` → `PackedCorners` runtime path as a
+/// JSON `packedWords` body — there is no separate DSP path for raw audition
+/// bodies.
+///
+/// Returns: 0 on success, -1 null engine/ptr, -4 wrong length, -3 decode error.
+#[no_mangle]
+pub unsafe extern "C" fn trench_engine_load_body_bytes(
+    engine: *mut c_void,
+    bytes: *const u8,
+    len: usize,
+) -> i32 {
+    if engine.is_null() || bytes.is_null() {
+        return -1;
+    }
+    if len != BODY_BYTES {
+        return -4;
+    }
+    let engine = &mut *(engine as *mut FilterEngine);
+    let slice = std::slice::from_raw_parts(bytes, len);
+
+    match Cartridge::from_body_bytes("audition", slice, 1.0) {
         Ok(cart) => {
             engine.load_cartridge(cart);
             0

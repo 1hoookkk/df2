@@ -1,7 +1,7 @@
-/// Packed-domain interpolation experiment — behind `packed_interp` feature flag.
+/// Packed-domain interpolation.
 ///
 /// Implements morph-first bilinear lerp in u16 minifloat space, faithful to the
-/// E-MU/MSVC decompiled FUN_1802c3d40 formula. Not the shipping interpolation path.
+/// E-MU/MSVC decompiled FUN_1802c3d40 formula.
 ///
 /// Corner word derivation: when raw ROM u16 words are unavailable, words are derived
 /// from decoded c0..c4 via inverse recombination. Results are labelled
@@ -28,7 +28,11 @@ pub fn decode(word: u16) -> f64 {
     }
     let e = ((u >> 12) & 0xF) as i32;
     let m = (u & 0xFFF) as f64;
-    let x = if e == 0 { m / 4096.0 } else { (m + 4096.0) / 8192.0 };
+    let x = if e == 0 {
+        m / 4096.0
+    } else {
+        (m + 4096.0) / 8192.0
+    };
     x * (2.0f64).powi(e - 15)
 }
 
@@ -92,10 +96,53 @@ pub fn lerp_u16(a: u16, b: u16, frac: f32) -> u16 {
 /// Five packed u16 words for one biquad stage.
 pub type PackedStage = [u16; NUM_COEFFS];
 
-/// Derived-packed-canonical corner bank: 4 corners × 6 stages × 5 words.
+/// Convert one packed stage to shifted minifloat-domain kernel form.
+///
+/// This is the decoded form used by the Python response/plot tooling:
+/// `[c0, c1, c2, c3, c4]` where
+/// `b0=c4`, `b1=(c0-2)*c4`, `b2=(1-c1)*c4`, `a1=c2-2`, `a2=1-c3`.
+pub fn stage_words_to_kernel(words: PackedStage) -> [f64; NUM_COEFFS] {
+    let d0 = decode(words[0]);
+    let d1 = decode(words[1]);
+    let d2 = decode(words[2]);
+    let d3 = decode(words[3]);
+    let d4 = decode(words[4]);
+
+    [
+        COMBINE_K * d0 + d1,
+        d1,
+        COMBINE_K * d2 + d3,
+        d3,
+        COMBINE_K * d4,
+    ]
+}
+
+/// Convert shifted minifloat-domain kernel form to the runtime Cascade row.
+///
+/// The Rust `Cascade` consumes direct DF2T biquad coefficients:
+/// `[b0, b1, b2, a1, a2]` for
+/// `H(z)=(b0+b1z^-1+b2z^-2)/(1+a1z^-1+a2z^-2)`.
+pub fn kernel_to_biquad(k: [f64; NUM_COEFFS]) -> [f64; NUM_COEFFS] {
+    let [c0, c1, c2, c3, c4] = k;
+    [c4, (c0 - 2.0) * c4, (1.0 - c1) * c4, c2 - 2.0, 1.0 - c3]
+}
+
+/// Convert one packed stage directly to the runtime Cascade row.
+pub fn stage_words_to_biquad(words: PackedStage) -> [f64; NUM_COEFFS] {
+    kernel_to_biquad(stage_words_to_kernel(words))
+}
+
+/// Exact on-disk size of a df2 body: 4 corners × 6 stages × 5 u16 words × 2 bytes.
+///
+/// This is the canonical body container size. A raw `.body240` file and a
+/// JSON `packedWords` block both serialize to exactly this many bytes.
+pub const BODY_BYTES: usize = 4 * NUM_STAGES * NUM_COEFFS * 2;
+
+/// Derived-packed-canonical corner bank: 4 corners x 6 stages x 5 words.
 ///
 /// Corner order: [0]=M0_Q0, [1]=M100_Q0, [2]=M0_Q100, [3]=M100_Q100
 /// Matches `Cartridge::corners` index order.
+#[derive(Clone, Debug, PartialEq, Eq)]
 pub struct PackedCorners {
     pub words: [[PackedStage; NUM_STAGES]; 4],
 }
@@ -134,8 +181,7 @@ impl PackedCorners {
     /// Unlike `from_corner_data`, the words are taken verbatim — no decode /
     /// re-encode round-trip — so this ingests true E-mu ROM words.
     pub fn from_rom_bytes(bytes: &[u8]) -> Result<Self, &'static str> {
-        const NEED: usize = 4 * NUM_STAGES * NUM_COEFFS * 2;
-        if bytes.len() < NEED {
+        if bytes.len() < BODY_BYTES {
             return Err("ROM corner block must be at least 240 bytes");
         }
         let mut words = [[[0u16; NUM_COEFFS]; NUM_STAGES]; 4];
@@ -151,10 +197,42 @@ impl PackedCorners {
         Ok(Self { words })
     }
 
+    /// Parse a body from exactly 240 bytes — the canonical body container.
+    ///
+    /// Unlike `from_rom_bytes` (which slices the first 240 bytes out of a
+    /// larger ROM dump), this rejects anything that is not exactly
+    /// [`BODY_BYTES`] long. This is the entry point for `.body240` files and
+    /// the FFI raw-byte loader.
+    pub fn from_body_bytes(bytes: &[u8]) -> Result<Self, &'static str> {
+        if bytes.len() != BODY_BYTES {
+            return Err("body must be exactly 240 bytes (4 corners × 6 stages × 5 u16 words)");
+        }
+        Self::from_rom_bytes(bytes)
+    }
+
+    /// Serialize to the canonical 240-byte body layout: corner-major, 30 u16
+    /// little-endian per corner, stage-major. Inverse of `from_rom_bytes`.
+    pub fn to_rom_bytes(&self) -> [u8; BODY_BYTES] {
+        let mut bytes = [0u8; BODY_BYTES];
+        let mut i = 0;
+        for corner in self.words.iter() {
+            for stage in corner.iter() {
+                for &w in stage.iter() {
+                    let [lo, hi] = w.to_le_bytes();
+                    bytes[i] = lo;
+                    bytes[i + 1] = hi;
+                    i += 2;
+                }
+            }
+        }
+        bytes
+    }
+
     /// Morph-first bilinear interpolation in packed u16 space.
     ///
     /// Order: morph lerp (A→B, C→D) first, then Q lerp (edge0→edge1).
-    /// Returns decoded kernel-form c0..c4 for all 6 stages.
+    /// Returns shifted minifloat-domain kernel form for all 6 stages. This is
+    /// not the direct Rust Cascade row; use `interpolate_biquad` for audio.
     pub fn interpolate(&self, morph: f32, q: f32) -> CornerData {
         let mut result = [[0.0f64; NUM_COEFFS]; NUM_STAGES];
         for si in 0..NUM_STAGES {
@@ -170,17 +248,18 @@ impl PackedCorners {
                 out_words[wi] = lerp_u16(edge0, edge1, q); // edge0→edge1 along Q
             }
 
-            let d0 = decode(out_words[0]);
-            let d1 = decode(out_words[1]);
-            let d2 = decode(out_words[2]);
-            let d3 = decode(out_words[3]);
-            let d4 = decode(out_words[4]);
+            result[si] = stage_words_to_kernel(out_words);
+        }
+        result
+    }
 
-            result[si][0] = COMBINE_K * d0 + d1;
-            result[si][1] = d1;
-            result[si][2] = COMBINE_K * d2 + d3;
-            result[si][3] = d3;
-            result[si][4] = COMBINE_K * d4; // c4 scale 4.0 (verified vs ROM)
+    /// Morph-first bilinear interpolation in packed u16 space, converted to
+    /// the direct DF2T biquad rows consumed by `Cascade`.
+    pub fn interpolate_biquad(&self, morph: f32, q: f32) -> CornerData {
+        let kernel = self.interpolate(morph, q);
+        let mut result = [[0.0f64; NUM_COEFFS]; NUM_STAGES];
+        for si in 0..NUM_STAGES {
+            result[si] = kernel_to_biquad(kernel[si]);
         }
         result
     }
@@ -200,10 +279,7 @@ mod unit_tests {
         for w in [0x0100u16, 0x1000, 0x4000, 0x8000, 0xC000, 0xFFFE] {
             let v = decode(w);
             let w2 = encode(v);
-            assert_eq!(
-                w, w2,
-                "encode(decode({w:#06x})) = {w2:#06x}, value={v}"
-            );
+            assert_eq!(w, w2, "encode(decode({w:#06x})) = {w2:#06x}, value={v}");
         }
     }
 
@@ -252,7 +328,10 @@ mod unit_tests {
         for ci in 0..4 {
             for si in 0..NUM_STAGES {
                 for wi in 0..NUM_COEFFS {
-                    assert_eq!(pc.words[ci][si][wi], idx, "corner {ci} stage {si} word {wi}");
+                    assert_eq!(
+                        pc.words[ci][si][wi], idx,
+                        "corner {ci} stage {si} word {wi}"
+                    );
                     idx += 1;
                 }
             }

@@ -1,6 +1,10 @@
 use crate::cascade::{NUM_COEFFS, NUM_STAGES};
 use crate::emu_resonator::{emu_resonator, EmuResonatorParams};
+use crate::minifloat::{stage_words_to_biquad, PackedCorners, PackedStage};
 use serde::Deserialize;
+
+/// Exact body container size: 4 corners × 6 stages × 5 u16 words × 2 bytes.
+pub use crate::minifloat::BODY_BYTES;
 
 /// Optional drive-stage config (preceding cascade).
 #[derive(Debug, Clone, Deserialize)]
@@ -98,6 +102,8 @@ struct KeyframeJson {
     boost: f64,
     #[serde(default)]
     stages: Vec<serde_json::Value>,
+    #[serde(default, rename = "packedWords")]
+    packed_words: Vec<PackedStage>,
 }
 
 fn default_boost() -> f64 {
@@ -128,6 +134,7 @@ pub struct Cartridge {
     pub name: String,
     pub corners: [CornerData; NUM_CORNERS],
     pub boosts: [f64; NUM_CORNERS],
+    pub packed: Option<PackedCorners>,
     pub drive: DriveBlock,
     pub spatial_profile: Option<SpatialProfile>,
     pub mod_fn: Option<ModFnBlock>,
@@ -139,10 +146,59 @@ impl Cartridge {
             name: crate::hedz_rom::HEDZ_NAME.to_string(),
             corners: crate::hedz_rom::HEDZ_CORNERS,
             boosts: crate::hedz_rom::HEDZ_BOOSTS,
+            packed: None,
             drive: DriveBlock::default(),
             spatial_profile: None,
             mod_fn: None,
         }
+    }
+
+    /// Canonical assembler: build a cartridge from a decoded packed corner bank.
+    ///
+    /// This is the single coefficient path. The runtime direct DF2T fallback
+    /// rows (`corners`) are derived from the packed words here so they can never
+    /// disagree with `packed`; `packed` stays the interpolation authority.
+    fn from_packed(
+        name: String,
+        packed: PackedCorners,
+        boosts: [f64; NUM_CORNERS],
+        drive: DriveBlock,
+        spatial_profile: Option<SpatialProfile>,
+        mod_fn: Option<ModFnBlock>,
+    ) -> Self {
+        let mut corners = [[[0.0; NUM_COEFFS]; NUM_STAGES]; NUM_CORNERS];
+        for ci in 0..NUM_CORNERS {
+            for si in 0..NUM_STAGES {
+                corners[ci][si] = stage_words_to_biquad(packed.words[ci][si]);
+            }
+        }
+        Self {
+            name,
+            corners,
+            boosts,
+            packed: Some(packed),
+            drive,
+            spatial_profile,
+            mod_fn,
+        }
+    }
+
+    /// Load a body from exactly 240 raw bytes — the canonical entry point.
+    ///
+    /// Rejects anything that is not exactly [`BODY_BYTES`]. The bytes flow
+    /// `BodyBytes240 → PackedCorners → Cartridge`, the same path JSON
+    /// `packedWords` bodies take, so a raw `.body240` file and its JSON wrapper
+    /// produce an identical `PackedCorners`.
+    pub fn from_body_bytes(name: &str, bytes: &[u8], boost: f64) -> Result<Self, String> {
+        let packed = PackedCorners::from_body_bytes(bytes).map_err(|e| e.to_string())?;
+        Ok(Self::from_packed(
+            name.to_string(),
+            packed,
+            [boost; NUM_CORNERS],
+            DriveBlock::default(),
+            None,
+            None,
+        ))
     }
 
     pub fn from_json(json: &str) -> Result<Self, String> {
@@ -150,44 +206,92 @@ impl Cartridge {
             serde_json::from_str(json).map_err(|e| format!("JSON parse error: {e}"))?;
         let sr = raw.sample_rate;
 
-        let find_corner = |label: &str| -> Result<(CornerData, f64), String> {
+        let mut packed_words = [[[0u16; NUM_COEFFS]; NUM_STAGES]; NUM_CORNERS];
+        let mut packed_present = [false; NUM_CORNERS];
+        // Stage-only fallback corners, used only when no packedWords are present.
+        let mut stage_corners = [[[0.0; NUM_COEFFS]; NUM_STAGES]; NUM_CORNERS];
+        let mut boosts = [1.0f64; NUM_CORNERS];
+
+        let mut find_corner = |label: &str, idx: usize| -> Result<(), String> {
             let kf = raw
                 .keyframes
                 .iter()
                 .find(|k| k.label == label)
                 .ok_or_else(|| format!("missing keyframe '{label}'"))?;
 
-            let mut corner = [[0.0; NUM_COEFFS]; NUM_STAGES];
-            for (i, v) in kf.stages.iter().take(NUM_STAGES).enumerate() {
-                // Try to parse as biquad first
-                if let Ok(c) = serde_json::from_value::<StageCoeffsJson>(v.clone()) {
-                    corner[i] = [c.c0, c.c1, c.c2, c.c3, c.c4];
-                } else if let Ok(r) = serde_json::from_value::<RawStage>(v.clone()) {
-                    // Compile from Z-plane
-                    let params = EmuResonatorParams {
-                        freq_hz: crate::emu_resonator::freq_from_a1_r(r.a1 as f64, r.r as f64, sr)
-                            as f32,
-                        radius: r.r,
-                        val1: r.val1,
-                        val2: r.val2,
-                        val3: r.val3,
-                    };
-                    let enc = emu_resonator(&params, sr);
-                    corner[i] = [enc.c0, enc.c1, enc.c2, enc.c3, enc.c4];
+            boosts[idx] = kf.boost;
+            if !kf.packed_words.is_empty() {
+                if kf.packed_words.len() != NUM_STAGES {
+                    return Err(format!(
+                        "{label}.packedWords has {} rows, expected {NUM_STAGES}",
+                        kf.packed_words.len()
+                    ));
+                }
+                for (i, words) in kf.packed_words.iter().copied().enumerate() {
+                    packed_words[idx][i] = words;
+                }
+                packed_present[idx] = true;
+            } else {
+                for (i, v) in kf.stages.iter().take(NUM_STAGES).enumerate() {
+                    // Try to parse as biquad first
+                    if let Ok(c) = serde_json::from_value::<StageCoeffsJson>(v.clone()) {
+                        stage_corners[idx][i] = [c.c0, c.c1, c.c2, c.c3, c.c4];
+                    } else if let Ok(r) = serde_json::from_value::<RawStage>(v.clone()) {
+                        // Compile from Z-plane
+                        let params = EmuResonatorParams {
+                            freq_hz: crate::emu_resonator::freq_from_a1_r(
+                                r.a1 as f64,
+                                r.r as f64,
+                                sr,
+                            ) as f32,
+                            radius: r.r,
+                            val1: r.val1,
+                            val2: r.val2,
+                            val3: r.val3,
+                        };
+                        let enc = emu_resonator(&params, sr);
+                        stage_corners[idx][i] = [enc.c0, enc.c1, enc.c2, enc.c3, enc.c4];
+                    }
                 }
             }
-            Ok((corner, kf.boost))
+            Ok(())
         };
 
-        let (c0, b0) = find_corner("M0_Q0")?;
-        let (c1, b1) = find_corner("M100_Q0")?;
-        let (c2, b2) = find_corner("M0_Q100")?;
-        let (c3, b3) = find_corner("M100_Q100")?;
+        find_corner("M0_Q0", 0)?;
+        find_corner("M100_Q0", 1)?;
+        find_corner("M0_Q100", 2)?;
+        find_corner("M100_Q100", 3)?;
 
+        let packed_count = packed_present.iter().filter(|&&v| v).count();
+        if packed_count == NUM_CORNERS {
+            // Packed bytes are present → they are the coefficient authority.
+            // Serialize to the exact 240-byte layout, then go through the same
+            // canonical constructor as a raw `.body240` file. `stages` (if any)
+            // are ignored: they are readback/fallback, never authority.
+            let bytes = PackedCorners {
+                words: packed_words,
+            }
+            .to_rom_bytes();
+            let packed = PackedCorners::from_body_bytes(&bytes).map_err(|e| e.to_string())?;
+            return Ok(Self::from_packed(
+                raw.name,
+                packed,
+                boosts,
+                raw.drive.unwrap_or_default(),
+                raw.spatial_profile,
+                raw.mod_fn,
+            ));
+        }
+        if packed_count != 0 {
+            return Err("packedWords must be present on all four corners or none".to_string());
+        }
+
+        // No packed bytes anywhere → legacy stage-coefficient body.
         Ok(Self {
             name: raw.name,
-            corners: [c0, c1, c2, c3],
-            boosts: [b0, b1, b2, b3],
+            corners: stage_corners,
+            boosts,
+            packed: None,
             drive: raw.drive.unwrap_or_default(),
             spatial_profile: raw.spatial_profile,
             mod_fn: raw.mod_fn,
@@ -195,6 +299,10 @@ impl Cartridge {
     }
 
     pub fn interpolate(&self, morph: f64, q: f64) -> CornerData {
+        if let Some(packed) = &self.packed {
+            return packed.interpolate_biquad(morph as f32, q as f32);
+        }
+
         let mut result = [[0.0; NUM_COEFFS]; NUM_STAGES];
         for stage in 0..NUM_STAGES {
             for c in 0..NUM_COEFFS {
