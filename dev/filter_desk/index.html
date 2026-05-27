@@ -18,6 +18,8 @@
   button:hover:not(:disabled){background:var(--green);color:#06100a}
   button:disabled{opacity:.4;cursor:default} button.sec{color:var(--ink);border-color:var(--line)}
   button.sec:hover{background:var(--line);color:var(--ink)}
+  select{background:#11201a;color:var(--green);border:1px solid var(--line);font:inherit;padding:5px 6px;letter-spacing:1px}
+  .div{width:1px;height:20px;background:var(--line);margin:0 2px;display:inline-block}
   #wrap{flex:1;position:relative;background:var(--panel)} canvas{display:block;width:100%;height:100%}
   #status{padding:6px 14px;background:var(--panel);border-top:1px solid var(--line);color:var(--dim);white-space:pre;min-height:24px}
   #status.ok{color:var(--green)} #status.bad{color:var(--red)} #status.busy{color:var(--amber)}
@@ -33,6 +35,10 @@
     <button id="compile">Compile</button>
     <button class="sec" id="validate" disabled>Validate</button>
     <button class="sec" id="write" disabled>Write Live</button>
+    <span class="div"></span>
+    <select id="src" title="audition source"><option>808</option><option>saw</option><option>noise</option></select>
+    <button class="sec" id="audCorner" disabled>▶ Corner</button>
+    <button id="audMid" disabled>▶ Middle</button>
   </header>
   <div id="wrap"><canvas id="cv"></canvas>
     <div class="legend"><b>● drag = target</b><br><span class="sv">— solved (forge_fit)</span><br><span class="er">— error</span></div>
@@ -106,6 +112,7 @@ document.getElementById("compile").onclick=async()=>{
     cartridge=out.cartridge; Object.assign(solved,out.corners);
     const lines=LABELS.map(L=>`${L} null ${out.corners[L].null_db.toFixed(1)}dB r${out.corners[L].max_radius.toFixed(3)}`).join("  ·  ");
     status("compiled · "+lines,"ok"); document.getElementById("validate").disabled=false;
+    document.getElementById("audCorner").disabled=false; document.getElementById("audMid").disabled=false;
   }catch(e){ status("compile failed: "+e.message,"bad"); }
   ["compile","load"].forEach(id=>document.getElementById(id).disabled=false); draw();
 };
@@ -132,8 +139,27 @@ document.getElementById("load").onclick=async()=>{
   }catch(e){ status("load failed: "+e.message,"bad"); }
 };
 
+// audition through the real engine (process_block over FFI)
+const TABMQ={M0_Q0:[0,0],M100_Q0:[1,0],M0_Q100:[0,1],M100_Q100:[1,1]};
+let audioEl=null;
+async function audition(m,q,where){
+  if(!cartridge){status("compile first to audition","bad");return;}
+  const src=document.getElementById("src").value;
+  status(`auditioning ${where} (M${Math.round(m*100)}/Q${Math.round(q*100)}) · ${src} … through the engine`,"busy");
+  try{
+    const r=await fetch("/desk/audition",{method:"POST",headers:{"content-type":"application/json"},
+      body:JSON.stringify({cartridge,morph:m,q:q,source:src,seconds:2.5})});
+    if(!r.ok){let d;try{d=await r.json();}catch{d=await r.text();} throw new Error(typeof d==="string"?d:JSON.stringify(d));}
+    const url=URL.createObjectURL(await r.blob());
+    if(audioEl){audioEl.pause();} audioEl=new Audio(url); audioEl.onended=()=>URL.revokeObjectURL(url); audioEl.play();
+    status(`▶ ${where} · M${Math.round(m*100)}/Q${Math.round(q*100)} · ${src} — the real player DSP`,"ok");
+  }catch(e){ status("audition failed: "+e.message,"bad"); }
+}
+document.getElementById("audCorner").onclick=()=>{const [m,q]=TABMQ[active];audition(m,q,active);};
+document.getElementById("audMid").onclick=()=>audition(0.5,0.5,"MIDDLE");
+
 // health on boot
-(async()=>{ try{const h=await api("/desk/health"); status(`ready · forge_fit ${h.forge_fit} · core ${h.core_backend} · live ${h.live_path}`,""); }catch(e){ status("backend not reachable — start: uvicorn pyruntime.api:app","bad"); } })();
+(async()=>{ try{const h=await api("/desk/health"); status(`ready · core ${h.core_backend} · engine ${h.engine?"on":"off"} · live ${h.live_path}`,""); }catch(e){ status("backend not reachable — start: uvicorn pyruntime.api:app","bad"); } })();
 resize();
 </script>
 </body></html>

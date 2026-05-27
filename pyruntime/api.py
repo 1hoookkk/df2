@@ -735,6 +735,14 @@ class _DeskDesign(BaseModel):
     corners: dict[str, _DeskCorner]
 
 
+class _DeskAudition(BaseModel):
+    cartridge: dict
+    morph: float = 0.5
+    q: float = 0.5
+    source: str = "808"      # "808" | "saw" | "noise"
+    seconds: float = 2.5
+
+
 def _as_dict(model):
     return model.model_dump() if hasattr(model, "model_dump") else model.dict()
 
@@ -771,3 +779,17 @@ def desk_write(cart: dict):
     if not val["ok"]:
         raise HTTPException(400, {"error": "validation failed", **val})
     return {"path": _desk.write_live(cart), "validate": val}
+
+
+@app.post("/desk/audition")
+def desk_audition(req: _DeskAudition):
+    """Render the body through the SHIPPED engine at (morph, q) — returns a WAV."""
+    from fastapi.responses import Response as _Resp
+    try:
+        wav = _desk.audition(req.cartridge, req.morph, req.q,
+                             source=req.source, seconds=req.seconds)
+    except RuntimeError as e:
+        raise HTTPException(503, {"error": str(e)})
+    except (ValueError, KeyError) as e:
+        raise HTTPException(400, {"error": str(e)})
+    return _Resp(content=wav, media_type="audio/wav")

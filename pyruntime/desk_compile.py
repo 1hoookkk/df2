@@ -15,14 +15,16 @@ file the plugin watches and hot-reloads: ~/Documents/TRENCH/authoring_slot.json.
 """
 from __future__ import annotations
 
+import io
 import json
 import math
 import os
+import wave
 from pathlib import Path
 
 import numpy as np
 
-from pyruntime import forge_fit, packed_interp as pi
+from pyruntime import forge_fit, packed_interp as pi, trench_ffi as _ffi
 
 SR = 39062.5                       # authoring rate (discovered: trench-core)
 N_FIT = 512                        # fit-grid resolution (snappy compile; plenty for a 6-biquad fit)
@@ -195,11 +197,79 @@ def live_as_design(npoints=14):
     return {"name": cart.get("name", "live"), "corners": corners}
 
 
+# ── audition through the SHIPPED engine (process_block over FFI) ──
+def _synth_source(source, seconds, sr):
+    """A consistent excitation to hear the body through. Mono float, peak ~0.5."""
+    n = max(1, int(float(seconds) * sr))
+    t = np.arange(n) / sr
+    if source == "noise":
+        x = np.random.default_rng(0).standard_normal(n)
+        x *= np.minimum(1.0, t / 0.01) * np.minimum(1.0, (seconds - t) / 0.05)  # soft edges
+    elif source == "saw":
+        f0 = 55.0
+        x = 2.0 * ((t * f0) % 1.0) - 1.0                       # sustained bass saw
+    else:  # "808" — flagship: pitch-dropped sine + click + decay
+        fenv = 48.0 + (120.0 - 48.0) * np.exp(-t / 0.03)
+        x = np.sin(2.0 * np.pi * np.cumsum(fenv) / sr)
+        x *= np.exp(-t / (float(seconds) * 0.45))
+        click = np.zeros(n); click[: int(0.0015 * sr)] = 1.0
+        x = x + 0.25 * click
+    peak = float(np.max(np.abs(x))) or 1.0
+    return (0.5 * x / peak).astype(np.float64)
+
+
+def _wav_pcm16(y, sr) -> bytes:
+    pcm = (np.clip(y, -1.0, 1.0) * 32767.0).astype("<i2").tobytes()
+    buf = io.BytesIO()
+    with wave.open(buf, "wb") as w:
+        w.setnchannels(1)
+        w.setsampwidth(2)
+        w.setframerate(int(round(sr)))
+        w.writeframes(pcm)
+    return buf.getvalue()
+
+
+def _corner_word_bank(cart):
+    """Cartridge keyframes -> owner A/B/C/D word bank (A=M0_Q0, B=M100_Q0, C=M0_Q100, D=M100_Q100)."""
+    kfs = {kf["label"]: kf for kf in cart.get("keyframes", [])}
+    missing = [c for c in CORNERS if c not in kfs]
+    if missing:
+        raise ValueError(f"cartridge missing corners: {missing}")
+
+    def rows(label):
+        kf = kfs[label]
+        if kf.get("packedWords"):
+            return [[int(x) & 0xFFFF for x in r] for r in kf["packedWords"]]
+        return [list(pi.coeffs_to_words(s["c0"], s["c1"], s["c2"], s["c3"], s["c4"]))
+                for s in kf["stages"][:STAGES]]
+
+    return {"A": rows("M0_Q0"), "B": rows("M100_Q0"), "C": rows("M0_Q100"), "D": rows("M100_Q100")}
+
+
+def audition(cart, morph=0.5, q=0.5, source="808", seconds=2.5, sr=SR):
+    """Render a test source through the body at a held (morph, q), via the
+    shipped FilterEngine. Returns 16-bit mono WAV bytes (what the player plays)."""
+    if not _ffi.engine_available():
+        raise RuntimeError("engine FFI not available — build trench-core "
+                           "(cargo build --release -p trench-core)")
+    bank = _corner_word_bank(cart)
+    body = _ffi.body_bytes_from_corner_words(bank)
+    x = _synth_source(source, seconds, sr)
+    out = _ffi.engine_render(body, float(morph), float(q), x.astype("<f4").tobytes(), sr=sr)
+    y = np.nan_to_num(np.frombuffer(out, dtype="<f4").astype(np.float64),
+                      nan=0.0, posinf=0.0, neginf=0.0)
+    peak = float(np.max(np.abs(y))) if y.size else 0.0
+    if peak > 1e-9:
+        y = 0.9 * y / peak
+    return _wav_pcm16(y, sr)
+
+
 def health():
     return {
         "ok": True,
         "forge_fit": True,
         "core_backend": pi.core_backend(),
+        "engine": _ffi.engine_available(),
         "live_path": str(LIVE_PATH),
         "live_exists": LIVE_PATH.exists(),
         "sample_rate_hz": SR, "stages": STAGES,

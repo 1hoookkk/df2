@@ -25,6 +25,7 @@ _OUT_LEN = NUM_STAGES * NUM_COEFFS            # 30
 _lib = None
 _lib_path: Path | None = None
 _load_attempted = False
+_engine_ok = False  # the stateful FilterEngine symbols (audition) bound OK
 
 
 def _candidate_paths():
@@ -77,14 +78,86 @@ def _load():
             lib.trench_packed_probe.restype = ctypes.c_int
             _lib = lib
             _lib_path = path
+            _bind_engine(lib)  # optional: stateful audition path (separate, non-fatal)
             return _lib
         except (OSError, AttributeError):
             continue
     return None
 
 
+def _bind_engine(lib) -> None:
+    """Bind the stateful FilterEngine symbols used for audition (process_block).
+
+    Kept separate from the packed-math bindings so that a DLL missing these
+    (older build) still delegates the codec/interp/probe math — audition just
+    becomes unavailable instead of dropping the whole library."""
+    global _engine_ok
+    try:
+        lib.trench_engine_create.restype = ctypes.c_void_p
+        lib.trench_engine_destroy.argtypes = [ctypes.c_void_p]
+        lib.trench_engine_prepare.argtypes = [ctypes.c_void_p, ctypes.c_double]
+        lib.trench_engine_load_body_bytes.argtypes = [ctypes.c_void_p, ctypes.c_char_p, ctypes.c_size_t]
+        lib.trench_engine_load_body_bytes.restype = ctypes.c_int
+        lib.trench_engine_set_input_mode.argtypes = [ctypes.c_void_p, ctypes.c_int]
+        lib.trench_engine_set_spatial_mode.argtypes = [ctypes.c_void_p, ctypes.c_int]
+        lib.trench_engine_process_block.argtypes = [
+            ctypes.c_void_p,
+            ctypes.POINTER(ctypes.c_float),  # left  (in place)
+            ctypes.POINTER(ctypes.c_float),  # right (in place)
+            ctypes.c_int,                    # num samples
+            ctypes.c_double,                 # morph
+            ctypes.c_double,                 # q
+        ]
+        _engine_ok = True
+    except AttributeError:
+        _engine_ok = False
+
+
 def available() -> bool:
     return _load() is not None
+
+
+def engine_available() -> bool:
+    """True when the stateful FilterEngine (audition / process_block) is bound."""
+    _load()
+    return _engine_ok
+
+
+def engine_render(body_bytes: bytes, morph: float, q: float, in_f32_bytes: bytes,
+                  sr: float = 39062.5, input_mode: int = 0, spatial_mode: int = 2) -> bytes:
+    """Render mono input through the SHIPPED FilterEngine at a held (morph, q).
+
+    `in_f32_bytes` is little-endian float32 mono PCM; returns the processed
+    left channel as little-endian float32 bytes. This is the player's exact
+    DSP — load a 240-byte body, prepare at `sr`, process_block — so the desk
+    auditions what the instrument plays, not a Python approximation.
+
+    Defaults: input_mode 0 (None — no input drive) and spatial_mode 2 (Off),
+    so you hear the body itself, transparent-player style.
+    """
+    lib = _load()
+    if lib is None or not _engine_ok:
+        raise RuntimeError("trench_core engine FFI not available")
+    if len(body_bytes) != BODY_BYTES:
+        raise ValueError(f"body must be {BODY_BYTES} bytes, got {len(body_bytes)}")
+    n = len(in_f32_bytes) // 4
+    eng = lib.trench_engine_create()
+    if not eng:
+        raise RuntimeError("trench_engine_create returned null")
+    try:
+        lib.trench_engine_prepare(eng, ctypes.c_double(float(sr)))
+        rc = lib.trench_engine_load_body_bytes(eng, bytes(body_bytes), len(body_bytes))
+        if rc != 0:
+            raise RuntimeError(f"load_body_bytes failed (rc={rc})")
+        lib.trench_engine_set_input_mode(eng, ctypes.c_int(int(input_mode)))
+        lib.trench_engine_set_spatial_mode(eng, ctypes.c_int(int(spatial_mode)))
+        left = (ctypes.c_float * n).from_buffer_copy(in_f32_bytes)
+        right = (ctypes.c_float * n).from_buffer_copy(in_f32_bytes)
+        lib.trench_engine_process_block(eng, left, right, ctypes.c_int(n),
+                                        ctypes.c_double(float(morph)), ctypes.c_double(float(q)))
+        return bytes(left)
+    finally:
+        lib.trench_engine_destroy(eng)
 
 
 def lib_path() -> Path | None:
