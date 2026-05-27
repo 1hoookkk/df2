@@ -710,3 +710,64 @@ def splice_endpoint(req: SpliceRequest):
         raise HTTPException(400, str(e)) from e
     body = Body(name=req.name, corners=spliced, boost=body_a.boost)
     return json.loads(body.to_json())
+
+
+# ── Anatomy-First filter design desk ─────────────────────────────────────────
+# draw magnitude target -> cepstral min-phase -> the REAL forge_fit solver ->
+# stable cartridge -> the plugin's live slot (~/Documents/TRENCH/authoring_slot.json).
+from pyruntime import desk_compile as _desk  # noqa: E402
+
+_DESK_HTML = os.path.join(os.path.dirname(__file__), "..", "dev", "filter_desk", "index.html")
+
+
+class _DeskPoint(BaseModel):
+    hz: float
+    db: float
+
+
+class _DeskCorner(BaseModel):
+    points: list[_DeskPoint]
+
+
+class _DeskDesign(BaseModel):
+    name: str = "desk_body"
+    boost: float = 1.0
+    corners: dict[str, _DeskCorner]
+
+
+def _as_dict(model):
+    return model.model_dump() if hasattr(model, "model_dump") else model.dict()
+
+
+@app.get("/desk")
+def serve_desk():
+    return FileResponse(_DESK_HTML)
+
+
+@app.get("/desk/health")
+def desk_health():
+    return _desk.health()
+
+
+@app.get("/desk/live")
+def desk_live():
+    d = _desk.live_as_design()
+    return d if d is not None else {"name": "", "corners": {}}
+
+
+@app.post("/desk/compile")
+def desk_compile_route(design: _DeskDesign):
+    return _desk.compile_design(_as_dict(design))
+
+
+@app.post("/desk/validate")
+def desk_validate(cart: dict):
+    return _desk.validate_cartridge(cart)
+
+
+@app.post("/desk/write-live")
+def desk_write(cart: dict):
+    val = _desk.validate_cartridge(cart)
+    if not val["ok"]:
+        raise HTTPException(400, {"error": "validation failed", **val})
+    return {"path": _desk.write_live(cart), "validate": val}

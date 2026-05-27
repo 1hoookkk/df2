@@ -243,7 +243,8 @@ def _response_null_db(kernel: np.ndarray, z_inv: np.ndarray,
 def fit_corner(target: np.ndarray, freqs: np.ndarray, z_inv: np.ndarray,
                sr: float, profile: str = "vocal",
                n_restarts: int = 16, seed: int = 0,
-               weight: np.ndarray | None = None) -> CornerFit:
+               weight: np.ndarray | None = None,
+               max_nfev: int = 1500, tol: float = 1e-10) -> CornerFit:
     """Fit one corner's complex response with a 6-biquad cascade.
 
     Phase-aware: the residual is the complex difference H_fit - H_target,
@@ -295,8 +296,8 @@ def fit_corner(target: np.ndarray, freqs: np.ndarray, z_inv: np.ndarray,
         try:
             sol = least_squares(
                 residual, x0, bounds=(lo, hi), method="trf",
-                x_scale="jac", ftol=1e-10, xtol=1e-10, gtol=1e-10,
-                max_nfev=1500,
+                x_scale="jac", ftol=tol, xtol=tol, gtol=tol,
+                max_nfev=max_nfev,
             )
         except Exception:  # noqa: BLE001 — a bad restart must not kill the run
             continue

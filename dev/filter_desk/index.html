@@ -1,0 +1,139 @@
+<!doctype html>
+<html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>df2 — Filter Design Desk</title>
+<style>
+  :root{--bg:#070a09;--panel:#0c1110;--ink:#bec5be;--dim:#5c6b62;--grid:#16201b;
+        --green:#5bef6f;--amber:#e8a33d;--red:#e83d31;--cyan:#31c6c9;--line:#2a3a31}
+  *{box-sizing:border-box}html,body{margin:0;height:100%}
+  body{background:var(--bg);color:var(--ink);font:13px/1.45 ui-monospace,Menlo,Consolas,monospace;
+       display:flex;flex-direction:column}
+  header{display:flex;gap:8px;align-items:center;padding:8px 14px;background:var(--panel);border-bottom:1px solid var(--line)}
+  h1{font-size:12px;letter-spacing:2px;color:var(--green);margin:0;text-transform:uppercase}
+  .tabs{display:flex;gap:4px;margin-left:14px}
+  .tab{padding:4px 10px;border:1px solid var(--line);color:var(--dim);cursor:pointer;letter-spacing:1px;font-size:11px}
+  .tab.on{color:var(--green);border-color:var(--green);background:#11201a}
+  .sp{flex:1}
+  button{background:#11201a;color:var(--green);border:1px solid var(--green);font:inherit;
+         padding:6px 11px;letter-spacing:1px;text-transform:uppercase;cursor:pointer}
+  button:hover:not(:disabled){background:var(--green);color:#06100a}
+  button:disabled{opacity:.4;cursor:default} button.sec{color:var(--ink);border-color:var(--line)}
+  button.sec:hover{background:var(--line);color:var(--ink)}
+  #wrap{flex:1;position:relative;background:var(--panel)} canvas{display:block;width:100%;height:100%}
+  #status{padding:6px 14px;background:var(--panel);border-top:1px solid var(--line);color:var(--dim);white-space:pre;min-height:24px}
+  #status.ok{color:var(--green)} #status.bad{color:var(--red)} #status.busy{color:var(--amber)}
+  .legend{position:absolute;right:12px;top:10px;font-size:10px;color:var(--dim);text-align:right;line-height:1.6}
+  .legend b{color:var(--green)} .sv{color:var(--amber)} .er{color:var(--red)}
+</style></head>
+<body>
+  <header>
+    <h1>Filter Desk</h1>
+    <div class="tabs" id="tabs"></div>
+    <div class="sp"></div>
+    <button class="sec" id="load">Load Live</button>
+    <button id="compile">Compile</button>
+    <button class="sec" id="validate" disabled>Validate</button>
+    <button class="sec" id="write" disabled>Write Live</button>
+  </header>
+  <div id="wrap"><canvas id="cv"></canvas>
+    <div class="legend"><b>● drag = target</b><br><span class="sv">— solved (forge_fit)</span><br><span class="er">— error</span></div>
+  </div>
+  <div id="status">draw a target curve · 20 Hz–20 kHz · −36…+36 dB</div>
+
+<script>
+"use strict";
+const LABELS=["M0_Q0","M100_Q0","M0_Q100","M100_Q100"];
+const FLO=20,FHI=20000,DBLO=-36,DBHI=36,NPTS=14;
+const logf=Array.from({length:NPTS},(_,i)=>FLO*Math.pow(FHI/FLO,i/(NPTS-1)));
+// per-corner target points + last compiled solved/error overlays
+const corners={}; LABELS.forEach(L=>corners[L]=logf.map(hz=>({hz,db:-6})));
+const solved={}; // L -> {freqs,solved_db,error_db,target_db,null_db,max_radius,stable}
+let active="M0_Q0", cartridge=null, dragIdx=-1;
+
+const cv=document.getElementById("cv"), ctx=cv.getContext("2d");
+function resize(){const r=cv.parentElement.getBoundingClientRect();
+  cv.width=r.width*devicePixelRatio;cv.height=r.height*devicePixelRatio;draw();}
+addEventListener("resize",resize);
+const xOf=f=>(Math.log2(f/FLO)/Math.log2(FHI/FLO))*cv.width;
+const yOf=db=>cv.height-((db-DBLO)/(DBHI-DBLO))*cv.height;
+const dbOf=y=>DBLO+(1-y/cv.height)*(DBHI-DBLO);
+
+function curveThroughPoints(pts){ // log-freq linear-dB interpolation -> screen path
+  return f=>{ const lf=Math.log2(f); let a=pts[0],b=pts[pts.length-1];
+    for(let i=0;i<pts.length-1;i++){ if(f>=pts[i].hz&&f<=pts[i+1].hz){a=pts[i];b=pts[i+1];break;} }
+    if(f<=pts[0].hz)return pts[0].db; if(f>=pts[pts.length-1].hz)return pts[pts.length-1].db;
+    const t=(lf-Math.log2(a.hz))/(Math.log2(b.hz)-Math.log2(a.hz)); return a.db+(b.db-a.db)*t; };
+}
+function poly(arrF,arrDb,color,w){ ctx.beginPath();ctx.strokeStyle=color;ctx.lineWidth=w*devicePixelRatio;
+  for(let i=0;i<arrF.length;i++){const x=xOf(arrF[i]),y=yOf(Math.max(DBLO,Math.min(DBHI,arrDb[i])));i?ctx.lineTo(x,y):ctx.moveTo(x,y);} ctx.stroke(); }
+function draw(){
+  ctx.clearRect(0,0,cv.width,cv.height);
+  ctx.strokeStyle="#16201b";ctx.lineWidth=1;ctx.fillStyle="#3a4a40";ctx.font=(10*devicePixelRatio)+"px monospace";
+  [100,1000,10000].forEach(f=>{const x=xOf(f);ctx.beginPath();ctx.moveTo(x,0);ctx.lineTo(x,cv.height);ctx.stroke();ctx.fillText(f>=1000?f/1000+"k":f,x+3,cv.height-4);});
+  for(let db=DBHI;db>=DBLO;db-=12){const y=yOf(db);ctx.beginPath();ctx.moveTo(0,y);ctx.lineTo(cv.width,y);ctx.stroke();ctx.fillText((db>0?"+":"")+db,3,y-3);}
+  ctx.beginPath();ctx.strokeStyle="#243a30";ctx.moveTo(0,yOf(0));ctx.lineTo(cv.width,yOf(0));ctx.stroke();
+  const s=solved[active];
+  if(s){ poly(s.freqs,s.solved_db,"#e8a33d",2); poly(s.freqs,s.error_db.map(e=>e),"#e83d31",1); }
+  // target curve through points
+  const pts=corners[active], f=curveThroughPoints(pts), N=Math.floor(cv.width), ff=[],dd=[];
+  for(let i=0;i<=N;i++){const fr=FLO*Math.pow(FHI/FLO,i/N);ff.push(fr);dd.push(f(fr));}
+  poly(ff,dd,"#5bef6f",2);
+  // draggable points
+  pts.forEach((p,i)=>{const x=xOf(p.hz),y=yOf(p.db);ctx.fillStyle=i===dragIdx?"#fff":"#5bef6f";
+    ctx.beginPath();ctx.arc(x,y,5*devicePixelRatio,0,6.283);ctx.fill();});
+}
+// drag (vertical = dB)
+function nearest(mx){ let bi=0,bd=1e9; corners[active].forEach((p,i)=>{const d=Math.abs(xOf(p.hz)-mx);if(d<bd){bd=d;bi=i;}}); return bd<24*devicePixelRatio?bi:-1; }
+cv.addEventListener("pointerdown",e=>{const r=cv.getBoundingClientRect();const mx=(e.clientX-r.left)*devicePixelRatio,my=(e.clientY-r.top)*devicePixelRatio;
+  dragIdx=nearest(mx); if(dragIdx>=0){corners[active][dragIdx].db=Math.max(DBLO,Math.min(DBHI,dbOf(my)));cv.setPointerCapture(e.pointerId);solved[active]=null;status("target edited — Compile to solve");draw();}});
+cv.addEventListener("pointermove",e=>{if(dragIdx<0)return;const r=cv.getBoundingClientRect();const my=(e.clientY-r.top)*devicePixelRatio;
+  corners[active][dragIdx].db=Math.max(DBLO,Math.min(DBHI,dbOf(my)));draw();});
+cv.addEventListener("pointerup",()=>{dragIdx=-1;draw();});
+
+// tabs
+const tabsEl=document.getElementById("tabs");
+LABELS.forEach(L=>{const b=document.createElement("div");b.className="tab"+(L===active?" on":"");b.textContent=L;
+  b.onclick=()=>{active=L;[...tabsEl.children].forEach(c=>c.classList.toggle("on",c.textContent===L));draw();};tabsEl.appendChild(b);});
+
+function status(msg,cls){const s=document.getElementById("status");s.textContent=msg;s.className=cls||"";}
+
+async function api(path,opts){ const r=await fetch(path,opts); if(!r.ok){let d;try{d=await r.json();}catch{d=await r.text();} throw new Error(typeof d==="string"?d:JSON.stringify(d)); } return r.json(); }
+function design(){ const c={}; LABELS.forEach(L=>c[L]={points:corners[L].map(p=>({hz:p.hz,db:p.db}))}); return {name:"desk_body",boost:1.0,corners:c}; }
+
+document.getElementById("compile").onclick=async()=>{
+  status("compiling all 4 corners through forge_fit (real solve, ~15–20s)…","busy");
+  ["compile","validate","write","load"].forEach(id=>document.getElementById(id).disabled=true);
+  try{ const out=await api("/desk/compile",{method:"POST",headers:{"content-type":"application/json"},body:JSON.stringify(design())});
+    cartridge=out.cartridge; Object.assign(solved,out.corners);
+    const lines=LABELS.map(L=>`${L} null ${out.corners[L].null_db.toFixed(1)}dB r${out.corners[L].max_radius.toFixed(3)}`).join("  ·  ");
+    status("compiled · "+lines,"ok"); document.getElementById("validate").disabled=false;
+  }catch(e){ status("compile failed: "+e.message,"bad"); }
+  ["compile","load"].forEach(id=>document.getElementById(id).disabled=false); draw();
+};
+document.getElementById("validate").onclick=async()=>{
+  if(!cartridge)return; status("validating against real stability rules…","busy");
+  try{ const v=await api("/desk/validate",{method:"POST",headers:{"content-type":"application/json"},body:JSON.stringify(cartridge)});
+    if(v.ok){status(`VALID · max pole radius ${v.max_radius} · stable`+(v.warnings.length?" · "+v.warnings.join("; "):""),"ok"); document.getElementById("write").disabled=false;}
+    else{status("INVALID · "+v.issues.join("; "),"bad"); document.getElementById("write").disabled=true;}
+  }catch(e){ status("validate failed: "+e.message,"bad"); }
+};
+document.getElementById("write").onclick=async()=>{
+  if(!cartridge)return; status("writing live slot…","busy");
+  try{ const w=await api("/desk/write-live",{method:"POST",headers:{"content-type":"application/json"},body:JSON.stringify(cartridge)});
+    status("WROTE LIVE · "+w.path+" · the plugin hot-reloads it","ok");
+  }catch(e){ status("write failed: "+e.message,"bad"); }
+};
+document.getElementById("load").onclick=async()=>{
+  status("loading live cartridge…","busy");
+  try{ const d=await api("/desk/live"); if(!d.corners||!Object.keys(d.corners).length){status("no live cartridge yet","bad");return;}
+    LABELS.forEach(L=>{ if(d.corners[L]) corners[L]=d.corners[L].points.map(p=>({hz:p.hz,db:p.db})); });
+    Object.keys(solved).forEach(k=>delete solved[k]); cartridge=null;
+    document.getElementById("validate").disabled=true; document.getElementById("write").disabled=true;
+    status("loaded live target — edit and Compile","ok"); draw();
+  }catch(e){ status("load failed: "+e.message,"bad"); }
+};
+
+// health on boot
+(async()=>{ try{const h=await api("/desk/health"); status(`ready · forge_fit ${h.forge_fit} · core ${h.core_backend} · live ${h.live_path}`,""); }catch(e){ status("backend not reachable — start: uvicorn pyruntime.api:app","bad"); } })();
+resize();
+</script>
+</body></html>
