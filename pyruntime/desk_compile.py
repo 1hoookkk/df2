@@ -140,18 +140,16 @@ def validate_cartridge(cart):
     if issues:
         return {"ok": False, "issues": issues, "warnings": warnings, "max_radius": None}
 
-    # stability over the packed Morph x Q surface (the repo's real rule: r < 1.0, finite)
+    # stability over the packed Morph x Q surface, via the SINGLE owned call:
+    # pi.packed_probe -> trench-core interpolate -> biquad -> pole_radius, the
+    # exact shipped path. No parallel Python kernel_to_biquad/pole_radius here.
     max_r, nonfinite, unstable = 0.0, 0, 0
     for m in np.linspace(0, 1, 17):
         for q in np.linspace(0, 1, 17):
-            for row in pi.packed_bilinear(words, float(m), float(q)):
-                bq = pi.kernel_to_biquad(row)
-                if not all(math.isfinite(v) for v in bq):
-                    nonfinite += 1; continue
-                r = pi._pole_radius(bq[3], bq[4]) if hasattr(pi, "_pole_radius") else math.sqrt(max(0.0, bq[4]))
-                max_r = max(max_r, r)
-                if r >= 1.0:
-                    unstable += 1
+            pr = pi.packed_probe(words, float(m), float(q))
+            max_r = max(max_r, pr["max_pole_radius"])
+            nonfinite += bin(pr["nonfinite_mask"]).count("1")
+            unstable += bin(pr["unstable_mask"]).count("1")
     if nonfinite:
         issues.append(f"{nonfinite} nonfinite coeff rows across the morph surface")
     if unstable:

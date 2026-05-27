@@ -41,6 +41,10 @@ def core_backend() -> str:
 def decode(word: int) -> float:
     """Decode u16 minifloat word to float.
 
+    Delegates to the shipped trench-core (`trench_packed_decode`) when the
+    library is available, so the word means exactly what the plugin says it
+    means. The pure-Python below is the bit-identical reference fallback.
+
     u = word + 1
       u==65536 → 1.0
       u==1     → 0.0
@@ -48,6 +52,8 @@ def decode(word: int) -> float:
       e==0: ldexp(m/4096, e-15)   (denormal)
       e>0:  ldexp((m|0x1000)/8192, e-15)  (normal)
     """
+    if _core is not None and _core.available():
+        return _core.decode(word)
     u = (int(word) & 0xFFFF) + 1
     if u == 65536:
         return 1.0
@@ -60,7 +66,14 @@ def decode(word: int) -> float:
 
 
 def encode(value: float) -> int:
-    """Encode float to nearest u16 minifloat word. Inverse of decode."""
+    """Encode float to nearest u16 minifloat word. Inverse of decode.
+
+    Delegates to the shipped trench-core (`trench_packed_encode`) when the
+    library is available, so a Python-authored body packs to the exact words
+    the plugin would. The pure-Python below is the reference fallback.
+    """
+    if _core is not None and _core.available():
+        return _core.encode(value)
     v = float(value)
     if v >= 1.0:
         return 0xFFFF

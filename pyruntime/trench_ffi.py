@@ -54,6 +54,8 @@ def _load():
             # skip it and try the next candidate rather than crashing.
             lib.trench_packed_decode.argtypes = [ctypes.c_uint16]
             lib.trench_packed_decode.restype = ctypes.c_double
+            lib.trench_packed_encode.argtypes = [ctypes.c_double]
+            lib.trench_packed_encode.restype = ctypes.c_uint16
             lib.trench_packed_interpolate.argtypes = [
                 ctypes.c_char_p,                 # bytes (explicit len, NULs ok)
                 ctypes.c_size_t,                 # len
@@ -96,6 +98,18 @@ def decode(word: int) -> float:
     if lib is None:
         raise RuntimeError("trench_core library not available")
     return float(lib.trench_packed_decode(ctypes.c_uint16(int(word) & 0xFFFF)))
+
+
+def encode(value: float) -> int:
+    """Encode one f64 to the nearest packed u16 word via the shipped core.
+
+    The inverse of `decode`. Owning this in Rust is what lets a Python-authored
+    body (coeffs -> words) pack to the exact words the plugin would.
+    """
+    lib = _load()
+    if lib is None:
+        raise RuntimeError("trench_core library not available")
+    return int(lib.trench_packed_encode(ctypes.c_double(float(value)))) & 0xFFFF
 
 
 def packed_interpolate(body_bytes: bytes, morph: float, q: float) -> list[tuple[float, ...]]:

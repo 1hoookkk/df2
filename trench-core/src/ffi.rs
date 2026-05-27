@@ -1,7 +1,7 @@
 use crate::cartridge::{Cartridge, BODY_BYTES};
 use crate::cascade::{NUM_COEFFS, NUM_STAGES};
 use crate::engine::{FilterEngine, InputMode, SpatialMode};
-use crate::minifloat::{decode, pole_radius, PackedCorners};
+use crate::minifloat::{decode, encode, pole_radius, PackedCorners};
 use libc::{c_char, c_void};
 use std::ffi::CStr;
 
@@ -87,6 +87,21 @@ pub unsafe extern "C" fn trench_engine_load_body_bytes(
 #[no_mangle]
 pub extern "C" fn trench_packed_decode(word: u16) -> f64 {
     decode(word)
+}
+
+/// Encode one f64 to the nearest packed `u16` minifloat word — the inverse of
+/// `trench_packed_decode`.
+///
+/// Stateless, and the single source of the encode direction: Python tooling
+/// calls it instead of reimplementing `encode`, so a body authored in Python
+/// (coeffs -> words) packs to the EXACT words the shipped core would, and
+/// therefore decodes back to what the author saw. decode is already owned;
+/// exposing encode closes the only remaining packed-math operation that could
+/// drift between Python and Rust — everything else (recombination,
+/// kernel_to_biquad) is pure f64 arithmetic over these two codecs.
+#[no_mangle]
+pub extern "C" fn trench_packed_encode(value: f64) -> u16 {
+    encode(value)
 }
 
 /// Interpolate a 240-byte packed body at `(morph, q)` and write 30 kernel-form
