@@ -1,9 +1,14 @@
 """FastAPI authoring runtime.
 
 Active surfaces:
-- `/`: unified morph designer + sift + analysis
-- `/designer`: legacy four-corner designer
-- `/sift`: legacy sift surface
+- `/desk/*`: the response-first command center (draw -> forge_fit -> audition -> live).
+- `/` redirects to `/desk`.
+- `/designer*`: the heritage Compiler (E-mu MorphDesigner XML), kept separate.
+- shared: `/response`, `/analyze`, `/bake`, `/export`, `/render`, `/vault`, `/splice`,
+  `/live-response`, `/health`.
+
+The stage-first generator path (target/macro_compile + /sift, /target, designer UIs)
+was retired 2026-05-27 and quarantined under pyruntime/legacy/.
 """
 from __future__ import annotations
 
@@ -32,22 +37,13 @@ from pyruntime.freq_response import cascade_response_db, freq_points
 from pyruntime.render import render_body, render_from_body
 from pyruntime.splice import SpliceError, SpliceMode, splice_corners
 from pyruntime.stage_params import StageParams
-from pyruntime.target import (
-    build_landmark_target,
-    build_nasal_target,
-    build_vowel_target,
-    build_morph_target,
-    build_composite_target,
-    build_bell_target,
-    build_electronic_target,
-    get_bell_names,
-    get_electronic_keys,
-    get_landmark_names,
-    get_nasal_keys,
-    get_vowel_keys,
-)
-from pyruntime.macro_compile import compile_body
 from pyruntime.analysis import body_profile
+
+# NOTE: the stage-first generator path (pyruntime.target + pyruntime.macro_compile)
+# and its routes (/target, /morph-target, /composite-target, /sonic-tables,
+# /suggest, /sift/*) and static designer UIs were retired 2026-05-27 — those
+# modules are quarantined under pyruntime/legacy/. The forward path is the
+# response-first desk (/desk/*). See pyruntime/legacy/README.md.
 
 
 app = FastAPI(title="TRENCH Authoring Runtime")
@@ -118,37 +114,11 @@ class DesignerRenderRequest(DesignerRequest):
     duration: float = 2.0
 
 
-class BatchRequest(BaseModel):
-    base_sections: list = Field(default_factory=list)
-    count: int = 10
-    name_prefix: str = "candidate"
-    boost: float = 4.0
-
-
-class TargetRequest(BaseModel):
-    name: str
-    source: str
-    key: str
-
-
 class SpliceRequest(BaseModel):
     name: str
     body_a: str
     body_b: str
     mode: str = "RestToMorphed"
-
-
-class MorphTargetRequest(BaseModel):
-    name: str
-    source_a: str
-    key_a: str
-    source_b: str
-    key_b: str
-
-
-class CompositeTargetRequest(BaseModel):
-    name: str
-    slots: list[dict]
 
 
 class AnalyzeRequest(BaseModel):
@@ -196,27 +166,9 @@ def _compile_designer_body(req: DesignerRequest) -> Body:
 
 @app.get("/")
 def serve_root():
-    return FileResponse(os.path.join(STATIC_DIR, "index.html"))
-
-
-@app.get("/designer")
-def serve_designer():
-    return FileResponse(os.path.join(STATIC_DIR, "index.html"))
-
-
-@app.get("/workbench")
-def serve_workbench():
-    return FileResponse(os.path.join(STATIC_DIR, "workbench.html"))
-
-
-@app.get("/sift")
-def serve_sift():
-    return FileResponse(os.path.join(STATIC_DIR, "sift.html"))
-
-
-@app.get("/forge")
-def serve_forge():
-    return FileResponse(os.path.join(STATIC_DIR, "forge.html"))
+    # Root now points at the response-first command center (the desk).
+    from fastapi.responses import RedirectResponse
+    return RedirectResponse(url="/desk")
 
 
 @app.get("/health")
@@ -316,367 +268,10 @@ def designer_live_endpoint(req: DesignerRequest):
     return {"status": "ok", "name": body.name}
 
 
-_candidate_queue: list[dict] = []
-_candidate_index: int = 0
-_p2k_bodies: list[dict] | None = None
-
-
-def _get_p2k_bodies() -> list[dict]:
-    global _p2k_bodies
-    if _p2k_bodies is not None:
-        return _p2k_bodies
-
-    bodies: list[dict] = []
-    skin_dir = os.path.join(os.path.dirname(__file__), "..", "datasets", "p2k_skins")
-    for path in sorted(glob.glob(os.path.join(skin_dir, "P2k_*.json"))):
-        with open(path) as f:
-            bodies.append(json.load(f))
-    _p2k_bodies = bodies
-    return bodies
-
-
-@app.post("/sift/generate")
-def sift_generate(req: BatchRequest):
-    """Generate a candidate queue for rapid ear triage."""
-    global _candidate_queue, _candidate_index
-    _candidate_queue = []
-    _candidate_index = 0
-
-    bodies = _get_p2k_bodies()
-    if len(bodies) < 2:
-        raise HTTPException(500, "Need at least 2 P2K bodies in datasets/p2k_skins/")
-
-    corner_labels = ["M0_Q0", "M0_Q100", "M100_Q0", "M100_Q100"]
-
-    def body_to_corners(bdata: dict, boost: float) -> list[CornerState]:
-        out: list[CornerState] = []
-        for label in corner_labels:
-            raw_stages = bdata["corners"][label]["stages"]
-            stages: list[StageParams] = []
-            pre_encoded: list[EncodedCoeffs] = []
-            for stage in raw_stages[:6]:
-                sp = StageParams(
-                    a1=stage["a1"],
-                    r=stage["r"],
-                    val1=stage["val1"],
-                    val2=stage["val2"],
-                    val3=stage["val3"],
-                )
-                stages.append(sp)
-                pre_encoded.append(raw_to_encoded(sp, flag=stage.get("flag", 1.0)))
-            while len(stages) < NUM_BODY_STAGES:
-                stages.append(StageParams.passthrough())
-                pre_encoded.append(PASSTHROUGH_ENC)
-            out.append(CornerState(stages=stages, boost=boost, _pre_encoded=pre_encoded))
-        return out
-
-    def perturb_corner(corner: CornerState, semitones: float) -> CornerState:
-        ratio = 2.0 ** (semitones / 12.0)
-        stages: list[StageParams] = []
-        pre_encoded: list[EncodedCoeffs] = []
-        for sp in corner.stages[:6]:
-            if sp.r > 0.01:
-                freq_hz = math.acos(max(-1.0, min(1.0, -sp.a1 / (2 * sp.r)))) * 39062.5 / (2 * math.pi)
-                new_freq = max(20.0, min(18000.0, freq_hz * ratio))
-                theta = 2.0 * math.pi * new_freq / 39062.5
-                new_sp = StageParams(
-                    a1=-2.0 * sp.r * math.cos(theta),
-                    r=sp.r,
-                    val1=sp.val1,
-                    val2=sp.val2,
-                    val3=sp.val3,
-                )
-            else:
-                new_sp = sp
-            stages.append(new_sp)
-            pre_encoded.append(raw_to_encoded(new_sp, flag=1.0))
-        while len(stages) < NUM_BODY_STAGES:
-            stages.append(StageParams.passthrough())
-            pre_encoded.append(PASSTHROUGH_ENC)
-        return CornerState(stages=stages, boost=corner.boost, _pre_encoded=pre_encoded)
-
-    source_pairs = [
-        ("vowel", "vowel"),
-        ("vowel", "nasal"),
-        ("vowel", "bell"),
-        ("nasal", "landmark"),
-    ]
-    source_key_getters = {
-        "vowel": get_vowel_keys,
-        "nasal": get_nasal_keys,
-        "landmark": get_landmark_names,
-        "bell": get_bell_names,
-    }
-
-    for i in range(req.count):
-        strategy = random.choice(["splice", "perturb", "cross", "target"])
-        a_body = random.choice(bodies)
-        b_body = random.choice(bodies)
-        name = f"{req.name_prefix}_{i:03d}"
-
-        if strategy == "target":
-            try:
-                src_a, src_b = random.choice(source_pairs)
-                key_a = random.choice(source_key_getters[src_a]())
-                key_b = random.choice(source_key_getters[src_b]())
-                spec = build_morph_target(name, src_a, key_a, src_b, key_b)
-                target_corners = compile_body(spec)
-                body = Body(name=name, corners=target_corners, boost=spec.boost)
-                _candidate_queue.append(json.loads(body.to_compiled_json(provenance="sift-target")))
-            except (ValueError, IndexError):
-                pass
-            continue
-
-        if strategy == "splice":
-            a_ca = CornerArray(*body_to_corners(a_body, req.boost))
-            b_ca = CornerArray(*body_to_corners(b_body, req.boost))
-            try:
-                spliced = splice_corners(
-                    a_ca,
-                    b_ca,
-                    SpliceMode.REST_TO_MORPHED,
-                    filter_type_a=a_body.get("filterType"),
-                    filter_type_b=b_body.get("filterType"),
-                )
-            except SpliceError:
-                continue
-            corners = [
-                spliced.corner(CornerName.A),
-                spliced.corner(CornerName.B),
-                spliced.corner(CornerName.C),
-                spliced.corner(CornerName.D),
-            ]
-        elif strategy == "perturb":
-            shift = random.uniform(-5.0, 5.0)
-            base = body_to_corners(a_body, req.boost)
-            corners = [perturb_corner(corner, shift) for corner in base]
-        else:
-            a_corners = body_to_corners(a_body, req.boost)
-            b_corners = body_to_corners(b_body, req.boost)
-            corners = []
-            for idx in range(4):
-                ac = a_corners[idx]
-                bc = b_corners[idx]
-                stages = list(ac.stages[:3]) + list(bc.stages[3:6]) + list(ac.stages[6:])
-                pre = list(ac._pre_encoded[:3]) + list(bc._pre_encoded[3:6]) + list(ac._pre_encoded[6:])
-                corners.append(CornerState(stages=stages, boost=req.boost, _pre_encoded=pre))
-
-        body = Body(
-            name=name,
-            corners=CornerArray(a=corners[0], b=corners[1], c=corners[2], d=corners[3]),
-            boost=req.boost,
-        )
-        _candidate_queue.append(json.loads(body.to_compiled_json(provenance=f"sift-{strategy}")))
-
-    if _candidate_queue:
-        with open(LIVE_PATH, "w") as f:
-            json.dump(_candidate_queue[0], f)
-
-    return {"count": len(_candidate_queue), "current": 0, "name": _candidate_queue[0].get("name", "") if _candidate_queue else ""}
-
-
-@app.post("/sift/next")
-def sift_next():
-    global _candidate_index
-    if not _candidate_queue:
-        raise HTTPException(400, "No candidates. Call /sift/generate first.")
-    _candidate_index = (_candidate_index + 1) % len(_candidate_queue)
-    with open(LIVE_PATH, "w") as f:
-        json.dump(_candidate_queue[_candidate_index], f)
-    return {"current": _candidate_index, "count": len(_candidate_queue), "name": _candidate_queue[_candidate_index].get("name", "")}
-
-
-@app.post("/sift/prev")
-def sift_prev():
-    global _candidate_index
-    if not _candidate_queue:
-        raise HTTPException(400, "No candidates. Call /sift/generate first.")
-    _candidate_index = (_candidate_index - 1) % len(_candidate_queue)
-    with open(LIVE_PATH, "w") as f:
-        json.dump(_candidate_queue[_candidate_index], f)
-    return {"current": _candidate_index, "count": len(_candidate_queue), "name": _candidate_queue[_candidate_index].get("name", "")}
-
-
-@app.post("/sift/save")
-def sift_save():
-    if not _candidate_queue or _candidate_index >= len(_candidate_queue):
-        raise HTTPException(400, "No current candidate.")
-    candidate = _candidate_queue[_candidate_index]
-    name = candidate.get("name", f"sift_{_candidate_index:03d}")
-    os.makedirs(VAULT_DIR, exist_ok=True)
-    path = os.path.join(VAULT_DIR, f"{name}.json")
-    with open(path, "w") as f:
-        json.dump(candidate, f, indent=2)
-    return {"saved": name, "path": path}
-
-
-@app.post("/sift/trash")
-def sift_trash():
-    global _candidate_queue, _candidate_index
-    if not _candidate_queue:
-        raise HTTPException(400, "No candidates.")
-    _candidate_queue.pop(_candidate_index)
-    if not _candidate_queue:
-        return {"count": 0, "current": 0, "name": ""}
-    _candidate_index = _candidate_index % len(_candidate_queue)
-    with open(LIVE_PATH, "w") as f:
-        json.dump(_candidate_queue[_candidate_index], f)
-    return {"current": _candidate_index, "count": len(_candidate_queue), "name": _candidate_queue[_candidate_index].get("name", "")}
-
-
-@app.get("/sift/status")
-def sift_status():
-    name = ""
-    if _candidate_queue and _candidate_index < len(_candidate_queue):
-        name = _candidate_queue[_candidate_index].get("name", "")
-    return {"current": _candidate_index, "count": len(_candidate_queue), "name": name}
-
-
-@app.get("/sift/current")
-def sift_current():
-    """Return the current sift candidate as a full body dict for audition."""
-    if not _candidate_queue or _candidate_index >= len(_candidate_queue):
-        raise HTTPException(400, "No current candidate.")
-    return _candidate_queue[_candidate_index]
-
-
-@app.get("/sonic-tables")
-def sonic_tables():
-    return {
-        "vowels": get_vowel_keys(),
-        "nasals": get_nasal_keys(),
-        "landmarks": get_landmark_names(),
-        "bells": get_bell_names(),
-        "electronic": get_electronic_keys(),
-    }
-
-
-@app.post("/target")
-def target_endpoint(req: TargetRequest):
-    if req.source == "vowel":
-        spec = build_vowel_target(req.name, req.key)
-    elif req.source == "nasal":
-        spec = build_nasal_target(req.name, req.key)
-    elif req.source == "landmark":
-        spec = build_landmark_target(req.name, req.key)
-    elif req.source == "bell":
-        spec = build_bell_target(req.name, req.key)
-    elif req.source == "electronic":
-        spec = build_electronic_target(req.name, req.key)
-    else:
-        raise HTTPException(400, f"Unknown source '{req.source}'. Use vowel, nasal, landmark, bell, or electronic.")
-
-    corners = compile_body(spec)
-    body = Body(name=req.name, corners=corners, boost=spec.boost)
-    return json.loads(body.to_json())
-
-
-@app.post("/morph-target")
-def morph_target_endpoint(req: MorphTargetRequest):
-    if not SAFE_NAME.match(req.name):
-        raise HTTPException(400, "Name must be alphanumeric + underscore only")
-    try:
-        spec = build_morph_target(req.name, req.source_a, req.key_a, req.source_b, req.key_b)
-        corners = compile_body(spec)
-        body = Body(name=req.name, corners=corners, boost=spec.boost)
-        return json.loads(body.to_json())
-    except ValueError as e:
-        raise HTTPException(400, str(e)) from e
-
-
-@app.post("/composite-target")
-def composite_target_endpoint(req: CompositeTargetRequest):
-    if not SAFE_NAME.match(req.name):
-        raise HTTPException(400, "Name must be alphanumeric + underscore only")
-    try:
-        spec = build_composite_target(req.name, req.slots)
-        corners = compile_body(spec)
-        body = Body(name=req.name, corners=corners, boost=spec.boost)
-        return json.loads(body.to_json())
-    except ValueError as e:
-        raise HTTPException(400, str(e)) from e
-
-
 @app.post("/analyze")
 def analyze_endpoint(req: AnalyzeRequest):
     body = _load_body(req.body)
     return body_profile(body)
-
-
-_SUGGEST_PAIRS = [
-    # Cross-source morphs — maximal timbral contrast
-    ("vowel", "ee", "nasal", "nasal_m", "bright vowel to nasal — F2 collision with anti-formant"),
-    ("vowel", "ah", "bell", "Freiburg Hosanna", "open vowel to bell partials — formant-to-harmonic transition"),
-    ("vowel", "oo", "electronic", "acid", "dark vowel to acid sweep — low formants meet resonant climb"),
-    ("nasal", "nasal_n", "bell", "Stretched Treble", "nasal zeros against inharmonic bell partials"),
-    ("vowel", "eh", "electronic", "telephone", "mid vowel to bandpass — spectral narrowing"),
-    ("bell", "Berlin Freedom Bell", "vowel", "er", "low bell partials to colored vowel — mass to throat"),
-    # Vowel-to-vowel — classic formant traverse
-    ("vowel", "ee", "vowel", "oo", "front-to-back vowel — maximum F2 migration"),
-    ("vowel", "ae", "vowel", "oo", "open-to-closed — F1 drops, F2 shifts"),
-    ("vowel", "ah", "vowel", "ee", "open-back to closed-front — full vowel space diagonal"),
-    ("vowel", "schwa", "vowel", "ih", "neutral to bright — subtle formant tightening"),
-    # Nasal transitions
-    ("vowel", "ah", "nasal", "nasal_n", "open vowel to uvular nasal — anti-formant carves the spectrum"),
-    ("nasal", "nasal_m", "nasal", "nasal_n", "bilabial to uvular — anti-formant frequencies shift"),
-    # Bell combinations
-    ("bell", "Freiburg Hosanna", "bell", "St Mary le Tower", "two real bells — partial spacing differs"),
-    ("electronic", "acid", "bell", "Stretched Treble", "sweep meets inharmonic partials"),
-]
-
-
-@app.post("/suggest")
-def suggest_endpoint():
-    """Suggest an interesting morph combination.
-
-    Uses OpenRouter LLM if OPENROUTER_API_KEY is set, otherwise picks
-    from curated cross-source pairs with acoustic rationale.
-    """
-    openrouter_key = os.environ.get("OPENROUTER_API_KEY")
-    if openrouter_key:
-        return _suggest_via_openrouter(openrouter_key)
-    # Smart random from curated pairs
-    sa, ka, sb, kb, rationale = random.choice(_SUGGEST_PAIRS)
-    return {"source_a": sa, "key_a": ka, "source_b": sb, "key_b": kb, "rationale": rationale}
-
-
-def _suggest_via_openrouter(api_key: str) -> dict:
-    import httpx
-
-    available = {
-        "vowels": get_vowel_keys(),
-        "nasals": get_nasal_keys(),
-        "bells": get_bell_names(),
-        "electronic": get_electronic_keys(),
-    }
-    prompt = (
-        "You are a Z-plane filter body designer. Pick two sources to morph between.\n"
-        f"Available: {json.dumps(available)}\n"
-        "Source types: vowel, nasal, bell, electronic.\n"
-        "Pick a pair that creates interesting spectral motion — "
-        "formant transitions, pole-zero crossings, timbral contrast.\n"
-        "Respond ONLY with JSON: "
-        '{"source_a":"...","key_a":"...","source_b":"...","key_b":"...","rationale":"one sentence"}'
-    )
-
-    resp = httpx.post(
-        "https://openrouter.ai/api/v1/chat/completions",
-        headers={"Authorization": f"Bearer {api_key}"},
-        json={
-            "model": "openai/gpt-4o",
-            "max_tokens": 200,
-            "messages": [{"role": "user", "content": prompt}],
-        },
-        timeout=15.0,
-    )
-    if resp.status_code != 200:
-        raise HTTPException(502, f"OpenRouter error: {resp.status_code}")
-    text = resp.json()["choices"][0]["message"]["content"].strip()
-    start = text.find("{")
-    end = text.rfind("}") + 1
-    if start < 0 or end <= start:
-        raise HTTPException(502, f"LLM returned unparseable response: {text}")
-    return json.loads(text[start:end])
 
 
 @app.get("/vault")
