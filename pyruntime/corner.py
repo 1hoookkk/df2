@@ -8,7 +8,7 @@ from dataclasses import dataclass
 from pyruntime.stage_params import StageParams
 from pyruntime.encode import EncodedCoeffs, raw_to_encoded
 from pyruntime.constants import NUM_BODY_STAGES
-from pyruntime.minifloat import interpolate_packed, pack
+from pyruntime import packed_interp as _packed
 
 
 class CornerName(IntEnum):
@@ -53,27 +53,29 @@ class CornerArray:
         return [CornerName.A, CornerName.B, CornerName.C, CornerName.D]
 
     def interpolate(self, morph: float, q: float) -> list:
-        """Bilinear interpolation at (morph, q). Q first, then morph.
+        """Bilinear interpolation at (morph, q), via the one packed-math owner.
 
-        Returns list of EncodedCoeffs for all stages.
-        Interpolation is done in packed minifloat u16 space (firmware-authentic),
-        not float-domain c-coeff space.
+        Delegates to pyruntime.packed_interp (which calls the shipped trench-core
+        when the library is loaded), so this judges the EXACT morph the player
+        produces: morph-first lerp in u16 space with i16-truncate-and-wrap, gain
+        at the runtime c4/4 scale. Returns a list of EncodedCoeffs for all stages.
+
+        Corner-label remap: this module names corners A=M0_Q0, B=M0_Q100,
+        C=M100_Q0, D=M100_Q100, whereas the owner's word bank is keyed
+        A=M0_Q0, B=M100_Q0, C=M0_Q100, D=M100_Q100 — so B and C swap on handoff.
         """
-        a_enc = self._corners[0].encode()
-        b_enc = self._corners[1].encode()
-        c_enc = self._corners[2].encode()
-        d_enc = self._corners[3].encode()
+        encs = [c.encode() for c in self._corners]
 
-        out = []
-        for i in range(NUM_BODY_STAGES):
-            out.append(
-                interpolate_packed(
-                    pack(a_enc[i]),
-                    pack(b_enc[i]),
-                    pack(c_enc[i]),
-                    pack(d_enc[i]),
-                    morph=float(morph),
-                    q=float(q),
-                )
-            )
-        return out
+        def words_of(idx: int) -> list:
+            return [_packed.coeffs_to_words(e.c0, e.c1, e.c2, e.c3, e.c4)
+                    for e in encs[idx]]
+
+        bank = {
+            "A": words_of(0),   # M0_Q0
+            "B": words_of(2),   # M100_Q0   (this module's corner C)
+            "C": words_of(1),   # M0_Q100   (this module's corner B)
+            "D": words_of(3),   # M100_Q100
+        }
+        rows = _packed.packed_bilinear(bank, float(morph), float(q))
+        return [EncodedCoeffs(c0=r[0], c1=r[1], c2=r[2], c3=r[3], c4=r[4])
+                for r in rows]
