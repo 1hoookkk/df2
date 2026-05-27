@@ -265,6 +265,27 @@ impl PackedCorners {
     }
 }
 
+/// Pole radius from direct DF2T biquad denominator coefficients (a1, a2).
+///
+/// Denominator: `z² + a1·z + a2 = 0`.
+/// Returns the larger of the two pole magnitudes.
+/// Returns `f64::INFINITY` if either input is nonfinite.
+pub fn pole_radius(a1: f64, a2: f64) -> f64 {
+    if !a1.is_finite() || !a2.is_finite() {
+        return f64::INFINITY;
+    }
+    let disc = a1 * a1 - 4.0 * a2;
+    if disc < 0.0 {
+        // Complex conjugate pair: |z| = sqrt(a2).
+        a2.max(0.0).sqrt()
+    } else {
+        let sq = disc.sqrt();
+        let r1 = ((-a1 + sq) / 2.0).abs();
+        let r2 = ((-a1 - sq) / 2.0).abs();
+        r1.max(r2)
+    }
+}
+
 #[cfg(test)]
 mod unit_tests {
     use super::*;
@@ -337,6 +358,33 @@ mod unit_tests {
             }
         }
         assert!(PackedCorners::from_rom_bytes(&bytes[..239]).is_err());
+    }
+
+    #[test]
+    fn pole_radius_real_roots() {
+        // Two real poles at z = 0.5 and z = -0.3 → a1 = 0.5+(-0.3) but wait:
+        // (z - 0.5)(z + 0.3) = z² - 0.2z - 0.15 → a1=-0.2, a2=-0.15.
+        // Hmm, Cascade convention is z²+a1z+a2 (with sign), so
+        // (z - p)(z - q) = z² - (p+q)z + pq → a1=-(p+q), a2=p*q.
+        // Two poles at ±0.5: a1=0, a2=-0.25 → disc = 1 → roots ±0.5 → radius=0.5.
+        let r = super::pole_radius(0.0, -0.25);
+        assert!((r - 0.5).abs() < 1e-12);
+    }
+
+    #[test]
+    fn pole_radius_complex_conjugate() {
+        // Complex pair at radius 0.9 (angle 30°): a1 = -2*0.9*cos(30°) = -√3*0.9,
+        // a2 = 0.9² = 0.81. disc = (√3*0.9)² - 4*0.81 = 2.43 - 3.24 < 0.
+        let a2 = 0.81f64;
+        let a1 = -2.0 * 0.9 * (std::f64::consts::PI / 6.0).cos();
+        let r = super::pole_radius(a1, a2);
+        assert!((r - 0.9).abs() < 1e-12, "expected 0.9, got {r}");
+    }
+
+    #[test]
+    fn pole_radius_nonfinite_input() {
+        assert_eq!(super::pole_radius(f64::NAN, 0.5), f64::INFINITY);
+        assert_eq!(super::pole_radius(0.0, f64::INFINITY), f64::INFINITY);
     }
 
     #[test]

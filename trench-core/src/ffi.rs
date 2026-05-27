@@ -1,5 +1,7 @@
 use crate::cartridge::{Cartridge, BODY_BYTES};
+use crate::cascade::{NUM_COEFFS, NUM_STAGES};
 use crate::engine::{FilterEngine, InputMode, SpatialMode};
+use crate::minifloat::{decode, pole_radius, PackedCorners};
 use libc::{c_char, c_void};
 use std::ffi::CStr;
 
@@ -75,6 +77,126 @@ pub unsafe extern "C" fn trench_engine_load_body_bytes(
         }
         Err(_) => -3,
     }
+}
+
+/// Decode one packed `u16` minifloat word to f64.
+///
+/// Stateless. This is the single source of the minifloat codec — Python tooling
+/// calls it instead of reimplementing `decode`, so the bench and the plugin can
+/// never disagree on what a word means.
+#[no_mangle]
+pub extern "C" fn trench_packed_decode(word: u16) -> f64 {
+    decode(word)
+}
+
+/// Interpolate a 240-byte packed body at `(morph, q)` and write 30 kernel-form
+/// coefficients (6 stages × 5: c0..c4), stage-major, into `out`.
+///
+/// Stateless and identical to the runtime's `PackedCorners::interpolate`
+/// (morph-first bilinear lerp in packed `u16` space, then minifloat decode):
+/// `morph`/`q` are cast to f32 exactly as `Cartridge::interpolate` does. This is
+/// the one path Python tools call so they judge the SAME interpolation the
+/// player ships — no parallel `packed_bilinear`.
+///
+/// Returns 0 ok, -1 null ptr, -4 wrong length, -3 decode error.
+#[no_mangle]
+pub unsafe extern "C" fn trench_packed_interpolate(
+    bytes: *const u8,
+    len: usize,
+    morph: f64,
+    q: f64,
+    out: *mut f64,
+) -> i32 {
+    if bytes.is_null() || out.is_null() {
+        return -1;
+    }
+    if len != BODY_BYTES {
+        return -4;
+    }
+    let slice = std::slice::from_raw_parts(bytes, len);
+    let packed = match PackedCorners::from_body_bytes(slice) {
+        Ok(p) => p,
+        Err(_) => return -3,
+    };
+    let kernel = packed.interpolate(morph as f32, q as f32);
+    let out_slice = std::slice::from_raw_parts_mut(out, NUM_STAGES * NUM_COEFFS);
+    for si in 0..NUM_STAGES {
+        for ci in 0..NUM_COEFFS {
+            out_slice[si * NUM_COEFFS + ci] = kernel[si][ci];
+        }
+    }
+    0
+}
+
+/// Interpolate a 240-byte packed body at `(morph, q)`, convert to biquad form,
+/// and compute per-stage stability diagnostics — in a single call.
+///
+/// This is the diagnostic chokepoint: Python tools call this instead of
+/// reimplementing `kernel_to_biquad` or `pole_radius`. Stateless.
+///
+/// Outputs:
+///   `out_biquad[30]`     — 6 stages × 5 biquad coeffs [b0,b1,b2,a1,a2], stage-major.
+///   `out_max_pole_radius`— max pole radius across all finite stages (0.0 if all nonfinite).
+///   `out_unstable_mask`  — bit i set if stage i has pole radius ≥ 1.0.
+///   `out_nonfinite_mask` — bit i set if any biquad coeff of stage i is nonfinite.
+///
+/// Returns 0 ok, -1 null ptr, -4 wrong length, -3 decode error.
+#[no_mangle]
+pub unsafe extern "C" fn trench_packed_probe(
+    bytes: *const u8,
+    len: usize,
+    morph: f64,
+    q: f64,
+    out_biquad: *mut f64,
+    out_max_pole_radius: *mut f64,
+    out_unstable_mask: *mut u32,
+    out_nonfinite_mask: *mut u32,
+) -> i32 {
+    if bytes.is_null()
+        || out_biquad.is_null()
+        || out_max_pole_radius.is_null()
+        || out_unstable_mask.is_null()
+        || out_nonfinite_mask.is_null()
+    {
+        return -1;
+    }
+    if len != BODY_BYTES {
+        return -4;
+    }
+    let slice = std::slice::from_raw_parts(bytes, len);
+    let packed = match PackedCorners::from_body_bytes(slice) {
+        Ok(p) => p,
+        Err(_) => return -3,
+    };
+    let biquad_rows = packed.interpolate_biquad(morph as f32, q as f32);
+
+    let out_bq = std::slice::from_raw_parts_mut(out_biquad, NUM_STAGES * NUM_COEFFS);
+    let mut max_r = 0.0f64;
+    let mut unstable_mask = 0u32;
+    let mut nonfinite_mask = 0u32;
+
+    for si in 0..NUM_STAGES {
+        let row = biquad_rows[si];
+        for ci in 0..NUM_COEFFS {
+            out_bq[si * NUM_COEFFS + ci] = row[ci];
+        }
+        if row.iter().any(|v| !v.is_finite()) {
+            nonfinite_mask |= 1u32 << si;
+        } else {
+            let r = pole_radius(row[3], row[4]);
+            if r > max_r {
+                max_r = r;
+            }
+            if r >= 1.0 {
+                unstable_mask |= 1u32 << si;
+            }
+        }
+    }
+
+    *out_max_pole_radius = max_r;
+    *out_unstable_mask = unstable_mask;
+    *out_nonfinite_mask = nonfinite_mask;
+    0
 }
 
 #[no_mangle]

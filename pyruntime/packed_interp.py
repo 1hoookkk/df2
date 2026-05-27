@@ -14,8 +14,25 @@ from __future__ import annotations
 import ctypes
 import math
 
+try:  # the shipped Rust core owns the packed math; Python delegates to it
+    from . import trench_ffi as _core
+except ImportError:  # tolerate being imported as a top-level module
+    try:
+        import trench_ffi as _core  # type: ignore
+    except ImportError:
+        _core = None
+
 
 COMBINE_K = 4.0
+
+
+def core_available() -> bool:
+    """True when packed math is delegating to the shipped trench-core."""
+    return _core is not None and _core.available()
+
+
+def core_backend() -> str:
+    return "trench-core" if core_available() else "python-fallback"
 
 
 # ── minifloat codec ───────────────────────────────────────────────────────────
@@ -148,6 +165,72 @@ def words_to_coeffs(words: tuple[int, ...]) -> tuple[float, ...]:
     )
 
 
+def kernel_to_biquad(row: tuple[float, ...]) -> tuple[float, ...]:
+    """Convert kernel-form (c0..c4) to direct DF2T biquad (b0,b1,b2,a1,a2).
+
+    Single Python owner. Formula mirrors `minifloat::kernel_to_biquad` in Rust.
+    Tools that need per-sample biquad coefficients import this; they do not
+    redefine the formula locally.
+    """
+    c0, c1, c2, c3, c4 = row
+    return (c4, (c0 - 2.0) * c4, (1.0 - c1) * c4, c2 - 2.0, 1.0 - c3)
+
+
+def _pole_radius(a1: float, a2: float) -> float:
+    """Pole radius from biquad denominator (a1, a2). Used in the Python fallback."""
+    if not math.isfinite(a1) or not math.isfinite(a2):
+        return math.inf
+    disc = a1 * a1 - 4.0 * a2
+    if disc < 0.0:
+        return max(a2, 0.0) ** 0.5
+    sq = disc ** 0.5
+    return max(abs((-a1 + sq) / 2.0), abs((-a1 - sq) / 2.0))
+
+
+def packed_probe(
+    corner_words: dict[str, list[tuple[int, ...]]],
+    morph: float,
+    q: float,
+) -> dict:
+    """Interpolate at (morph,q), return biquad coeffs + stability diagnostics.
+
+    Delegates to the shipped trench-core (`trench_packed_probe`) when available;
+    falls back to pure-Python. Single owner of kernel_to_biquad + pole_radius in
+    the Python toolchain — callers do not reimplement those locally.
+
+    Returns:
+      biquad: list of 6 (b0,b1,b2,a1,a2) tuples
+      max_pole_radius: float
+      unstable_mask: int  (bit i = stage i has pole radius ≥ 1.0)
+      nonfinite_mask: int (bit i = any coeff of stage i is nonfinite)
+    """
+    if _core is not None and _core.available():
+        body_bytes = _core.body_bytes_from_corner_words(corner_words)
+        return _core.packed_probe(body_bytes, morph, q)
+
+    # Python fallback
+    kernel_rows = packed_bilinear(corner_words, morph, q)
+    biquad = [kernel_to_biquad(row) for row in kernel_rows]
+    max_r = 0.0
+    unstable = 0
+    nonfinite = 0
+    for si, bq in enumerate(biquad):
+        if not all(math.isfinite(v) for v in bq):
+            nonfinite |= (1 << si)
+        else:
+            r = _pole_radius(bq[3], bq[4])
+            if r > max_r:
+                max_r = r
+            if r >= 1.0:
+                unstable |= (1 << si)
+    return {
+        "biquad": biquad,
+        "max_pole_radius": max_r,
+        "unstable_mask": unstable,
+        "nonfinite_mask": nonfinite,
+    }
+
+
 def packed_bilinear(
     corner_words: dict[str, list[tuple[int, ...]]],
     morph: float,
@@ -164,7 +247,14 @@ def packed_bilinear(
 
     Returns:
         List of (c0, c1, c2, c3, c4) tuples, one per stage.
+
+    Delegates to the shipped trench-core (`trench_packed_interpolate`) when the
+    library is available, so callers judge the EXACT interpolation the plugin
+    ships. Falls back to the pure-Python reference below otherwise.
     """
+    if _core is not None and _core.available():
+        return _core.packed_bilinear(corner_words, morph, q)
+
     num_stages = len(corner_words["A"])
     result = []
     for si in range(num_stages):
