@@ -34,8 +34,15 @@ from scipy.signal import lfilter, resample_poly
 # ── constants (spec-fixed) ──────────────────────────────────────────────────
 ANALYSIS_SR = 16000
 LPC_ORDER = 12
-PRE_EMPH = 0.0          # transparency: fit the RAW envelope; pre-emphasis brightens
-                        # the realised filter ~6 dB/oct (never de-emphasised) and drops body
+PRE_EMPH = 0.97         # standard speech pre-emphasis: lifts formants above the
+                        # voiced-pitch tilt so LPC resolves F1/F2/F3 (not the pitch).
+                        # Only applied when the source tilts down (gated below).
+# Formant-likeness gate (rejects pitch harmonics + junk poles before selection).
+# A pitch harmonic is ultra-narrow (bw < ~45 Hz, r ~0.99); a junk pole is very
+# wide / low-radius. Real formants live in between.
+FORMANT_BW_MIN_HZ = 45.0
+FORMANT_BW_MAX_HZ = 900.0
+FORMANT_RADIUS_MIN = 0.84
 FRAME_MS = 25.0          # RMS-frame length for steady-state detection
 HOP_MS = 10.0            # RMS-frame hop
 PEAK_RMS_TOL_DB = 3.0    # within this many dB of peak counts as steady-state
@@ -175,6 +182,16 @@ def extract_poles(lpc_coeffs: np.ndarray, sr: int) -> list[dict]:
         if f < FORMANT_FREQ_MIN_HZ or f > FORMANT_FREQ_MAX_HZ:
             continue
         cand.append((f, r))
+
+    # Reject pitch harmonics (ultra-narrow) and junk (very wide / low-radius)
+    # BEFORE selecting — otherwise the highest-radius pole is the PITCH, not a
+    # formant. Keep a graceful fallback if the gate leaves too little.
+    def _bw(r):
+        return float(-sr / np.pi * np.log(r)) if r > 0.0 else float("inf")
+    formantlike = [(f, r) for (f, r) in cand
+                   if FORMANT_RADIUS_MIN <= r and FORMANT_BW_MIN_HZ <= _bw(r) <= FORMANT_BW_MAX_HZ]
+    if len(formantlike) >= 2:
+        cand = formantlike
 
     cand.sort(key=lambda fr: fr[1], reverse=True)   # highest radius first
     if len(cand) < N_KEEP:

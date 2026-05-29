@@ -5,10 +5,63 @@ every time. Keep the bottom half stable.
 
 ---
 
-## This session — 2026-05-29 (next AI: start here)
+## 2026-05-29 NIGHT — VOCAL/AUTHORING BREAKTHROUGH (next AI: START HERE)
 
-**READ `CODEMAP.md` then `STATE.md` top entry.** Working tree is committed and
-clean; `forge-recovery` is ahead of origin (not yet pushed).
+**Read memory `canonical-preset-authoring` + `agc-drive-is-the-character` FIRST.**
+A long session with Tyson resolved how to author iconic presets. The conclusions
+(all validated against the E-mu manual via his NotebookLM + by ear):
+
+1. **VOWEL filters = PARAMETRIC PEAKING EQ** — flat 0 dB baseline + formant BUMPS
+   at real frequencies, NO notches, high end stays flat. Use
+   `tools/corner_words.peak_eq_words(freq,bw,gain_db)`, NOT `bp`/`notch` (those
+   make bandpass islands + pedestal = the "looks/sounds nothing like the ROM"
+   error we chased all day). Notches belong to OTHER families (comb/flanger/
+   notch-sweep), not vowels.
+2. **Morph = the vowel journey** (ah→ee passes through "ay" in the middle —
+   proven; this IS the ROM `AahAyEeh` filter). **Q / 2nd axis = mouth-cavity size
+   / vowel STRESS** (schwa→max excursion) = Tyson's "Body Size" — confirmed
+   verbatim (ROM `VowelSpace` cube, `AahAyEeh`: "Q varies the apparent size of
+   the mouth cavity").
+3. **AGC DRIVE IS THE CHARACTER.** Auditioning at boost=1.0 leaves the AGC
+   DORMANT (output scales linearly ×2→×2) = clinical/thin = much of the whole
+   "fidelity gap." Drive peaks to ~+22–28 dB (hot gains / boost ~4.0) → AGC
+   engages (compresses) → E-mu warmth/grit/soul. AGC = 16-entry global table in
+   `trench-core/src/dsp/mod.rs` (NOT in the 240-byte body, frozen). Render/audition
+   WITH drive, not boost=1.0 (Tyson: "holy fuck that makes a huge difference").
+4. **Vowels need a low-mid FOUNDATION** (a broad gentle low shelf) so the formants
+   ride on a body instead of floating as thin spikes. Confirmed by ear + the ROM
+   shape.
+5. **Validation view = the SIMPLE clean magnitude curve** (teal MorphDesigner
+   style), NOT an FFT spectrum (Tyson: "spectrum is AI reading").
+
+**TOOLS:** `tools/author_journey.py` = canonical authoring primitive (committed).
+`dev/journey_tool/` = self-serve browser canvas (gitignored scratch; run
+`python -m uvicorn dev.journey_tool.server:app --port 8770` → http://127.0.0.1:8770).
+
+**SMALL TALK (first shipping preset) — awaiting Tyson's pick.** Structure locked:
+peaking-EQ vowels, ah→ay→ee Morph × Body-Size Q, low-mid foundation, AGC drive.
+Candidates rendered in `dev/tmp/journeys/`: 4 drive levels
+(`st_A_gentle/B_warm/C_driven/D_slammed.wav`) + `st_flat` vs `st_foundation`.
+Coolest concept agreed: **"a conversation that escalates"** — low Q = casual
+mumbled small talk (schwa), push Q + AGC = emphatic → gritty shout. Small talk →
+argument. On-brand controlled destruction.
+
+**DO NEXT:**
+1. Tyson picks the drive candidate (A/B/C/D or between) + confirms foundation.
+2. Build the final Small Talk = peaking-EQ ah→ay→ee × Body Size + foundation +
+   chosen drive (boost) → finalize packed words / `.body240` + cartridge.
+3. Bake Small Talk into the player roster, run the null gate (`tools/null_test.py`).
+4. Template the vocal siblings — `Ooh-To-Eee`, `Eeh-To-Aah`, `Ooh-To-Aah` — same
+   peaking-EQ recipe, minutes each (the ROM VOW family is the menu).
+5. Then the non-vocal categories (Knock/Acid/Violence) — those DRIVE the AGC hard
+   and DO use notches (different family); Riser/Bender/Split = sweep/comb families.
+
+---
+
+## This session — 2026-05-29 earlier (skill/CODEMAP/repo lock)
+
+**READ `CODEMAP.md` then `STATE.md` top entry.** Working tree committed;
+`forge-recovery` ahead of origin (not pushed).
 
 **What happened this session:**
 - **Canonicalized the `df2-operator` skill.** It routed to 6 deleted docs
