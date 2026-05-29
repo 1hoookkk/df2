@@ -35,6 +35,25 @@ def core_backend() -> str:
     return "trench-core" if core_available() else "python-fallback"
 
 
+def _require_core(fn_name: str) -> None:
+    """Raise unless the shipped trench-core is loaded.
+
+    The shipping morph/Q interpolation is ``PackedCorners::interpolate_biquad``
+    in ``trench-core`` (see ``cartridge.rs::interpolate``). Tools that compare
+    the shipped engine against authored words MUST go through it; the
+    pure-Python reference below is a *reference*, never the production path.
+    Mirrors the AGC-table pattern in ``pyruntime/trench_ffi.py::agc_table()``
+    (STATE.md 2026-05-28): one Rust owner, Python delegates or raises.
+    """
+    if _core is None or not _core.available():
+        raise RuntimeError(
+            f"{fn_name} requires the trench-core shared library — "
+            "build it (`cargo build -p trench-core --release`) and ensure the "
+            "DLL/.so is on the load path. The pure-Python reference is not the "
+            "shipping interpolation path; refusing to silently substitute."
+        )
+
+
 # ── minifloat codec ───────────────────────────────────────────────────────────
 
 
@@ -217,31 +236,42 @@ def packed_probe(
       unstable_mask: int  (bit i = stage i has pole radius ≥ 1.0)
       nonfinite_mask: int (bit i = any coeff of stage i is nonfinite)
     """
-    if _core is not None and _core.available():
-        body_bytes = _core.body_bytes_from_corner_words(corner_words)
-        return _core.packed_probe(body_bytes, morph, q)
+    _require_core("packed_probe")
+    body_bytes = _core.body_bytes_from_corner_words(corner_words)
+    return _core.packed_probe(body_bytes, morph, q)
 
-    # Python fallback
-    kernel_rows = packed_bilinear(corner_words, morph, q)
-    biquad = [kernel_to_biquad(row) for row in kernel_rows]
-    max_r = 0.0
-    unstable = 0
-    nonfinite = 0
-    for si, bq in enumerate(biquad):
-        if not all(math.isfinite(v) for v in bq):
-            nonfinite |= (1 << si)
-        else:
-            r = _pole_radius(bq[3], bq[4])
-            if r > max_r:
-                max_r = r
-            if r >= 1.0:
-                unstable |= (1 << si)
-    return {
-        "biquad": biquad,
-        "max_pole_radius": max_r,
-        "unstable_mask": unstable,
-        "nonfinite_mask": nonfinite,
-    }
+
+def _packed_bilinear_reference(
+    corner_words: dict[str, list[tuple[int, ...]]],
+    morph: float,
+    q: float,
+) -> list[tuple[float, ...]]:
+    """Pure-Python reference for ``packed_bilinear`` — NOT the shipping path.
+
+    Bit-identical to ``PackedCorners::interpolate`` at the f32-precision lerp
+    boundary, kept for cross-checking the FFI and for environments where the
+    Rust core is intentionally not loaded (e.g. parity tests in
+    ``ffi_parity.py``). Production callers go through ``packed_bilinear``
+    which delegates to the FFI.
+    """
+    num_stages = len(corner_words["A"])
+    result = []
+    for si in range(num_stages):
+        a = corner_words["A"][si]
+        b = corner_words["B"][si]
+        c = corner_words["C"][si]
+        d = corner_words["D"][si]
+
+        out_words = tuple(
+            lerp_u16(
+                lerp_u16(a[wi], b[wi], morph),  # edge0: A→B along morph
+                lerp_u16(c[wi], d[wi], morph),  # edge1: C→D along morph
+                q,                               # edge0→edge1 along Q
+            )
+            for wi in range(5)
+        )
+        result.append(words_to_coeffs(out_words))
+    return result
 
 
 def packed_bilinear(
@@ -261,31 +291,16 @@ def packed_bilinear(
     Returns:
         List of (c0, c1, c2, c3, c4) tuples, one per stage.
 
-    Delegates to the shipped trench-core (`trench_packed_interpolate`) when the
-    library is available, so callers judge the EXACT interpolation the plugin
-    ships. Falls back to the pure-Python reference below otherwise.
+    Delegates to the shipped trench-core (`trench_packed_interpolate`) — the
+    SAME path the player runs (``cartridge.rs:303``,
+    ``PackedCorners::interpolate_biquad``). Raises if the core is unavailable
+    rather than silently substituting the pure-Python reference, which is
+    bit-identical at f32 precision but not the shipping path. See
+    ``_packed_bilinear_reference`` for the reference implementation
+    (cross-check / parity-test use only).
     """
-    if _core is not None and _core.available():
-        return _core.packed_bilinear(corner_words, morph, q)
-
-    num_stages = len(corner_words["A"])
-    result = []
-    for si in range(num_stages):
-        a = corner_words["A"][si]
-        b = corner_words["B"][si]
-        c = corner_words["C"][si]
-        d = corner_words["D"][si]
-
-        out_words = tuple(
-            lerp_u16(
-                lerp_u16(a[wi], b[wi], morph),  # edge0: A→B along morph
-                lerp_u16(c[wi], d[wi], morph),  # edge1: C→D along morph
-                q,                               # edge0→edge1 along Q
-            )
-            for wi in range(5)
-        )
-        result.append(words_to_coeffs(out_words))
-    return result
+    _require_core("packed_bilinear")
+    return _core.packed_bilinear(corner_words, morph, q)
 
 
 def build_corner_words_from_coeffs(

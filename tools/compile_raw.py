@@ -1,12 +1,17 @@
 #!/usr/bin/env python3
-"""Compile an internal raw stage surface into a compiled-v1 cartridge.
+"""Legacy bridge: compile an internal raw-stage surface into compiled-v1.
+
+This is not the current authoring path. Stages here are a compatibility
+serialization of an already-decomposed response. They are not musical authoring
+primitives. New bodies should use `tools/author_body.py` with a direct
+packed-body-v1 / 240-byte input.
 
 Input format: raw-stage-v1 JSON with either:
   - `frames: {M0: {...}, M100: {...}}` (native 2-frame authoring surface)
   - `corners: {M0_Q0: {...}, ...}`     (legacy authored 4-corner surface)
   - `keyframes: [{label, stages, ...}, ...]`
 
-Each stage is authored in musical units:
+Each legacy row is encoded from musical units:
   - `allpole` / `resonator`: pole frequency + radius + stage gain. A textbook
     2-pole resonator with no numerator zeros: `b = (g, 0, 0)`. This is the
     firmware-native pole-only shape (Morpheus cubes per E-mu RE).
@@ -23,8 +28,8 @@ Each stage is authored in musical units:
 Output: compiled-v1 cartridge JSON that loads through
 `trench_core::Cartridge::from_json`.
 
-Stdlib only. No RBJ derivation. This is a deterministic format bridge from an
-internal authoring surface to kernel-form coefficients.
+Stdlib only. No RBJ derivation. This is a deterministic format bridge from
+legacy raw-stage-v1 data to kernel-form coefficients.
 """
 
 from __future__ import annotations
@@ -466,7 +471,7 @@ def compile_raw(raw_doc: dict) -> dict:
 
 def main(argv: list[str]) -> int:
     parser = argparse.ArgumentParser(
-        description="Compile a raw-stage-v1 authoring surface into compiled-v1 JSON."
+        description="Legacy bridge: compile raw-stage-v1 data into compiled-v1 JSON."
     )
     parser.add_argument(
         "raw",
@@ -480,6 +485,12 @@ def main(argv: list[str]) -> int:
         help="Output cartridge path (stdout if omitted).",
     )
     args = parser.parse_args(argv)
+
+    print(
+        "warning: compile_raw.py is a legacy stage bridge, not the direct body authoring path; "
+        "use tools/author_body.py for packed-body-v1 / 240-byte bodies.",
+        file=sys.stderr,
+    )
 
     try:
         if str(args.raw) == "-":

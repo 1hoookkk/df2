@@ -37,19 +37,21 @@ def find_repo_root(start: Path) -> Path:
 
 
 ROOT = find_repo_root(Path(__file__).resolve())
+if str(ROOT) not in sys.path:
+    sys.path.insert(0, str(ROOT))
 DRY = Path(r"C:/Users/hooki/trenchwork_clean/ref/bypassed-pinknoise.wav")
 REF_DIR = ROOT / "reference" / "canonical_audio"
+
+from pyruntime import trench_ffi
 
 CORNERS = ("M0_Q0", "M0_Q100", "M100_Q0", "M100_Q100")
 # Null worse than this triggers a failure exit code.
 FAIL_THRESHOLD_DB = -140.0
 
-# AGC_TABLE ported from trenchwork_clean/trench-core/src/agc.rs
-AGC_TABLE = np.array(
-    [1.0001, 1.0001, 0.996, 0.990, 0.920, 0.500, 0.200, 0.160,
-     0.120, 0.120, 0.120, 0.120, 0.120, 0.120, 0.120, 0.120],
-    dtype=np.float64,
-)
+# Canonical AGC / global-compression curve, read from trench-core via FFI (single
+# source of truth = trench-core/src/dsp/mod.rs::AGC_TABLE). f32 values cast to f64
+# exactly (no precision loss) for this parity helper.
+AGC_TABLE = np.array(trench_ffi.agc_table(), dtype=np.float64)
 
 
 def db(x: float) -> float:

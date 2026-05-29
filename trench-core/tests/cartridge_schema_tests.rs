@@ -1,4 +1,5 @@
 use trench_core::cartridge::Cartridge;
+use trench_core::minifloat::{stage_words_to_biquad, PackedCorners, PackedStage};
 
 #[test]
 fn existing_cartridge_without_new_blocks_loads_with_safe_defaults() {
@@ -51,6 +52,68 @@ fn cartridge_with_drive_mod_fn_spatial_parses() {
     assert_eq!(mf.segments[0].level, 1.0);
     assert!(mf.key_sync());
     assert!(mf.tempo_sync());
+}
+
+#[test]
+fn packed_words_take_precedence_and_interpolate_in_packed_domain() {
+    const PASS: PackedStage = [0xDFFF, 0xFFFF, 0xDFFF, 0xFFFF, 0xDFFF];
+    const FIRST_ROWS: [PackedStage; 4] = [
+        [7549, 44668, 27391, 50821, 56688],
+        [7549, 44668, 40758, 50193, 56688],
+        [7549, 44668, 31012, 47431, 57015],
+        [7549, 44668, 45317, 46149, 57015],
+    ];
+
+    let mut packed = [[[0u16; 5]; 6]; 4];
+    let labels = ["M0_Q0", "M100_Q0", "M0_Q100", "M100_Q100"];
+    let keyframes = labels
+        .iter()
+        .enumerate()
+        .map(|(ci, label)| {
+            let mut rows = vec![PASS.to_vec(); 6];
+            rows[0] = FIRST_ROWS[ci].to_vec();
+            for si in 0..6 {
+                packed[ci][si].copy_from_slice(&rows[si]);
+            }
+            serde_json::json!({
+                "label": label,
+                "stages": [
+                    {"c0":99,"c1":99,"c2":99,"c3":99,"c4":99},
+                    {"c0":99,"c1":99,"c2":99,"c3":99,"c4":99},
+                    {"c0":99,"c1":99,"c2":99,"c3":99,"c4":99},
+                    {"c0":99,"c1":99,"c2":99,"c3":99,"c4":99},
+                    {"c0":99,"c1":99,"c2":99,"c3":99,"c4":99},
+                    {"c0":99,"c1":99,"c2":99,"c3":99,"c4":99}
+                ],
+                "packedWords": rows
+            })
+        })
+        .collect::<Vec<_>>();
+
+    let json = serde_json::json!({
+        "format": "compiled-v1",
+        "name": "packed precedence",
+        "sampleRate": 39062.5,
+        "keyframes": keyframes
+    })
+    .to_string();
+    let cart = Cartridge::from_json(&json).expect("packed cart parses");
+
+    let home = cart.interpolate(0.0, 0.0);
+    assert_eq!(home[0], stage_words_to_biquad(FIRST_ROWS[0]));
+
+    let expected_mid = PackedCorners { words: packed }.interpolate_biquad(0.5, 0.5);
+    let got_mid = cart.interpolate(0.5, 0.5);
+    for si in 0..6 {
+        for wi in 0..5 {
+            assert!(
+                (got_mid[si][wi] - expected_mid[si][wi]).abs() < 1.0e-12,
+                "stage {si} coeff {wi}: got {} expected {}",
+                got_mid[si][wi],
+                expected_mid[si][wi]
+            );
+        }
+    }
 }
 
 const KEYFRAMES_STUB: &str = r#"

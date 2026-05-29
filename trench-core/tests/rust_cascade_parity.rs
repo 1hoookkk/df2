@@ -55,10 +55,15 @@ mod parity {
     /// the Python `verified_packed_audit.load_mono` (`data[:, 0]`). The dry is
     /// already float32, so no normalisation is applied.
     fn load_mono_f32(path: &Path) -> Vec<f32> {
-        let mut reader = WavReader::open(path)
-            .unwrap_or_else(|e| panic!("open {}: {e}", path.display()));
+        let mut reader =
+            WavReader::open(path).unwrap_or_else(|e| panic!("open {}: {e}", path.display()));
         let spec = reader.spec();
-        assert_eq!(spec.sample_rate, SR, "{}: unexpected sample rate", path.display());
+        assert_eq!(
+            spec.sample_rate,
+            SR,
+            "{}: unexpected sample rate",
+            path.display()
+        );
         assert_eq!(
             spec.sample_format,
             SampleFormat::Float,
@@ -123,7 +128,10 @@ mod parity {
         // ── 1. raw ROM corner words -> PackedCorners ──────────────────────
         let rom_path = PathBuf::from(ROM_REL);
         let rom_bytes = std::fs::read(&rom_path).unwrap_or_else(|e| {
-            panic!("read {}: {e} — run tools/rom_corner_audit.py first", rom_path.display())
+            panic!(
+                "read {}: {e} — run tools/rom_corner_audit.py first",
+                rom_path.display()
+            )
         });
         assert_eq!(rom_bytes.len(), 240, "ROM corner block must be 240 bytes");
         let packed = PackedCorners::from_rom_bytes(&rom_bytes).expect("parse ROM corners");
@@ -145,7 +153,11 @@ mod parity {
         // ── 4. render the real dry through the Rust Cascade ───────────────
         let dry_path = PathBuf::from(DRY_PATH);
         let dry = load_mono_f32(&dry_path);
-        println!("\ndry: {} samples ({:.2} s)", dry.len(), dry.len() as f32 / SR as f32);
+        println!(
+            "\ndry: {} samples ({:.2} s)",
+            dry.len(),
+            dry.len() as f32 / SR as f32
+        );
 
         let (render, unstable) = render_fixed(&biquad, &dry);
         let peak = render.iter().map(|&x| x.abs()).fold(0.0f32, f32::max);
@@ -158,9 +170,15 @@ mod parity {
             unstable
         );
 
-        assert!(!unstable, "M50/Q50 cascade went unstable — coefficients should be pole-stable");
+        assert!(
+            !unstable,
+            "M50/Q50 cascade went unstable — coefficients should be pole-stable"
+        );
         assert!(render.len() == dry.len(), "render length must match dry");
-        assert!(peak > 0.0 && peak.is_finite(), "render is silent or non-finite");
+        assert!(
+            peak > 0.0 && peak.is_finite(),
+            "render is silent or non-finite"
+        );
 
         // ── 5. write the render verbatim for the Python parity harness ────
         let out_path = PathBuf::from(OUT_REL);

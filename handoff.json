@@ -1,0 +1,74 @@
+{
+  "handoff": "2026-05-27 — generate / curate / audition loop",
+  "one_line": "The authoring thrash resolved into: GENERATE bodies at scale -> AUDITION the 808 by ear -> ITERATE. Awaiting Tyson's ear verdict on 16 complex bodies + which MOTION reads best.",
+
+  "awaiting_user": {
+    "what": "Tyson's ear verdict on dev/tmp/audition/audition.html (16 bodies, 808 at HOME->MORPH->TENSION->MORPH+TENSION->MIDDLE).",
+    "the_question": "Which MOTION strategy reads as musical (translate / glide / comb_fixed / anchored) and which specific crazy_NN bodies hit?",
+    "then": [
+      "Lean tools/batch_complex.py toward the winning motion.",
+      "Bake the keeper bodies into the player roster (assets/cartridges + TrenchBodyRoster.h rows + rebuild).",
+      "That player rebuild ALSO brings the tell-always-visible display fix live (see below)."
+    ]
+  },
+
+  "doctrine_settled_this_session": [
+    "Fitter is DEMOTED to a rough seed, not the boss. Do NOT 'fix' VOICE/ARMA with more hardcoded cost heuristics — that is the treadmill Tyson named.",
+    "The path is GENERATE (machine, at scale) + CURATE (Tyson's ear = the only fitness function) + ITERATE fast. keeper_04 came from exactly this.",
+    "THIN bodies cause: a serial cascade of band-peaks (bp, rolls off below its peak) multiplicatively BURIES the low end; normalize_corner_peak then scales to the lone surviving spike. FIX = peaking-EQ stages (peak_eq_words: flat baseline + bumps) so bands stay balanced.",
+    "Morph TRAJECTORY = where the 4 corners sit (the runtime is a dumb bilinear word-lerp). It is NOT a runtime feature. 4 generator MOTION strategies author it: translate (comb climbs), glide (bumps cross), comb_fixed (notches locked/peaks move), anchored (low holds/top moves).",
+    "ROMs decode as STOCK, not product (bodies/rom/). 33 of 50 stable; the 17 LPF/HPF/sweep/EQ/PHA/FLG/VOW fail (poles on the unit circle).",
+    "Cross-breed in CURVE space (blend response curves) not pole space (pole-splice-by-index = lopsided/explodes).",
+    "Runtime stays TRANSPARENT: no in-player modulation, no MotionLaw ID, no pole-radius modulation, no cost-function fitter, no z-plane/radius on the surface (the magnitude curve = the sound's shape = allowed; coefficients/poles/EMU = never)."
+  ],
+
+  "contamination_watch": "Pasted AI theory (Gemini/ChatGPT) repeatedly smuggled the SAME rejected traps in new clothes: pin-Stage-N-as-a-role, runtime pole-radius modulation, an 'anatomy-aware fitter cost function', a z-plane/radius overlay, a runtime MotionLaw. ALL rejected. When a theory is pasted, DO NOT build a new mechanism — force the listen-loop instead.",
+
+  "built_this_session": {
+    "player_roster": {
+      "files": "juce-shell/assets/cartridges/keeper_04.json + P2k_*.json (33 ROM bodies); rows in juce-shell/source/TrenchBodyRoster.h",
+      "state": "Player REBUILT + INSTALLED to Common Files/VST3 (keeper_04 + 33 ROM bodies + 11 factory + Forge Audition). Plays in FL."
+    },
+    "player_display_fix": {
+      "file": "juce-shell/source/TrenchResponseDisplay.cpp:343",
+      "change": "magnitude tell now always draws; output waveform overlays (was: waveform SUPPRESSED the tell, leaving a blank scope while audio played).",
+      "state": "EDITED IN SOURCE, NOT in the installed VST3 — rebuild the player to apply."
+    },
+    "forge_draw": {
+      "files": "forge/src/dsp.rs (realize_resonances, corner_to_resonances, ResoKind/Resonance), forge/src/forge_core.rs (design state, DRAW methods, SKETCH->SCULPT bridge), forge/src/main.rs (DRAW UI, VOWELS/BARK overlays, magnetic snap, named-actor labels, heat cue, focus mode)",
+      "state": "In source + tested (cargo test -p trench-forge green). Rebuild 'cargo build -p trench-forge --release' to be current."
+    },
+    "factorizer": {
+      "file": "trench-core/src/arma.rs::fit_corner_from_magnitude (+ shared arma_fit_from_logmag)",
+      "purpose": "Fit a clean TARGET magnitude curve -> 6-stage cascade (feed ARMA a curve not audio). The right realization of specs/response_target.v1.schema.json. Compiles; not yet wired to a UI/Target Browser.",
+      "state": "Built, NOT proven on a target curve yet, NOT wired into the forge."
+    }
+  },
+
+  "pipeline_tools": {
+    "tools/batch_complex.py": "Generate complex+balanced bodies (peaking-EQ baseline + 4 motion strategies). Seeded/reproducible. Writes bodies/crazy/crazy_NN.cart.json + manifest.json (seed, motion, peaks, spread, move). Run: python -m tools.batch_complex [N] [base] [K]",
+    "tools/render_audition.py": "Run a synth 808 through bodies/crazy/ + bodies/proofs/ via the SHIPPED engine (trench_ffi.engine_render, real AGC+saturate) at the 4 corners + middle -> dev/tmp/audition/audition.html. The listen surface.",
+    "tools/plot_crazy.py": "Square-grid magnitude plot of bodies/crazy/ with notch markers + zero-stage counts -> bodies/crazy/crazy_plot.png.",
+    "tools/batch_crazy.py": "OLDER generator (raw random words). Produced THIN single-resonance bodies — superseded by batch_complex.",
+    "tools/breed_corners.py": "Cross-breed two ROM bodies. v1 pole-splice = lopsided (rejected); the right version is CURVE-blend then factor (not yet built).",
+    "gotcha": "Run tools as 'python -m tools.X' — a tools/pyruntime/ shadows the real pyruntime and breaks pyruntime.freq_response under 'python tools/X.py'."
+  },
+
+  "reproducibility": "Every bodies/crazy/ body carries its seed in manifest.json. Regenerate: rand_body(random.Random(seed)) in batch_complex. The cheap-proof body (bodies/proofs/metallic_vowel_target.json) is byte-deterministic (verified: same sha256 across runs).",
+
+  "key_files": {
+    "specs/response_target.v1.schema.json": "The Target Template schema (response-surface authoring; already existed). The factorizer realizes it.",
+    "bodies/rom/": "33 decoded stable E-mu ROM bodies (stock/targets, not shipped product).",
+    "bodies/crazy/": "16 current candidate bodies + manifest.json.",
+    "dev/tmp/audition/audition.html": "The 808 audition page (open locally; WAVs alongside).",
+    "STATE.md": "The worklog — read first.",
+    "memory generate-curate-audition-loop": "The full resolution + anti-loop discipline (in ~/.claude memory)."
+  },
+
+  "next_concrete_steps": [
+    "1. Get Tyson's ear verdict (which motion + bodies). DO NOT build more until he has listened.",
+    "2. Lean batch_complex toward the winning motion; regenerate; re-audition.",
+    "3. Bake keepers -> player roster -> rebuild (also ships the tell-always display fix).",
+    "4. Optional later: prove + wire the factorizer (Target Browser), curve-blend breeding off keepers."
+  ]
+}

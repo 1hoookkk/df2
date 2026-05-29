@@ -4,7 +4,267 @@ What exists. What's broken. What's next. Update on every code change.
 
 ---
 
-## Now — 2026-05-26 · later (read this first; supersedes below)
+## Now — 2026-05-28 · late (read this first)
+
+**STRATEGIC POSITION:** Tyson is exhausted and asking for a fresh-eyes audit of
+the whole plugin codebase (he wants a GPT prompt for an in-depth review — that
+prompt is in the conversation transcript and proposes 3 options: surgical
+fixes / JUCE shell rewrite preserving Rust core / full rewrite). My honest
+read: Option B (JUCE-shell-only rewrite, keep `trench-core`) is the right call
+— every bug found today lives in the JUCE C++ shell; the Rust core, AGC table,
+240-byte format, and X3 null parity are all verified-clean.
+
+**WHAT SHIPPED THIS SESSION:**
+- 7 originals baked into the player roster: **Voice Walk** (Klatt vowel),
+  **Mason Tube** (physical Helmholtz), **Knock Burst** (808),
+  **Metal Scream** (resonant), **Phaser Slide** (comb), **Cut Edge** (cut),
+  **Maul** (insane direct-biquad). Plus Razor Shell from morning. Carts in
+  `juce-shell/assets/cartridges/`. VST3 rebuilt + installed to Program Files.
+- `tools/sweep_roster.py` extended with `wild` (random-then-structured-chaos),
+  `insane` (direct biquad design — bypasses factorizer, every pole+zero
+  hand-placed at audible high radii), `analyze_sweep` (mid-intent + trajectory
+  smoothness on every body), and the `_normalize_corner_peak` helper that
+  targets a configurable AGC sweet spot (+22–28 dB peaks).
+- `tools/_anatomy.py` — exact per-stage pole/zero extraction via the kernel→
+  biquad math (`b0=c4, b1=(c0-2)c4, b2=(1-c1)c4, a1=c2-2, a2=1-c3`) and root-
+  finding. Annotated plots with red ▲ poles, blue ▼ zeros, radius labels.
+- `tools/gen_vocal_v2.py` — Klatt-formant-pinned direct-biquad vocals (5
+  named vowel-pair morphs), AGC-engaged. Loads picks into Forge Audition slot.
+- `tables/physical_models.py` — Helmholtz + closed/open pipe + Donnell shell
+  + rectangular cavity room-mode formulas. Real physics for cavity intents.
+- `tables/family_intents.json` extended: Klatt vocals (10 vowels),
+  physics-modelled cavities (7 objects with dim receipts), violence intents
+  (chainsaw / drill_squeal / glass_shatter / iron_plate / wolf_howl /
+  bee_swarm / acid_303 with freq maps in the descriptions).
+
+**CRITICAL JUCE-SHELL BUGS FOUND TODAY:**
+1. **Body strip writing NORMALIZED 0..1 to a parameter expecting DENORMALIZED
+   0..N** — `TrenchBodyStrip::setIndex` at line 107 called `convertTo0to1`
+   before `setValueAsCompleteGesture`. JUCE renormalised again → every click
+   collapsed to index 0 or 1. **Fixed in place**. Every other control in the
+   codebase calls `toDenorm()` correctly — this was a one-off, and a strong
+   signal the param contract is fragile.
+2. **Input mode default = SLAM** (`TrenchParameters.cpp:39-40`), `slamDrive
+   = 0.35` → 12.6 dB of pre-cascade desk-drive saturation on EVERY body by
+   default. Producer expectation is clean-unless-cranked. This was the cause
+   of "Neon Vane sounds completely distorted" — Neon Vane was fine; the
+   *input stage* was hot.
+3. **Latent display-only bug in `TrenchResponseDisplay.cpp` lines 14-17 +
+   441**: hardcoded `kBodyNames[4]` and `bodyIndex() % 4`. The on-screen
+   "BODY 013–016" identity readout cycles through 4 numbers regardless of
+   which of the 54 bodies is selected. Cosmetic only (the strip name reads
+   from the real roster), but misleading.
+4. **Two VST3 install paths drifted out of sync** — `Program Files\Common
+   Files\VST3\TRENCH.vst3` (fresh, today's build) and
+   `%LOCALAPPDATA%\Programs\Common\VST3\TRENCH.vst3` (stale, earlier today's
+   build). FL may scan either. Delete the LOCALAPPDATA copy to remove
+   ambiguity, or always copy both.
+
+**THE ACTUAL ROOT CAUSE of "presets don't work / Neon Vane distorted":**
+**FL Studio had been running continuously since May 25 19:05 — 3 days — and
+was holding the old DLL in memory the entire conversation.** Every rebuild
+today landed on disk correctly; FL just never reloaded. Multi-hour debug
+session was chasing ghosts in a binary that wasn't even loaded. The fix is
+killing `FL64.exe` in Task Manager (closing the FL window leaves the process
+running in tray) and reopening FL fresh.
+
+**DEV-WORKFLOW LESSON LEARNED:** Use `TRENCH_Standalone.exe` or JUCE
+AudioPluginHost while iterating on plugin code. FL is for *using* the
+plugin in a real session, not for fast-iteration dev — Windows maps DLLs
+once per process and they stay in memory until the host fully exits.
+
+**DOCTRINAL INSIGHTS:**
+- Engine ceiling is **12 poles + 12 zeros per corner** (4 corners × 6 biquads
+  × 2 poles + 2 zeros each, packed in 240 bytes). Going higher requires
+  engine V2 (new format + break X3 parity).
+- **AGC table at indices 4–7 (mults 0.92 / 0.50 / 0.20 / 0.16) is where the
+  E-mu character lives.** Filter peaks need to reach ~+22 to +28 dB to drive
+  the AGC into those zones. Below ~+15 dB the AGC is asleep and the body
+  sounds clinical/dry. The `& 0xF` wrap fires above ~+24 dB → adds chaos
+  gating character.
+- **Mud is broad-Q low-freq peaks, NOT narrow ones**. A razor 300 Hz pole at
+  r=0.997 is a tonal ring (clean character). A 200–500 Hz wide hump from a
+  low-Q pole is mud. The fix is the BALANCE RULE — low-mid peak must be
+  matched by an equal-or-louder mid+treble peak — not capping low-freq Q
+  (which makes everything smooth and dull).
+- **The factorizer wastes zeros at the origin when the target curve has no
+  notches.** Wild-mode bodies had all 12 zeros parked at r=0 (inactive),
+  body was pole-only → buzzy without cutting character. The fix is either
+  (a) target curves with deep notches that force the fitter to commit zeros
+  at audible radii, or (b) bypass the factorizer with direct biquad design
+  (the `insane` mode does this).
+
+**OUTSTANDING / DO NEXT:**
+- Tyson needs to kill `FL64.exe` and reopen FL to actually load today's
+  work. Then audition the 7 originals (Voice Walk, Maul, etc.) in the body
+  strip and the Klatt-direct vocals via Forge Audition swap.
+- A "runtime error" was reported but never described — diagnosis pending.
+- Tyson is leaning toward a code rebuild. The audit prompt (in conversation)
+  is ready to paste into a fresh AI session.
+- The latent `TrenchResponseDisplay` display bug is still present and worth
+  a small fix.
+
+---
+
+## 2026-05-28 · evening
+
+**FILTER TYPE CARDS = the producer front door. A body is a named FILTER TYPE, not
+a corner bank.** Tyson's synthesis from the Morpheus/P2K screenshots: producers
+choose a *named morphing machine*, move Morph, move Q — they never design corners,
+responses, or poles. This is a REFRAME + front door over the proven Target Browser,
+not a new engine. No DSP invented.
+
+- **`tools/filter_type_cards.json`** — 6 v1 cards (Speaker Knockerz=EQ_BOOST/RESONANCE,
+  Small Talk=VOWEL, Razor Shell=EQ_CUT/PHASER, Aluminum Siding=RESONANCE/FLANGER,
+  Cul-De-Sac=BPF/RESONANCE, Glass Throat=VOWEL/RESONANCE/HYBRID). Each card = plain job +
+  what Morph does + what Q does + avoid + an existing `target_templates` archetype + an
+  optional reference inspiration. Internal class taxonomy (LPF HPF BPF EQ_BOOST EQ_CUT
+  VOWEL PHASER FLANGER RESONANCE WAH DISTORTION SPECIAL_FX HYBRID) is **inspiration only —
+  never product-facing**.
+- **`tools/make_class_bodies.py`** — THE producer command. `--class EQ_CUT --campaign
+  razor_shell --count 64 --seed 1001` → generates whole 4-corner bodies via
+  `target_browser.generate`, culls broken, publishes survivors to `bodies/generated/`,
+  writes a **purely musical** card-framed `audition.html` (card header + "Candidate NN" +
+  KEEP/MAYBE/REJECT; NO freqs/poles/coeffs/stages on the surface — leak-checked). `--keep`
+  saves body240 + cart + keep.json. `--reference [slug]` routes through the brief path.
+  **Verified: 51/64 survived, 51 presets published, page DSP-clean.**
+- **`tools/reference_brief.py`** — reference→ORIGINAL bodies. Loads a `bodies/rom/P2k_*.json`
+  reference, extracts a musical BRIEF (body mass, identity, fracture, Morph/Q motion, midpoint,
+  failure modes — **behaviour only, never coefficients/names**), widens it into a template
+  family, generates, hard-culls, and **rejects candidates too close to the reference** (corner+
+  midpoint curve distance, exact-freq clones). audition.html carries a REFERENCE A/B preview
+  (preview-only, never shipped) + response images. `--keep` saves body240+cart+brief+gate+
+  notes+response.png. Fix landed: brief analysis is **band-limited (60–10.5 kHz)** or it picks
+  the Nyquist-edge resonance as the "identity" (it called an 11.5 kHz spike DJ Alkaline's voice).
+
+**PLAYER SHIPS IT:** first filter-type-card body baked into the roster —
+`juce-shell/assets/cartridges/razor_shell_v1.json` ("Razor Shell", EQ_CUT/PHASER,
+gate-clean cand_03; packedWords-only, loads via the canonical packed path,
+`cartridge.rs:223`). Roster row added after the verified-usable `neon_vane` boot
+default. **TRENCH VST3 rebuilt Release (exit 0)**, `razor_shell_v1_json` confirmed in
+the binary, installed to `C:\Program Files\Common Files\VST3\TRENCH.vst3` (51 MB).
+
+**OVERNIGHT BOLD SWEEP (roster_0528) — ran, merged, waiting on ears.** Six family
+subagents (Vocal/Cavity/Resonant/Knock/Comb/Cut) ran `tools/sweep_roster.py` in
+parallel. **Bold twin-anchor:** HOME and AWAY are INDEPENDENT skeleton draws —
+genuinely different corners (~32 dB apart on test), AWAY hotter so HOME→AWAY spans
+tame→violent. This replaces the timid base→shift→sharpen (which made 4 near-copies
+and a dead morph) — Tyson's call: "E-mu had presets with 4 completely different
+corners." 3 seeds × 64 = 192/family → **900 survivors / 1152, all stable** (no pole
+radius ≥ 1). **Knock rebuilt** (his correction: 808 = knock+grit, NOT low boost; sub
+is the source's job) — pedestal-cull is STRUCTURAL (0 sub-dominant survivors via the
+`low_rolloff` hard gate). Merged to ONE queue:
+`dev/tmp/sweep/roster_0528/audition.html` — 16 shortlisted/family (96 total), soft
+pre-sort (advisory-clean + motion, NOT a verdict), DSP-clean surface, per-family
+`.md` analyses. Survivors also published to `bodies/generated/gen_<family>_s700X_NN.bin`
+(Factory list is flooded — audition.html is the curation surface). NEXT = ears →
+KEEP → per-body `make_class_bodies --keep` cmd shown on each card.
+
+**TRAP REJECTED (contamination vigilance):** a pasted "topology-locked morphing / fixed stage
+roles (stages 1-2=body, 3-4=bite, 5-6=air), pin poles to bands" theory = the stage-authoring
+trap doctrine forbids (stages are bookkeeping, no roles). NOT built. KIN is already structural:
+every generated body's 4 corners grow from ONE feature skeleton (M0_Q0=base, others=morph/
+sharpen of it), so they glide by construction — and the runtime never morphs *between two
+presets*, so the "interpolate two ROM presets → mush" problem doesn't exist here. The ear is
+still the boss; the avoided step is **curation**, not more generators.
+
+---
+
+## 2026-05-28 · parity ledger + factorizer proven
+
+**PARITY LEDGER ~CLOSED + FACTORIZER PROVEN (bounded).** Two threads this session:
+
+1. **Single-owner parity, two more locked.**
+   - `AGC_TABLE` (the global compression curve) deduped: one Rust const
+     (`trench-core/src/dsp/mod.rs`), exposed read-only via FFI
+     `trench_agc_table`. `pyruntime/trench_ffi.py::agc_table()` reads it and
+     **raises** if the core is missing (no Python mirror). The 4 tool copies
+     (`verified_packed_audit`, `render_hedz`, `packed_gap_diagnosis`,
+     `parity_null`) now read the canonical curve. Literal lives in ONE place.
+   - **Forge `kernel_to_biquad` consolidated:** `forge/src/dsp.rs` no longer
+     carries the formula — it delegates to `trench_core::minifloat::kernel_to_biquad`
+     (kept the `&[f64;5]` wrapper so call sites are untouched). Packed interp was
+     already gated both sides. Remaining triplication is now small.
+
+2. **`fit_corner_from_magnitude` PROVEN — and characterized.**
+   `trench-core/tests/factorizer_proof.rs` feeds it synthetic shapes + a real P2K
+   ref's own M0_Q0 response (refit). Findings (artifacts: `dev/tmp/factorizer_proof/`,
+   audition via `tools/prove_factorizer.py` SAW/TONE/PINK through the shipped engine):
+   - **In-band (120–8 kHz) it reproduces a broad formant-envelope target tightly**
+     (~2.3 dB RMS / ~5 dB max, stable). It WORKS for response-surface authoring.
+   - **Top octave is unconstrained** → it parks a Nyquist-edge resonance (synthetic
+     target: +66 dB spike at ~13.7 kHz). Out of the asserted band; audition decides.
+   - **It is an ENVELOPE fitter, not a razor-ROM replicator** — refitting a real P2K
+     body smooths its sharp poles/notches (~13 dB in-band). Expected & doctrinal.
+   - Implication for a Target Browser: target broad formant/peak surfaces with rolled
+     low end; derive boost AFTER shape; don't expect ROM-exact replication. **Open
+     decision before the Browser: constrain the top-octave edge resonance, or let the
+     ear gate it.**
+
+3. **FACTORIZER BENCH = the anti-slop scoreboard** (`tools/factorizer_bench.py`,
+   frozen `tools/factorizer_battery.json`). One command: fit each frozen target via
+   FFI → pack → measure the SHIPPED (packed-decoded) in-band residual + stability →
+   render SAW/TONE/PINK → scoreboard table with **delta vs the previous run** +
+   `audition.html`/`overlay.png`/`scoreboard.json`/`history.jsonl`. Headline = mean
+   in-band RMS over the 6 'primary' broad-shape targets. **Baseline = 6.335 dB.**
+   The fitter is now FFI-exposed (`trench_fit_corner_from_magnitude` →
+   `trench_ffi.fit_corner_from_magnitude(curve, sr)`; thin wrapper, no new DSP) — same
+   rail a Target Browser rides. Rule: no fitter change ships unless the headline drops
+   on the frozen battery AND the ear signs off; the fit stays DUMB (taste lives in the
+   curve, never in fitter heuristics — that's the rejected treadmill).
+   Bench surfaced weak spots to attack one-at-a-time (measured, not guessed):
+   `two_formant_vox` 13.5 dB and `nasal_mid`/`scooped_2band` ~8 dB are the worst;
+   `bright_lead` 0.56 dB and `three_formant_vox` 2.9 dB are clean. NOTE: the fitter is
+   sensitive to target SAMPLING (same shape, 160-pt smooth vs 256-pt piecewise = 2.3 vs
+   5.4 dB), so the battery freezes the exact sampling — compare deltas, not absolutes.
+
+4. **TARGET BROWSER LOCKED AS THE MAIN AUTHORING LOOP.** `tools/target_browser.py`
+   now supports the producer command form:
+   `python -m tools.target_browser --template razor_shell --count 32 --seed 1001`.
+   `tools/target_templates.json` now carries the seven production archetypes:
+   `bright_vowel`, `bottle_cavity`, `broken_comb`, `small_metal_shell`, `vocal_bell`,
+   `razor_shell`, `speaker_knocker`. Flow: pick template -> generate N whole
+   4-corner bodies -> hard-cull broken candidates only -> render survivor audio
+   (M0_Q0, M100_Q0, M0_Q100, M100_Q100, midpoint, Morph sweep, Q sweep, diagonal
+   sweep) -> write `audition.html` with KEEP/MAYBE/REJECT, notes, and one-line
+   `--keep` commands -> publish survivor `.bin` bodies to `bodies/generated/`.
+   Keeper promotion preserves body/cart/seed/template/gate/notes in
+   `dev/tmp/keepers/`. Exact verified run: `razor_shell` seed 1001 count 32 produced
+   29/32 survivors, wrote `dev/tmp/target_browser/razor_shell_s1001/audition.html`,
+   and published 29 `bodies/generated/gen_razor_shell_s1001_NN.bin` presets. Manual
+   DRAW/WAV/corner/pole/P2K workflows are quarantine/debug unless Target Browser is
+   blocked. Ear chooses; advisory scores do not.
+
+---
+
+## Now — 2026-05-26 · evening
+
+**FORGE FITTER MADE HONEST + EXPORT PUT ON THE CANONICAL PACKED PATH.** The live fit
+was a fixed-band spectral peak picker mislabelled (in `forge/AUDIT.md`) as "ARMA". Now
+explicit, honestly-named modes — the fit is a STARTING POINT, not the boss:
+- `dsp::FitMode` { **SpectrumPeak** (default, = old `formant_fit`, behaviour unchanged),
+  **VoiceLpc** (pre-emphasis tilt-removal → order-14 LPC vocal tract; `lpc::fit_corner_conditioned_pe`),
+  **Arma** (`arma::fit_corner_arma` called directly, not just fallback) }. `dsp::fit_window_mode`.
+  `F` key / `FIT·<mode>` strip button cycle + re-fit loaded sources in place (A/B by ear).
+- **Export authority fixed (the urgent rot):** `export_json` now emits **`packedWords`**
+  (6×5 u16) as authority + `stages` as readback only; `save` also writes `authoring_slot.body240`
+  (exactly 240 bytes). A loaded 240-byte body is preserved as `PackedCorners` and exported
+  VERBATIM (no decode→repack). Tests: `export_goes_through_canonical_packed_path`,
+  `loaded_240_byte_body_exports_verbatim`. `trench-core::lpc` now owns one `realize_poles_zeros`.
+- **`aaa.wav` regression** (`cargo test -p trench-forge --bin trench-forge voice_regression -- --ignored`)
+  → `dev/tmp/forge_voice_regression/` (source + 3 fit WAVs ×2 takes, level-matched for ear A/B,
+  raw loudness in `comparison_report.json` + `audition.html`). **PROVEN why voice felt broken:**
+  spectrum_peak misses the vowel (resid 33.7 dB, wastes poles at 188/211 Hz f0 mud); voice_lpc
+  matches the envelope (10.7 dB) but renders near-silent — `top-6-by-radius` selection in `lpc.rs`
+  picks HF hiss (6–9 kHz) over F1/F2 on a consumer mic (pre-emph 0.97→0.5 barely moved it); arma
+  is loudest/decent (9.8 dB) but has 3–5 dB packed quantization drift. Fix direction = formant-region
+  pole biasing + the log-grid nudge surface (fitter proposes, human relocates poles onto F1/F2 by ear).
+- Full trace + stale-doc callouts: **`dev/tmp/forge_first_principles_audit.md`**. No UI redesign,
+  no per-stage/Actor/BodySpec path, runtime + packing math untouched.
+
+---
+
+## 2026-05-26 · later (superseded above)
 
 **240-BYTE PACKED BODY IS NOW THE SINGLE CANONICAL COEFFICIENT PATH.** One path:
 `source (.body240 / JSON packedWords / packed-body-v1) → BodyBytes240 → PackedCorners → Cartridge/runtime`.
@@ -29,6 +289,20 @@ poke ONE packed `u16` word (`--corner/--row/--word/--delta`, wraps faithfully pe
 - Reuses the `teleport_stress` signal path (sounds like the runtime). Sound-first; no stage/Actor/BodySpec/LPC path.
 - Verified: one word moves the WAV; JSON==raw before mutation; clean numerator poke = `nonfinite=0 / unstable=0 /
   max_r=0.980`; keeper writes 240 bytes + 4-corner packed cart. (memory `corner-bench-instrument`)
+
+**FIRST CUT AT THE CAN OF WORMS — trench-core now owns decode+interpolate; Python calls it.** The packed math was
+reimplemented in Python (`packed_interp.py`) + Rust runtime + Rust forge + ~30 tools, with no single owner — the
+"haunted" drift where the bench and the plugin can judge different versions of the same corner (memory
+`packed-math-triplicated`). Step 1 done:
+- `trench-core` FFI: `trench_packed_decode(word)` + `trench_packed_interpolate(bytes,len,morph,q,out[30])` (kernel
+  form, morph-first — the SAME `PackedCorners::interpolate` the player ships; morph/q cast to f32 like the runtime).
+- `pyruntime/trench_ffi.py` — ctypes binding (prefers release dll, graceful fallback, skips stale builds missing the
+  symbols). `packed_interp.packed_bilinear` now delegates to the core when present, pure-Python as fallback only.
+- `corner_bench.py` prints `interp -> trench-core [..dll]` and has `--require-core`.
+- **Proof: Python-reference vs Rust-core = BIT-IDENTICAL** across 8670 coeffs / 289 (m,q) points; bench renders
+  end-to-end through the FFI, stability unchanged (max_r 0.980, CLEAN). Rust test `ffi_interpolate_matches_in_process`.
+- **Still triplicated:** the Rust forge (`forge/src/dsp.rs`) and the ~30 tools' other math; response/render not yet
+  behind the core. Next: route `kernel_to_biquad`/response + the forge through the same owner.
 
 **FRONT-DOOR PITCH LOCKED (memory `trench-front-door-pitch`): "controlled destruction / stable machine for unstable
 sounds."** Sell the feeling, hide the 240 bytes. Verbs not params (Morph = drag open · Q = pull tight · Teleport =

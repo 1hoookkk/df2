@@ -1,0 +1,28 @@
+{
+  "version": 1,
+  "note": "FROZEN battery for the factorizer scoreboard. Do not edit casually — changing a target invalidates run-to-run comparison. Each target is sampled deterministically onto a fixed log grid, so the same spec always produces the same curve (the fitter is sensitive to sampling). 'primary' targets are broad shapes the fitter should nail; 'boundary' targets are known-hard markers tracked but NOT part of the headline score.",
+  "sample_rate_hz": 39062.5,
+  "band_hz": [120, 8000],
+  "sample_lo_hz": 40,
+  "sample_hi_hz": 16000,
+  "sample_points": 192,
+  "bump_model": "db = floor + sum(gain*exp(-((log2(f/fc))/width_oct)^2)) - sum(dip_depth*exp(-((log2(f/fc))/width_oct)^2))",
+  "targets": [
+    {"name": "three_formant_vox", "kind": "primary", "floor_db": -18,
+     "bumps": [[600, 22, 0.45], [1400, 20, 0.45], [2700, 18, 0.5]]},
+    {"name": "two_formant_vox", "kind": "primary", "floor_db": -16,
+     "bumps": [[700, 20, 0.5], [1800, 18, 0.5]]},
+    {"name": "bass_honk", "kind": "primary", "floor_db": -20,
+     "bumps": [[170, 24, 0.7], [430, 14, 0.6]]},
+    {"name": "nasal_mid", "kind": "primary", "floor_db": -14,
+     "bumps": [[1000, 22, 0.35]], "dips": [[420, 10, 0.5], [2400, 8, 0.5]]},
+    {"name": "bright_lead", "kind": "primary", "floor_db": -20,
+     "bumps": [[2600, 20, 0.6], [4200, 16, 0.5]]},
+    {"name": "scooped_2band", "kind": "primary", "floor_db": -10,
+     "bumps": [[220, 16, 0.6], [3200, 16, 0.5]], "dips": [[950, 12, 0.6]]},
+    {"name": "tilt_lowpass", "kind": "boundary", "floor_db": 0,
+     "tilt": [800, -12]},
+    {"name": "ref_talking_hedz", "kind": "boundary",
+     "ref_bin": "ref/presets/P2k_013_talking_hedz.bin"}
+  ]
+}

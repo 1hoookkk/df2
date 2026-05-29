@@ -34,7 +34,8 @@ from scipy.signal import lfilter, resample_poly
 # ── constants (spec-fixed) ──────────────────────────────────────────────────
 ANALYSIS_SR = 16000
 LPC_ORDER = 12
-PRE_EMPH = 0.97
+PRE_EMPH = 0.0          # transparency: fit the RAW envelope; pre-emphasis brightens
+                        # the realised filter ~6 dB/oct (never de-emphasised) and drops body
 FRAME_MS = 25.0          # RMS-frame length for steady-state detection
 HOP_MS = 10.0            # RMS-frame hop
 PEAK_RMS_TOL_DB = 3.0    # within this many dB of peak counts as steady-state
@@ -177,15 +178,14 @@ def extract_poles(lpc_coeffs: np.ndarray, sr: int) -> list[dict]:
 
     cand.sort(key=lambda fr: fr[1], reverse=True)   # highest radius first
     if len(cand) < N_KEEP:
+        # Transparency: do NOT fabricate a phantom resonance. Keep the real poles
+        # only; the corner builder pads the rest with neutral passthrough sections.
         print(
-            f"WARNING: only {len(cand)} valid pole(s) found inside "
-            f"[{FORMANT_FREQ_MIN_HZ}, {FORMANT_FREQ_MAX_HZ}] Hz; "
-            f"padding to {N_KEEP} with dummy "
-            f"({DUMMY_FREQ_HZ} Hz, r={DUMMY_RADIUS}).",
+            f"NOTE: only {len(cand)} valid pole(s) inside "
+            f"[{FORMANT_FREQ_MIN_HZ}, {FORMANT_FREQ_MAX_HZ}] Hz; keeping them as-is "
+            f"(no dummy pole).",
             file=sys.stderr,
         )
-        while len(cand) < N_KEEP:
-            cand.append((DUMMY_FREQ_HZ, DUMMY_RADIUS))
 
     cand = cand[:N_KEEP]
     cand.sort(key=lambda fr: fr[0])                 # final: ascending in freq

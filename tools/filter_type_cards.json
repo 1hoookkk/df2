@@ -1,0 +1,111 @@
+{
+  "_schema": {
+    "note": "Producer-facing FILTER TYPE cards, named by what you HEAR (the family), not by brand. A body is a named filter type, not a corner bank. Each card = one whole 4-corner machine: HOME(M0_Q0) / AWAY(M100_Q0) / TIGHT HOME(M0_Q100) / TIGHT AWAY(M100_Q100). Tyson picks a family and listens; Claude turns the card into hidden response frames.",
+    "classes_are_internal": "The E-mu-style class taxonomy (LPF/HPF/BPF/EQ_BOOST/EQ_CUT/VOWEL/PHASER/FLANGER/RESONANCE/WAH/DISTORTION/SPECIAL_FX/HYBRID) is INTERNAL inspiration only. Never shown in the shipped player. No E-mu/Morpheus/Z-plane branding product-facing.",
+    "template": "Each card pulls its generation params (features/morph/Q/gates) from tools/target_templates.json by name — single source, no duplicated DSP.",
+    "reference_inspiration": "Optional slug into bodies/rom. Used ONLY via the --reference path to shape the brief. Never copied, never shipped, name never carried forward.",
+    "knock_note": "808 character is KNOCK + GRIT, not low boost. The sub is the source's job; the Knock card leaves the weight alone and sculpts mid punch + upper tear. A sub-dominant body is a failure, and the Knock gate culls it (low_rolloff_min_db).",
+    "clean_room": "Commercial release needs legal review. Do not copy or ship legacy coefficients, packed words, ROM data, exact curves, or preset names."
+  },
+  "classes": {
+    "LPF": "low pass — keeps weight, sheds the top",
+    "HPF": "high pass — sheds the weight, keeps the edge",
+    "BPF": "band pass — one window of the spectrum, the rest gone",
+    "EQ_BOOST": "lifts chosen bands (formant/peak boosts)",
+    "EQ_CUT": "carves chosen bands away (notches, fracture teeth)",
+    "VOWEL": "vowel/talkbox mouth shapes that morph between vowels",
+    "PHASER": "moving notches that sweep through the body",
+    "FLANGER": "tight comb of notches, metallic sweep",
+    "RESONANCE": "sharp ringing modes — metal, glass, screaming peaks",
+    "WAH": "one strong peak that sweeps like a mouth/pedal",
+    "DISTORTION": "the violence the corners drive through the chip path",
+    "SPECIAL_FX": "inharmonic, broken, attention-grabbing oddities",
+    "HYBRID": "two class behaviours fused into one machine"
+  },
+  "cards": [
+    {
+      "name": "Vocal",
+      "campaign": "vocal",
+      "classes": ["VOWEL"],
+      "template": "bright_vowel",
+      "job": "a formant mouth — vowel / talkbox character",
+      "good_on": ["vocals", "talkbox", "leads", "synth stabs"],
+      "morph": "changes the vowel (ah to ee to oo)",
+      "q": "tightens the talk — clearer speech, not a whistle",
+      "avoid": ["vowel identity disappears", "low band turns muddy", "Q becomes a dog-whistle"],
+      "reference_inspiration": "ooh_to_eee"
+    },
+    {
+      "name": "Cavity",
+      "campaign": "cavity",
+      "classes": ["BPF", "RESONANCE"],
+      "template": "bottle_cavity",
+      "job": "a hollow boxed / tube body with one controlled mouth tone",
+      "good_on": ["vocals", "synths", "drums", "drones"],
+      "morph": "changes the size of the cavity",
+      "q": "deepens the hollow and the mouth contrast",
+      "avoid": ["pedestal bass", "plain EQ bump with no hollow", "neck tone becomes a single whistle"],
+      "reference_inspiration": "deep_bouche"
+    },
+    {
+      "name": "Resonant",
+      "campaign": "resonant",
+      "classes": ["RESONANCE", "WAH"],
+      "template": "small_metal_shell",
+      "job": "sharp ringing / screaming peaks — metal, glass, scream",
+      "good_on": ["percussion", "metallic leads", "fx", "drums"],
+      "morph": "sweeps the ring / changes the shell tension",
+      "q": "makes it scream — harder, more selective",
+      "avoid": ["too harmonic, turns organ-like", "too wide, becomes ordinary EQ", "one mode dominates"],
+      "reference_inspiration": "klang_kling"
+    },
+    {
+      "name": "Knock",
+      "campaign": "knock",
+      "classes": ["EQ_BOOST", "DISTORTION"],
+      "template": "knock",
+      "job": "808 destroyer — knock + grit + upper tear, the sub left alone",
+      "good_on": ["808", "bass", "sub", "trap loops", "drum bus"],
+      "morph": "drives the tear up the body without touching the weight",
+      "q": "sets knock vs tear",
+      "avoid": ["pedestal sub / one-note boom", "knock disappears", "all grit, no weight to ride on"],
+      "reference_inspiration": "bass_o_matic"
+    },
+    {
+      "name": "Comb",
+      "campaign": "comb",
+      "classes": ["PHASER", "FLANGER"],
+      "template": "broken_comb",
+      "job": "regular moving teeth — hollow, phaser / flanger sweep",
+      "good_on": ["pads", "synths", "loops", "noise"],
+      "morph": "slides the teeth across the spectrum",
+      "q": "deepens the teeth",
+      "avoid": ["comb too shallow / polite", "mid body erased by the notches", "teeth feel regular and dead"],
+      "reference_inspiration": "tooth_comb"
+    },
+    {
+      "name": "Cut",
+      "campaign": "cut",
+      "classes": ["EQ_CUT", "PHASER"],
+      "template": "razor_shell",
+      "job": "carved bands / fracture — a razor that tears the high end",
+      "good_on": ["808", "hats", "distorted loops", "drum bus"],
+      "morph": "moves the cut / teeth pattern",
+      "q": "selects, tightens and deepens the cuts",
+      "avoid": ["low-end pedestal", "dog-whistle spike", "dead midpoint", "teeth dominate the body"],
+      "reference_inspiration": "razor_blades"
+    },
+    {
+      "name": "Violence",
+      "campaign": "violence",
+      "classes": ["DISTORTION", "RESONANCE", "SPECIAL_FX"],
+      "template": "violence",
+      "job": "the body screams, tears, and walks the wreckage across the spectrum",
+      "good_on": ["leads", "808", "vocal destruction", "noise", "FX"],
+      "morph": "the violence walks — features cross octaves between HOME and AWAY",
+      "q": "turns peaks into screams",
+      "avoid": ["polite", "balanced", "EQ tilt", "anything safe"],
+      "reference_inspiration": "razor_blades"
+    }
+  ]
+}

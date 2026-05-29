@@ -86,6 +86,27 @@ impl Default for DebugToggles {
     }
 }
 
+/// Output soft-limiter — the final safety stage.
+///
+/// The AGC index wraps (`& 0xf`, faithful to the hardware `FUN_1802c04e0`): a ring
+/// transient that drives `gain·|x|` past 16 wraps back into the no-reduction zone,
+/// so the limiter momentarily fails and a spike passes ungained. With output boost
+/// (~×4) that reaches ~18× full scale and the host hard-clips it — the audible
+/// "distortion". This bounds the output to ±1 while staying **transparent below the
+/// knee** (normal level passes untouched), turning those spikes into clean limiting
+/// instead of digital clip. Gated by `saturation_enabled`, which until now was
+/// declared but wired to nothing.
+#[inline]
+fn saturate(x: f32) -> f32 {
+    const KNEE: f32 = 0.9;
+    let a = x.abs();
+    if a <= KNEE {
+        x
+    } else {
+        x.signum() * (KNEE + (1.0 - KNEE) * ((a - KNEE) / (1.0 - KNEE)).tanh())
+    }
+}
+
 /// Stereo Filter Engine — handles dual cascades, Mackie saturation, and QSound.
 pub struct FilterEngine {
     cascade_l: Cascade,
@@ -291,6 +312,13 @@ impl FilterEngine {
         if self.debug.dc_block_enabled {
             sl = self.dc_blocker_l.process(sl);
             sr = self.dc_blocker_r.process(sr);
+        }
+
+        // 7. Output saturation — final safety stage (see `saturate`). Catches the
+        // AGC-wrap spikes that otherwise hard-clip at the host.
+        if self.debug.saturation_enabled {
+            sl = saturate(sl);
+            sr = saturate(sr);
         }
 
         (sl, sr)

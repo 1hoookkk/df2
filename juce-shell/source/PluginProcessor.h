@@ -5,12 +5,16 @@
 #include "parameters/TrenchParameters.h"
 #include "dsp/TrenchDspBridge.h"
 #include "dsp/FixedRateTrenchIsland.h"
-#include "TrenchAuthoringSlot.h"
+#include "dsp/TeleportEngine.h"
+#include "dsp/TrenchCleanBody.h"
 
 #include <array>
 #include <atomic>
 
-class PluginProcessor final : public juce::AudioProcessor
+class PluginProcessor final : public juce::AudioProcessor,
+                              private juce::AudioProcessorValueTreeState::Listener,
+                              private juce::AsyncUpdater,
+                              private juce::Timer
 {
 public:
     PluginProcessor();
@@ -51,9 +55,34 @@ public:
     static constexpr int kScopeLen = 512;
     int copyScopeSamples (float* outL, float* outR, int count) const noexcept;
 
+    // Status readout for the FX pane: which body is loaded and whether the last
+    // load (body switch or authoring-slot hot-reload) parsed cleanly.
+    int  getLoadedBodyIndex() const noexcept { return loadedBodyIndex.load (std::memory_order_relaxed); }
+    bool getLastLoadOk()      const noexcept { return lastLoadOk.load (std::memory_order_relaxed); }
+    bool isCleanGroundTruthAudio() const noexcept { return trench::clean_audio::kEnabled(); }
+
 private:
+    // juce::AudioProcessorValueTreeState::Listener — body switching. May be
+    // called on the audio thread (automation), so we only stash the request and
+    // defer the JSON parse/load to handleAsyncUpdate() on the message thread.
+    void parameterChanged (const juce::String& parameterID, float newValue) override;
+    void handleAsyncUpdate() override;
+    // Hot-reloads the Forge audition slot, but only while the audition body is
+    // the selected body — so it never overrides a normal body selection.
+    void timerCallback() override;
+    void forceCleanAudioUiState();
+    void setParameterDenormalized (const char* parameterID, float value);
+
     trench::FixedRateTrenchIsland fixedRateIsland;
-    trench::TrenchAuthoringSlot authoringSlot;
+    trench::TeleportEngine        teleportEngine;
+
+    std::atomic<int>  pendingBodyIndex { 0 };
+    std::atomic<int>  loadedBodyIndex { 0 };
+    std::atomic<bool> lastLoadOk { true };
+    juce::Time        auditionSlotMtime;
+
+    // Final user makeup gain (dB param -> linear), ramped to avoid zipper noise.
+    juce::LinearSmoothedValue<float> outputGain { 1.0f };
     std::atomic<float> inputMeterL { 0.0f };
     std::atomic<float> inputMeterR { 0.0f };
 

@@ -1,11 +1,8 @@
+use crate::dsp::AGC_TABLE;
+
 /// Table-driven post-cascade soft limiter (verified against EmulatorX.dll binary).
 /// All 16 table values confirmed exact. Algorithm confirmed from FUN_1802c04e0.
 /// Index uses `& 0xF` wrapping (not clamp). No gain floor — gain can drop to zero.
-const AGC_TABLE: [f32; 16] = [
-    1.0001, 1.0001, 0.996, 0.990, 0.920, 0.500, 0.200, 0.160, 0.120, 0.120, 0.120, 0.120, 0.120,
-    0.120, 0.120, 0.120,
-];
-
 #[inline(always)]
 pub fn agc_step(sample: f32, agc_gain: &mut f32) -> f32 {
     let abs_sample = sample.abs();

@@ -10,6 +10,12 @@
     "format": { "type": "string", "const": "compiled-v1" },
     "name":   { "type": "string", "minLength": 1 },
     "sampleRate": { "type": "number", "exclusiveMinimum": 0 },
+    "authoringModel": {
+      "type": "string",
+      "description": "Optional authoring provenance. response-surface-v1 means the magnitude/motion/Q surface is the design truth and keyframe stages are packed realization/readback.",
+      "enum": ["response-surface-v1"]
+    },
+    "responseAudit": { "$ref": "#/$defs/response_audit" },
     "keyframes": {
       "type": "array",
       "minItems": 4,
@@ -34,10 +40,81 @@
         "boost": { "type": "number" },
         "stages": {
           "type": "array",
-          "minItems": 12,
+          "minItems": 6,
           "maxItems": 12,
           "items": { "$ref": "#/$defs/stage" }
+        },
+        "packedWords": {
+          "type": "array",
+          "minItems": 6,
+          "maxItems": 6,
+          "items": {
+            "type": "array",
+            "minItems": 5,
+            "maxItems": 5,
+            "items": { "type": "integer", "minimum": 0, "maximum": 65535 }
+          }
         }
+      }
+    },
+    "response_audit": {
+      "type": "object",
+      "description": "Machine-readable audit of the response-first authoring target after packing.",
+      "required": ["contract", "sample_rate_hz", "grid_points", "corners", "motion", "q", "packing"],
+      "additionalProperties": true,
+      "properties": {
+        "contract": { "type": "string" },
+        "sample_rate_hz": { "type": "number", "exclusiveMinimum": 0 },
+        "grid_points": { "type": "integer", "minimum": 2 },
+        "corners": {
+          "type": "array",
+          "minItems": 4,
+          "maxItems": 4,
+          "items": { "$ref": "#/$defs/response_summary" }
+        },
+        "motion": { "$ref": "#/$defs/axis_motion" },
+        "q": { "$ref": "#/$defs/axis_motion" },
+        "packing": {
+          "type": "object",
+          "required": ["rms_db", "peak_db"],
+          "properties": {
+            "rms_db": { "type": "number" },
+            "peak_db": { "type": "number" }
+          }
+        }
+      }
+    },
+    "response_summary": {
+      "type": "object",
+      "required": ["label", "peak_db", "centroid_hz", "slope_db_per_octave", "bands"],
+      "properties": {
+        "label": { "type": "string" },
+        "peak_db": { "type": "number" },
+        "centroid_hz": { "type": "number" },
+        "slope_db_per_octave": { "type": "number" },
+        "bands": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "required": ["name", "db"],
+            "properties": {
+              "name": { "type": "string" },
+              "db": { "type": "number" }
+            }
+          }
+        }
+      }
+    },
+    "axis_motion": {
+      "type": "object",
+      "required": ["axis", "from", "to", "rms_delta_db", "centroid_delta_hz", "peak_delta_db"],
+      "properties": {
+        "axis": { "type": "string" },
+        "from": { "type": "string" },
+        "to": { "type": "string" },
+        "rms_delta_db": { "type": "number" },
+        "centroid_delta_hz": { "type": "number" },
+        "peak_delta_db": { "type": "number" }
       }
     },
     "stage": {

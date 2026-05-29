@@ -37,14 +37,20 @@ mod audition {
     }
 
     fn load_mono_f32(path: &Path) -> Vec<f32> {
-        let mut reader = WavReader::open(path)
-            .unwrap_or_else(|e| panic!("open {}: {e}", path.display()));
+        let mut reader =
+            WavReader::open(path).unwrap_or_else(|e| panic!("open {}: {e}", path.display()));
         let spec = reader.spec();
         assert_eq!(spec.sample_rate, SR);
         assert_eq!(spec.sample_format, SampleFormat::Float);
-        let interleaved: Vec<f32> =
-            reader.samples::<f32>().map(|s| s.expect("sample")).collect();
-        interleaved.iter().step_by(spec.channels as usize).copied().collect()
+        let interleaved: Vec<f32> = reader
+            .samples::<f32>()
+            .map(|s| s.expect("sample"))
+            .collect();
+        interleaved
+            .iter()
+            .step_by(spec.channels as usize)
+            .copied()
+            .collect()
     }
 
     /// Fixed-coefficient Cascade render: warm the ramp up on silence so the
@@ -90,7 +96,11 @@ mod audition {
         let out_dir = PathBuf::from(OUT_DIR);
 
         println!("\nmorph sweep — Talking Hedz, encoded-domain interpolation");
-        println!("dry: {} samples ({:.2} s)\n", dry.len(), dry.len() as f32 / SR as f32);
+        println!(
+            "dry: {} samples ({:.2} s)\n",
+            dry.len(),
+            dry.len() as f32 / SR as f32
+        );
 
         let mut count = 0;
         for &q in &[0.0f32, 1.0] {

@@ -26,6 +26,8 @@ _lib = None
 _lib_path: Path | None = None
 _load_attempted = False
 _engine_ok = False  # the stateful FilterEngine symbols (audition) bound OK
+_agc_ok = False     # the read-only trench_agc_table symbol bound OK
+_fit_ok = False     # the trench_fit_corner_from_magnitude symbol bound OK
 
 
 def _candidate_paths():
@@ -79,6 +81,8 @@ def _load():
             _lib = lib
             _lib_path = path
             _bind_engine(lib)  # optional: stateful audition path (separate, non-fatal)
+            _bind_agc(lib)     # optional: read-only AGC curve accessor (non-fatal)
+            _bind_fit(lib)     # optional: response-curve factorizer (non-fatal)
             return _lib
         except (OSError, AttributeError):
             continue
@@ -111,6 +115,101 @@ def _bind_engine(lib) -> None:
         _engine_ok = True
     except AttributeError:
         _engine_ok = False
+
+
+def _bind_agc(lib) -> None:
+    """Bind the read-only AGC-table accessor. Kept separate (non-fatal) so a DLL
+    missing it (older build) still delegates the packed math; `agc_table()` then
+    falls back to its in-module mirror."""
+    global _agc_ok
+    try:
+        lib.trench_agc_table.argtypes = [ctypes.POINTER(ctypes.c_float), ctypes.c_size_t]
+        lib.trench_agc_table.restype = ctypes.c_int
+        _agc_ok = True
+    except AttributeError:
+        _agc_ok = False
+
+
+def _bind_fit(lib) -> None:
+    """Bind the response-curve factorizer. Non-fatal: a DLL missing it (older
+    build) still delegates the packed math; `fit_corner_from_magnitude()` raises."""
+    global _fit_ok
+    try:
+        lib.trench_fit_corner_from_magnitude.argtypes = [
+            ctypes.POINTER(ctypes.c_double),  # freqs[n]
+            ctypes.POINTER(ctypes.c_double),  # dbs[n]
+            ctypes.c_size_t,                  # n
+            ctypes.c_double,                  # runtime_sr
+            ctypes.POINTER(ctypes.c_double),  # out[30] kernel coeffs
+        ]
+        lib.trench_fit_corner_from_magnitude.restype = ctypes.c_int
+        _fit_ok = True
+    except AttributeError:
+        _fit_ok = False
+
+
+# The canonical AGC / global-compression curve lives in exactly ONE place:
+# `trench-core/src/dsp/mod.rs::AGC_TABLE`. `agc_table()` reads it via FFI and
+# RAISES if the core isn't built — there is deliberately NO in-Python mirror, so
+# a stale copy can never silently stand in for the engine's real curve.
+_AGC_TABLE_LEN = 16  # trench-core AGC_TABLE is [f32; 16] — a length, not the data
+
+
+def agc_table() -> tuple[float, ...]:
+    """The canonical 16-entry AGC / global-compression curve, read from the
+    shipped trench-core (single source of truth = `AGC_TABLE` in
+    `trench-core/src/dsp/mod.rs`).
+
+    Raises RuntimeError if the library isn't built/loadable or is a stale build
+    missing `trench_agc_table`. No fallback by design — build it with
+    `cargo build --release -p trench-core`.
+    """
+    lib = _load()
+    if lib is None:
+        raise RuntimeError(
+            "trench_core library not available; cannot read the canonical AGC table. "
+            "Build it: cargo build --release -p trench-core"
+        )
+    if not _agc_ok:
+        raise RuntimeError(
+            "trench_core is loaded but missing trench_agc_table (stale build); "
+            "rebuild: cargo build --release -p trench-core"
+        )
+    buf = (ctypes.c_float * _AGC_TABLE_LEN)()
+    wrote = lib.trench_agc_table(buf, ctypes.c_size_t(_AGC_TABLE_LEN))
+    if wrote <= 0:
+        raise RuntimeError(f"trench_agc_table failed (rc={wrote})")
+    return tuple(float(buf[i]) for i in range(int(wrote)))
+
+
+def fit_corner_from_magnitude(curve, runtime_sr: float = 39062.5) -> list[tuple[float, ...]]:
+    """Factorize a target magnitude curve into one fitted corner via the shipped
+    Rust factorizer (`arma::fit_corner_from_magnitude`).
+
+    `curve` is a sorted iterable of (freq_hz, db) points. Returns 6 kernel-form
+    rows (c0..c4). Raises RuntimeError if the core isn't built/loadable or the
+    fitter returns None (degenerate target). The fit is dumb on purpose — the
+    taste lives in the curve, not here.
+    """
+    lib = _load()
+    if lib is None or not _fit_ok:
+        raise RuntimeError(
+            "trench_core factorizer unavailable; build: cargo build --release -p trench-core"
+        )
+    pts = [(float(f), float(d)) for f, d in curve]
+    n = len(pts)
+    if n < 2:
+        raise ValueError("curve needs at least 2 points")
+    fs = (ctypes.c_double * n)(*[f for f, _ in pts])
+    ds = (ctypes.c_double * n)(*[d for _, d in pts])
+    out = (ctypes.c_double * (NUM_STAGES * NUM_COEFFS))()
+    rc = lib.trench_fit_corner_from_magnitude(
+        fs, ds, ctypes.c_size_t(n), ctypes.c_double(float(runtime_sr)), out
+    )
+    if rc != 0:
+        raise RuntimeError(f"trench_fit_corner_from_magnitude failed (rc={rc})")
+    flat = list(out)
+    return [tuple(flat[si * NUM_COEFFS:(si + 1) * NUM_COEFFS]) for si in range(NUM_STAGES)]
 
 
 def available() -> bool:
@@ -156,6 +255,55 @@ def engine_render(body_bytes: bytes, morph: float, q: float, in_f32_bytes: bytes
         lib.trench_engine_process_block(eng, left, right, ctypes.c_int(n),
                                         ctypes.c_double(float(morph)), ctypes.c_double(float(q)))
         return bytes(left)
+    finally:
+        lib.trench_engine_destroy(eng)
+
+
+def engine_render_automated(body_bytes: bytes, morph_per_block, q_per_block,
+                            in_f32_bytes: bytes, sr: float = 39062.5,
+                            input_mode: int = 0, spatial_mode: int = 2,
+                            block: int = 512) -> bytes:
+    """Render mono input through the shipped engine while AUTOMATING (morph, q).
+
+    Holds ONE engine instance and steps `(morph, q)` per `block` samples via
+    repeated `process_block`, so filter state is continuous (no clicks/resets) —
+    the genuine shipped path for slow Morph/Q/diagonal sweeps. `morph_per_block`
+    and `q_per_block` are sequences (one value per block; last value is held if
+    short). Returns processed left channel as little-endian float32 bytes.
+    """
+    lib = _load()
+    if lib is None or not _engine_ok:
+        raise RuntimeError("trench_core engine FFI not available")
+    if len(body_bytes) != BODY_BYTES:
+        raise ValueError(f"body must be {BODY_BYTES} bytes, got {len(body_bytes)}")
+    total = len(in_f32_bytes) // 4
+    nb = max(1, (total + block - 1) // block)
+    mlen, qlen = len(morph_per_block), len(q_per_block)
+    eng = lib.trench_engine_create()
+    if not eng:
+        raise RuntimeError("trench_engine_create returned null")
+    try:
+        lib.trench_engine_prepare(eng, ctypes.c_double(float(sr)))
+        rc = lib.trench_engine_load_body_bytes(eng, bytes(body_bytes), len(body_bytes))
+        if rc != 0:
+            raise RuntimeError(f"load_body_bytes failed (rc={rc})")
+        lib.trench_engine_set_input_mode(eng, ctypes.c_int(int(input_mode)))
+        lib.trench_engine_set_spatial_mode(eng, ctypes.c_int(int(spatial_mode)))
+        out = bytearray()
+        for bi in range(nb):
+            s = bi * block * 4
+            chunk = in_f32_bytes[s:s + block * 4]
+            cn = len(chunk) // 4
+            if cn == 0:
+                break
+            m = float(morph_per_block[min(bi, mlen - 1)])
+            q = float(q_per_block[min(bi, qlen - 1)])
+            left = (ctypes.c_float * cn).from_buffer_copy(chunk)
+            right = (ctypes.c_float * cn).from_buffer_copy(chunk)
+            lib.trench_engine_process_block(eng, left, right, ctypes.c_int(cn),
+                                            ctypes.c_double(m), ctypes.c_double(q))
+            out += bytes(left)
+        return bytes(out)
     finally:
         lib.trench_engine_destroy(eng)
 

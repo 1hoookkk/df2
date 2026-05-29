@@ -199,6 +199,106 @@ fn packed_on_some_corners_only_is_rejected() {
 }
 
 #[test]
+fn ffi_interpolate_matches_in_process_packed_corners() {
+    use trench_core::minifloat::{decode, PackedCorners};
+    let words = corner_words();
+    let bytes = raw_bytes(&words);
+    let packed = PackedCorners::from_body_bytes(&bytes).unwrap();
+
+    for (m, q) in [
+        (0.0, 0.0),
+        (1.0, 0.0),
+        (0.0, 1.0),
+        (1.0, 1.0),
+        (0.5, 0.5),
+        (0.3, 0.7),
+    ] {
+        let want = packed.interpolate(m as f32, q as f32); // kernel form
+        let mut out = [0.0f64; 30];
+        let rc = unsafe {
+            trench_core::ffi::trench_packed_interpolate(
+                bytes.as_ptr(),
+                bytes.len(),
+                m,
+                q,
+                out.as_mut_ptr(),
+            )
+        };
+        assert_eq!(rc, 0, "ffi interpolate failed at ({m},{q})");
+        for si in 0..6 {
+            for ci in 0..5 {
+                assert_eq!(
+                    out[si * 5 + ci],
+                    want[si][ci],
+                    "ffi vs in-process interpolate differ at ({m},{q}) s{si} c{ci}"
+                );
+            }
+        }
+    }
+
+    // decode parity: the FFI codec is the same `decode`.
+    for w in [0u16, 1, 0x0040, 0x1000, 0x8000, 0xC000, 0xFFFF] {
+        assert_eq!(trench_core::ffi::trench_packed_decode(w), decode(w));
+    }
+
+    // length rejection through the FFI.
+    let mut out = [0.0f64; 30];
+    let rc = unsafe {
+        trench_core::ffi::trench_packed_interpolate(bytes.as_ptr(), 239, 0.5, 0.5, out.as_mut_ptr())
+    };
+    assert_eq!(rc, -4, "FFI must reject non-240-byte length");
+}
+
+#[test]
+fn corner_kernel_decodes_each_corner_verbatim() {
+    use trench_core::minifloat::{stage_words_to_kernel, PackedCorners};
+    let words = corner_words();
+    let packed = PackedCorners::from_body_bytes(&raw_bytes(&words)).unwrap();
+
+    // Direct unpack via corner_kernel must equal the per-stage
+    // stage_words_to_kernel applied to each stored corner's words. This is the
+    // primitive load_reference_rom uses to decode ROM corners without going
+    // through the interpolation path.
+    for ci in 0..4 {
+        let got = packed.corner_kernel(ci);
+        for si in 0..6 {
+            let want = stage_words_to_kernel(packed.words[ci][si]);
+            assert_eq!(
+                got[si], want,
+                "corner_kernel({ci}) stage {si} != stage_words_to_kernel(words[{ci}][{si}])"
+            );
+        }
+    }
+}
+
+#[test]
+fn corner_kernel_matches_interpolate_at_grid_points() {
+    use trench_core::minifloat::PackedCorners;
+    let words = corner_words();
+    let packed = PackedCorners::from_body_bytes(&raw_bytes(&words)).unwrap();
+
+    // At the four grid points, decode-via-interpolate happens to be byte-
+    // identical to direct unpack today (lerp_u16(_,_,0)=a and (_,_,1)=b for
+    // u16 inputs). Lock this equivalence as a test so any future change to
+    // lerp_u16 or stage_words_to_kernel keeps the two primitives consistent
+    // at the grid — and so the FG-1 refactor (load_reference_rom switching
+    // from interpolate-at-corner to corner_kernel) stays bit-identical.
+    let grid = [
+        (0, 0.0f32, 0.0f32),
+        (1, 1.0, 0.0),
+        (2, 0.0, 1.0),
+        (3, 1.0, 1.0),
+    ];
+    for (ci, m, q) in grid {
+        assert_eq!(
+            packed.corner_kernel(ci),
+            packed.interpolate(m, q),
+            "corner_kernel({ci}) != interpolate({m},{q}) — grid-point equivalence broken"
+        );
+    }
+}
+
+#[test]
 fn non_240_byte_raw_load_is_rejected() {
     let words = corner_words();
     let bytes = raw_bytes(&words);

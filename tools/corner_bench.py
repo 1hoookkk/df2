@@ -1,30 +1,36 @@
 #!/usr/bin/env python3
-"""Corner Bench — poke a 240-byte body, hear it, keep the ones that bite.
+"""Corner Bench — an audition + mutation surface for a 240-byte body.
 
-The body is the 240 bytes. Nothing here authors stages, BodySpec, Actors, EQ
-primitives, or all-pole/LPC anything. You load a body, nudge a single packed
-u16 word, and the bench re-renders WAVs so you can decide by ear. The renders
-reuse the exact teleport_stress signal path, so what you hear here is what the
-runtime does.
+The body is the 240 bytes; the vocabulary is the SOUND, not the words. Nothing
+here authors stages, roles, BodySpec, Actors, or freq/Q tables. You roll a body,
+hear it, mutate it, undo, A/B it, and keep the ones that bite. Every render
+reuses the exact teleport_stress signal path, so what you hear is the runtime.
 
-Inputs (all collapse to BodyBytes240 internally):
-  - raw .body240 / .bin / .bytes / .raw
-  - compiled cart JSON with packedWords
-  - packed-body-v1 TOML/JSON
+The verbs:
+  random   roll a fresh body (gated stable + no pedestal)
+  mutate   nudge the current body by one random stable move
+  undo     step the current body back one move
+  (A/B)    every page plays before-vs-now side by side
+  teleport teleport-stress rack (noise / strobe / derivative)
+  save     --save-keeper NAME  ->  dev/tmp/keepers/
 
-Poke one word:
-  python tools/corner_bench.py bodies/neon_vane.body240 \
-      --corner M100_Q100 --row 2 --word 3 --delta 0x0040
+    python tools/corner_bench.py --random
+    python tools/corner_bench.py --mutate          # again, and again, by ear
+    python tools/corner_bench.py --undo
+    python tools/corner_bench.py --save-keeper rust_choir
 
-Keep one:
-  python tools/corner_bench.py dev/tmp/corner_bench/current.body240 \
-      --save-keeper my_keeper
+Load an existing body to audition / continue it:
+    python tools/corner_bench.py bodies/keeper_04.cart.json
+
+The raw packed words are an emergency hatch (hidden in the audition page, and
+the explicit --corner/--row/--word/--delta poke) — not the vocabulary.
 """
 from __future__ import annotations
 
 import argparse
 import copy
 import json
+import random
 import sys
 from pathlib import Path
 from typing import Any
@@ -40,6 +46,8 @@ for _p in (str(ROOT), str(TOOLS)):
 
 import author_body as ab  # noqa: E402
 import teleport_stress as ts  # noqa: E402
+from pyruntime import packed_interp as pi  # noqa: E402  (the delegation chokepoint)
+import packed_random as pr  # noqa: E402  (single owner: random body + stability gate)
 
 CORNER_ORDER = ab.CORNER_ORDER  # M0_Q0, M100_Q0, M0_Q100, M100_Q100
 RAW_BYTES = ab.RAW_BYTES  # 240
@@ -132,6 +140,27 @@ def apply_mutation(words: dict[str, list[tuple[int, ...]]],
     rows[row][word] = new
     words[corner] = [tuple(r) for r in rows]
     return old, new
+
+
+def random_stable_mutation(words: dict[str, list[tuple[int, ...]]], amount: int) -> tuple[str, int, int, int]:
+    """Pick a random (corner,row,word) and a signed delta that leaves the poked
+    stage stable. By ear, not by design — the move is blind on purpose. Never
+    touches one row 'as a job'; it's a random nudge to the 240 bytes."""
+    amount = max(1, int(amount))
+    corner, row, word, delta = CORNER_ORDER[0], 0, 0, amount
+    for _ in range(600):
+        corner = random.choice(CORNER_ORDER)
+        row = random.randrange(STAGES)
+        word = random.randrange(WORDS_PER_STAGE)
+        delta = random.randint(-amount, amount)
+        if delta == 0:
+            continue
+        cur = int(words[corner][row][word]) & 0xFFFF
+        trial = list(words[corner][row])
+        trial[word] = (cur + delta) & 0xFFFF
+        if pr.stage_stable(trial):
+            return corner, row, word, delta
+    return corner, row, word, delta  # best effort; the badge flags any instability
 
 
 # ── history ─────────────────────────────────────────────────────────────────────
@@ -290,47 +319,50 @@ def write_audition_html(path: Path, report: dict[str, Any],
   .badge.ok{{background:#173d2c;color:#7fe0aa}}
   .badge.bad{{background:#4a1414;color:#ff8a8a}}
   code{{background:#11201b;padding:1px 6px;border-radius:3px;color:#bfe}}
+  details.hatch{{margin-top:30px;border-top:1px solid #1d2422;padding-top:10px}}
+  details.hatch>summary{{cursor:pointer;color:#5f7d70;font:12px ui-monospace,Consolas,monospace}}
+  details.hatch h3{{color:#6f9c8a;margin:16px 0 4px;font-size:13px}}
 </style>
 <main>
   <h1>Corner Bench — {report['name']}</h1>
   <p class="muted">origin: <code>{hist.get('origin_source','?')}</code> ·
-     <span class="badge {badge_cls}">{badge}</span> ·
-     max pole r {stab['max_pole_radius']:.5f}</p>
+     <span class="badge {badge_cls}">{badge}</span></p>
 
-  <h2>Listen — original vs mutated</h2>
+  <h2>A / B — before vs now</h2>
   <div class="ab">
     <section class="player">
-      <h3>Original — slow sweep</h3>
-      <p class="muted">the body before this session's pokes</p>
+      <h3>A — before</h3>
+      <p class="muted">the body before this session's moves</p>
       <audio controls preload="none" src="sweep_slow_original.wav"></audio>
     </section>
     <section class="player">
-      <h3>Mutated — slow sweep</h3>
+      <h3>B — now</h3>
       <p class="muted">current body, full morph/Q field</p>
       <audio controls preload="none" src="sweep_slow.wav"></audio>
     </section>
   </div>
 
-  <h2>Teleport stress (mutated)</h2>
+  <h2>Teleport stress</h2>
   {teleports}
 
-  <h2>Current words (hex)</h2>
-  {_hex_table(words, hot)}
-
-  <h2>Mutation history</h2>
-  {_history_html(hist)}
-
-  <h2>Stability</h2>
-  <table class="hist">
-    <tr><th>nonfinite state events</th><td>{stab['nonfinite_state_events']}</td></tr>
-    <tr><th>nonfinite coeff rows</th><td>{stab['nonfinite_coeff_rows']}</td></tr>
-    <tr><th>unstable denominator rows</th><td>{stab['unstable_denominator_rows']}</td></tr>
-    <tr><th>max pole radius</th><td>{stab['max_pole_radius']:.6f}</td></tr>
-  </table>
-
   <h2>Keep it</h2>
-  <p class="muted">If it bites, save it:</p>
-  <p><code>python tools/corner_bench.py dev/tmp/corner_bench/current.body240 --save-keeper NAME</code></p>
+  <p class="muted">If it bites, name it and keep it:</p>
+  <p><code>python tools/corner_bench.py --save-keeper NAME</code></p>
+
+  <details class="hatch">
+    <summary>raw words &amp; moves — emergency hatch (the sound is the vocabulary, not this)</summary>
+    <h3>Stability</h3>
+    <table class="hist">
+      <tr><th>nonfinite state events</th><td>{stab['nonfinite_state_events']}</td></tr>
+      <tr><th>nonfinite coeff rows</th><td>{stab['nonfinite_coeff_rows']}</td></tr>
+      <tr><th>unstable denominator rows</th><td>{stab['unstable_denominator_rows']}</td></tr>
+      <tr><th>max pole radius</th><td>{stab['max_pole_radius']:.6f}</td></tr>
+    </table>
+    <h3>Current words</h3>
+    {_hex_table(words, hot)}
+    <h3>Moves this session</h3>
+    {_history_html(hist)}
+  </details>
 </main>
 """
     path.write_text(html, encoding="utf-8")
@@ -362,69 +394,130 @@ def save_keeper(body: Path, keeper_name: str) -> int:
 def main(argv: list[str]) -> int:
     ap = argparse.ArgumentParser(description=__doc__,
                                  formatter_class=argparse.RawDescriptionHelpFormatter)
-    ap.add_argument("body", type=Path, help=".body240, compiled cart JSON, or packed-body-v1 TOML/JSON")
-    ap.add_argument("--corner", choices=CORNER_ORDER, help="corner to poke")
-    ap.add_argument("--row", type=int, help=f"stage row 0..{STAGES - 1}")
-    ap.add_argument("--word", type=int, help=f"word 0..{WORDS_PER_STAGE - 1}")
-    ap.add_argument("--delta", type=lambda s: int(s, 0), help="signed nudge, hex (0x..) or int")
-    ap.add_argument("--save-keeper", metavar="NAME", default=None, help="save this body to dev/tmp/keepers/")
+    ap.add_argument("body", type=Path, nargs="?",
+                    help=".body240 / compiled cart JSON / packed-body-v1 — omit for --random/--mutate/--undo")
+    ap.add_argument("--random", action="store_true",
+                    help="roll a fresh random body (gated stable + no pedestal) as the new current")
+    ap.add_argument("--mutate", action="store_true",
+                    help="nudge the current body by one random stable move (by ear, not by design)")
+    ap.add_argument("--undo", action="store_true", help="step the current body back one move")
+    ap.add_argument("--pick", type=lambda s: int(s, 0), default=None,
+                    help="seed for --random/--mutate (reproducible); default entropy")
+    ap.add_argument("--amount", type=lambda s: int(s, 0), default=0x0A00,
+                    help="max packed delta for --mutate")
+    # emergency hatch — explicit word poke (not the vocabulary):
+    ap.add_argument("--corner", choices=CORNER_ORDER, help="[hatch] corner to poke")
+    ap.add_argument("--row", type=int, help=f"[hatch] row 0..{STAGES - 1}")
+    ap.add_argument("--word", type=int, help=f"[hatch] word 0..{WORDS_PER_STAGE - 1}")
+    ap.add_argument("--delta", type=lambda s: int(s, 0), help="[hatch] signed nudge, hex (0x..) or int")
+    ap.add_argument("--save-keeper", metavar="NAME", default=None, help="save current body to dev/tmp/keepers/")
     ap.add_argument("--name", default=None, help="override body name")
     ap.add_argument("--sr", type=int, default=44_100)
     ap.add_argument("--seconds-sweep", type=float, default=2.5)
     ap.add_argument("--seconds-teleport", type=float, default=1.2)
-    ap.add_argument("--seed", type=int, default=0x513DF2)
+    ap.add_argument("--seed", type=int, default=0x513DF2, help="teleport-driver seed")
     ap.add_argument("--containment-drive", type=float, default=4.0)
+    ap.add_argument("--require-core", action="store_true",
+                    help="fail unless interpolation runs through the shipped trench-core (FFI)")
     args = ap.parse_args(argv)
 
-    if args.save_keeper:
-        return save_keeper(args.body, args.save_keeper)
-
-    # 1. load -> 240 bytes
-    try:
-        name, boost, raw_in = load_body(args.body)
-    except (BenchError, OSError, ValueError, json.JSONDecodeError) as exc:
-        print(f"corner_bench error: {exc}", file=sys.stderr)
+    backend = pi.core_backend()
+    if args.require_core and not pi.core_available():
+        print("corner_bench error: trench-core FFI not available "
+              f"(backend={backend}); build it with `cargo build -p trench-core`", file=sys.stderr)
         return 1
-    if args.name:
-        name = args.name
+    print(f"interp   -> {backend}"
+          + (f" [{pi._core.lib_path()}]" if pi.core_available() else ""))
 
-    # 2. session continuity: only continue when re-poking our own current body
+    OUT.mkdir(parents=True, exist_ok=True)
     out_current = OUT / "current.body240"
-    continuing = HISTORY.exists() and args.body.resolve() == out_current.resolve()
-    hist = load_history() if continuing else None
-    if hist is None:
-        hist = {
-            "origin_source": str(args.body),
-            "origin_name": name,
-            "origin_bytes_hex": raw_in.hex(),
-            "mutations": [],
-        }
 
-    # 3. apply mutation (if any)
-    words = copy.deepcopy(words_from_bytes(raw_in))
+    if args.save_keeper:
+        return save_keeper(args.body or out_current, args.save_keeper)
+
+    name = "body"
+    boost = 1.0
     hot: tuple[str, int, int] | None = None
-    if args.corner is not None:
-        if args.row is None or args.word is None or args.delta is None:
-            print("corner_bench error: --corner requires --row, --word and --delta", file=sys.stderr)
+    hist: dict[str, Any] | None = None
+
+    # ── choose the working body + history per verb ───────────────────────────────
+    if args.random:
+        seed = args.pick if args.pick is not None else random.randrange(1 << 32)
+        print(f"random   -> seed 0x{seed:08X}")
+        corners, emergence = pr.random_body(seed=seed)
+        words = {label: corners[i] for i, label in enumerate(CORNER_ORDER)}
+        name = args.name or f"random_{seed & 0xFFFF:04X}"
+        raw0 = ab.raw_from_words(words)
+        hist = {
+            "origin_source": f"random(seed=0x{seed:08X})",
+            "origin_name": name, "origin_bytes_hex": raw0.hex(),
+            "boost": boost, "mutations": [],
+        }
+        print(f"emergence-> {emergence:.2f} dB (middle vs corner mean)")
+
+    elif args.mutate or args.undo:
+        hist = load_history()
+        if hist is None or not out_current.exists():
+            print("corner_bench error: no current body — load one or use --random first", file=sys.stderr)
+            return 1
+        name = args.name or hist.get("origin_name", "body")
+        boost = float(hist.get("boost", 1.0))
+        words = copy.deepcopy(words_from_bytes(out_current.read_bytes()))
+        if args.mutate:
+            if args.pick is not None:
+                random.seed(args.pick)
+            corner, row, word, delta = random_stable_mutation(words, args.amount)
+            old, new = apply_mutation(words, corner, row, word, delta)
+            hist["mutations"].append({"corner": corner, "row": row, "word": word,
+                                      "delta": int(delta), "old": old, "new": new})
+            hot = (corner, row, word)
+            print(f"mutate   -> {corner} r{row} w{word}: {old:04X} -> {new:04X} ({delta:+d})")
+        else:
+            if not hist["mutations"]:
+                print("corner_bench error: nothing to undo", file=sys.stderr)
+                return 1
+            m = hist["mutations"].pop()
+            old, new = apply_mutation(words, m["corner"], m["row"], m["word"], -int(m["delta"]))
+            hot = (m["corner"], m["row"], m["word"])
+            print(f"undo     -> {m['corner']} r{m['row']} w{m['word']}: {old:04X} -> {new:04X}")
+
+    else:
+        if args.body is None:
+            print("corner_bench error: give a body path, or use --random / --mutate / --undo",
+                  file=sys.stderr)
             return 1
         try:
-            old, new = apply_mutation(words, args.corner, args.row, args.word, args.delta)
-        except BenchError as exc:
+            name, boost, raw_in = load_body(args.body)
+        except (BenchError, OSError, ValueError, json.JSONDecodeError) as exc:
             print(f"corner_bench error: {exc}", file=sys.stderr)
             return 1
-        hist["mutations"].append({
-            "corner": args.corner, "row": args.row, "word": args.word,
-            "delta": int(args.delta), "old": old, "new": new,
-        })
-        hot = (args.corner, args.row, args.word)
-        print(f"poke {args.corner} r{args.row} w{args.word}: {old:04X} -> {new:04X} ({int(args.delta):+d})")
+        if args.name:
+            name = args.name
+        continuing = HISTORY.exists() and args.body.resolve() == out_current.resolve()
+        hist = load_history() if continuing else None
+        if hist is None:
+            hist = {"origin_source": str(args.body), "origin_name": name,
+                    "origin_bytes_hex": raw_in.hex(), "boost": boost, "mutations": []}
+        words = copy.deepcopy(words_from_bytes(raw_in))
+        if args.corner is not None:  # hatch poke
+            if args.row is None or args.word is None or args.delta is None:
+                print("corner_bench error: --corner requires --row, --word and --delta", file=sys.stderr)
+                return 1
+            try:
+                old, new = apply_mutation(words, args.corner, args.row, args.word, args.delta)
+            except BenchError as exc:
+                print(f"corner_bench error: {exc}", file=sys.stderr)
+                return 1
+            hist["mutations"].append({"corner": args.corner, "row": args.row, "word": args.word,
+                                      "delta": int(args.delta), "old": old, "new": new})
+            hot = (args.corner, args.row, args.word)
+            print(f"poke     -> {args.corner} r{args.row} w{args.word}: {old:04X} -> {new:04X} ({int(args.delta):+d})")
 
     mutated_bytes = ab.raw_from_words(words)
     assert len(mutated_bytes) == RAW_BYTES, f"mutated body must be {RAW_BYTES} bytes"
 
-    # 4. write current + cart, then render both original and mutated
-    OUT.mkdir(parents=True, exist_ok=True)
-    (OUT / "current.body240").write_bytes(mutated_bytes)
+    # ── write current + cart, render A/B + teleport ──────────────────────────────
+    out_current.write_bytes(mutated_bytes)
     payload = ab.compiled_payload(name, boost, words)
     (OUT / "current.cart.json").write_text(json.dumps(payload, indent=2) + "\n", encoding="utf-8")
 
@@ -442,12 +535,11 @@ def main(argv: list[str]) -> int:
 
     stability = aggregate_stability(sweep_static, sweep_dyn, modes)
 
-    # 5. report + audition
     report = {
         "name": name,
-        "source": str(args.body),
+        "source": str(args.body) if args.body else hist["origin_source"],
         "sample_rate": args.sr,
-        "doctrine": "the body is the 240 bytes; sound first; one packed word at a time",
+        "doctrine": "the body is the 240 bytes; the sound is the vocabulary; one move at a time",
         "sweep": {"dynamic": sweep_dyn, "static_probe": sweep_static},
         "modes": modes,
         "stability": stability,
@@ -467,7 +559,6 @@ def main(argv: list[str]) -> int:
     write_audition_html(OUT / "audition.html", report, words, hist, hot)
     HISTORY.write_text(json.dumps(hist, indent=2), encoding="utf-8")
 
-    # 6. summary
     print(f"body     -> {name}")
     print(f"current  -> {OUT / 'current.body240'}")
     print(f"audition -> {OUT / 'audition.html'}")
@@ -478,8 +569,10 @@ def main(argv: list[str]) -> int:
         f"max_r={stability['max_pole_radius']:.6f} "
         f"{'CLEAN' if stability['clean'] else 'UNSTABLE'}"
     )
-    print(f"mutations: {len(hist['mutations'])}")
-    print("keep it  -> python tools/corner_bench.py dev/tmp/corner_bench/current.body240 --save-keeper NAME")
+    print(f"moves    -> {len(hist['mutations'])} this session")
+    if args.random:
+        print("mutate   -> python tools/corner_bench.py --mutate    (again, by ear)")
+    print("keep it  -> python tools/corner_bench.py --save-keeper NAME")
     return 0
 
 

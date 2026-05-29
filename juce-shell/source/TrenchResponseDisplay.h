@@ -16,12 +16,10 @@ namespace trench
 
 /// DF-II command display — laid out to match the Rossum Morpheus HD reference:
 ///   meters (chunky, L=green, R=red, segments green→yellow→red)
-///   massive preset name      `013 SPEAKER KNOCKERZ`
-///   sub-line numeric         cyan `M 73   Q 100` (positional, no themed labels)
+///   sub-line numeric         M/Q position + input/spatial state
 ///   M / Q / S bars  (left)   2-D corner-bank pad (right) — pad's 4 edges
 ///                            magenta/blue/red/yellow, white `+` inside at (M, Q)
-///   toggle strip             INPUT  |  BIT  (DF-II-specific surfacing)
-///   spectrum                 multi-colour grid + white pixel-stair-step trace
+///   output scope             amplitude-first post-filter stereo waveform
 class TrenchResponseDisplay final : public juce::Component
 {
 public:
@@ -31,12 +29,12 @@ public:
                            juce::AudioProcessorValueTreeState& state,
                            const std::atomic<float>& inputL,
                            const std::atomic<float>& inputR,
-                           ScopeReader scopeReader);
+                           ScopeReader scopeReader,
+                           bool cleanModeIn = false);
     ~TrenchResponseDisplay() override = default;
 
     void paint (juce::Graphics&) override;
     void resized() override;
-    void mouseDown (const juce::MouseEvent&) override;
 
 private:
     static constexpr int   kSamples      = 256;
@@ -59,24 +57,20 @@ private:
     void drawSubLine (juce::Graphics& g) const;
     void drawParamBars (juce::Graphics& g) const;
     void drawCornerBankPad (juce::Graphics& g) const;
-    void drawToggleStrip (juce::Graphics& g) const;
+    bool drawOutputScope (juce::Graphics& g) const;
     void drawTrace (juce::Graphics& g) const;
 
     juce::Rectangle<int> meterBounds() const;
     juce::Rectangle<int> identityBounds() const;
     juce::Rectangle<int> subLineBounds() const;
     juce::Rectangle<int> barsBounds() const;
+    juce::Rectangle<int> paramBarFrame (int rowIndex) const;
     juce::Rectangle<int> cornerBankPadBounds() const;
-    juce::Rectangle<int> toggleStripBounds() const;
-    juce::Rectangle<int> inputCellBounds() const;
-    juce::Rectangle<int> bitCellBounds() const;
     juce::Rectangle<int> spectrumBounds() const;
 
     float param01 (const char* id) const noexcept;
     int   paramInt (const char* id) const noexcept;
     int   bodyIndex() const noexcept;
-    int   pixelStepForBit() const noexcept;
-    void  cycleChoice (const char* id);
 
     static float coeffDistance (const CoeffSet& a, const CoeffSet& b) noexcept;
     static float easeInOutCubic (float t) noexcept;
@@ -87,6 +81,7 @@ private:
     const std::atomic<float>& inputMeterL;
     const std::atomic<float>& inputMeterR;
     ScopeReader scopeReader;
+    bool cleanMode = false;
 
     juce::Image gridImage;
 

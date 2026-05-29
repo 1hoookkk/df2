@@ -36,8 +36,12 @@ public:
         const int fw    = strip.getWidth() / numFrames;
         const int fh    = strip.getHeight();
         const int frame = juce::jlimit (0, numFrames - 1, (int) std::lround (norm * (numFrames - 1)));
-        const auto b    = getLocalBounds();
-        g.drawImage (strip, b.getX(), b.getY(), b.getWidth(), b.getHeight(),
+        const auto b    = getLocalBounds().toFloat().reduced (4.0f, 4.0f);
+        const auto fit  = juce::RectanglePlacement (juce::RectanglePlacement::centred)
+                            .appliedTo ({ 0.0f, 0.0f, (float) fw, (float) fh }, b);
+        g.drawImage (strip,
+                     juce::roundToInt (fit.getX()), juce::roundToInt (fit.getY()),
+                     juce::roundToInt (fit.getWidth()), juce::roundToInt (fit.getHeight()),
                      frame * fw, 0, fw, fh);
     }
 

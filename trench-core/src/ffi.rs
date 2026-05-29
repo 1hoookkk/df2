@@ -1,5 +1,6 @@
 use crate::cartridge::{Cartridge, BODY_BYTES};
 use crate::cascade::{NUM_COEFFS, NUM_STAGES};
+use crate::dsp::AGC_TABLE;
 use crate::engine::{FilterEngine, InputMode, SpatialMode};
 use crate::minifloat::{decode, encode, pole_radius, PackedCorners};
 use libc::{c_char, c_void};
@@ -102,6 +103,64 @@ pub extern "C" fn trench_packed_decode(word: u16) -> f64 {
 #[no_mangle]
 pub extern "C" fn trench_packed_encode(value: f64) -> u16 {
     encode(value)
+}
+
+/// Copy the canonical 16-entry AGC (global compression) curve into `out`.
+///
+/// Stateless, read-only. `AGC_TABLE` (`crate::dsp`) is the engine's post-cascade
+/// gain curve — the single source of "loud without clipping." Python audit tools
+/// read these exact f32 values instead of hand-copying the literal, so they judge
+/// the SAME compression curve the engine applies and can never drift from it.
+///
+/// Returns the number of entries written (16), or -1 on null/short buffer.
+#[no_mangle]
+pub unsafe extern "C" fn trench_agc_table(out: *mut f32, len: usize) -> i32 {
+    if out.is_null() || len < AGC_TABLE.len() {
+        return -1;
+    }
+    let dst = std::slice::from_raw_parts_mut(out, AGC_TABLE.len());
+    dst.copy_from_slice(&AGC_TABLE);
+    AGC_TABLE.len() as i32
+}
+
+/// Factorize a TARGET magnitude curve into one fitted corner (kernel form).
+///
+/// `freqs`/`dbs` are `n` parallel sorted points `(freq_hz, db)`; writes 30 kernel
+/// coefficients (6 stages × 5: c0..c4, stage-major) into `out`. This is a thin
+/// wrapper over `arma::fit_corner_from_magnitude` — no new DSP, the fit stays
+/// dumb (the taste lives in the curve). It exists so the factorizer bench (and a
+/// Target Browser) drive the SAME fitter the proof test exercised.
+///
+/// Returns: 0 ok, -1 null ptr, -2 fewer than 2 points, -3 fitter returned None.
+#[no_mangle]
+pub unsafe extern "C" fn trench_fit_corner_from_magnitude(
+    freqs: *const f64,
+    dbs: *const f64,
+    n: usize,
+    runtime_sr: f64,
+    out: *mut f64,
+) -> i32 {
+    if freqs.is_null() || dbs.is_null() || out.is_null() {
+        return -1;
+    }
+    if n < 2 {
+        return -2;
+    }
+    let fs = std::slice::from_raw_parts(freqs, n);
+    let ds = std::slice::from_raw_parts(dbs, n);
+    let curve: Vec<(f64, f64)> = fs.iter().zip(ds).map(|(&f, &d)| (f, d)).collect();
+    match crate::arma::fit_corner_from_magnitude(&curve, runtime_sr) {
+        Some(corner) => {
+            let dst = std::slice::from_raw_parts_mut(out, NUM_STAGES * NUM_COEFFS);
+            for (si, stage) in corner.iter().enumerate() {
+                for (ki, &c) in stage.iter().enumerate() {
+                    dst[si * NUM_COEFFS + ki] = c;
+                }
+            }
+            0
+        }
+        None => -3,
+    }
 }
 
 /// Interpolate a 240-byte packed body at `(morph, q)` and write 30 kernel-form

@@ -20,8 +20,8 @@ struct TrenchParams
 {
     float morph = 0.0f; // normalised 0..1
     float q = 0.0f;     // normalised 0..1
-    float slamDrive = 0.35f;
-    float fiveD = 0.75f;
+    float slamDrive = 0.0f;
+    float fiveD = 0.0f;
 };
 
 class TrenchDspBridge
@@ -108,7 +108,7 @@ public:
 
     // Post-cascade spatial stage. 0 = QSound (realistic ITD/ILD/shelves; falls
     // back to a symmetric widener when the body carries no spatial profile),
-    // 1 = Trench M/S matrix, 2 = Off. The player always runs QSound.
+    // 1 = Trench M/S matrix, 2 = Off. Clean ground-truth audio keeps this Off.
     void setSpatialMode (int mode)
     {
         if (engine != nullptr)

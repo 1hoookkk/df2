@@ -23,8 +23,8 @@ mod ab_render {
     use hound::{SampleFormat, WavSpec, WavWriter};
     use std::f32::consts::TAU;
     use std::path::{Path, PathBuf};
-    use trench_core::cascade::{Cascade, BLOCK_SIZE};
     use trench_core::cartridge::Cartridge;
+    use trench_core::cascade::{Cascade, BLOCK_SIZE};
     use trench_core::minifloat::PackedCorners;
     use trench_core::CornerData;
 
@@ -45,7 +45,9 @@ mod ab_render {
         // LCG — same seed every run
         let mut s: u64 = 0x517cc1b727220a95;
         for _ in 0..n {
-            s = s.wrapping_mul(6364136223846793005).wrapping_add(1442695040888963407);
+            s = s
+                .wrapping_mul(6364136223846793005)
+                .wrapping_add(1442695040888963407);
             let w = (s >> 33) as f32 / 2_147_483_647.0 - 1.0; // [-1, 1]
             b0 = 0.99886 * b0 + w * 0.0555179;
             b1 = 0.99332 * b1 + w * 0.0750759;
@@ -70,11 +72,11 @@ mod ab_render {
         let mut out = [[0.0f64; 5]; 6];
         for si in 0..6 {
             let [c0, c1, c2, c3, c4] = k[si];
-            out[si][0] = c4;               // b0
+            out[si][0] = c4; // b0
             out[si][1] = (c0 - 2.0) * c4; // b1
             out[si][2] = (1.0 - c1) * c4; // b2
-            out[si][3] = c2 - 2.0;        // a1
-            out[si][4] = 1.0 - c3;        // a2
+            out[si][3] = c2 - 2.0; // a1
+            out[si][4] = 1.0 - c3; // a2
         }
         out
     }
@@ -98,7 +100,7 @@ mod ab_render {
         let mut warmup = vec![0.0f32; BLOCK_SIZE];
         cascade.process_block_mono(&mut warmup);
         cascade.set_targets(coeffs, BLOCK_SIZE); // now at target: deltas → 0
-        cascade.set_boost(boost, BLOCK_SIZE);    // same
+        cascade.set_boost(boost, BLOCK_SIZE); // same
 
         let mut out = dry.to_vec();
         let n = out.len();
@@ -187,8 +189,8 @@ mod ab_render {
 
         // ── render points ──
         let points: &[(&str, f32, f32)] = &[
-            ("midpoint",         0.5f32,    0.5f32),
-            ("offset_near_mid",  0.46875,   0.46875),
+            ("midpoint", 0.5f32, 0.5f32),
+            ("offset_near_mid", 0.46875, 0.46875),
         ];
 
         // Output under workspace root
@@ -196,7 +198,10 @@ mod ab_render {
         let out_dir = PathBuf::from("../dev/tmp/packed_interp_ab").join(&timestamp);
 
         println!("\noutput directory: {}", out_dir.display());
-        println!("{:<28} {:<12} {:<12}  null(packed vs float)", "point", "morph", "q");
+        println!(
+            "{:<28} {:<12} {:<12}  null(packed vs float)",
+            "point", "morph", "q"
+        );
         println!("{}", "-".repeat(70));
 
         for &(label, morph, q) in points {
@@ -211,26 +216,19 @@ mod ab_render {
             let wet_packed = render(&coeffs_packed, boost, &dry);
 
             // Coefficient diff for cross-check
-            let max_coeff_diff = coeffs_float.iter().zip(coeffs_packed.iter())
+            let max_coeff_diff = coeffs_float
+                .iter()
+                .zip(coeffs_packed.iter())
                 .flat_map(|(af, ap)| af.iter().zip(ap.iter()).map(|(a, b)| (a - b).abs()))
                 .fold(0.0f64, f64::max);
             println!("  max|biquad coeff diff|={max_coeff_diff:.4}");
 
             let null_db = null_depth_db(&wet_packed, &wet_float);
 
-            write_wav(
-                &out_dir.join(format!("packed_{label}.wav")),
-                &wet_packed,
-            );
-            write_wav(
-                &out_dir.join(format!("float_{label}.wav")),
-                &wet_float,
-            );
+            write_wav(&out_dir.join(format!("packed_{label}.wav")), &wet_packed);
+            write_wav(&out_dir.join(format!("float_{label}.wav")), &wet_float);
 
-            println!(
-                "{:<28} {:<12.5} {:<12.5}  {null_db:.2} dB",
-                label, morph, q
-            );
+            println!("{:<28} {:<12.5} {:<12.5}  {null_db:.2} dB", label, morph, q);
 
             // Assert the paths diverge — quantisation should produce audible difference.
             // < −60 dB would mean they're effectively identical. > −30 dB = audible gap.

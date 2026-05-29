@@ -1,6 +1,7 @@
 #pragma once
 
 #include "TrenchStyle.h"
+#include "TrenchBodyRoster.h"
 
 #include <juce_audio_processors/juce_audio_processors.h>
 #include <juce_gui_basics/juce_gui_basics.h>
@@ -15,14 +16,6 @@ class TrenchBodyStrip final : public juce::Component,
                               private juce::Timer
 {
 public:
-    static constexpr const char* kBodyNames[] = {
-        "Speaker Knockerz",
-        "Aluminum Siding",
-        "Small Talk Ah-Ee",
-        "Cul-De-Sac"
-    };
-    static constexpr int kBodyCount = 4;
-
     explicit TrenchBodyStrip (juce::RangedAudioParameter& p)
         : parameter (p),
           attachment (p, [this] (float) { refresh(); })
@@ -45,12 +38,13 @@ public:
         const float t = juce::jlimit (0.0f, 1.0f, (lastFlashTime + fadeFor - now) / fadeFor);
         const auto nameCol = style::primary().interpolatedWith (style::accent(), t);
 
+        const auto name = trench::bodyDisplayName (index);
         g.setColour (juce::Colours::black.withAlpha (0.45f));
         g.setFont (style::label (fontSize, true));
-        g.drawFittedText (kBodyNames[wrapIndex (index)], textArea.translated (0, 1).expanded (0, 1),
+        g.drawFittedText (name, textArea.translated (0, 1).expanded (0, 1),
                           juce::Justification::centred, 1, 0.9f);
         g.setColour (nameCol);
-        g.drawFittedText (kBodyNames[wrapIndex (index)], textArea, juce::Justification::centred, 1, 0.9f);
+        g.drawFittedText (name, textArea, juce::Justification::centred, 1, 0.9f);
 
         // Chevrons either side — dim bone.
         const int cy = b.getCentreY();
@@ -89,9 +83,7 @@ private:
 
     static int wrapIndex (int i)
     {
-        i %= kBodyCount;
-        if (i < 0) i += kBodyCount;
-        return i;
+        return trench::wrapBodyIndex (i);
     }
 
     static void drawArrow (juce::Graphics& g, int x, int y, int dir)
@@ -110,9 +102,12 @@ private:
     void setIndex (int next)
     {
         next = wrapIndex (next);
-        const auto& range = parameter.getNormalisableRange();
-        const float denorm = (float) next;
-        attachment.setValueAsCompleteGesture (range.convertTo0to1 (denorm));
+        // `setValueAsCompleteGesture` expects the DENORMALIZED parameter value
+        // (0..bodyCount-1), not a normalised 0..1. Passing 0..1 here caused
+        // JUCE to renormalise again and collapsed every click to index 0 or 1
+        // — the "only two presets reachable" bug. Every other control in the
+        // codebase (shuttle, thumbwheel) passes denormalised already.
+        attachment.setValueAsCompleteGesture ((float) next);
     }
 
     void refresh()

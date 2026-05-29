@@ -1,6 +1,8 @@
 #include "TrenchResponseDisplay.h"
 
+#include "dsp/TrenchCleanBody.h"
 #include "parameters/TrenchParameters.h"
+#include "TrenchBodyRoster.h"
 
 #include <algorithm>
 #include <cmath>
@@ -11,10 +13,10 @@ namespace trench
 
 namespace
 {
-    constexpr const char* kBodyNames[4] = {
-        "SPEAKER KNOCKERZ", "ALUMINUM SIDING", "SMALL TALK AH-EE", "CUL-DE-SAC"
-    };
-    constexpr int kBodyCount = 4;
+    // PL-4: kBodyNames[4] + kBodyCount=4 was a leftover from when the roster
+    // had four entries — it cycled through four placeholder names regardless
+    // of how many real bodies were loaded. Now the diagnostic readout reads
+    // the live roster directly (`trench::bodyDisplayName`, `bodyCount`).
 
     juce::Colour mix (juce::Colour a, juce::Colour b, float t) noexcept
     {
@@ -54,15 +56,17 @@ TrenchResponseDisplay::TrenchResponseDisplay (TrenchDspBridge& bridge,
                                               juce::AudioProcessorValueTreeState& state,
                                               const std::atomic<float>& inputL,
                                               const std::atomic<float>& inputR,
-                                              ScopeReader reader)
+                                              ScopeReader reader,
+                                              bool cleanModeIn)
     : dspBridge (bridge),
       parameters (state),
       inputMeterL (inputL),
       inputMeterR (inputR),
-      scopeReader (std::move (reader))
+      scopeReader (std::move (reader)),
+      cleanMode (cleanModeIn)
 {
     setOpaque (false);
-    setMouseCursor (juce::MouseCursor::PointingHandCursor);
+    setInterceptsMouseClicks (false, false); // display-only; controls live on chassis/FX
     vBlank = juce::VBlankAttachment (this, [this] (double t) { onVBlankTick (t); });
 }
 
@@ -88,43 +92,16 @@ int TrenchResponseDisplay::paramInt (const char* id) const noexcept
 
 int TrenchResponseDisplay::bodyIndex() const noexcept
 {
-    int i = paramInt (ParamID::body) % kBodyCount;
-    if (i < 0) i += kBodyCount;
-    return i;
-}
-
-int TrenchResponseDisplay::pixelStepForBit() const noexcept
-{
-    switch (paramInt (ParamID::bitDepth))
-    {
-        case 1:  return 2;
-        case 2:  return 4;
-        default: return 1;
-    }
-}
-
-void TrenchResponseDisplay::cycleChoice (const char* id)
-{
-    auto* p = parameters.getParameter (id);
-    if (p == nullptr) return;
-    const int numSteps = juce::jmax (1, p->getNumSteps());
-    const int curIndex = juce::roundToInt (p->getValue() * (float) (numSteps - 1));
-    const int nextIdx  = (curIndex + 1) % numSteps;
-    p->beginChangeGesture();
-    p->setValueNotifyingHost ((float) nextIdx / (float) juce::jmax (1, numSteps - 1));
-    p->endChangeGesture();
-    tracePathValid = false;
-    repaint();
+    return trench::wrapBodyIndex (paramInt (ParamID::body));
 }
 
 // ---- layout — 1.66:1 landscape, no in-screen cartridge name --------------
 // The chassis TYPE strip above the screen already shows the cartridge name,
 // so the screen does NOT repeat it. Top→bottom:
 //   meters       : chunky L/R input bars, full width
-//   sub-line     : tiny numeric position readout (M / Q + cart counter)
+//   sub-line     : tiny state readout (M / Q + input + 5D + body number)
 //   hero row     : M / Q / S bars on the left, 2-D corner-bank pad on the right
-//   toggle strip : INPUT + BIT cells
-//   spectrum     : the trace dominates — ~46% of the screen
+//   output scope : amplitude-first post-filter stereo waveform
 juce::Rectangle<int> TrenchResponseDisplay::meterBounds() const
 {
     const auto b = getLocalBounds().reduced (6, 5);
@@ -164,46 +141,28 @@ juce::Rectangle<int> TrenchResponseDisplay::identityBounds() const
     return {};
 }
 
-juce::Rectangle<int> TrenchResponseDisplay::toggleStripBounds() const
-{
-    const auto b = getLocalBounds().reduced (6, 5);
-    const auto pad = cornerBankPadBounds();
-    const int bot = spectrumBounds().getY() - 3;
-    const int h   = juce::jmax (12, juce::roundToInt ((float) b.getHeight() * 0.055f));
-    // The toggle strip occupies the left column, bottom of the hero row.
-    return { b.getX(), bot - h, pad.getX() - b.getX() - 6, h };
-}
-
 juce::Rectangle<int> TrenchResponseDisplay::barsBounds() const
 {
     const auto b = getLocalBounds().reduced (6, 5);
     const auto pad = cornerBankPadBounds();
-    const auto tog = toggleStripBounds();
     const int top  = subLineBounds().getBottom() + 3;
-    const int bot  = tog.getY() - 3;
+    const int bot  = spectrumBounds().getY() - 3;
     return { b.getX(), top, pad.getX() - b.getX() - 6, juce::jmax (16, bot - top) };
 }
 
-juce::Rectangle<int> TrenchResponseDisplay::inputCellBounds() const
+juce::Rectangle<int> TrenchResponseDisplay::paramBarFrame (int rowIndex) const
 {
-    const auto t = toggleStripBounds();
-    return { t.getX(), t.getY(), t.getWidth() / 2 - 3, t.getHeight() };
-}
+    const auto area = barsBounds();
+    if (area.isEmpty()) return {};
 
-juce::Rectangle<int> TrenchResponseDisplay::bitCellBounds() const
-{
-    const auto t = toggleStripBounds();
-    const int w = t.getWidth() / 2 - 3;
-    return { t.getRight() - w, t.getY(), w, t.getHeight() };
-}
-
-void TrenchResponseDisplay::mouseDown (const juce::MouseEvent& e)
-{
-    const auto p = e.getPosition();
-    if (inputCellBounds().contains (p))    cycleChoice (ParamID::inputMode);
-    else if (bitCellBounds().contains (p)) cycleChoice (ParamID::bitDepth);
-    else                                    return;
-    flickerUntilSec = (lastTickSec > 0.0 ? lastTickSec : juce::Time::getMillisecondCounterHiRes() / 1000.0) + 0.06;
+    const int rowGap = 2;
+    const int rowH = juce::jmax (6, (area.getHeight() - rowGap * 2) / 3);
+    const int labelW = juce::jmax (12, rowH);
+    const auto row = juce::Rectangle<int> (area.getX(),
+                                           area.getY() + rowIndex * (rowH + rowGap),
+                                           area.getWidth(),
+                                           rowH);
+    return row.withTrimmedLeft (labelW + 2);
 }
 
 float TrenchResponseDisplay::coeffDistance (const CoeffSet& a, const CoeffSet& b) noexcept
@@ -321,13 +280,17 @@ void TrenchResponseDisplay::rebuildTraceFromCoeffs (const CoeffSet& coeffs, floa
     const int plotRight  = bounds.getRight();
     const int plotTop    = bounds.getY();
     const int plotBottom = bounds.getBottom();
-    const int pixelStep  = pixelStepForBit();
+    const int pixelStep  = 1;
 
     traceSampleCount = width;
     traceFloorY = plotBottom - 1;
 
-    const float logRatio   = kFreqHi / kFreqLo;
     const float sampleRate = static_cast<float> (TrenchRates::emuInternalRate);
+    // Never plot past Nyquist (fs/2 = 19531.25 Hz at 39062.5). Above it the
+    // magnitude is just the aliased mirror — fiction. Stopping here shows the
+    // HF/Nyquist edge (the near-wall pole tricks) truthfully.
+    const float freqHi   = juce::jmin (kFreqHi, sampleRate * 0.5f);
+    const float logRatio = freqHi / kFreqLo;
 
     for (int i = 0; i < width; ++i)
     {
@@ -379,14 +342,18 @@ void TrenchResponseDisplay::paint (juce::Graphics& g)
         rebuildGridImage();
     g.drawImageAt (gridImage, 0, 0);
 
+    // The magnitude tell (the body's shape) is the hero — ALWAYS draw it. The live
+    // output waveform overlays faintly on top when there's signal; it no longer
+    // replaces the tell (which left the scope blank while audio played).
     if (tracePathValid)
         drawTrace (g);
+    if (! cleanMode)
+        drawOutputScope (g);
 
     drawSlamMeters (g);
     drawSubLine (g);
     drawParamBars (g);
     drawCornerBankPad (g);
-    drawToggleStrip (g);
 
     // Vignette.
     {
@@ -438,8 +405,8 @@ void TrenchResponseDisplay::drawIdentity (juce::Graphics& g) const
     const auto smallFont = style::label (smallFs, true);
 
     const int body = bodyIndex();
-    const auto num  = juce::String::formatted ("%03d", 13 + body);
-    const auto name = juce::String (kBodyNames[body]);
+    const auto num  = juce::String::formatted ("%03d", body + 1);
+    const auto name = trench::bodyDisplayName (body).toUpperCase();
 
     const int numW = (int) std::ceil (juce::GlyphArrangement::getStringWidth (smallFont, num)) + 6;
 
@@ -465,13 +432,29 @@ void TrenchResponseDisplay::drawSubLine (juce::Graphics& g) const
     const int mPct = juce::roundToInt (param01 (ParamID::morph) * 100.0f);
     const int qPct = juce::roundToInt (param01 (ParamID::q)     * 100.0f);
 
+    if (cleanMode)
+    {
+        g.setColour (style::oledCyan());
+        g.drawText (juce::String::formatted ("M %3d  Q %3d  IN OFF  SPACE OFF", mPct, qPct),
+                    area, juce::Justification::centredLeft, false);
+
+        g.setColour (style::oledMagenta());
+        g.drawText (juce::String ("BODY240  ") + trench::clean_audio::kBodyName,
+                    area, juce::Justification::centredRight, false);
+        return;
+    }
+
+    const int inputIdx = juce::jlimit (0, 2, paramInt (ParamID::inputMode));
+    const char* inputLbl = inputIdx == 0 ? "OFF" : (inputIdx == 1 ? "SLAM" : "EOS");
+    const int fiveDIdx = juce::jlimit (0, 3, paramInt (ParamID::fiveD));
+    const char* fiveDLbl = fiveDIdx == 0 ? "OFF" : (fiveDIdx == 1 ? "NAR" : (fiveDIdx == 2 ? "WIDE" : "FULL"));
+
     g.setColour (style::oledCyan());
-    g.drawText (juce::String::formatted ("M %3d    Q %3d", mPct, qPct),
+    g.drawText (juce::String::formatted ("M %3d  Q %3d  IN %s  5D %s", mPct, qPct, inputLbl, fiveDLbl),
                 area, juce::Justification::centredLeft, false);
 
-    // Right-floating tiny magenta cartridge count — the Morpheus's "002" idiom.
     g.setColour (style::oledMagenta());
-    g.drawText (juce::String::formatted ("%03d / 200", 13 + bodyIndex()),
+    g.drawText (juce::String::formatted ("BODY %03d", bodyIndex() + 1),
                 area, juce::Justification::centredRight, false);
 }
 
@@ -492,10 +475,13 @@ void TrenchResponseDisplay::drawParamBars (juce::Graphics& g) const
         juce::Colour fillCol;
         float value;
     };
+    const bool slamActive = paramInt (ParamID::inputMode) == 1;
     const Row rows[3] = {
         { "M", style::oledMagenta(), style::oledMagenta(), param01 (ParamID::morph)     },
         { "Q", style::oledYellow(),  style::oledBlue(),    param01 (ParamID::q)         },
-        { "S", style::oledYellow(),  style::oledRed(),     param01 (ParamID::slamDrive) },
+        { "S", slamActive ? style::oledYellow() : style::oledWhite().withAlpha (0.32f),
+               slamActive ? style::oledRed()    : style::oledWhite().withAlpha (0.18f),
+               slamActive ? param01 (ParamID::slamDrive) : 0.0f },
     };
 
     for (int i = 0; i < 3; ++i)
@@ -505,7 +491,7 @@ void TrenchResponseDisplay::drawParamBars (juce::Graphics& g) const
         g.setColour (rows[i].letterCol);
         g.drawText (rows[i].letter, row.withWidth (labelW), juce::Justification::centred, false);
         // white frame
-        const auto frame = row.withTrimmedLeft (labelW + 2);
+        const auto frame = paramBarFrame (i);
         g.setColour (style::oledWhite().withAlpha (0.85f));
         g.drawRect (frame, 1);
         // fill
@@ -553,40 +539,59 @@ void TrenchResponseDisplay::drawCornerBankPad (juce::Graphics& g) const
     g.fillRect (juce::Rectangle<float> (px - 1.0f, py - k, 2.0f, k * 2.0f));
 }
 
-void TrenchResponseDisplay::drawToggleStrip (juce::Graphics& g) const
+bool TrenchResponseDisplay::drawOutputScope (juce::Graphics& g) const
 {
-    auto drawCell = [&] (juce::Rectangle<int> cell, const juce::String& label, const juce::String& value,
-                         juce::Colour valueCol)
+    const auto area = spectrumBounds().reduced (4, 4);
+    if (area.isEmpty() || ! scopeReader)
+        return false;
+
+    std::array<float, 512> l {};
+    std::array<float, 512> r {};
+    const int n = juce::jlimit (0, (int) l.size(), scopeReader (l.data(), r.data(), (int) l.size()));
+    if (n < 2)
+        return false;
+
+    auto makePath = [&] (auto sampleAt)
     {
-        g.setColour (juce::Colours::black.withAlpha (0.45f));
-        g.fillRect (cell);
-        g.setColour (style::oledWhite().withAlpha (0.45f));
-        g.drawRect (cell, 1);
-        const float fs = juce::jlimit (8.0f, 11.5f, (float) cell.getHeight() * 0.66f);
-        g.setFont (style::label (fs, true));
-        const auto inner = cell.reduced (4, 0);
-        g.setColour (style::oledCyan().withAlpha (0.85f));
-        g.drawText (label, inner, juce::Justification::centredLeft, false);
-        g.setColour (valueCol);
-        g.drawText (value, inner, juce::Justification::centredRight, false);
+        juce::Path p;
+        const float cy = (float) area.getCentreY();
+        const float sy = (float) area.getHeight() * 0.42f;
+        for (int i = 0; i < n; ++i)
+        {
+            const float x = juce::jmap ((float) i, 0.0f, (float) (n - 1),
+                                        (float) area.getX(), (float) area.getRight());
+            const float y = cy - juce::jlimit (-1.0f, 1.0f, sampleAt (i)) * sy;
+            if (i == 0) p.startNewSubPath (x, y);
+            else        p.lineTo (x, y);
+        }
+        return p;
     };
 
-    const int inputIdx = juce::jlimit (0, 2, paramInt (ParamID::inputMode));
-    const char* inputLbl = inputIdx == 0 ? "OFF" : (inputIdx == 1 ? "SLAM" : "EOS");
-    drawCell (inputCellBounds(), "INPUT", inputLbl,
-              inputIdx == 0 ? style::oledWhite().withAlpha (0.55f) : style::oledAmber());
+    g.setColour (juce::Colours::black.withAlpha (0.35f));
+    g.fillRect (area);
 
-    const int bitIdx = juce::jlimit (0, 2, paramInt (ParamID::bitDepth));
-    const char* bitLbl = bitIdx == 0 ? "24" : (bitIdx == 1 ? "20" : "16");
-    drawCell (bitCellBounds(), "BIT", juce::String (bitLbl) + "-BIT", style::oledAmber());
+    const float cy = (float) area.getCentreY();
+    g.setColour (style::oledWhite().withAlpha (0.24f));
+    g.drawHorizontalLine ((int) cy, (float) area.getX(), (float) area.getRight());
+
+    const auto left  = makePath ([&] (int i) { return l[(size_t) i]; });
+    const auto right = makePath ([&] (int i) { return r[(size_t) i]; });
+    const auto mono  = makePath ([&] (int i) { return 0.5f * (l[(size_t) i] + r[(size_t) i]); });
+
+    g.setColour (juce::Colour (0xff36c828).withAlpha (0.55f));
+    g.strokePath (left, juce::PathStrokeType (1.2f));
+    g.setColour (style::oledRed().withAlpha (0.48f));
+    g.strokePath (right, juce::PathStrokeType (1.2f));
+    g.setColour (style::oledWhite().withAlpha (0.85f));
+    g.strokePath (mono, juce::PathStrokeType (1.6f));
+    return true;
 }
 
 void TrenchResponseDisplay::drawTrace (juce::Graphics& g) const
 {
     if (traceSampleCount < 2) return;
 
-    const int step = pixelStepForBit();
-    const int thickness = juce::jmax (1, 3 - step / 2);
+    const int thickness = 2;
 
     g.setColour (style::oledWhite());
     for (int i = 1; i < traceSampleCount; ++i)

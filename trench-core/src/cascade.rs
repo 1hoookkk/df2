@@ -205,9 +205,8 @@ mod tests {
         let mut out = Vec::with_capacity(input.len());
 
         for &x0 in input {
-            let y0 = coeffs[0] * x0 + coeffs[1] * x1 + coeffs[2] * x2
-                - coeffs[3] * y1
-                - coeffs[4] * y2;
+            let y0 =
+                coeffs[0] * x0 + coeffs[1] * x1 + coeffs[2] * x2 - coeffs[3] * y1 - coeffs[4] * y2;
             out.push(y0);
             x2 = x1;
             x1 = x0;
@@ -296,8 +295,7 @@ mod tests {
             [0.19, 0.27, 0.19, -1.438, 0.522],
         ];
         let input = [
-            1.0, -0.25, 0.125, 0.0, 0.5, -0.75, 0.375, -0.1875, 0.09375, 0.0,
-            -0.03125, 0.015625,
+            1.0, -0.25, 0.125, 0.0, 0.5, -0.75, 0.375, -0.1875, 0.09375, 0.0, -0.03125, 0.015625,
         ];
 
         for coeffs in cases {

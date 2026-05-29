@@ -18,10 +18,14 @@ use crate::cascade::{NUM_COEFFS, NUM_STAGES};
 // air/RIP actor instead of being capped off at 7 kHz.
 const ANALYSIS_SR: f64 = 22050.0;
 const LPC_ORDER: usize = 14;
-// Standard speech pre-emphasis — the value the 2026-05-22 fit used when a dropped
-// vowel matched Talking Hedz (the gate). A 0.0 experiment captured dark-vowel
-// lows better in isolation but regressed that match, so it's reverted.
-const PRE_EMPH: f64 = 0.97;
+// TRANSPARENCY (audit 2026-05-24): 0.0 = fit the RAW envelope. Pre-emphasis (0.97)
+// brightens the analysed spectrum to help estimate high formants, but the realised
+// filter is built straight from those poles with NO de-emphasis — and a 6-biquad
+// cascade has no room for a 7th de-emphasis pole — so any pre-emphasis tilts the
+// captured corner ~6 dB/oct bright and discards the low body (the "no body" the
+// user heard). 0.0 captures the true low body faithfully. NOTE: this changes the
+// old 2026-05-22 Talking-Hedz match, which was tuned to the brightened spectrum.
+const PRE_EMPH: f64 = 0.0;
 const FRAME_MS: f64 = 25.0;
 const HOP_MS: f64 = 10.0;
 const PEAK_RMS_TOL_DB: f64 = 3.0;
@@ -54,11 +58,17 @@ impl C {
         C::new(self.re - o.re, self.im - o.im)
     }
     fn mul(self, o: C) -> C {
-        C::new(self.re * o.re - self.im * o.im, self.re * o.im + self.im * o.re)
+        C::new(
+            self.re * o.re - self.im * o.im,
+            self.re * o.im + self.im * o.re,
+        )
     }
     fn div(self, o: C) -> C {
         let d = o.re * o.re + o.im * o.im;
-        C::new((self.re * o.re + self.im * o.im) / d, (self.im * o.re - self.re * o.im) / d)
+        C::new(
+            (self.re * o.re + self.im * o.im) / d,
+            (self.im * o.re - self.re * o.im) / d,
+        )
     }
     fn abs(self) -> f64 {
         self.re.hypot(self.im)
@@ -109,7 +119,10 @@ fn steady_state(x: &[f64], sr: f64) -> (usize, usize) {
         rms.push(r);
     }
     let thr_db = -PEAK_RMS_TOL_DB;
-    let above: Vec<bool> = rms.iter().map(|r| 20.0 * (r / peak + 1e-30).log10() >= thr_db).collect();
+    let above: Vec<bool> = rms
+        .iter()
+        .map(|r| 20.0 * (r / peak + 1e-30).log10() >= thr_db)
+        .collect();
     let (mut best_start, mut best_len, mut cur) = (0usize, 0usize, None::<usize>);
     for (i, &v) in above.iter().enumerate() {
         if v {
@@ -286,7 +299,11 @@ fn analyze_lpc_pe(
             continue;
         }
         let bw = -ANALYSIS_SR / std::f64::consts::PI * r.ln();
-        cand.push(Pole { freq_hz: f, radius: r, bw_hz: bw });
+        cand.push(Pole {
+            freq_hz: f,
+            radius: r,
+            bw_hz: bw,
+        });
     }
     cand.sort_by(|p, q| q.radius.partial_cmp(&p.radius).unwrap()); // strongest first
     cand.truncate(N_KEEP);
@@ -296,7 +313,9 @@ fn analyze_lpc_pe(
 
 /// Extract the top-N resonant poles from a recorded sound.
 pub fn extract_poles(samples: &[f64], sr_in: f64) -> Vec<Pole> {
-    analyze_lpc(samples, sr_in).map(|(_, p)| p).unwrap_or_default()
+    analyze_lpc(samples, sr_in)
+        .map(|(_, p)| p)
+        .unwrap_or_default()
 }
 
 /// Poles plus the spectral-valley (anti-resonance) frequencies, strongest first.
@@ -383,12 +402,48 @@ pub fn fit_corner_pe(samples: &[f64], sr_in: f64, runtime_sr: f64, pre_emph: f64
         return [PASSTHROUGH; NUM_STAGES];
     };
     let zeros = valley_freqs(&a);
+    realize_poles_zeros(&poles, &zeros, runtime_sr)
+}
+
+/// VOICE fit from an ALREADY-conditioned (cut + windowed) slice, with explicit
+/// pre-emphasis. This is the honest voice-capture path: pre-emphasis flattens the
+/// glottal + radiation source tilt (~−6 dB/oct) so the order-`LPC_ORDER` LPC poles
+/// land on the **vocal-tract formants** (F1/F2/F3…) instead of being dragged into
+/// the loud low-end energy — the failure that made a dropped "aaa" capture as body
+/// + hiss with no vowel. The `conditioned` flag means the caller (the Forge) has
+/// already sliced and Hann-windowed exactly what it wants fit, so the internal
+/// steady-state hunt and second window are skipped (one window → sharp, faithful
+/// formant bandwidths instead of fattened poles).
+///
+/// NOTE the deliberate trade (audit 2026-05-24): a 6-biquad cascade has no room for
+/// a 7th de-emphasis pole, so a non-zero `pre_emph` here leaves the realised corner
+/// tilted brighter than the raw source. For VOICE that is the point — formants over
+/// body. The neutral `fit_corner`/`fit_corner_conditioned` paths keep `PRE_EMPH=0`.
+pub fn fit_corner_conditioned_pe(
+    samples: &[f64],
+    sr_in: f64,
+    runtime_sr: f64,
+    pre_emph: f64,
+) -> CornerData {
+    let Some((a, poles)) = analyze_lpc_pe(samples, sr_in, pre_emph, LPC_ORDER, true) else {
+        return [PASSTHROUGH; NUM_STAGES];
+    };
+    let zeros = valley_freqs(&a);
+    realize_poles_zeros(&poles, &zeros, runtime_sr)
+}
+
+/// Build the six pole-zero biquads (in kernel form) from a set of resonant poles
+/// and spectral-valley zeros, then spread-normalize the cascade peak. Shared by
+/// every LPC fit entry so the realization is owned in exactly one place.
+fn realize_poles_zeros(poles: &[Pole], zeros: &[f64], runtime_sr: f64) -> CornerData {
     const Z_RADIUS: f64 = 0.93; // notch depth/character
     let mut corner: CornerData = [PASSTHROUGH; NUM_STAGES];
     for (i, p) in poles.iter().take(NUM_STAGES).enumerate() {
         // Natural radius from the captured bandwidth (varied Q = complexity).
         // The Forge's DEPTH control pushes these toward the unit circle later.
-        let rp = (-std::f64::consts::PI * p.bw_hz / runtime_sr).exp().clamp(0.5, 0.997);
+        let rp = (-std::f64::consts::PI * p.bw_hz / runtime_sr)
+            .exp()
+            .clamp(0.5, 0.997);
         let tp = 2.0 * std::f64::consts::PI * p.freq_hz / runtime_sr;
         let a1 = -2.0 * rp * tp.cos();
         let a2 = rp * rp;
@@ -401,7 +456,10 @@ pub fn fit_corner_pe(samples: &[f64], sr_in: f64, runtime_sr: f64, pre_emph: f64
             .copied()
             .filter(|&fz| (fz / p.freq_hz).log2().abs() > 0.25)
             .min_by(|x, y| {
-                (x - p.freq_hz).abs().partial_cmp(&(y - p.freq_hz).abs()).unwrap()
+                (x - p.freq_hz)
+                    .abs()
+                    .partial_cmp(&(y - p.freq_hz).abs())
+                    .unwrap()
             });
         let (b0, b1, b2) = if let Some(fz) = zero {
             let tz = 2.0 * std::f64::consts::PI * fz / runtime_sr;
@@ -418,9 +476,11 @@ pub fn fit_corner_pe(samples: &[f64], sr_in: f64, runtime_sr: f64, pre_emph: f64
 }
 
 // Scale the cascade so its peak magnitude ≈ `target` — keeps audio at a sane,
-// consistent level across corners (and through the morph). Folds the gain into
-// the first active stage's c4, which scales only that stage's numerator
-// (c0/c1 are ratios, so they're unchanged).
+// consistent level across corners (and through the morph). The scalar gain is
+// spread evenly across the active stages (`g^(1/n)` per stage), not dumped on
+// one: the cascade is a product, so this is the same response with the gain
+// merely relocated, but it keeps every c4 inside the packable [0,4] minifloat
+// box instead of letting one stage's gain overflow and pack to silence.
 pub fn normalize_corner_peak(corner: &mut CornerData, sr: f64, target: f64) {
     let mag_at = |k: &[f64; 5], w: f64| -> f64 {
         let (c0, c1, c2, c3, c4) = (k[0], k[1], k[2], k[3], k[4]);
@@ -443,11 +503,21 @@ pub fn normalize_corner_peak(corner: &mut CornerData, sr: f64, target: f64) {
         peak = peak.max(mag);
     }
     let g = target / peak;
+    let passth = |k: &[f64; 5]| {
+        (k[0] - 2.0).abs() < 1e-9
+            && (k[1] - 1.0).abs() < 1e-9
+            && (k[2] - 2.0).abs() < 1e-9
+            && (k[3] - 1.0).abs() < 1e-9
+            && (k[4] - 1.0).abs() < 1e-9
+    };
+    let n_active = corner.iter().filter(|k| !passth(k)).count();
+    if n_active == 0 {
+        return;
+    }
+    let per = g.powf(1.0 / n_active as f64);
     for k in corner.iter_mut() {
-        let passth = (k[0] - 2.0).abs() < 1e-9 && (k[1] - 1.0).abs() < 1e-9 && (k[2] - 2.0).abs() < 1e-9 && (k[3] - 1.0).abs() < 1e-9 && (k[4] - 1.0).abs() < 1e-9;
-        if !passth {
-            k[4] *= g;
-            break;
+        if !passth(k) {
+            k[4] *= per;
         }
     }
 }
@@ -482,7 +552,9 @@ mod tests {
         let mut seed = 0x1234_5678u64;
         let mut noise = vec![0.0f64; n];
         for v in noise.iter_mut() {
-            seed = seed.wrapping_mul(6364136223846793005).wrapping_add(1442695040888963407);
+            seed = seed
+                .wrapping_mul(6364136223846793005)
+                .wrapping_add(1442695040888963407);
             *v = ((seed >> 33) as f64 / (1u64 << 31) as f64) - 1.0;
         }
         let a = resonator(&noise, f1, 0.97, sr);
@@ -502,7 +574,8 @@ mod tests {
         let mut x = vec![0.0f64; n];
         for (i, xi) in x.iter_mut().enumerate() {
             let t = i as f64 / sr;
-            *xi = (2.0 * std::f64::consts::PI * 800.0 * t).sin() + 0.4 * (2.0 * std::f64::consts::PI * 2500.0 * t).sin();
+            *xi = (2.0 * std::f64::consts::PI * 800.0 * t).sin()
+                + 0.4 * (2.0 * std::f64::consts::PI * 2500.0 * t).sin();
         }
         let corner = fit_corner(&x, sr, 39062.5);
         for stage in &corner {

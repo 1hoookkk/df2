@@ -15,9 +15,9 @@
 
 #[cfg(feature = "packed_interp")]
 mod tests {
-    use trench_core::minifloat::{decode, encode, lerp_u16, PackedCorners};
-    use trench_core::cascade::{NUM_COEFFS, NUM_STAGES};
     use trench_core::cartridge::CornerData;
+    use trench_core::cascade::{NUM_COEFFS, NUM_STAGES};
+    use trench_core::minifloat::{decode, encode, lerp_u16, PackedCorners};
 
     // ── synthetic cartridge with Q variation ──────────────────────────
 
@@ -65,10 +65,8 @@ mod tests {
         let mut result = [[0.0f64; NUM_COEFFS]; NUM_STAGES];
         for si in 0..NUM_STAGES {
             for ki in 0..NUM_COEFFS {
-                let q_m0 = corners[0][si][ki]
-                    + (corners[2][si][ki] - corners[0][si][ki]) * q;
-                let q_m1 = corners[1][si][ki]
-                    + (corners[3][si][ki] - corners[1][si][ki]) * q;
+                let q_m0 = corners[0][si][ki] + (corners[2][si][ki] - corners[0][si][ki]) * q;
+                let q_m1 = corners[1][si][ki] + (corners[3][si][ki] - corners[1][si][ki]) * q;
                 result[si][ki] = q_m0 + (q_m1 - q_m0) * morph;
             }
         }
@@ -108,23 +106,32 @@ mod tests {
         // Word 0x0001: u=2, e=0, m=2, x=2/4096, d=ldexp(x,-15)=2/4096/32768
         let expected = 2.0 / 4096.0 * (2.0f64).powi(-15);
         let got = decode(0x0001);
-        assert!((got - expected).abs() < 1e-18, "decode(0x0001)={got} want {expected}");
+        assert!(
+            (got - expected).abs() < 1e-18,
+            "decode(0x0001)={got} want {expected}"
+        );
 
         // Word 0x0FFF: u=0x1000, e=1, m=0, x=(0x1000)/8192=4096/8192=0.5, d=ldexp(0.5,-14)
         let expected = 0.5 * (2.0f64).powi(-14);
         let got = decode(0x0FFF);
-        assert!((got - expected).abs() < 1e-18, "decode(0x0FFF)={got} want {expected}");
+        assert!(
+            (got - expected).abs() < 1e-18,
+            "decode(0x0FFF)={got} want {expected}"
+        );
     }
 
     #[test]
     fn encode_decode_roundtrip() {
         for w in [
-            0x0000u16, 0x0001, 0x00FF, 0x0FFF, 0x1000, 0x4000, 0x7FFF,
-            0x8000, 0xBFFF, 0xC000, 0xFFFE, 0xFFFF,
+            0x0000u16, 0x0001, 0x00FF, 0x0FFF, 0x1000, 0x4000, 0x7FFF, 0x8000, 0xBFFF, 0xC000,
+            0xFFFE, 0xFFFF,
         ] {
             let v = decode(w);
             let w2 = encode(v);
-            assert_eq!(w, w2, "roundtrip failed for word {w:#06x}: v={v}, re-encoded={w2:#06x}");
+            assert_eq!(
+                w, w2,
+                "roundtrip failed for word {w:#06x}: v={v}, re-encoded={w2:#06x}"
+            );
         }
     }
 

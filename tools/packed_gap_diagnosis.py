@@ -57,6 +57,7 @@ from tools.coefficient_field_bakeoff import (
     null_depth,
     CORNER_LABELS,
 )
+from pyruntime import trench_ffi
 
 DEFAULT_CARTRIDGE = ROOT / "ref" / "p2k_skins" / "00_talking_hedz.json"
 DEFAULT_DRY = Path(r"C:\Users\hooki\Downloads\222323232.wav")
@@ -65,11 +66,9 @@ DEFAULT_OUT = ROOT / "dev" / "tmp" / "packed_gap_diagnosis"
 SR = 44100
 EPS = 1e-30
 
-AGC_TABLE = np.array(
-    [1.0001, 1.0001, 0.996, 0.990, 0.920, 0.500, 0.200, 0.160,
-     0.120, 0.120, 0.120, 0.120, 0.120, 0.120, 0.120, 0.120],
-    dtype=np.float32,
-)
+# Canonical AGC / global-compression curve, read from trench-core via FFI (single
+# source of truth = trench-core/src/dsp/mod.rs::AGC_TABLE). No hand-copied literal.
+AGC_TABLE = np.array(trench_ffi.agc_table(), dtype=np.float32)
 BLOCK_SIZE = 32
 
 

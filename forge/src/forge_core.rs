@@ -16,9 +16,13 @@ use trench_core::cartridge::{Cartridge, CornerData};
 use trench_core::minifloat::PackedCorners;
 
 use crate::dsp::{
-    self, condition_fit_window, display_name, fit_window_mode, load_wav_with_meta,
-    magnitude_response, source_envelope, FitMode, AUTHORING_RATE,
+    self, condition_fit_window, corner_to_resonances, display_name, fit_window_mode,
+    load_wav_with_meta, magnitude_response, realize_resonances, source_envelope, FitMode,
+    Resonance, ResoKind, AUTHORING_RATE,
 };
+
+/// Corner letters for naming hand-drawn corners.
+const SLOT_LETTERS: [&str; 4] = ["A", "B", "C", "D"];
 
 /// The four corner slots, in body order: M0_Q0, M100_Q0, M0_Q100, M100_Q100.
 /// A/B are the Morph endpoints (Q0 row); C/D are the Q endpoints (Q100 row).
@@ -26,7 +30,26 @@ pub const CARD_LABELS: [&str; 4] = ["A · MORPH 0", "B · MORPH 100", "C · Q", 
 
 /// Export labels matching the runtime keyframe order.
 const CORNER_LABELS: [&str; 4] = ["M0_Q0", "M100_Q0", "M0_Q100", "M100_Q100"];
-const EXPORT_BOOST: f64 = 4.0;
+
+/// Default per-corner boost stamped into newly-exported bodies.
+///
+/// Not a blind gain multiplier — this is the AGC engagement default. The E-mu
+/// character (chip-saturate, & 0xF wrap chaos gating) lives at AGC table
+/// indices 4-7 (mults 0.92 / 0.50 / 0.20 / 0.16), which engages when filter
+/// peaks reach ~+22..+28 dB (`STATE.md` `Now` 2026-05-28). Below ~+15 dB the
+/// AGC is asleep and the body sounds clinical/dry. A boost of 4.0 puts a
+/// nominal-loudness corner into that engagement zone by default.
+///
+/// **Override-friendly:** the cartridge loader treats `boost` as per-keyframe
+/// metadata and falls back to 1.0 when absent
+/// (`trench-core/src/cartridge.rs::default_boost`). A future Forge UI may
+/// publish bodies with `boost: 1.0` (Output knob is the user's control) or
+/// other per-corner values; existing cartridges in
+/// `juce-shell/assets/cartridges/` retain their explicit `boost: 4.0` so
+/// roster loudness does not shift without intent.
+fn default_boost_for_engagement() -> f64 {
+    4.0
+}
 
 /// A pickable source file for the corner dropdowns.
 pub struct SourceEntry {
@@ -51,33 +74,64 @@ pub fn available_sources() -> Vec<SourceEntry> {
     out
 }
 
-/// Every verbatim `.bin` preset in `ref/presets/`, for the PRESET dropdown.
+/// The PRESET dropdown list. Three sources, in priority order so the most
+/// useful starting points are at the top:
+///   1. GENERATED bodies (`bodies/generated/*.bin`, written by the Target
+///      Browser) — your own original work.
+///   2. P2K REFERENCE VARIANTS (`ref/p2k_variants/P2k_NNN_*/variant_*.bin`) —
+///      the 50 canonical E-mu filter types × 4 variants each = 200 reference
+///      bodies. Load one to "start from a body" and tweak by ear in DRAW.
+///   3. RAW reference skins in `ref/presets/` — guardrails / null-test set.
+/// All three load whole through the same 240-byte path; `from_rom_bytes` →
+/// `corner_to_resonances` populates DRAW with actors at the loaded body's
+/// pole positions.
 pub fn available_presets() -> Vec<SourceEntry> {
-    let mut out = Vec::new();
+    let mut gen = Vec::new();
+    if let Some(dir) = generated_presets_dir() {
+        scan_bins(&dir, &mut gen);
+    }
+    gen.sort_by(|a, b| a.label.cmp(&b.label));
+
+    let mut p2k = Vec::new();
+    if let Some(dir) = p2k_variants_dir() {
+        scan_p2k_variants(&dir, &mut p2k);
+    }
+    // Sort P2K bodies by their numeric index (P2k_003 before P2k_010) then
+    // variant number — so types stay together and read in spec order.
+    p2k.sort_by(|a, b| a.category.cmp(&b.category).then(a.label.cmp(&b.label)));
+
+    let mut refs = Vec::new();
     if let Some(dir) = presets_dir() {
-        if let Ok(entries) = std::fs::read_dir(&dir) {
-            for e in entries.flatten() {
-                let p = e.path();
-                if p.extension()
-                    .map(|x| x.eq_ignore_ascii_case("bin"))
-                    .unwrap_or(false)
-                {
-                    let label = p
-                        .file_stem()
-                        .and_then(|s| s.to_str())
-                        .unwrap_or("?")
-                        .to_owned();
-                    out.push(SourceEntry {
-                        label,
-                        path: p,
-                        category: String::new(),
-                    });
-                }
+        scan_bins(&dir, &mut refs);
+    }
+    refs.sort_by(|a, b| a.label.cmp(&b.label));
+
+    gen.extend(p2k);
+    gen.extend(refs);
+    gen
+}
+
+fn scan_bins(dir: &Path, out: &mut Vec<SourceEntry>) {
+    if let Ok(entries) = std::fs::read_dir(dir) {
+        for e in entries.flatten() {
+            let p = e.path();
+            if p.extension()
+                .map(|x| x.eq_ignore_ascii_case("bin"))
+                .unwrap_or(false)
+            {
+                let label = p
+                    .file_stem()
+                    .and_then(|s| s.to_str())
+                    .unwrap_or("?")
+                    .to_owned();
+                out.push(SourceEntry {
+                    label,
+                    path: p,
+                    category: String::new(),
+                });
             }
         }
     }
-    out.sort_by(|a, b| a.label.cmp(&b.label));
-    out
 }
 
 fn presets_dir() -> Option<PathBuf> {
@@ -86,6 +140,114 @@ fn presets_dir() -> Option<PathBuf> {
         .join("ref")
         .join("presets");
     p.is_dir().then_some(p)
+}
+
+/// Original bodies generated by `tools/target_browser.py`, dropped here so they
+/// appear in the Factory's PRESET list and load whole with one click.
+fn generated_presets_dir() -> Option<PathBuf> {
+    let p = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+        .join("..")
+        .join("bodies")
+        .join("generated");
+    p.is_dir().then_some(p)
+}
+
+/// The 50 canonical P2K filter types × 4 variants each. Each subdirectory is
+/// `P2k_NNN_<slug>/` containing `variant_K_dat_MMM.bin` files (240 bytes raw).
+/// Load any of these in PRESET → enter DRAW → DRAW auto-populates actors at
+/// the body's existing pole positions. Killing the cold-start problem.
+fn p2k_variants_dir() -> Option<PathBuf> {
+    let p = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+        .join("..")
+        .join("ref")
+        .join("p2k_variants");
+    p.is_dir().then_some(p)
+}
+
+/// Scan `ref/p2k_variants/P2k_NNN_<slug>/variant_K_*.bin` and produce one
+/// `SourceEntry` per variant with a producer-facing label:
+///   "Millennium · 0", "Bassbox 303 · 2", "Talking Hedz · 1"
+/// The `category` field gets the numeric type id (`P2k_003`) so dropdowns
+/// can sort by spec order while showing names. The raw 240-byte path goes
+/// straight into `from_rom_bytes` like every other bin source.
+fn scan_p2k_variants(root: &Path, out: &mut Vec<SourceEntry>) {
+    let Ok(types) = std::fs::read_dir(root) else { return };
+    for type_entry in types.flatten() {
+        let type_path = type_entry.path();
+        if !type_path.is_dir() {
+            continue;
+        }
+        let Some(dir_name) = type_path.file_name().and_then(|s| s.to_str()) else {
+            continue;
+        };
+        // Directory names look like `P2k_003_millennium` or
+        // `P2k_038_band_pass1_2_bpf`. Strip the `P2k_NNN_` prefix to get the
+        // human slug; if the strip fails, fall back to the whole name.
+        let (id_prefix, slug) = match split_p2k_dirname(dir_name) {
+            Some(parts) => parts,
+            None => continue,
+        };
+        let pretty = prettify_slug(&slug);
+
+        let Ok(files) = std::fs::read_dir(&type_path) else { continue };
+        for file in files.flatten() {
+            let path = file.path();
+            if !path.extension().map(|x| x.eq_ignore_ascii_case("bin")).unwrap_or(false) {
+                continue;
+            }
+            // Filename: `variant_K_dat_NNN.bin` — extract K.
+            let stem = path.file_stem().and_then(|s| s.to_str()).unwrap_or("");
+            let variant_n = variant_number(stem);
+            let label = match variant_n {
+                Some(n) => format!("{pretty} · {n}"),
+                None => format!("{pretty} · {stem}"),
+            };
+            out.push(SourceEntry {
+                label,
+                path,
+                category: id_prefix.clone(),
+            });
+        }
+    }
+}
+
+/// Split `P2k_NNN_<slug>` into (`P2k_NNN`, `slug`). Returns None if the prefix
+/// doesn't parse — caller can skip the directory.
+fn split_p2k_dirname(name: &str) -> Option<(String, String)> {
+    // Expect "P2k_NNN_..." — three segments minimum, joined by underscores.
+    let mut parts = name.splitn(3, '_');
+    let p2k = parts.next()?;
+    let num = parts.next()?;
+    let rest = parts.next()?;
+    if !p2k.eq_ignore_ascii_case("P2k") || num.parse::<u32>().is_err() {
+        return None;
+    }
+    Some((format!("{p2k}_{num}"), rest.to_owned()))
+}
+
+/// "millennium" → "Millennium". "tb_or_not_tb" → "Tb Or Not Tb".
+/// "band_pass1_2_bpf" → "Band Pass1 2 Bpf". Imperfect but readable; we never
+/// hand-curate the slug list and the variant number distinguishes siblings.
+fn prettify_slug(slug: &str) -> String {
+    slug.split('_')
+        .map(|w| {
+            let mut c = w.chars();
+            match c.next() {
+                None => String::new(),
+                Some(first) => first.to_ascii_uppercase().to_string() + c.as_str(),
+            }
+        })
+        .collect::<Vec<_>>()
+        .join(" ")
+}
+
+/// Extract K from `variant_K_dat_NNN`. Returns None if the pattern doesn't fit.
+fn variant_number(stem: &str) -> Option<u32> {
+    stem.strip_prefix("variant_")?
+        .split('_')
+        .next()?
+        .parse()
+        .ok()
 }
 
 fn collect_wavs(dir: &Path, base: &Path, out: &mut Vec<SourceEntry>) {
@@ -202,6 +364,14 @@ pub struct ForgeCore {
     /// Which fitter proposes a corner from a dropped sound. The fit is a starting
     /// point; this picks how it's derived. Default = the original peak picker.
     fit_mode: FitMode,
+    /// DRAW: the hand-placed actors per corner. When a corner's list is non-empty
+    /// it is realized into `corners[i]` through `realize_resonances` — the same
+    /// kind of object a fit produces. From-scratch authoring, no source needed.
+    design: [Vec<Resonance>; 4],
+    /// In DRAW mode the field places/drags actors instead of roaming the puck.
+    design_mode: bool,
+    /// The corner DRAW edits (0..3 = A/B/C/D). Selecting it snaps the puck there.
+    active: usize,
 }
 
 impl Default for ForgeCore {
@@ -215,6 +385,9 @@ impl Default for ForgeCore {
             reference_body: None,
             reference_packed: None,
             fit_mode: FitMode::default(),
+            design: core::array::from_fn(|_| Vec::new()),
+            design_mode: false,
+            active: 0,
         }
     }
 }
@@ -304,6 +477,140 @@ impl ForgeCore {
         }
         self.body_rev += 1;
         refit_any
+    }
+
+    // ── DRAW (from-scratch corner authoring) ──────────────────────────────────
+    pub fn design_mode(&self) -> bool {
+        self.design_mode
+    }
+
+    pub fn active(&self) -> usize {
+        self.active
+    }
+
+    /// Toggle DRAW. Entering pulls the active corner's existing shape (a loaded
+    /// ROM seed or a fit) into editable actors — the SKETCH→SCULPT bridge — and
+    /// snaps the puck to it so the scope shows exactly the corner you're shaping.
+    pub fn toggle_design(&mut self) {
+        self.design_mode = !self.design_mode;
+        if self.design_mode {
+            self.ensure_design_from_fit(self.active);
+            self.snap_to_active();
+        }
+    }
+
+    /// Select which corner DRAW edits, snapping the puck to its grid position and
+    /// (in DRAW) pulling its current shape into actors if it hasn't been touched.
+    pub fn set_active(&mut self, i: usize) {
+        self.active = i.min(3);
+        if self.design_mode {
+            self.ensure_design_from_fit(self.active);
+        }
+        self.snap_to_active();
+    }
+
+    /// SKETCH→SCULPT: if corner `i` has a shape (loaded ROM / fit) but no actors
+    /// yet, decode its poles into draggable actors so you can sculpt the seed.
+    /// Leaves a corner already being drawn untouched.
+    fn ensure_design_from_fit(&mut self, i: usize) {
+        let i = i.min(3);
+        if !self.design[i].is_empty() {
+            return;
+        }
+        if let Some(c) = self.corners[i].as_ref() {
+            let res = corner_to_resonances(&c.fit, AUTHORING_RATE);
+            if !res.is_empty() {
+                self.design[i] = res;
+                self.rebuild(i);
+            }
+        }
+    }
+
+    fn snap_to_active(&mut self) {
+        let (m, q) = [(0.0, 0.0), (1.0, 0.0), (0.0, 1.0), (1.0, 1.0)][self.active.min(3)];
+        self.morph = m;
+        self.q = q;
+    }
+
+    /// The placed actors of corner `i` (for drawing the draggable handles).
+    pub fn resonances(&self, i: usize) -> &[Resonance] {
+        &self.design[i.min(3)]
+    }
+
+    /// Add an actor to the active corner and rebuild it. Returns its index.
+    pub fn add_resonance(&mut self, freq_hz: f64, radius: f64, kind: ResoKind) -> usize {
+        let i = self.active.min(3);
+        if self.design[i].len() >= dsp::POLE_ZERO_COUNT {
+            return self.design[i].len().saturating_sub(1); // six actors max (six stages)
+        }
+        self.design[i].push(Resonance {
+            freq_hz,
+            radius,
+            kind,
+            cavity_semis: if matches!(kind, ResoKind::Cavity) { 3.0 } else { 0.0 },
+        });
+        self.rebuild(i);
+        self.design[i].len() - 1
+    }
+
+    /// Move actor `idx` of the active corner (frequency + sharpness) and rebuild.
+    pub fn move_resonance(&mut self, idx: usize, freq_hz: f64, radius: f64) {
+        let i = self.active.min(3);
+        if let Some(r) = self.design[i].get_mut(idx) {
+            r.freq_hz = freq_hz;
+            r.radius = radius;
+            self.rebuild(i);
+        }
+    }
+
+    /// Remove actor `idx` from the active corner and rebuild.
+    pub fn remove_resonance(&mut self, idx: usize) {
+        let i = self.active.min(3);
+        if idx < self.design[i].len() {
+            self.design[i].remove(idx);
+            self.rebuild(i);
+        }
+    }
+
+    /// Index of the actor nearest `freq_hz` (log distance) in the active corner.
+    pub fn nearest_resonance(&self, freq_hz: f64) -> Option<usize> {
+        let i = self.active.min(3);
+        self.design[i]
+            .iter()
+            .enumerate()
+            .min_by(|(_, a), (_, b)| {
+                let da = (a.freq_hz / freq_hz.max(1.0)).ln().abs();
+                let db = (b.freq_hz / freq_hz.max(1.0)).ln().abs();
+                da.partial_cmp(&db).unwrap_or(core::cmp::Ordering::Equal)
+            })
+            .map(|(idx, _)| idx)
+    }
+
+    /// Realize the active corner's actor list into a corner (or clear if empty).
+    /// A drawn corner is the same kind of object a fit produces, so `body()`,
+    /// `preview()`, and every save/export path work on it unchanged.
+    fn rebuild(&mut self, i: usize) {
+        if self.design[i].is_empty() {
+            self.corners[i] = None;
+        } else {
+            let fit = realize_resonances(&self.design[i], AUTHORING_RATE);
+            let fit_db = magnitude_response(&fit, AUTHORING_RATE);
+            self.corners[i] = Some(Corner {
+                name: format!("DRAW {}", SLOT_LETTERS[i]),
+                fit,
+                src_db: fit_db.clone(),
+                fit_db,
+                duration_s: 0.0,
+                sample_rate: AUTHORING_RATE as u32,
+                channels: 1,
+                bits: 32,
+                samples: Vec::new(),
+                src_sr: 0.0,
+            });
+        }
+        self.reference_body = None; // a drawn corner supersedes a loaded frame
+        self.reference_packed = None;
+        self.body_rev += 1;
     }
 
     // ── loading ─────────────────────────────────────────────────────────────
@@ -409,12 +716,13 @@ impl ForgeCore {
         let bytes = std::fs::read(path).map_err(|e| e.to_string())?;
         let packed = trench_core::minifloat::PackedCorners::from_rom_bytes(&bytes)
             .map_err(|e| e.to_string())?;
-        // Decode each corner verbatim by interpolating at its own grid position.
+        // Direct unpack — one corner = one stored set of 5×6 packed words decoded
+        // through `stage_words_to_kernel`. No interpolation primitive in the path.
         let corners = [
-            packed.interpolate(0.0, 0.0),
-            packed.interpolate(1.0, 0.0),
-            packed.interpolate(0.0, 1.0),
-            packed.interpolate(1.0, 1.0),
+            packed.corner_kernel(0),
+            packed.corner_kernel(1),
+            packed.corner_kernel(2),
+            packed.corner_kernel(3),
         ];
         const LABELS: [&str; 4] = ["M0_Q0", "M100_Q0", "M0_Q100", "M100_Q100"];
         for (ci, &corner) in corners.iter().enumerate() {
@@ -544,11 +852,69 @@ impl ForgeCore {
         Some(PackedCorners::from_corner_data(&self.body()?))
     }
 
+    /// Test-only: install a verbatim 240-byte body straight into the
+    /// `reference_packed` slot so the publish gate can be exercised without
+    /// touching the filesystem. Mirrors `load_reference_rom` minus the I/O
+    /// and the per-corner decode (decode is covered by FG-1 tests).
+    #[cfg(test)]
+    fn set_reference_for_test(&mut self, packed: PackedCorners) {
+        let corners = [
+            packed.corner_kernel(0),
+            packed.corner_kernel(1),
+            packed.corner_kernel(2),
+            packed.corner_kernel(3),
+        ];
+        self.reference_body = Some(corners);
+        self.reference_packed = Some(packed);
+        self.body_rev += 1;
+    }
+
+    /// Publishability gate. Returns `None` when the body is honest to ship;
+    /// `Some(reason)` when publishing would emit a body whose corners came
+    /// from the `shift_corner`/`sharpen_corner` fallback in `body()`.
+    ///
+    /// Publishable when:
+    /// 1. a verbatim 240-byte ROM/body was loaded (`reference_packed.is_some()`), or
+    /// 2. all four corner slots are explicitly populated (real fit / design /
+    ///    drawn / captured corner placed in each).
+    ///
+    /// The synthesised-corner fallback in `body()` is fine for in-Forge
+    /// preview — drag a starter into HOME and see what the Morph axis sounds
+    /// like before fitting the other slots — but it is never an honest
+    /// publish. `save()` calls this; the underlying `export_json` /
+    /// `export_body240` stay un-gated for preview and tests.
+    pub fn publishability_error(&self) -> Option<String> {
+        if self.reference_packed.is_some() {
+            return None;
+        }
+        let missing: Vec<&str> = CORNER_LABELS
+            .iter()
+            .enumerate()
+            .filter_map(|(i, label)| {
+                if self.corners[i].is_none() {
+                    Some(*label)
+                } else {
+                    None
+                }
+            })
+            .collect();
+        if missing.is_empty() {
+            None
+        } else {
+            Some(format!(
+                "publish requires all 4 corners loaded (missing: {}). The synthesised-corner fallback is for in-Forge preview only — not a shippable body.",
+                missing.join(", ")
+            ))
+        }
+    }
+
     // ── reset / export / save ───────────────────────────────────────────────
     pub fn reset(&mut self) {
         self.corners = core::array::from_fn(|_| None);
         self.reference_body = None;
         self.reference_packed = None;
+        self.design = core::array::from_fn(|_| Vec::new());
+        self.active = 0;
         self.morph = 0.0;
         self.q = 0.0;
         self.body_rev += 1;
@@ -583,7 +949,7 @@ impl ForgeCore {
                     .collect();
                 serde_json::json!({
                     "label": label,
-                    "boost": EXPORT_BOOST,
+                    "boost": default_boost_for_engagement(),
                     "packedWords": packed_words, // authority
                     "stages": stages,            // readback / legacy fallback only
                 })
@@ -609,12 +975,46 @@ impl ForgeCore {
         Some(self.packed_authority()?.to_rom_bytes())
     }
 
+    /// Worst-case pole radius across the bilinear-interp morph surface and
+    /// the (morph, q) cell where it occurs. Returns `None` when no body is
+    /// assembled yet. See `dsp::morph_surface_max_pole_radius` for the why
+    /// (ARMAdillo behaviour: the middle can leave the unit circle even when
+    /// the four corners are stable).
+    pub fn morph_surface_stability(&self) -> Option<(f64, (f64, f64))> {
+        let body = self.body()?;
+        Some(dsp::morph_surface_max_pole_radius(&body, 5))
+    }
+
+    /// Human-readable stability warning, present only when the morph surface
+    /// scan exceeded the safety radius. The UI surfaces this as a banner so
+    /// the user knows the middle is destabilised even though the corners
+    /// look fine on the response curve.
+    pub fn stability_warning(&self) -> Option<String> {
+        let (r, (m, q)) = self.morph_surface_stability()?;
+        if r > dsp::STABILITY_RADIUS_LIMIT {
+            Some(format!(
+                "morph cell (m={:.2}, Q={:.2}) reaches r={:.4} — the middle is destabilised; widen the corner spread or pull the high-Q corner back",
+                m, q, r
+            ))
+        } else {
+            None
+        }
+    }
+
     /// Export and write to the canonical authoring slot. Writes BOTH the
     /// compiled-v1 JSON (with authoritative `packedWords`) and a raw
     /// `authoring_slot.body240` next to it. Returns the JSON path written.
+    /// Logs (stderr) a stability warning if the morph surface destabilises,
+    /// but does NOT block the write — the user may want to audition the edge.
     pub fn save(&self) -> Result<PathBuf, String> {
+        if let Some(reason) = self.publishability_error() {
+            return Err(reason);
+        }
         let json = self.export_json().ok_or("drop a sound first")?;
         let bytes = self.export_body240().ok_or("drop a sound first")?;
+        if let Some(msg) = self.stability_warning() {
+            eprintln!("forge save: STABILITY WARNING — {msg}");
+        }
         let home = std::env::var("USERPROFILE")
             .or_else(|_| std::env::var("HOME"))
             .unwrap_or_default();
@@ -820,7 +1220,7 @@ mod tests {
             BODY_BYTES,
             ".body240 must be exactly 240 bytes"
         );
-        let raw = Cartridge::from_body_bytes("tone", &bytes, EXPORT_BOOST)
+        let raw = Cartridge::from_body_bytes("tone", &bytes, default_boost_for_engagement())
             .expect("loads from raw .body240");
         assert_eq!(
             cart.packed.unwrap().words,
@@ -859,5 +1259,210 @@ mod tests {
             "a loaded 240-byte body must export verbatim (no decode→repack drift)"
         );
         let _ = std::fs::remove_file(&path);
+    }
+
+    // DRAW: a from-scratch corner (no source, no fit) realizes into a real corner,
+    // stays finite + stable across the puck sweep, and exports through the same
+    // canonical packed path as everything else.
+    #[test]
+    fn drawn_corner_realizes_and_exports() {
+        let mut core = ForgeCore::default();
+        core.toggle_design();
+        assert!(core.design_mode());
+        core.set_active(0);
+        core.add_resonance(90.0, 0.94, ResoKind::Peak);
+        core.add_resonance(300.0, 0.96, ResoKind::Peak);
+        let edge = core.add_resonance(16_000.0, 0.99, ResoKind::Edge);
+        assert_eq!(core.resonances(0).len(), 3);
+        assert_eq!(core.nearest_resonance(15_000.0), Some(edge));
+
+        let c = core.corner(0).expect("drawn corner present");
+        assert!(
+            c.fit.iter().flatten().all(|v| v.is_finite()),
+            "drawn corner must be finite"
+        );
+
+        assert!(core.can_save(), "a body must assemble from one drawn corner");
+        for &(m, q) in &[(0.0, 0.0), (1.0, 0.0), (0.0, 1.0), (1.0, 1.0), (0.5, 0.5)] {
+            core.set_puck(m, q);
+            let body = core.body().expect("body at every puck position");
+            assert!(
+                body.iter().flatten().flatten().all(|v| v.is_finite()),
+                "non-finite drawn body at morph={m} q={q}"
+            );
+        }
+
+        let json = core.export_json().expect("export json");
+        assert!(
+            json.contains("packedWords") && json.contains("M0_Q0"),
+            "drawn body must export through the canonical packed path"
+        );
+
+        core.move_resonance(0, 120.0, 0.90);
+        core.remove_resonance(0);
+        assert_eq!(core.resonances(0).len(), 2, "remove drops an actor");
+    }
+
+    // SKETCH→SCULPT: a corner realized from actors decodes back into actors at the
+    // same pole frequencies, so a loaded seed can be pulled into DRAW and nudged.
+    #[test]
+    fn corner_pulls_back_into_actors() {
+        let res = vec![
+            Resonance {
+                freq_hz: 250.0,
+                radius: 0.95,
+                kind: ResoKind::Peak,
+                cavity_semis: 0.0,
+            },
+            Resonance {
+                freq_hz: 1_400.0,
+                radius: 0.93,
+                kind: ResoKind::Peak,
+                cavity_semis: 0.0,
+            },
+        ];
+        let corner = realize_resonances(&res, AUTHORING_RATE);
+        let back = corner_to_resonances(&corner, AUTHORING_RATE);
+        assert!(back.len() >= 2, "both poles recovered as actors");
+        let f_lo = back.iter().map(|r| r.freq_hz).fold(f64::INFINITY, f64::min);
+        assert!(
+            (f_lo - 250.0).abs() / 250.0 < 0.08,
+            "low pole frequency recovered (got {f_lo})"
+        );
+    }
+
+    // The bridge end to end: a loaded corner (here a synthetic tone) becomes
+    // editable DRAW actors the moment you enter DRAW on it.
+    #[test]
+    fn entering_draw_pulls_a_loaded_corner_into_actors() {
+        let sr = 16_000.0;
+        let tau = std::f64::consts::TAU;
+        let tone: Vec<f64> = (0..8_000)
+            .map(|i| {
+                let t = i as f64 / sr;
+                (tau * 700.0 * t).sin() + 0.4 * (tau * 1_800.0 * t).sin()
+            })
+            .collect();
+        let mut core = ForgeCore::default();
+        core.load_samples(0, &tone, sr, "seed".to_owned());
+        assert!(core.corner(0).is_some());
+        assert!(core.resonances(0).is_empty(), "no actors before DRAW");
+        core.toggle_design(); // active = 0 → pulls its poles into editable actors
+        assert!(
+            !core.resonances(0).is_empty(),
+            "a loaded seed becomes sculptable actors on entering DRAW"
+        );
+    }
+
+    // CHEAP PROOF: construct a "metallic vowel" body directly through the resonance
+    // API (Klatt formants + Bark notches as actors) — no fitter, no UI — and export
+    // a shippable cartridge. M0/M100 = Ah/Oo soft anchors; Q0->Q100 heats the
+    // formants and tears in fractures. Run, then load bodies/proofs/ in the DAW.
+    #[test]
+    fn cheap_proof_metallic_vowel() {
+        let mut core = ForgeCore::default();
+        core.toggle_design();
+
+        core.set_active(0); // M0_Q0: "Ah" vocal anchor, soft
+        core.add_resonance(730.0, 0.85, ResoKind::Peak);
+        core.add_resonance(1090.0, 0.80, ResoKind::Peak);
+        core.add_resonance(2440.0, 0.75, ResoKind::Peak);
+
+        core.set_active(1); // M100_Q0: "Oo" vocal anchor, soft
+        core.add_resonance(300.0, 0.85, ResoKind::Peak);
+        core.add_resonance(870.0, 0.80, ResoKind::Peak);
+        core.add_resonance(2240.0, 0.75, ResoKind::Peak);
+
+        core.set_active(2); // M0_Q100: "Ah" heated + fracture
+        core.add_resonance(730.0, 0.98, ResoKind::Peak);
+        core.add_resonance(1090.0, 0.96, ResoKind::Peak);
+        core.add_resonance(2440.0, 0.94, ResoKind::Peak);
+        core.add_resonance(3150.0, 0.99, ResoKind::Notch);
+        core.add_resonance(4400.0, 0.99, ResoKind::Notch);
+        core.add_resonance(8000.0, 0.99, ResoKind::Edge);
+
+        core.set_active(3); // M100_Q100: "Oo" heated + fracture
+        core.add_resonance(300.0, 0.98, ResoKind::Peak);
+        core.add_resonance(870.0, 0.96, ResoKind::Peak);
+        core.add_resonance(2240.0, 0.94, ResoKind::Peak);
+        core.add_resonance(3700.0, 0.99, ResoKind::Notch);
+        core.add_resonance(5300.0, 0.99, ResoKind::Notch);
+        core.add_resonance(9500.0, 0.99, ResoKind::Edge);
+
+        // Body assembles, stays finite across the puck sweep.
+        assert!(core.can_save());
+        for &(m, q) in &[(0.0, 0.0), (1.0, 0.0), (0.0, 1.0), (1.0, 1.0), (0.5, 0.5)] {
+            core.set_puck(m, q);
+            let body = core.body().expect("body at every puck position");
+            assert!(body.iter().flatten().flatten().all(|v| v.is_finite()));
+        }
+
+        let json = core.export_json().expect("exports cleanly");
+        assert!(json.contains("packedWords"));
+        let dir = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+            .join("..")
+            .join("bodies")
+            .join("proofs");
+        std::fs::create_dir_all(&dir).unwrap();
+        std::fs::write(dir.join("metallic_vowel_target.json"), json).unwrap();
+    }
+
+    // FG-2: bodies built through the shift_corner/sharpen_corner fabrication
+    // fallback in `body()` must not publish. The fallback is fine for in-Forge
+    // preview (drag HOME in, hear the Morph axis before fitting the rest) but
+    // the publish gate requires every corner explicit.
+    #[test]
+    fn publish_gate_rejects_fabricated_corners() {
+        let mut core = ForgeCore::default();
+        core.toggle_design();
+
+        // Empty Forge: every slot missing → publish refused, all 4 labels named.
+        assert!(core.publishability_error().is_some());
+        assert!(core.save().is_err());
+        let msg = core.publishability_error().unwrap();
+        for label in ["M0_Q0", "M100_Q0", "M0_Q100", "M100_Q100"] {
+            assert!(msg.contains(label), "expected {label} in error: {msg}");
+        }
+
+        // One corner loaded: still refused; the three missing labels named.
+        core.set_active(0);
+        core.add_resonance(800.0, 0.85, ResoKind::Peak);
+        let msg = core
+            .publishability_error()
+            .expect("only HOME loaded — still 3 missing");
+        assert!(!msg.contains("M0_Q0"), "M0_Q0 was loaded: {msg}");
+        for label in ["M100_Q0", "M0_Q100", "M100_Q100"] {
+            assert!(msg.contains(label), "expected {label} in error: {msg}");
+        }
+        assert!(core.save().is_err());
+
+        // All four corners explicitly drawn: gate clears.
+        for slot in 1..4 {
+            core.set_active(slot);
+            core.add_resonance(800.0 + 200.0 * slot as f64, 0.85, ResoKind::Peak);
+        }
+        assert!(
+            core.publishability_error().is_none(),
+            "all 4 corners explicit — gate should clear"
+        );
+        // (We don't actually call .save() here because it writes to ~/Documents.)
+    }
+
+    #[test]
+    fn publish_gate_accepts_verbatim_rom_body() {
+        // A 240-byte ROM/body load takes the reference_packed path and is
+        // shippable verbatim — no fabrication, no per-corner explicit setup
+        // through the resonance UI required.
+        use trench_core::minifloat::{PackedCorners, BODY_BYTES};
+        let dummy_bytes = [0u8; BODY_BYTES]; // legal length; words may be all zero
+        let packed = PackedCorners::from_body_bytes(&dummy_bytes).unwrap();
+        let mut core = ForgeCore::default();
+        // Simulate what load_reference_rom does for state: set the verbatim
+        // body and packed, leave self.corners empty.
+        core.set_reference_for_test(packed);
+        assert!(
+            core.publishability_error().is_none(),
+            "verbatim 240-byte ROM must publish without any corners[] set"
+        );
     }
 }

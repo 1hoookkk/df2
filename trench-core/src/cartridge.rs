@@ -298,11 +298,35 @@ impl Cartridge {
         })
     }
 
+    /// The single shipping morph/Q interpolation entry point.
+    ///
+    /// Every cartridge constructed from `.body240` / JSON `packedWords` / FFI
+    /// raw bytes carries `packed = Some(_)` and dispatches into
+    /// [`PackedCorners::interpolate_biquad`] — packed-u16 bilinear in the
+    /// same domain the E-mu hardware morphs. This is the path the player
+    /// runs, the path null-vs-X3 (-95.41 dB @ M50/Q50) was achieved with, and
+    /// the only path tools should compare against.
+    ///
+    /// The `packed = None` branch is the legacy stage-coefficients f64
+    /// fallback — see [`Self::interpolate_legacy_stages`]. It exists only for
+    /// bodies that never carried packed words (pre-`packed-body-v1` JSON);
+    /// no shipping body lands in this branch.
     pub fn interpolate(&self, morph: f64, q: f64) -> CornerData {
         if let Some(packed) = &self.packed {
             return packed.interpolate_biquad(morph as f32, q as f32);
         }
+        self.interpolate_legacy_stages(morph, q)
+    }
 
+    /// f64 bilinear over the decoded `stages` coefficients — legacy fallback
+    /// for cartridges built without `packedWords`.
+    ///
+    /// **Never used for shipping bodies.** Bodies authored after the canonical
+    /// 240-byte path (`STATE.md` 2026-05-26) all carry packed words; this
+    /// branch only fires for legacy compiled-v1 JSON files lacking
+    /// `packedWords`. It is preserved so those files still load, not as a
+    /// production interpolation path.
+    fn interpolate_legacy_stages(&self, morph: f64, q: f64) -> CornerData {
         let mut result = [[0.0; NUM_COEFFS]; NUM_STAGES];
         for stage in 0..NUM_STAGES {
             for c in 0..NUM_COEFFS {

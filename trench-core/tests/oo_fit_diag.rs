@@ -49,7 +49,9 @@ fn synth_noise(modes: &[(f64, f64, f64)], dur: f64) -> Vec<f64> {
     let mut seed = 7u64;
     let mut noise = vec![0.0; n];
     for v in noise.iter_mut() {
-        seed = seed.wrapping_mul(6364136223846793005).wrapping_add(1442695040888963407);
+        seed = seed
+            .wrapping_mul(6364136223846793005)
+            .wrapping_add(1442695040888963407);
         let u = (seed >> 11) as f64 / (1u64 << 53) as f64;
         *v = u - 0.5;
     }
@@ -83,7 +85,12 @@ fn score(samples: &[f64], real_formants: &[f64], pre_emph: f64) -> (usize, usize
     let lo = real_formants.iter().cloned().fold(f64::INFINITY, f64::min);
     let low_rr = poles
         .iter()
-        .min_by(|a, b| (a.freq_hz - lo).abs().partial_cmp(&(b.freq_hz - lo).abs()).unwrap())
+        .min_by(|a, b| {
+            (a.freq_hz - lo)
+                .abs()
+                .partial_cmp(&(b.freq_hz - lo).abs())
+                .unwrap()
+        })
         .map(|p| (-std::f64::consts::PI * p.bw_hz / RUNTIME_SR).exp())
         .unwrap_or(0.0);
     (captured, poles.len(), spurious, low_rr)
@@ -94,7 +101,10 @@ fn dump_poles(name: &str, samples: &[f64], real_formants: &[f64], pre_emph: f64)
     println!("\n-- {name} @ pre_emph={pre_emph}  (real: {real_formants:?}) --");
     for (i, p) in poles.iter().enumerate() {
         let rr = (-std::f64::consts::PI * p.bw_hz / RUNTIME_SR).exp();
-        println!("  pole[{i}] f={:7.1}Hz  bw={:6.1}Hz  runtime_r={:.4}", p.freq_hz, p.bw_hz, rr);
+        println!(
+            "  pole[{i}] f={:7.1}Hz  bw={:6.1}Hz  runtime_r={:.4}",
+            p.freq_hz, p.bw_hz, rr
+        );
     }
     print!("  valleys:");
     for v in valleys.iter().take(6) {
@@ -105,11 +115,68 @@ fn dump_poles(name: &str, samples: &[f64], real_formants: &[f64], pre_emph: f64)
 
 fn sounds() -> Vec<(&'static str, Vec<f64>, Vec<f64>)> {
     vec![
-        ("ah", synth(&[(730.0, 80.0, 1.0), (1090.0, 90.0, 0.6), (2440.0, 120.0, 0.3)], 2.0, 120.0), vec![730.0, 1090.0, 2440.0]),
-        ("ee", synth(&[(270.0, 60.0, 1.0), (2290.0, 100.0, 0.7), (3010.0, 150.0, 0.3)], 2.0, 120.0), vec![270.0, 2290.0, 3010.0]),
-        ("oo", synth(&[(300.0, 60.0, 1.0), (870.0, 80.0, 0.5), (2240.0, 120.0, 0.2)], 2.0, 120.0), vec![300.0, 870.0, 2240.0]),
-        ("eh", synth(&[(530.0, 70.0, 1.0), (1840.0, 100.0, 0.6), (2480.0, 130.0, 0.3)], 2.0, 120.0), vec![530.0, 1840.0, 2480.0]),
-        ("tube", synth_noise(&[(220.0, 6.0, 1.0), (540.0, 8.0, 0.8), (980.0, 12.0, 0.6), (1490.0, 16.0, 0.4), (2300.0, 26.0, 0.25)], 2.0), vec![220.0, 540.0, 980.0, 1490.0, 2300.0]),
+        (
+            "ah",
+            synth(
+                &[
+                    (730.0, 80.0, 1.0),
+                    (1090.0, 90.0, 0.6),
+                    (2440.0, 120.0, 0.3),
+                ],
+                2.0,
+                120.0,
+            ),
+            vec![730.0, 1090.0, 2440.0],
+        ),
+        (
+            "ee",
+            synth(
+                &[
+                    (270.0, 60.0, 1.0),
+                    (2290.0, 100.0, 0.7),
+                    (3010.0, 150.0, 0.3),
+                ],
+                2.0,
+                120.0,
+            ),
+            vec![270.0, 2290.0, 3010.0],
+        ),
+        (
+            "oo",
+            synth(
+                &[(300.0, 60.0, 1.0), (870.0, 80.0, 0.5), (2240.0, 120.0, 0.2)],
+                2.0,
+                120.0,
+            ),
+            vec![300.0, 870.0, 2240.0],
+        ),
+        (
+            "eh",
+            synth(
+                &[
+                    (530.0, 70.0, 1.0),
+                    (1840.0, 100.0, 0.6),
+                    (2480.0, 130.0, 0.3),
+                ],
+                2.0,
+                120.0,
+            ),
+            vec![530.0, 1840.0, 2480.0],
+        ),
+        (
+            "tube",
+            synth_noise(
+                &[
+                    (220.0, 6.0, 1.0),
+                    (540.0, 8.0, 0.8),
+                    (980.0, 12.0, 0.6),
+                    (1490.0, 16.0, 0.4),
+                    (2300.0, 26.0, 0.25),
+                ],
+                2.0,
+            ),
+            vec![220.0, 540.0, 980.0, 1490.0, 2300.0],
+        ),
     ]
 }
 
@@ -127,7 +194,10 @@ fn pre_emphasis_sweep() {
         print!("{name:>10}");
         for pe in sweep {
             let (cap, n, spur, rr) = score(samples, formants, pe);
-            print!("{:>18}", format!("{cap}/{} n{n} s{spur} r{rr:.3}", formants.len()));
+            print!(
+                "{:>18}",
+                format!("{cap}/{} n{n} s{spur} r{rr:.3}", formants.len())
+            );
         }
         println!();
     }

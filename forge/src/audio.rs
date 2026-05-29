@@ -16,6 +16,24 @@ use cpal::{FromSample, SizedSample};
 const EMU: f64 = 39062.5;
 const NS: usize = 6;
 const SCOPE_LEN: usize = 2048; // recent output samples for the live response
+const DEFAULT_LEVEL: f32 = 0.85;
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum SourceMode {
+    Pink = 0,
+    Tone = 1,
+    Saw = 2,
+}
+
+impl SourceMode {
+    fn from_bits(bits: u32) -> Self {
+        match bits {
+            1 => Self::Tone,
+            2 => Self::Saw,
+            _ => Self::Pink,
+        }
+    }
+}
 
 /// Per-stage biquad coefficients [b0, b1, b2, a1, a2].
 pub type Biquads = [[f64; 5]; NS];
@@ -31,8 +49,7 @@ pub struct Audio {
     pub level: Arc<AtomicU32>,
     pub peak: Arc<AtomicU32>,
     pub scope: Arc<Mutex<Vec<f32>>>,
-    pub src: Arc<Mutex<Option<Vec<f32>>>>, // looped sample source (host rate)
-    pub use_sample: Arc<AtomicBool>,       // false = pink noise, true = sample
+    pub source_mode: Arc<AtomicU32>,
     pub rate: f64,
     pub device_name: String,
 }
@@ -43,6 +60,9 @@ impl Audio {
             *g = b;
         }
     }
+    pub fn clear_target(&self) {
+        self.set_target(passthru());
+    }
     pub fn set_playing(&self, on: bool) {
         self.playing.store(on, Ordering::Relaxed);
     }
@@ -52,22 +72,20 @@ impl Audio {
     pub fn set_level(&self, v: f32) {
         self.level.store(v.to_bits(), Ordering::Relaxed);
     }
+    pub fn level(&self) -> f32 {
+        f32::from_bits(self.level.load(Ordering::Relaxed))
+    }
     pub fn meter(&self) -> f32 {
         f32::from_bits(self.peak.load(Ordering::Relaxed))
     }
     pub fn scope_copy(&self) -> Vec<f32> {
         self.scope.lock().map(|g| g.clone()).unwrap_or_default()
     }
-    pub fn set_sample(&self, s: Option<Vec<f32>>) {
-        if let Ok(mut g) = self.src.lock() {
-            *g = s;
-        }
+    pub fn set_source_mode(&self, mode: SourceMode) {
+        self.source_mode.store(mode as u32, Ordering::Relaxed);
     }
-    pub fn set_use_sample(&self, on: bool) {
-        self.use_sample.store(on, Ordering::Relaxed);
-    }
-    pub fn uses_sample(&self) -> bool {
-        self.use_sample.load(Ordering::Relaxed)
+    pub fn source_mode(&self) -> SourceMode {
+        SourceMode::from_bits(self.source_mode.load(Ordering::Relaxed))
     }
 }
 
@@ -146,17 +164,17 @@ fn run<T>(
     level: Arc<AtomicU32>,
     peak: Arc<AtomicU32>,
     scope: Arc<Mutex<Vec<f32>>>,
-    src: Arc<Mutex<Option<Vec<f32>>>>,
-    use_sample: Arc<AtomicBool>,
+    source_mode: Arc<AtomicU32>,
 ) -> Option<cpal::Stream>
 where
     T: SizedSample + FromSample<f32>,
 {
     let mut voice = Voice::new(config.sample_rate.0 as f64);
+    let host_rate = config.sample_rate.0 as f64;
     let mut meter = 0f32;
     let mut pb = [0f64; 7];
     let mut rng = 0x2545_F491_4F6C_DD1Du64;
-    let mut pos = 0usize;
+    let mut phase = 0.0f64;
     device
         .build_output_stream(
             config,
@@ -164,44 +182,47 @@ where
                 let tgt = *target.lock().unwrap();
                 let on = playing.load(Ordering::Relaxed);
                 let lvl = f32::from_bits(level.load(Ordering::Relaxed)) as f64;
-                let use_s = use_sample.load(Ordering::Relaxed);
-                let guard = src.lock().ok();
-                let smp: Option<&Vec<f32>> = guard.as_ref().and_then(|g| g.as_ref());
+                let mode = SourceMode::from_bits(source_mode.load(Ordering::Relaxed));
                 let mut block: Vec<f32> = Vec::with_capacity(data.len() / channels.max(1) + 1);
                 for frame in data.chunks_mut(channels.max(1)) {
                     let x = if !on {
                         0.0
-                    } else if use_s {
-                        match smp {
-                            Some(s) if !s.is_empty() => {
-                                let v = s[pos % s.len()] as f64;
-                                pos = pos.wrapping_add(1);
+                    } else {
+                        match mode {
+                            SourceMode::Tone => {
+                                let v = (std::f64::consts::TAU * phase).sin() * 0.45;
+                                phase = (phase + 110.0 / host_rate).fract();
                                 v
                             }
-                            _ => 0.0,
+                            SourceMode::Saw => {
+                                let v = (phase * 2.0 - 1.0) * 0.36;
+                                phase = (phase + 110.0 / host_rate).fract();
+                                v
+                            }
+                            SourceMode::Pink => {
+                                rng = rng
+                                    .wrapping_mul(6364136223846793005)
+                                    .wrapping_add(1442695040888963407);
+                                let white = ((rng >> 40) as f64 / (1u64 << 23) as f64) - 1.0;
+                                pb[0] = 0.99886 * pb[0] + white * 0.0555179;
+                                pb[1] = 0.99332 * pb[1] + white * 0.0750759;
+                                pb[2] = 0.96900 * pb[2] + white * 0.1538520;
+                                pb[3] = 0.86650 * pb[3] + white * 0.3104856;
+                                pb[4] = 0.55000 * pb[4] + white * 0.5329522;
+                                pb[5] = -0.7616 * pb[5] - white * 0.0168980;
+                                let pink = (pb[0]
+                                    + pb[1]
+                                    + pb[2]
+                                    + pb[3]
+                                    + pb[4]
+                                    + pb[5]
+                                    + pb[6]
+                                    + white * 0.5362)
+                                    * 0.11;
+                                pb[6] = white * 0.115926;
+                                pink
+                            }
                         }
-                    } else {
-                        rng = rng
-                            .wrapping_mul(6364136223846793005)
-                            .wrapping_add(1442695040888963407);
-                        let white = ((rng >> 40) as f64 / (1u64 << 23) as f64) - 1.0;
-                        pb[0] = 0.99886 * pb[0] + white * 0.0555179;
-                        pb[1] = 0.99332 * pb[1] + white * 0.0750759;
-                        pb[2] = 0.96900 * pb[2] + white * 0.1538520;
-                        pb[3] = 0.86650 * pb[3] + white * 0.3104856;
-                        pb[4] = 0.55000 * pb[4] + white * 0.5329522;
-                        pb[5] = -0.7616 * pb[5] - white * 0.0168980;
-                        let pink = (pb[0]
-                            + pb[1]
-                            + pb[2]
-                            + pb[3]
-                            + pb[4]
-                            + pb[5]
-                            + pb[6]
-                            + white * 0.5362)
-                            * 0.11;
-                        pb[6] = white * 0.115926;
-                        pink
                     };
                     let out = voice.sample(&tgt, x, lvl);
                     meter = meter.max(out.abs());
@@ -211,7 +232,6 @@ where
                         *xx = s;
                     }
                 }
-                drop(guard);
                 peak.store(meter.to_bits(), Ordering::Relaxed);
                 meter *= 0.55;
                 if let Ok(mut sc) = scope.lock() {
@@ -266,11 +286,10 @@ pub fn start_on(name: Option<&str>) -> Option<Audio> {
 
     let target = Arc::new(Mutex::new(passthru()));
     let playing = Arc::new(AtomicBool::new(false));
-    let level = Arc::new(AtomicU32::new(0.4f32.to_bits()));
+    let level = Arc::new(AtomicU32::new(DEFAULT_LEVEL.to_bits()));
     let peak = Arc::new(AtomicU32::new(0));
     let scope = Arc::new(Mutex::new(Vec::with_capacity(SCOPE_LEN)));
-    let src = Arc::new(Mutex::new(None));
-    let use_sample = Arc::new(AtomicBool::new(false));
+    let source_mode = Arc::new(AtomicU32::new(SourceMode::Saw as u32));
 
     let stream = match sample_format {
         cpal::SampleFormat::F32 => run::<f32>(
@@ -282,8 +301,29 @@ pub fn start_on(name: Option<&str>) -> Option<Audio> {
             level.clone(),
             peak.clone(),
             scope.clone(),
-            src.clone(),
-            use_sample.clone(),
+            source_mode.clone(),
+        ),
+        cpal::SampleFormat::F64 => run::<f64>(
+            &device,
+            &config,
+            channels,
+            target.clone(),
+            playing.clone(),
+            level.clone(),
+            peak.clone(),
+            scope.clone(),
+            source_mode.clone(),
+        ),
+        cpal::SampleFormat::I8 => run::<i8>(
+            &device,
+            &config,
+            channels,
+            target.clone(),
+            playing.clone(),
+            level.clone(),
+            peak.clone(),
+            scope.clone(),
+            source_mode.clone(),
         ),
         cpal::SampleFormat::I16 => run::<i16>(
             &device,
@@ -294,8 +334,7 @@ pub fn start_on(name: Option<&str>) -> Option<Audio> {
             level.clone(),
             peak.clone(),
             scope.clone(),
-            src.clone(),
-            use_sample.clone(),
+            source_mode.clone(),
         ),
         cpal::SampleFormat::U16 => run::<u16>(
             &device,
@@ -306,8 +345,7 @@ pub fn start_on(name: Option<&str>) -> Option<Audio> {
             level.clone(),
             peak.clone(),
             scope.clone(),
-            src.clone(),
-            use_sample.clone(),
+            source_mode.clone(),
         ),
         cpal::SampleFormat::I32 => run::<i32>(
             &device,
@@ -318,8 +356,51 @@ pub fn start_on(name: Option<&str>) -> Option<Audio> {
             level.clone(),
             peak.clone(),
             scope.clone(),
-            src.clone(),
-            use_sample.clone(),
+            source_mode.clone(),
+        ),
+        cpal::SampleFormat::I64 => run::<i64>(
+            &device,
+            &config,
+            channels,
+            target.clone(),
+            playing.clone(),
+            level.clone(),
+            peak.clone(),
+            scope.clone(),
+            source_mode.clone(),
+        ),
+        cpal::SampleFormat::U8 => run::<u8>(
+            &device,
+            &config,
+            channels,
+            target.clone(),
+            playing.clone(),
+            level.clone(),
+            peak.clone(),
+            scope.clone(),
+            source_mode.clone(),
+        ),
+        cpal::SampleFormat::U32 => run::<u32>(
+            &device,
+            &config,
+            channels,
+            target.clone(),
+            playing.clone(),
+            level.clone(),
+            peak.clone(),
+            scope.clone(),
+            source_mode.clone(),
+        ),
+        cpal::SampleFormat::U64 => run::<u64>(
+            &device,
+            &config,
+            channels,
+            target.clone(),
+            playing.clone(),
+            level.clone(),
+            peak.clone(),
+            scope.clone(),
+            source_mode.clone(),
         ),
         other => {
             eprintln!("audio: unsupported sample format {other:?}");
@@ -334,8 +415,7 @@ pub fn start_on(name: Option<&str>) -> Option<Audio> {
         level,
         peak,
         scope,
-        src,
-        use_sample,
+        source_mode,
         rate: sr,
         device_name,
     })

@@ -34,7 +34,13 @@ ROOT = Path(__file__).resolve().parents[1]
 if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
 
-from pyruntime.packed_interp import packed_bilinear  # noqa: E402
+from pyruntime.packed_interp import (  # noqa: E402
+    packed_bilinear,
+    packed_probe,
+    kernel_to_biquad,
+    core_available,
+    core_backend,
+)
 
 SR_DEFAULT = 44_100
 AUTHORING_SR = 39_062.5
@@ -96,17 +102,6 @@ def load_packed_cart(path: Path) -> tuple[str, dict[str, list[tuple[int, ...]]]]
     return str(cart.get("name") or path.stem), out
 
 
-def kernel_to_biquad(row: tuple[float, ...]) -> tuple[float, ...]:
-    c0, c1, c2, c3, c4 = row
-    return (
-        c4,
-        (c0 - 2.0) * c4,
-        (1.0 - c1) * c4,
-        c2 - 2.0,
-        1.0 - c3,
-    )
-
-
 def source_signal(n: int, sr: int) -> np.ndarray:
     t = np.arange(n, dtype=np.float64) / sr
     saw55 = 2.0 * ((55.0 * t) % 1.0) - 1.0
@@ -148,30 +143,28 @@ def drivers(mode: str, x: np.ndarray, sr: int, seed: int) -> tuple[np.ndarray, n
     raise ValueError(mode)
 
 
-def pole_radius(a1: float, a2: float) -> float:
-    roots = np.roots([1.0, a1, a2])
-    return float(np.max(np.abs(roots)))
-
-
 def static_probe(corners: dict[str, list[tuple[int, ...]]],
                  morph: np.ndarray, q: np.ndarray) -> dict[str, Any]:
+    """Sample the morph/Q surface and return stability diagnostics.
+
+    Delegates to trench-core's trench_packed_probe via packed_probe — no local
+    kernel_to_biquad or pole_radius. Results are identical to what the runtime
+    computes: same interpolation, same biquad conversion, same pole math.
+    """
     idx = np.linspace(0, len(morph) - 1, min(1024, len(morph))).astype(int)
     max_abs_coeff = 0.0
     max_pole_radius = 0.0
     nonfinite_coeffs = 0
     unstable_rows = 0
     for i in idx:
-        rows = packed_bilinear(corners, float(morph[i]), float(q[i]))
-        for row in rows:
-            b = kernel_to_biquad(row)
-            if not all(math.isfinite(v) for v in b):
+        probe = packed_probe(corners, float(morph[i]), float(q[i]))
+        for si, bq in enumerate(probe["biquad"]):
+            if (probe["nonfinite_mask"] >> si) & 1:
                 nonfinite_coeffs += 1
                 continue
-            max_abs_coeff = max(max_abs_coeff, max(abs(v) for v in b))
-            r = pole_radius(b[3], b[4])
-            max_pole_radius = max(max_pole_radius, r)
-            if r >= 1.0:
-                unstable_rows += 1
+            max_abs_coeff = max(max_abs_coeff, max(abs(v) for v in bq))
+        max_pole_radius = max(max_pole_radius, probe["max_pole_radius"])
+        unstable_rows += bin(probe["unstable_mask"]).count("1")
     return {
         "probe_points": int(len(idx)),
         "nonfinite_coeff_rows": int(nonfinite_coeffs),
@@ -350,7 +343,18 @@ def main() -> int:
     ap.add_argument("--sr", type=int, default=SR_DEFAULT)
     ap.add_argument("--seed", type=int, default=0x513DF2)
     ap.add_argument("--containment-drive", type=float, default=4.0)
+    ap.add_argument("--require-core", action="store_true",
+                    help="fail unless packed math runs through the shipped trench-core (FFI)")
     args = ap.parse_args()
+
+    if args.require_core and not core_available():
+        print(
+            f"teleport_stress error: trench-core FFI not available (backend={core_backend()}); "
+            "build it with `cargo build -p trench-core`",
+            file=sys.stderr,
+        )
+        return 1
+    print(f"interp   -> {core_backend()}")
 
     name, corners = load_packed_body(args.body)
     n = int(round(args.seconds * args.sr))

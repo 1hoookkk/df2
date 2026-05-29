@@ -43,7 +43,9 @@ fn capture_fit_cartridge_roundtrips() {
     let mut seed = 0xABCD_1234u64;
     let mut noise = vec![0.0f64; n];
     for v in noise.iter_mut() {
-        seed = seed.wrapping_mul(6364136223846793005).wrapping_add(1442695040888963407);
+        seed = seed
+            .wrapping_mul(6364136223846793005)
+            .wrapping_add(1442695040888963407);
         *v = ((seed >> 33) as f64 / (1u64 << 31) as f64) - 1.0;
     }
     let stage1 = resonator(&noise, 650.0, 0.97, sr);
@@ -57,7 +59,14 @@ fn capture_fit_cartridge_roundtrips() {
     let cart = Cartridge::from_json(&json).expect("Forge cartridge should parse in the runtime");
 
     // interpolation must be finite across the whole morph/cavity surface
-    for (m, q) in [(0.0, 0.0), (1.0, 0.0), (0.0, 1.0), (1.0, 1.0), (0.5, 0.5), (0.3, 0.7)] {
+    for (m, q) in [
+        (0.0, 0.0),
+        (1.0, 0.0),
+        (0.0, 1.0),
+        (1.0, 1.0),
+        (0.5, 0.5),
+        (0.3, 0.7),
+    ] {
         let c = cart.interpolate(m, q);
         for stage in &c {
             for v in stage {

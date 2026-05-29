@@ -57,7 +57,10 @@ fn every_engine_pill_loads() {
     let mut failures: Vec<String> = Vec::new();
     let root = repo_root();
     for token in tokens {
-        let id = token.get("id").and_then(|v| v.as_str()).unwrap_or("<missing id>");
+        let id = token
+            .get("id")
+            .and_then(|v| v.as_str())
+            .unwrap_or("<missing id>");
         let path = match token.get("path").and_then(|v| v.as_str()) {
             Some(path) => root.join(path),
             None => {

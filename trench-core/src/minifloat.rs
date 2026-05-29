@@ -228,6 +228,24 @@ impl PackedCorners {
         bytes
     }
 
+    /// Decode one stored corner verbatim to kernel-domain coefficients.
+    ///
+    /// `ci` is the corner index (0=M0_Q0, 1=M100_Q0, 2=M0_Q100, 3=M100_Q100).
+    /// This is the right primitive for "give me this corner as decoded
+    /// coefficients" — direct unpack of the 5 u16 words per stage through
+    /// `stage_words_to_kernel`. Use this instead of `interpolate(0,0)` etc.,
+    /// which happens to be byte-identical at the four grid points today but
+    /// depends on the f32 endpoint behaviour of `lerp_u16` and obscures intent.
+    ///
+    /// Panics if `ci >= 4`.
+    pub fn corner_kernel(&self, ci: usize) -> CornerData {
+        let mut result = [[0.0f64; NUM_COEFFS]; NUM_STAGES];
+        for si in 0..NUM_STAGES {
+            result[si] = stage_words_to_kernel(self.words[ci][si]);
+        }
+        result
+    }
+
     /// Morph-first bilinear interpolation in packed u16 space.
     ///
     /// Order: morph lerp (A→B, C→D) first, then Q lerp (edge0→edge1).

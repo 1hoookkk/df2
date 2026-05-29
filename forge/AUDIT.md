@@ -17,14 +17,20 @@ Audit of the standalone authoring app (`forge/`, the Filter Factory) and the
 > 4-corner model: four discrete audio anchors (M0·Q0 / M100·Q0 / M0·Q100 /
 > M100·Q100), a 2-D puck, crossing-allowed actor correspondence anchored on M0·Q0,
 > and four discrete corners exported (no duplication). Runtime/format unchanged.
+>
+> **Update (2026-05-26).** Re-ranked architecture: the authoring truth is now the
+> **full magnitude response surface** (`trench_core::response`, exported as
+> `responseAudit`), and the 4 corners × 6 stages are the final packed
+> realization. Actor/stage labels remain useful diagnostics, not the design
+> schema.
 
 ---
 
 ## 0. What it is, in one sentence
 
-**Capture a sound → reduce it to 6 resonances (one "corner") → drop a sound into
-each of the 4 Morph×Q corners → roam the morph/Q space in the frozen E-mu
-packed-coefficient grid → audition → save a cartridge.**
+**Author or capture target response curves → measure Morph/Q movement as curve
+change → factor the resulting surface into 4 packable corners × 6 stages → roam
+the packed surface → audition → save a cartridge with response audit metadata.**
 
 Everything else is plumbing around that sentence.
 
@@ -46,11 +52,11 @@ Trace one dropped WAV all the way through. `file:fn` shows where each step lives
 | 8 | Score the parse: weighted residual, max pack drift, impossible-notch penalty, and formant-specific error against the strongest target peaks in the formant band | `dsp::detect_formant_peaks` / `dsp::formant_peak_error` | — |
 | 9 | Result is Ready / Review / Blocked. Only Ready auto-assigns; Review stays visible for slice/fitter diagnosis | `FitQuality::can_assign` | — |
 | 10 | Inspect reports raw source, stylised target, fit peaks/valleys, residual, post-pack residual, max pack drift, formant error, per-stage role/frequency/radius/zero, and review/block reason | `inspect::inspect_controls` | — |
-| → | Result = one **CORNER**: 6 kernel biquads `[c0..c4]` | `ExtractionResults.corner` | — |
-| 11 | Four corners → **packed u16 minifloat** words. The non-anchor corners are first re-indexed onto the M0·Q0 anchor's actors (`dsp::align_to_anchor`, crossing-allowed) so stage *i* is the same actor at every corner | `minifloat::PackedCorners::from_corner_data` | — |
+| → | Result = one **response target realized as a corner**: 6 kernel biquads `[c0..c4]`. The response curve is the thing being judged; the six rows are the current factorization. | `trench_core::response` / `ExtractionResults.corner` | — |
+| 11 | Four response corners → **packed u16 minifloat** words. The non-anchor corners are first re-indexed onto the M0·Q0 anchor's actors (`dsp::align_to_anchor`, crossing-allowed) so stage *i* is the same bookkeeping row at every corner | `minifloat::PackedCorners::from_corner_data` | — |
 | 12 | **Morph×Q**: bilinear lerp of the packed words (morph→A/B & C/D, then Q) → decoded kernel corner | `minifloat::PackedCorners::interpolate(morph, q)` | — |
 | 13 | Audition: DF2T biquad cascade on the audio thread, run at 39062.5 via linear resampling, coefficients ramped (click-free) | `audio::Voice::sample` | device SR ↔ 39062.5 |
-| 14 | Save: `compiled-v1` JSON, 4 keyframes × 12 stages — the four **discrete** actor-aligned corners, all four required (no A/B→C/D duplication) | `App::export_body` | — |
+| 14 | Save: `compiled-v1` JSON, 4 keyframes × 6 stages plus `authoringModel=response-surface-v1` and `responseAudit`. `packedWords` is authority; `stages` is decoded readback/debugging. | `ForgeCore::export_json` | — |
 
 ---
 

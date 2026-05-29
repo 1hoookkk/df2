@@ -1,4 +1,5 @@
 #include "parameters/TrenchParameters.h"
+#include "TrenchBodyRoster.h"
 
 namespace TrenchParameters
 {
@@ -11,7 +12,7 @@ juce::AudioProcessorValueTreeState::ParameterLayout createParameterLayout()
         juce::ParameterID { ParamID::morph, 1 },
         "Morph",
         juce::NormalisableRange<float> { 0.0f, 1.0f, 0.001f },
-        0.729f));
+        0.0f));  // load at M0.
 
     layout.add (std::make_unique<juce::AudioParameterFloat> (
         juce::ParameterID { ParamID::q, 1 },
@@ -23,26 +24,76 @@ juce::AudioProcessorValueTreeState::ParameterLayout createParameterLayout()
         juce::ParameterID { ParamID::body, 1 },
         "Body",
         0,
-        127,
+        juce::jmax (1, trench::bodyCount() - 1),
         0));
 
     layout.add (std::make_unique<juce::AudioParameterFloat> (
-        juce::ParameterID { ParamID::slamDrive, 1 },
-        "Slam",
-        juce::NormalisableRange<float> { 0.0f, 1.0f, 0.001f },
-        0.35f));
+        juce::ParameterID { ParamID::output, 1 },
+        "Output",
+        juce::NormalisableRange<float> { -24.0f, 24.0f, 0.1f },
+        0.0f));  // final user makeup gain, dB — the only level control after the engine.
 
+    // PL-1: extras parameters live behind TRENCH_PLAYER_EXTRAS.
+    //
+    // Shipping build: these parameters do not exist. The plug-in surface is
+    // body / Morph / Q / Output, period — the smallest honest player runtime.
+    // Diagnostic / dev build: the parameters are present and processBlock's
+    // extras branches run when clean_audio::kEnabled() is flipped off.
+    //
+    // inputMode stays in the default layout because OFF is a clean identity
+    // and the user-visible "OFF / SLAM / EOS" choice is the band-aid for the
+    // 2026-05-28 regression where SLAM was the default; removing it would
+    // hide the choice that flips the regression back on by hand.
     layout.add (std::make_unique<juce::AudioParameterChoice> (
         juce::ParameterID { ParamID::inputMode, 1 },
         "Input",
         juce::StringArray { "OFF", "SLAM", "EOS" },
-        0));  // default = OFF — input character must be opt-in, not on-by-default
+        0));  // default = OFF — clean input reaches the selected body directly.
+
+#ifdef TRENCH_PLAYER_EXTRAS
+    layout.add (std::make_unique<juce::AudioParameterFloat> (
+        juce::ParameterID { ParamID::slamDrive, 1 },
+        "Slam",
+        juce::NormalisableRange<float> { 0.0f, 1.0f, 0.001f },
+        0.0f));
 
     layout.add (std::make_unique<juce::AudioParameterChoice> (
-        juce::ParameterID { ParamID::bitDepth, 1 },
-        "Bit Depth",
-        juce::StringArray { "24", "20", "16" },
-        0));  // default = 24-bit
+        juce::ParameterID { ParamID::fiveD, 1 },
+        "5D",
+        juce::StringArray { "Off", "Narrow", "Wide", "Full" },
+        0));  // default = Off — QSound depth is opt-in; Off is a true bypass.
+
+    // ── Teleport motion mode ──────────────────────────────────────────────────
+    layout.add (std::make_unique<juce::AudioParameterChoice> (
+        juce::ParameterID { ParamID::teleportMode, 1 },
+        "Teleport",
+        juce::StringArray { "Off", "Noise", "Strobe", "Deriv" },
+        0));  // default = Off — violent motion is opt-in.
+
+    layout.add (std::make_unique<juce::AudioParameterFloat> (
+        juce::ParameterID { ParamID::teleportAmount, 1 },
+        "Tport Amount",
+        juce::NormalisableRange<float> { 0.0f, 1.0f, 0.001f },
+        0.0f));  // zero by default — no motion until the user dials it in.
+
+    layout.add (std::make_unique<juce::AudioParameterFloat> (
+        juce::ParameterID { ParamID::teleportRate, 1 },
+        "Tport Rate",
+        juce::NormalisableRange<float> { 0.1f, 30.0f, 0.01f, 0.4f }, // skew toward low rates
+        4.0f));  // 4 Hz default — slow enough to hear the snap clearly.
+
+    layout.add (std::make_unique<juce::AudioParameterFloat> (
+        juce::ParameterID { ParamID::teleportMorphDepth, 1 },
+        "Tport M.Depth",
+        juce::NormalisableRange<float> { 0.0f, 1.0f, 0.001f },
+        1.0f));  // full morph-axis depth when active.
+
+    layout.add (std::make_unique<juce::AudioParameterFloat> (
+        juce::ParameterID { ParamID::teleportQDepth, 1 },
+        "Tport Q.Depth",
+        juce::NormalisableRange<float> { 0.0f, 1.0f, 0.001f },
+        1.0f));  // full Q-axis depth when active.
+#endif // TRENCH_PLAYER_EXTRAS
 
     return layout;
 }
