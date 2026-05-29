@@ -85,6 +85,15 @@ For frontend work: also check the global `frontend-design` and
   (`.body240` / JSON `packedWords`) → `BodyBytes240` → `PackedCorners` →
   `Cartridge`. `stages` is read-only fallback, never authority when packed bytes
   are present. The `compiled-v1` cartridge format is stable forever.
+- **Presets are authored by BOLD direct 4-frame placement — the ONLY authoring
+  path.** Like the ROM (which stores 240 bytes verbatim, no runtime compiler):
+  place poles directly via `tools/corner_words.py` → verbatim 240 bytes, scale via
+  the `forge-corners` skill. Poles on real freqs+bandwidths (`tables/`), every pole
+  zero-paired, MORPH = a bold whole-spectrum journey, Q = a free per-body character,
+  KIN corners so the MIDDLE (the product) glides; audition the middle through the
+  shipped engine, ear picks. The factorizer / `make_class_bodies` / `sweep_roster`
+  generate-and-cull path is **RETIRED for authoring** (drifts poles, skips
+  zero-pairing). See memory `canonical-preset-authoring`.
 - **Distortion IS the filters.** Character lives in the corners rendered through
   the faithful chip path (incl. its saturation). No clippers bolted between or
   after stages. The player is transparent. All tricks

@@ -1,0 +1,22 @@
+{
+  "format": "klatt-bandwidths-v1",
+  "description": "Klatt 1980 formant BANDWIDTHS (Hz). Bandwidth sets how sharply a formant rings; radius = exp(-pi*BW/SR) (tools/corner_words.r_from_bw). Companion to klatt_1980_formants.json (center freqs) and vowel_formants.json (Peterson-Barney). Captured from the project NotebookLM (Klatt 1980, Table I/II/III) 2026-05-29.",
+  "source": "Dennis H. Klatt, 'Software for a cascade/parallel formant synthesizer', JASA 67(3):971-995, 1980.",
+  "notes": "Klatt vowels are ALL-POLE (R1-R5 cascade, no zeros). The only explicit antiresonance is NASAL (RNP/RNZ). Fricatives use parallel-branch amplitudes, not zeros. Higher formants use constant default bandwidths.",
+  "default_high_formant_bw": { "B4": 250, "B5": 200, "B6": 1000, "comment": "Table I; B4/B5 held constant across vowels, F4/F5 ~3300/3850" },
+  "nasal_pole_zero": {
+    "FNP_hz": 270, "comment": "Table I; nasal pole fixed at 270 Hz. Non-nasal: FNZ=270 cancels it. Nasalized vowel: shift F1 up ~100 Hz, set FNZ = mean(F1+100, 270) -> pole-zero-pole split that reduces F1 amplitude.",
+    "BNP_hz": 100, "BNZ_hz": 100
+  },
+  "vowels": {
+    "_comment": "Table II isolated-vowel bandwidths. NotebookLM quoted the three corner vowels /i a u/ verbatim; the rest of Table II can be added when needed. Map: i=ee, a=ah, u=oo.",
+    "i":  { "vowel": "ee (bead)", "B1": 52,  "B2": 200, "B3": 400 },
+    "a":  { "vowel": "ah (bard)", "B1": 130, "B2": 70,  "B3": 160 },
+    "u":  { "vowel": "oo (boot)", "B1": 72,  "B2": 105, "B3": 110 }
+  },
+  "nasal_murmurs": {
+    "_comment": "Table III. Higher-frequency nasal character simulated by WIDENING bandwidths (B2/B3), not by extra poles/zeros.",
+    "m": { "B1": 40, "B2": 200, "B3": 200 },
+    "n": { "B1": 40, "B2": 300, "B3": 300 }
+  }
+}

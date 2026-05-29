@@ -32,17 +32,27 @@ bilinear (`cartridge.rs:314` → `interpolate_biquad`), not decoded-f64; the
 chassis is **not green** — palette is `TrenchStyle.h` (red-tinted PNG + bone +
 phosphor-green accent, active-only).
 
+**CANONICAL AUTHORING LOCKED (2026-05-29):** presets are made by **bold direct
+4-frame placement** (`corner_words` → 240 bytes verbatim, like the ROM), scaled
+via the `forge-corners` skill. Poles on real freqs+bandwidths, every pole
+zero-paired, MORPH = a bold whole-spectrum journey, Q = a free per-body character,
+KIN corners → the MIDDLE is the product. The factorizer / `make_class_bodies` /
+`sweep_roster` generate-and-cull path is RETIRED for authoring. Validated against
+the decoded ROM filters + the Morpheus source. See memory `canonical-preset-authoring`
+and CLAUDE.md "How presets are authored". The 0529 factorizer sweep
+(`dev/tmp/sweep/roster_0529`) is scratch — superseded.
+
 **DO NEXT (agreed sequence — Tyson drives the order):**
-1. *(optional)* push `forge-recovery` to origin.
-2. **Screen revamp.** `TrenchResponseDisplay` over-draws 8 layers — Morph/Q is
-   shown 4 ways, and the slam meters + "S" bar are wired to a param that doesn't
-   exist in the shipping build (dead decoration). Decide what the OLED is FOR
-   (≈ the response curve + minimal state) and **delete layers, don't restyle.**
-   Brainstorm direction first; see it running in Standalone before/after.
-3. **Gut the cruft.** Dead player files (CODEMAP §player), the tracked 12 MB
-   `PluginProcessor.zip`, ~100 `tools/` scripts → the canonical handful (CODEMAP §5).
-4. **Execute `REBUILD_PLAN`** (the minimum honest runtime) once the above settle.
+1. **Author the first canonical bodies** — one bold body per category via the
+   `forge-corners` skill (Vocal first: oo↔ee MORPH × lax↔tense Q), audition the
+   MIDDLE through the shipped engine, ear-pick keepers, bake into the roster.
+2. **Screen revamp** is shipped to the curve + SLAM/5D (commit a81fb2c); still
+   needs the rust+blue faceplate PNG (image #1) dropped into
+   `juce-shell/assets/images/` to seat the face + place the Slam/5D knobs.
+3. **Gut the cruft** (CODEMAP §player dead files + the 12 MB zip).
+4. **Execute `REBUILD_PLAN`** once the above settle.
 5. **Ear-verify the resampler fix** in Standalone/AudioPluginHost — never FL.
+6. *(optional)* push `forge-recovery` to origin.
 
 ---
 

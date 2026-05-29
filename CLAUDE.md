@@ -41,6 +41,29 @@ df2 is a **distortion engine**, shipped as two artifacts:
   player never modulates.
 - Authoring sample rate is **39062.5 Hz** (10 MHz / 256). Shipping resamples.
 
+## How presets are authored (THE canonical path — non-negotiable)
+The E-mu ROM stores each filter as **240 bytes verbatim** (4 corners × 6 stages
+× 5 `u16`) — no descriptor, no runtime compiler; the chip just plays four
+hand-authored frames. **df2 authors at that exact level: bold, direct,
+four-frame placement.** This is the ONLY authoring path.
+- **Place poles directly; do NOT fit.** Use `tools/corner_words.py`
+  (`bp`/`formant`/`notch`/`hedz_body` → `corner_words` → verbatim 240 bytes).
+  The factorizer / "draw a curve and fit it" / `make_class_bodies` /
+  `sweep_roster` generate-and-cull path is **RETIRED for authoring** — it drifts
+  poles off their target, parks random near-Nyquist poles, and skips zero-pairing.
+- **Poles on REAL frequencies + real bandwidths** (`tables/`: vowel formants,
+  `klatt_1980_bandwidths.json` → `r_from_bw`, tube/modal/harmonic). Every pole is
+  **zero-paired** (the Rossum `bp` structure; pure all-pole is unstable here).
+- **The MORPH is a BOLD spectral journey** — poles travel far (sweep top↔bottom,
+  vowel-migrate, open↔closed). Timid nudges are the failure mode; the ROM sweeps
+  the whole constellation. Near-Nyquist poles are a deliberate bright extreme, not
+  an artifact.
+- **Q is a FREE chosen character per body** (resonance / vocal-stress / shelf /
+  notch-depth) — confirmed against the Morpheus source. NOT universally "sharpen".
+- **Scale via the `forge-corners` skill** (parallel subagents, one bold body each).
+  Audition the **middle** through the shipped engine; the ear picks keepers, no
+  scorecards.
+
 ## The encoding (strict — this is the real one)
 A body is **4 corners × 6 stages × 5 coefficients** (`NUM_STAGES = 6`,
 `NUM_COEFFS = 5`; `trench-core/src/cascade.rs:3-4`). It exists in two forms:
@@ -49,19 +72,27 @@ A body is **4 corners × 6 stages × 5 coefficients** (`NUM_STAGES = 6`,
 - `compiled-v1` JSON: `EncodedCoeffs { c0, c1, c2, c3, c4 }` per stage
   (`pyruntime/encode.py`, `trench-core/src/cartridge.rs`). DF2T biquad kernel
   coefficients (`raw_to_encoded`: resonator path + lowpass path).
-- The **shipping morph is a plain bilinear lerp over these decoded coefficients**
-  — `Cartridge::interpolate(morph, q)` (`cartridge.rs:197`): Q-lerp the two morph
-  edges, then morph-lerp. Boost interpolates the same way (`interpolate_boost`).
+- The **shipping morph is a bilinear lerp in the PACKED (minifloat/ARMAdillo-encoded)
+  domain**, NOT over decoded coefficients. `Cartridge::interpolate(morph, q)`
+  (`cartridge.rs:314`) dispatches to `PackedCorners::interpolate_biquad` whenever
+  `packed = Some(_)` — every body on the 240-byte path. The decoded-f64 bilinear
+  (`interpolate_legacy_stages`) is **legacy fallback only**; no shipping body uses
+  it. Confirmed against the Morpheus source: the hardware "linearly interpolates the
+  coefficients in the encoded space at the sample rate." Boost interpolates the same
+  way (`interpolate_boost`).
 
 **2. Packed-16 minifloat — the native ROM word format.**
 - `trench-core/src/minifloat.rs`, behind the `packed_interp` feature. **5 packed
   `u16` words per stage** (`PackedStage = [u16; NUM_COEFFS]`). A raw ROM corner
   block is **240 bytes** = 4 corners × 60 bytes, 30 `u16` little-endian each,
   stage-major (`from_rom_bytes`). `decode`/`encode` convert word ↔ f64.
-- Its packed-domain morph (`lerp_u16`: int16-truncate the delta, then add base —
-  the E-MU/MSVC `FUN_1802c3d40` formula, wraps, no clamp) is an **experiment, NOT
-  the shipping interpolation path**. Words derived from coefficients are
-  "derived-packed-canonical" (`from_corner_data`), not claimed bit-exact to E-mu.
+- The packed domain **IS** the shipping interpolation domain (see above) — this is
+  the E-mu/ARMAdillo design: linear interpolation of the log-encoded words gives
+  perceptually-meaningful sweeps. `lerp_u16` (int16-truncate the delta then add base
+  — the E-MU/MSVC `FUN_1802c3d40` formula, wraps, no clamp) is the exact-E-mu
+  truncating variant; the shipping path is `interpolate_biquad` (packed bilinear).
+  Words derived from coefficients are "derived-packed-canonical" (`from_corner_data`),
+  not claimed bit-exact to E-mu.
 
 **Not part of the encoding:**
 - **There is NO "Glyph12" / feature fingerprint.** That name is a discarded
