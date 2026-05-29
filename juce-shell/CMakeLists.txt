@@ -1,11 +1,18 @@
 cmake_minimum_required(VERSION 3.25)
 
 # --- VST3 Output Setup ---
-set(TRENCH_DEV_VST3_DIR "$ENV{LOCALAPPDATA}/Programs/Common/VST3" CACHE PATH "Dev VST3 output directory")
-
-if(CMAKE_BUILD_TYPE STREQUAL "Debug")
-    message(STATUS "TRENCH: Dev VST3 output path selected: ${TRENCH_DEV_VST3_DIR}")
-endif()
+#
+# PL-6: a single install location for every build configuration. Both Debug
+# and Release auto-copy into Program Files; we no longer maintain a parallel
+# LOCALAPPDATA destination for Debug. The reason — STATE.md `Now`,
+# 2026-05-28 — is that DAWs scan whatever they find first, and a stale
+# LOCALAPPDATA copy from a previous Debug build silently masked Release
+# builds for hours. Dev iteration should go through TRENCH_Standalone.exe
+# (see juce-shell/README.md), not the auto-installed VST3.
+#
+# If you previously built Debug here, manually delete
+#   %LOCALAPPDATA%\Programs\Common\VST3\TRENCH.vst3
+# so DAW scanners don't find it.
 
 # This tells cmake we have goodies in the /cmake folder
 list(APPEND CMAKE_MODULE_PATH "${CMAKE_CURRENT_SOURCE_DIR}/cmake")
@@ -97,6 +104,7 @@ set(SourceFiles
     source/parameters/TrenchParameters.h
     source/parameters/TrenchParameters.cpp
     source/dsp/TrenchDspBridge.h
+    source/dsp/TrenchCleanBody.h
     source/dsp/FixedRateTrenchIsland.h
     source/dsp/FixedRateTrenchIsland.cpp
 )
@@ -139,9 +147,46 @@ target_link_libraries(SharedCode
 
 target_link_libraries("${PROJECT_NAME}" PRIVATE SharedCode)
 
-if(CMAKE_BUILD_TYPE STREQUAL "Debug")
-    set_target_properties("${PROJECT_NAME}_VST3" PROPERTIES VST3_DESTINATION "${TRENCH_DEV_VST3_DIR}")
-endif()
+# Dumb DAW tap: passes audio through and writes captured WAVs for Forge.
+set(CAPTURE_PROJECT_NAME "TRENCH_CAPTURE")
+juce_add_plugin("${CAPTURE_PROJECT_NAME}"
+    COMPANY_NAME "${COMPANY_NAME}"
+    BUNDLE_ID "com.trench.capture"
+    COPY_PLUGIN_AFTER_BUILD TRUE
+    PLUGIN_MANUFACTURER_CODE Trec
+    PLUGIN_CODE T0C1
+    FORMATS VST3
+    PRODUCT_NAME "Trench Capture")
+
+target_sources("${CAPTURE_PROJECT_NAME}"
+    PRIVATE
+    source/capture_vst/TrenchCaptureProcessor.h
+    source/capture_vst/TrenchCaptureProcessor.cpp
+    source/capture_vst/TrenchCaptureEditor.h
+    source/capture_vst/TrenchCaptureEditor.cpp)
+
+target_compile_definitions("${CAPTURE_PROJECT_NAME}"
+    PRIVATE
+    JUCE_WEB_BROWSER=0
+    JUCE_USE_CURL=0
+    JUCE_VST3_CAN_REPLACE_VST2=0)
+
+target_include_directories("${CAPTURE_PROJECT_NAME}" PRIVATE "${CMAKE_CURRENT_SOURCE_DIR}/source/capture_vst")
+
+target_link_libraries("${CAPTURE_PROJECT_NAME}"
+    PRIVATE
+    juce_audio_formats
+    juce_audio_processors
+    juce_audio_utils
+    juce_gui_basics
+    juce::juce_recommended_config_flags
+    juce::juce_recommended_lto_flags
+    juce::juce_recommended_warning_flags)
+
+# PL-6: no per-configuration VST3_DESTINATION override. Every build copies to
+# the same Program Files VST3 path (JUCE's default for Windows). The previous
+# Debug-only LOCALAPPDATA destination is gone — see the comment at the top of
+# this file for why.
 
 include(PamplejuceIPP)
 include(Tests)
