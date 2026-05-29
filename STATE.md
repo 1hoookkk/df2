@@ -4,7 +4,35 @@ What exists. What's broken. What's next. Update on every code change.
 
 ---
 
-## Now — 2026-05-28 · late (read this first)
+## Now — 2026-05-29 · canonical skill + CODEMAP + repo locked (read this first)
+
+**Repo is committed and clean** on `forge-recovery` (ahead of origin, not pushed).
+Three commits this session: `.gitignore` hardening, the resampler boundary fix +
+silence test, and a checkpoint locking all in-flight work.
+
+- **Canonical `df2-operator` skill** (`.claude/skills/df2-operator/SKILL.md`):
+  the old one routed to 6 deleted docs and asserted 2 claims the code
+  contradicts. Rewritten to route at the live docs + name the code as authority.
+- **`CODEMAP.md` added** — the navigable map (the three trees, the shipping
+  signal path, dead-vs-real code, central-screen anatomy, repo hazards). The
+  operator skill routes to it.
+- **Resampler static FIXED** (`FixedRateTrenchIsland.cpp`): the unsafe 4-arg
+  `LagrangeInterpolator::process` read past the buffer → full-scale noise from
+  zero input. Now the bounded 6-arg overload + clear guard + a Catch2 silence
+  test. **Unit-verified 44.1/48/96 kHz; NOT yet ear-verified in a host.** This
+  refines the 05-28 "FL cached the DLL" story below — FL caching was real, but a
+  genuine memory-safety bug sat underneath it.
+- **Two doctrine corrections** (now in the skill + CODEMAP; root `CLAUDE.md`
+  still carries the stale lines): shipping morph = PACKED-domain
+  `interpolate_biquad` (`cartridge.rs:314`), not decoded-f64; chassis is NOT
+  green (`TrenchStyle.h`: red-tinted PNG + bone + phosphor-green accent, active-only).
+
+**DO NEXT:** see `NOW.md`. Agreed sequence: (git ✓) → screen revamp → gut cruft
+→ REBUILD_PLAN → ear-verify the fix.
+
+---
+
+## 2026-05-28 · late
 
 **STRATEGIC POSITION:** Tyson is exhausted and asking for a fresh-eyes audit of
 the whole plugin codebase (he wants a GPT prompt for an in-depth review — that

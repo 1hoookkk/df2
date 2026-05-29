@@ -5,7 +5,48 @@ every time. Keep the bottom half stable.
 
 ---
 
-## This session — 2026-05-28 late (next AI: start here)
+## This session — 2026-05-29 (next AI: start here)
+
+**READ `CODEMAP.md` then `STATE.md` top entry.** Working tree is committed and
+clean; `forge-recovery` is ahead of origin (not yet pushed).
+
+**What happened this session:**
+- **Canonicalized the `df2-operator` skill.** It routed to 6 deleted docs
+  (BRIEF/SPEC/BODIES/BRAND/ARCHITECTURE/FRAME_BANK) and asserted 2 things the
+  code contradicts. Now routes to live files and names the **code** as authority.
+- **Wrote `CODEMAP.md`** — where everything lives, the shipping signal path,
+  dead-vs-real code, the central-screen anatomy, and repo hazards. The operator
+  skill routes to it.
+- **Fixed the resampler static bug** (`FixedRateTrenchIsland.cpp`): the unsafe
+  4-arg `LagrangeInterpolator::process` read one sample past the buffer → random
+  memory as full-scale noise from zero input. Now the bounded 6-arg overload +
+  clear guard + a Catch2 silence test. **Unit-verified at 44.1/48/96 kHz — NOT
+  yet ear-verified in a host.**
+- **Locked the repo:** hardened `.gitignore` (vendored JUCE/clap, build
+  artifacts, scratch, `bodies/generated/` cache), then 3 commits saving all
+  in-flight work + the new docs/skill/CODEMAP.
+
+**Two doctrine corrections** (now in the skill + CODEMAP; root `CLAUDE.md` still
+carries the stale lines, worth fixing): shipping morph is the **PACKED-domain**
+bilinear (`cartridge.rs:314` → `interpolate_biquad`), not decoded-f64; the
+chassis is **not green** — palette is `TrenchStyle.h` (red-tinted PNG + bone +
+phosphor-green accent, active-only).
+
+**DO NEXT (agreed sequence — Tyson drives the order):**
+1. *(optional)* push `forge-recovery` to origin.
+2. **Screen revamp.** `TrenchResponseDisplay` over-draws 8 layers — Morph/Q is
+   shown 4 ways, and the slam meters + "S" bar are wired to a param that doesn't
+   exist in the shipping build (dead decoration). Decide what the OLED is FOR
+   (≈ the response curve + minimal state) and **delete layers, don't restyle.**
+   Brainstorm direction first; see it running in Standalone before/after.
+3. **Gut the cruft.** Dead player files (CODEMAP §player), the tracked 12 MB
+   `PluginProcessor.zip`, ~100 `tools/` scripts → the canonical handful (CODEMAP §5).
+4. **Execute `REBUILD_PLAN`** (the minimum honest runtime) once the above settle.
+5. **Ear-verify the resampler fix** in Standalone/AudioPluginHost — never FL.
+
+---
+
+## ARCHIVE — previous session, 2026-05-28 late
 
 **READ STATE.md TOP ENTRY FIRST.** It has the full picture. Brief summary:
 
