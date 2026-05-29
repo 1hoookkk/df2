@@ -104,6 +104,14 @@ def _bind_engine(lib) -> None:
         lib.trench_engine_load_body_bytes.restype = ctypes.c_int
         lib.trench_engine_set_input_mode.argtypes = [ctypes.c_void_p, ctypes.c_int]
         lib.trench_engine_set_spatial_mode.argtypes = [ctypes.c_void_p, ctypes.c_int]
+        try:
+            lib.trench_engine_set_parameters.argtypes = [
+                ctypes.c_void_p, ctypes.c_float, ctypes.c_float,
+                ctypes.c_float, ctypes.c_float,  # slam_drive (0..1), five_d
+            ]
+            _set_params_ok = True
+        except AttributeError:
+            _set_params_ok = False
         lib.trench_engine_process_block.argtypes = [
             ctypes.c_void_p,
             ctypes.POINTER(ctypes.c_float),  # left  (in place)
@@ -298,6 +306,57 @@ def engine_render_automated(body_bytes: bytes, morph_per_block, q_per_block,
                 break
             m = float(morph_per_block[min(bi, mlen - 1)])
             q = float(q_per_block[min(bi, qlen - 1)])
+            left = (ctypes.c_float * cn).from_buffer_copy(chunk)
+            right = (ctypes.c_float * cn).from_buffer_copy(chunk)
+            lib.trench_engine_process_block(eng, left, right, ctypes.c_int(cn),
+                                            ctypes.c_double(m), ctypes.c_double(q))
+            out += bytes(left)
+        return bytes(out)
+    finally:
+        lib.trench_engine_destroy(eng)
+
+
+def engine_render_slam(body_bytes: bytes, morph_per_block, q_per_block,
+                       in_f32_bytes: bytes, slam_drive: float = 0.5,
+                       five_d: float = 0.0, sr: float = 39062.5,
+                       block: int = 512) -> bytes:
+    """Render through the shipped engine with the MACKIE DESK SLAM input stage
+    engaged (input_mode=1): a PRE-cascade saturator (0..1 -> up to 36 dB desk
+    drive) feeding the filter, then the AGC post-cascade. This is the full driven
+    path E-mu-style (drive INTO the filter), not just AGC-on-output. `slam_drive`
+    in [0,1]. Filter state is continuous across blocks (no clicks)."""
+    lib = _load()
+    if lib is None or not _engine_ok:
+        raise RuntimeError("trench_core engine FFI not available")
+    if not getattr(lib.trench_engine_set_parameters, "argtypes", None):
+        raise RuntimeError("trench_engine_set_parameters not bound (rebuild trench-core FFI)")
+    if len(body_bytes) != BODY_BYTES:
+        raise ValueError(f"body must be {BODY_BYTES} bytes, got {len(body_bytes)}")
+    total = len(in_f32_bytes) // 4
+    nb = max(1, (total + block - 1) // block)
+    mlen, qlen = len(morph_per_block), len(q_per_block)
+    sd = max(0.0, min(1.0, float(slam_drive)))
+    eng = lib.trench_engine_create()
+    if not eng:
+        raise RuntimeError("trench_engine_create returned null")
+    try:
+        lib.trench_engine_prepare(eng, ctypes.c_double(float(sr)))
+        rc = lib.trench_engine_load_body_bytes(eng, bytes(body_bytes), len(body_bytes))
+        if rc != 0:
+            raise RuntimeError(f"load_body_bytes failed (rc={rc})")
+        lib.trench_engine_set_input_mode(eng, ctypes.c_int(1))  # MackieDeskSlam
+        out = bytearray()
+        for bi in range(nb):
+            s = bi * block * 4
+            chunk = in_f32_bytes[s:s + block * 4]
+            cn = len(chunk) // 4
+            if cn == 0:
+                break
+            m = float(morph_per_block[min(bi, mlen - 1)])
+            q = float(q_per_block[min(bi, qlen - 1)])
+            # set_slam_drive (+ five_d); morph/q still applied per-block below
+            lib.trench_engine_set_parameters(eng, ctypes.c_float(m), ctypes.c_float(q),
+                                             ctypes.c_float(sd), ctypes.c_float(float(five_d)))
             left = (ctypes.c_float * cn).from_buffer_copy(chunk)
             right = (ctypes.c_float * cn).from_buffer_copy(chunk)
             lib.trench_engine_process_block(eng, left, right, ctypes.c_int(cn),

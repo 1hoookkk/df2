@@ -4,7 +4,89 @@ What exists. What's broken. What's next. Update on every code change.
 
 ---
 
-## Now — 2026-05-29 · canonical skill + CODEMAP + repo locked (read this first)
+## Now — 2026-05-29 NIGHT · gain-staging doctrine + filter-type vocabulary + authoring-method crossroads (read this first)
+
+A long exploratory session with Tyson. No bodies shipped; the yield is **doctrine +
+tooling + a method correction**. The vocal "Small Talk" arc was set aside — Tyson
+re-aimed at his favorite ROM presets (bass/acid/sweep), which is the right target
+for an **insert FX**.
+
+**TRENCH is a FILTER FX on the effect chain** (insert over 808/reese/vocal/bus), not
+a sound source. Premium bar: each preset must be worth **$99–149 AUD**.
+
+**THE GAIN-STAGING DOCTRINE (the session's spine).** The engine chain is
+`input → [SLAM pre-cascade] → ×pre_drive_gain → CASCADE (body) → [AGC post-cascade]
+→ output_gain → DC block → output-sat → [spatial]`.
+- **SLAM** (`input_mode=1`, Mackie desk saturator, pre-cascade) feeds the filter
+  HARMONICS to chew = **density/"balls"** — the D&B "drive it to hell" move. Tyson:
+  "SLAM is the better sound." Pre-filter drive beats post (the AGC only sees the
+  filter output).
+- **AGC** (post-cascade table limiter, EmulatorX-verified) = glue + the `&0xF` wrap
+  grit. Driving it hard (linear pre-gain) **flat-tops** = the "DAC clipping" Tyson
+  heard.
+- **Clean input = max resonance; slam = density; keep OUTPUT clean** (headroom rule).
+  A body is judged across the **drive ladder** (clean→slam→slammed→crush), not one
+  render. Render/audition is on **real bass** (reese/808), not pink noise.
+- **Render path:** `pyruntime/trench_ffi.engine_render_slam` (new — SLAM via
+  `set_parameters` binding). Auditions at AUTH_SR 39062.5 play ~2 semitones sharp in
+  a 44.1k host → resample output to 44.1k for honest preview.
+
+**SURFACE LOCKED (Tyson):** only **SLAM + QSound (5D)** are optional effects;
+everything else loads **neutral, presets at Morph 0 / Q 0**. **EOS/CVSD ripped** from
+the shell input choices (`TrenchParameters.cpp` → OFF/SLAM only; it was dead — the
+processor derives input from the Slam knob, never CVSD). Dormant `Cvsd` +
+`SpatialMode::Trench` still sit in the **frozen core** — delete + re-run null gate as
+one verified pass (not done).
+
+**ICONIC-PRESET STRUCTURE (decoded, the real target).** The best ROM presets
+(MegaSweepz/Lucifer's Q/Meaty Gizmo/Klub Klassik/BassBox 303/TB-or-not-TB/Deep
+Bouche) are **5–6-pole CONSTELLATIONS**, NOT single resonances (that read was an
+argmax artifact). **Morph reshapes the whole constellation** (MegaSweepz: a high
+~9.7–16k cluster migrates down to a ~110Hz–6k spread); **Q tightens EVERY radius**
+(broad humps → screaming spikes), the Talking-Hedz "Q sharpens all" mechanism.
+Verified against Tyson's MorphDesigner screenshots.
+
+**AUTHORING-METHOD CROSSROADS (unresolved — decide next session).** Hand-placing a
+rich constellation to plot-match **does not converge** — the net curve is a coupled
+pole+zero fit (~48 params); manual radii stack to +60/+70 dB. The canonical surface
+is **"fitter PROPOSES → human nudges by ear"** (memory `authoring-surface-fitter-
+proposes`). BUT the shipped curve-fitter `trench_ffi.fit_corner_from_magnitude` **IS
+the factorizer the doctrine retired** (drifts, skips zero-pairing — "dumb on
+purpose"); `pyruntime/forge_fit.py` (phase-aware LSQ) is better but **not wired to a
+stable zero-paired packed export**. Clean-room: fit to the real curves only as STUDY;
+ship original constellations targeting curves designed in each archetype's SPIRIT
+(Rossum patent live).
+
+**NEW TOOLING (committed this entry):**
+- `tools/voxbench.py` — the filter-type vocabulary as code (LP2/4/6, HP, BP,
+  Contrary BP, Swept-EQ X→1-oct, **Spectral Tilt** [ported J.O.Smith fractional-
+  slope, verified ±0.15 dB/oct], Phaser) + `verify_body` (stable / drives-AGC /
+  bold-morph / middle-emerges) + `audition_fx` (drive ladder on reese/808/pad).
+- `pyruntime/trench_ffi.py` — `engine_render_slam` + `set_parameters` argtype bind.
+- `.claude/workflows/trench-listen-loop.js` — the loop (ran once on the OLD vocal
+  recipes; output `dev/tmp/voxlab` + `dev/tmp/loop_run` is superseded by the pivot).
+- `juce-shell/source/parameters/TrenchParameters.cpp` — EOS rip.
+
+**THE PACK (Tyson's targets, he names them):** 1 Deep Bouche · 2 Lucifer's Q ·
+3 MegaSweepz · 4 Meaty Gizmo · 5 Klub Klassik · 6 BassBox 303 · 7 TB or not TB.
+All single-/multi-resonance bass/acid, driven via SLAM, Q hard.
+
+**DO NEXT:**
+1. Wire `forge_fit` → stable zero-paired **packed** export (the proper fitter), so
+   "fitter proposes" actually produces a plot-matched, stable, zero-paired corner.
+2. Author the 7 via **fitter-proposes → nudge by ear**, plot-matched to curves drawn
+   in each archetype's spirit (original, not E-mu's data). Audition on reese/808 up
+   the SLAM drive ladder; ear picks; null gate; bake roster.
+3. Delete dormant `Cvsd` + `SpatialMode::Trench` from `trench-core`, rebuild, re-run
+   the null gate (one verified pass).
+4. **Hazard:** `PluginEditor.{cpp,h}`, `TrenchResponseDisplay.{cpp,h}`,
+   `chassis_variants/*`, `runtime_layout.json` are dirty in the working tree but were
+   **NOT touched this session** — left uncommitted; confirm provenance before
+   committing them.
+
+---
+
+## 2026-05-29 · canonical skill + CODEMAP + repo locked
 
 **Repo is committed and clean** on `forge-recovery` (ahead of origin, not pushed).
 Three commits this session: `.gitignore` hardening, the resampler boundary fix +

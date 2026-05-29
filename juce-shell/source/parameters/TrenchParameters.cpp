@@ -40,20 +40,20 @@ juce::AudioProcessorValueTreeState::ParameterLayout createParameterLayout()
     // Diagnostic / dev build: the parameters are present and processBlock's
     // extras branches run when clean_audio::kEnabled() is flipped off.
     //
-    // inputMode stays in the default layout because OFF is a clean identity
-    // and the user-visible "OFF / SLAM / EOS" choice is the band-aid for the
-    // 2026-05-28 regression where SLAM was the default; removing it would
-    // hide the choice that flips the regression back on by hand.
+    // Input character: OFF (clean identity) or SLAM. EOS/CVSD removed 2026-05-29
+    // (dead — the processor derives the input stage from the Slam knob, never
+    // CVSD). The two optional effects are SLAM (below) and QSound/5D; everything
+    // else loads neutral.
     layout.add (std::make_unique<juce::AudioParameterChoice> (
         juce::ParameterID { ParamID::inputMode, 1 },
         "Input",
-        juce::StringArray { "OFF", "SLAM", "EOS" },
+        juce::StringArray { "OFF", "SLAM" },
         0));  // default = OFF — clean input reaches the selected body directly.
 
-    // SLAM (Mackie desk drive) + 5D (QSound width) are first-class user effects
-    // now, not dev-only. Both default to a clean bypass — Slam 0 engages no input
-    // character, 5D Off is a true spatial bypass — so the resting plug-in stays
-    // transparent until the user reaches for them.
+    // SLAM (Mackie desk drive) + 5D (QSound width) are the only first-class user
+    // effects. Both default to a clean bypass — Slam 0 engages no input character,
+    // 5D Off is a true spatial bypass — so the resting plug-in stays transparent
+    // (neutral default state) until the user reaches for them.
     layout.add (std::make_unique<juce::AudioParameterFloat> (
         juce::ParameterID { ParamID::slamDrive, 1 },
         "Slam",
