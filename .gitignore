@@ -5,3 +5,22 @@ __pycache__/
 *.pyc
 .DS_Store
 Thumbs.db
+
+# --- build artifacts / vendored deps / scratch (forge-recovery lock-in) ---
+target_vst_static/
+juce-shell/JUCE/
+juce-shell/modules/
+.playwright-mcp/
+*.7z
+*.zip
+*.exe
+# AI-generated scratch images dropped into the asset tree
+juce-shell/assets/images/ChatGPT Image*.png
+# local/personal Claude config (machine-specific; not shared)
+.claude/settings.local.json
+.claude/*.lock
+# reproducible, seeded body search output (regenerable; not source of truth)
+bodies/generated/
+# loose diagnostic screenshots / demo clips dropped at repo root
+/*.png
+/*.mp4
