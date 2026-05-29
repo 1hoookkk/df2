@@ -50,7 +50,10 @@ juce::AudioProcessorValueTreeState::ParameterLayout createParameterLayout()
         juce::StringArray { "OFF", "SLAM", "EOS" },
         0));  // default = OFF — clean input reaches the selected body directly.
 
-#ifdef TRENCH_PLAYER_EXTRAS
+    // SLAM (Mackie desk drive) + 5D (QSound width) are first-class user effects
+    // now, not dev-only. Both default to a clean bypass — Slam 0 engages no input
+    // character, 5D Off is a true spatial bypass — so the resting plug-in stays
+    // transparent until the user reaches for them.
     layout.add (std::make_unique<juce::AudioParameterFloat> (
         juce::ParameterID { ParamID::slamDrive, 1 },
         "Slam",
@@ -63,6 +66,7 @@ juce::AudioProcessorValueTreeState::ParameterLayout createParameterLayout()
         juce::StringArray { "Off", "Narrow", "Wide", "Full" },
         0));  // default = Off — QSound depth is opt-in; Off is a true bypass.
 
+#ifdef TRENCH_PLAYER_EXTRAS
     // ── Teleport motion mode ──────────────────────────────────────────────────
     layout.add (std::make_unique<juce::AudioParameterChoice> (
         juce::ParameterID { ParamID::teleportMode, 1 },

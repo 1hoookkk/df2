@@ -172,29 +172,25 @@ void PluginProcessor::processBlock (juce::AudioBuffer<float>& buffer, juce::Midi
     params.morph = apvts.getRawParameterValue (ParamID::morph)->load();
     params.q     = apvts.getRawParameterValue (ParamID::q)->load();
 
-    if (auto* mp = apvts.getRawParameterValue (ParamID::inputMode))
+    // SLAM — the Slam knob is the shipping input-character control. >0 engages
+    // the Mackie desk-slam stage and sets its amount; 0 is a clean bypass, so a
+    // resting plug-in adds no input colour. (The legacy inputMode choice param is
+    // retained for the diagnostic FX pane only and is no longer read here.)
+    params.slamDrive = apvts.getRawParameterValue (ParamID::slamDrive)->load();
+    const int inMode = params.slamDrive > 0.001f ? 1 /*MackieDeskSlam*/ : kCleanInputMode;
+    if (inMode != lastInputModeSent)
     {
-        const int currentMode = static_cast<int> (mp->load (std::memory_order_relaxed));
-        if (currentMode != lastInputModeSent)
-        {
-            dspBridge.setInputMode (currentMode);
-            lastInputModeSent = currentMode;
-        }
+        dspBridge.setInputMode (inMode);
+        lastInputModeSent = inMode;
     }
-    dspBridge.setSpatialMode (kSpatialOff);
 
-#ifdef TRENCH_PLAYER_EXTRAS
-    if (! trench::clean_audio::kEnabled())
-    {
-        params.slamDrive = apvts.getRawParameterValue (ParamID::slamDrive)->load();
-        static constexpr float kSpaceForChoice[] = { 0.0f, 0.33f, 0.66f, 1.0f };
-        const int fiveDChoice = juce::jlimit (0, 3,
-            (int) apvts.getRawParameterValue (ParamID::fiveD)->load());
-        params.fiveD = kSpaceForChoice[fiveDChoice];
-        // Extras build may configure spatial via fiveD; the default-off above
-        // is the band-aid until a body-driven spatial profile is wired.
-    }
-#endif // TRENCH_PLAYER_EXTRAS
+    // 5D — QSound width. The choice (Off/Narrow/Wide/Full) maps to a depth and
+    // engages the QSound spatial stage; Off is a true spatial bypass.
+    static constexpr float kSpaceForChoice[] = { 0.0f, 0.33f, 0.66f, 1.0f };
+    const int spaceChoice = juce::jlimit (0, 3,
+        (int) apvts.getRawParameterValue (ParamID::fiveD)->load());
+    params.fiveD = kSpaceForChoice[spaceChoice];
+    dspBridge.setSpatialMode (spaceChoice > 0 ? 0 /*QSound*/ : kSpatialOff);
 
     auto channelPeak = [&buffer] (int channel)
     {

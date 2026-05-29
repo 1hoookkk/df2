@@ -14,12 +14,12 @@
 namespace trench
 {
 
-/// DF-II command display — laid out to match the Rossum Morpheus HD reference:
-///   meters (chunky, L=green, R=red, segments green→yellow→red)
-///   sub-line numeric         M/Q position + input/spatial state
-///   M / Q / S bars  (left)   2-D corner-bank pad (right) — pad's 4 edges
-///                            magenta/blue/red/yellow, white `+` inside at (M, Q)
-///   output scope             amplitude-first post-filter stereo waveform
+/// The screen. One job: draw the body's frequency-response shape as a single
+/// living curve that eases to a new form when Morph or Q move, and is still
+/// otherwise. No grid, no markers, no meters, no labels — the shape is the hero.
+///
+/// (The constructor still accepts the input meters + scope reader so the editor
+/// that builds it does not have to change; they are simply unused now.)
 class TrenchResponseDisplay final : public juce::Component
 {
 public:
@@ -50,27 +50,9 @@ private:
 
     void onVBlankTick (double timestampSec);
     void rebuildTraceFromCoeffs (const CoeffSet& coeffs, float boost);
-    void rebuildGridImage();
-
-    void drawSlamMeters (juce::Graphics& g) const;
-    void drawIdentity (juce::Graphics& g) const;
-    void drawSubLine (juce::Graphics& g) const;
-    void drawParamBars (juce::Graphics& g) const;
-    void drawCornerBankPad (juce::Graphics& g) const;
-    bool drawOutputScope (juce::Graphics& g) const;
     void drawTrace (juce::Graphics& g) const;
 
-    juce::Rectangle<int> meterBounds() const;
-    juce::Rectangle<int> identityBounds() const;
-    juce::Rectangle<int> subLineBounds() const;
-    juce::Rectangle<int> barsBounds() const;
-    juce::Rectangle<int> paramBarFrame (int rowIndex) const;
-    juce::Rectangle<int> cornerBankPadBounds() const;
-    juce::Rectangle<int> spectrumBounds() const;
-
-    float param01 (const char* id) const noexcept;
-    int   paramInt (const char* id) const noexcept;
-    int   bodyIndex() const noexcept;
+    juce::Rectangle<int> screenBounds() const;
 
     static float coeffDistance (const CoeffSet& a, const CoeffSet& b) noexcept;
     static float easeInOutCubic (float t) noexcept;
@@ -78,12 +60,10 @@ private:
 
     TrenchDspBridge& dspBridge;
     juce::AudioProcessorValueTreeState& parameters;
-    const std::atomic<float>& inputMeterL;
-    const std::atomic<float>& inputMeterR;
-    ScopeReader scopeReader;
-    bool cleanMode = false;
-
-    juce::Image gridImage;
+    const std::atomic<float>& inputMeterL;   // unused (kept for ctor compatibility)
+    const std::atomic<float>& inputMeterR;   // unused
+    ScopeReader scopeReader;                  // unused
+    bool cleanMode = false;                   // unused
 
     CoeffSet animFromCoeffs {};
     CoeffSet animToCoeffs {};
@@ -98,7 +78,6 @@ private:
     int   traceSampleCount = 0;
     int   traceFloorY = 0;
     bool  tracePathValid = false;
-    double flickerUntilSec = 0.0;
 
     juce::VBlankAttachment vBlank;
     double lastTickSec = 0.0;
