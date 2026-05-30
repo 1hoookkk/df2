@@ -115,6 +115,28 @@ def golden_comb(n=6, depth_db=-15.0, bw_oct=0.20):
         out.append(NT(round(f, 1), bw_oct, depth_db)); f *= GOLDEN
     return out
 
+# ── physical models (native: pipe acoustics + modal ratios — physics, no old module) ──
+C_CM = 35000.0   # speed of sound, cm/s
+_MODAL = {       # modal frequency ratios
+    "bar":      [1.0, 2.756, 5.404, 8.933, 13.35, 18.65],
+    "membrane": [1.0, 1.593, 2.136, 2.295, 2.653, 2.917],
+    "plate":    [1.0, 1.71, 2.43, 3.18, 4.05, 5.06],
+    "bell":     [0.5, 1.0, 1.183, 1.506, 2.0, 2.514],
+}
+
+def tube(length_cm, ends="closed-open", n=6, q=11, gain=11.0):
+    """cylindrical pipe -> PK sections. closed-open = (2k-1)c/4L; open-open = k c/2L."""
+    if ends == "closed-open":
+        fs = [(2 * k - 1) * C_CM / (4 * length_cm) for k in range(1, n + 1)]
+    else:
+        fs = [k * C_CM / (2 * length_cm) for k in range(1, n + 1)]
+    return [PK(round(f, 1), round(bw_hz_to_oct(f, f / q), 4), gain) for f in fs if 40 < f < 13000]
+
+def modal(kind, f0, n=6, q=55, gain=12.0):
+    """inharmonic modal body (bell/plate/membrane/bar) -> PK sections; higher modes damped."""
+    return [PK(round(f0 * r, 1), round(bw_hz_to_oct(f0 * r, f0 * r / q), 4), round(gain / (1 + i * 0.25), 1))
+            for i, r in enumerate(_MODAL[kind][:n]) if 40 < f0 * r < 13000]
+
 # ── the compiler — enforces the invariants, returns kernel coeffs + a report ──────────
 def _cascade_dc(secs):
     d = 1.0

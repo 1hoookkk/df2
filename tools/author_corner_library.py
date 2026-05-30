@@ -23,18 +23,7 @@ from tools import corner_author as ca          # THE owner — author / compile 
 
 SR = ca.SR
 OUT = ROOT / "dev/tmp/arma_source_pack/corners_audio_only/_authored"
-
-# PHYSICS frequencies come from physical_corners (the acoustic models — single source of
-# the physics); the COMPILE + ENCODE go through the owner. No duplicated DSP.
-import importlib.util as _ilu
-def _load(name, rel):
-    s = _ilu.spec_from_file_location(name, ROOT / rel); m = _ilu.module_from_spec(s); s.loader.exec_module(m); return m
-pc = _load("physical_corners", ".claude/skills/physical-corners/physical_corners.py")
-
-def physics_pk(modes, gain):
-    """physical_corners modes [(f_hz, bw_hz, weight)] -> owner PK sections."""
-    return [ca.PK(round(f, 1), round(ca.bw_hz_to_oct(f, bw), 4), round(gain * w, 1))
-            for (f, bw, w) in modes if 40 < f < 13000]
+# Physics is native in the owner now (ca.tube / ca.modal) — no import of old modules.
 
 def stk(freqs, bw, gain, tilt=0.0):
     """design postures (cavity/tube/modal): uniform Bw/gain + slight up-tilt (balance rule).
@@ -80,13 +69,13 @@ LIBRARY = {
         "golden_comb": ca.golden_comb(6, -16, 0.20),
         "wide_comb":   ca.golden_comb(6, -12, 0.30),
     },
-    "physics": {  # REAL acoustic models (physical_corners freqs) compiled through the owner
-        "pipe_30cm":    physics_pk(pc.tube_modes(30.0), 11),
-        "pipe_18cm":    physics_pk(pc.tube_modes(18.0), 11),
-        "pipe_11cm":    physics_pk(pc.tube_modes(11.0), 11),
-        "bell_220":     physics_pk(pc.modal_modes("bell", 220.0), 12),
-        "plate_300":    physics_pk(pc.modal_modes("plate", 300.0), 12),
-        "membrane_150": physics_pk(pc.modal_modes("membrane", 150.0), 12),
+    "physics": {  # REAL acoustic models, native in the owner (ca.tube / ca.modal)
+        "pipe_30cm":    ca.tube(30.0),
+        "pipe_18cm":    ca.tube(18.0),
+        "pipe_11cm":    ca.tube(11.0),
+        "bell_220":     ca.modal("bell", 220.0),
+        "plate_300":    ca.modal("plate", 300.0),
+        "membrane_150": ca.modal("membrane", 150.0),
     },
 }
 
