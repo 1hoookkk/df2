@@ -4,7 +4,25 @@ What exists. What's broken. What's next. Update on every code change.
 
 ---
 
-## Now — 2026-05-29 NIGHT · gain-staging doctrine + filter-type vocabulary + authoring-method crossroads (read this first)
+## Now — 2026-05-30 · ONE owned corner-authoring primitive (the tooling fix — read this first)
+
+The session's repeated misfires (samey corners, sub gain, fake vowels, poles sliding) had
+ONE root cause: corner authoring had no single owner — every script reimplemented the
+compile and re-violated a different rule (`packed-math-triplicated`). FIXED:
+**`tools/corner_author.py` is THE owner.** Author in perceptual units (Fc/Bw/dB) → kernel
+coeffs → BOTH `.corner.json` (Forge) + the verbatim 240-byte body (via `corner_words`, the
+−95 dB encoder — the one source-critical step; E-mu stores 240 bytes verbatim, no runtime
+compiler). Doctrine = enforced invariants, source-law vs clean-room tagged: unity-DC forced
+(sub passes at unity — a bass body NEVER boosts sub), peak ∝ 1/Bw, 200 Hz coupling,
+fixed-slot crossing, EXACT Klatt vowels, golden-1.61 comb. `tools/author_corner_library.py`
+= data + plot calling the owner (its dup compiler deleted); 24 postures baked both formats,
+organised low/high × open/closed + vox + experimental → Forge well tree. Doctrine ref:
+`ref/morpheus_authoring_doctrine.md` (corner-vs-preset; df2 = insert FX, preset layer N/A).
+STILL forked (next consolidation): `heaps.py`, `physical_corners.py`, the Forge fitter.
+
+---
+
+## Now — 2026-05-29 NIGHT · gain-staging doctrine + filter-type vocabulary + authoring-method crossroads
 
 A long exploratory session with Tyson. No bodies shipped; the yield is **doctrine +
 tooling + a method correction**. The vocal "Small Talk" arc was set aside — Tyson
