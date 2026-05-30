@@ -16,9 +16,12 @@ compiler). Doctrine = enforced invariants, source-law vs clean-room tagged: unit
 (sub passes at unity — a bass body NEVER boosts sub), peak ∝ 1/Bw, 200 Hz coupling,
 fixed-slot crossing, EXACT Klatt vowels, golden-1.61 comb. `tools/author_corner_library.py`
 = data + plot calling the owner (its dup compiler deleted); 24 postures baked both formats,
-organised low/high × open/closed + vox + experimental → Forge well tree. Doctrine ref:
-`ref/morpheus_authoring_doctrine.md` (corner-vs-preset; df2 = insert FX, preset layer N/A).
-STILL forked (next consolidation): `heaps.py`, `physical_corners.py`, the Forge fitter.
+organised low/high × open/closed + vox + experimental + physics → Forge well tree. Doctrine
+ref: `ref/morpheus_authoring_doctrine.md` (corner-vs-preset; df2 = insert FX, preset N/A).
+PHYSICS now routed through the owner: `physical_corners` freqs (tube/modal) → owner compile
+/encode (its all-pole compile superseded for authoring; its physics reused — no dup). STILL
+forked: `heaps.py` (random, rejected — retire), `physical_corners`' live-hot-reload slot
+path, the Rust Forge WAV fitter (interactive/in-process — rewire deliberately, not blind).
 
 ---
 
