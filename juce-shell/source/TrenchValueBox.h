@@ -15,7 +15,7 @@ class TrenchValueBox final : public juce::Component,
                              private juce::Timer
 {
 public:
-    enum class Mode { Percent, Raw };
+    enum class Mode { Percent, Raw, IntPercent };
 
     explicit TrenchValueBox (juce::RangedAudioParameter& param, Mode m = Mode::Percent)
         : parameter (param), mode (m), lastValue (param.getValue())
@@ -27,9 +27,13 @@ public:
     void paint (juce::Graphics& g) override
     {
         const float v01 = parameter.getValue();
-        const juce::String text = mode == Mode::Percent
-            ? juce::String::formatted ("%5.1f%%", (double) (v01 * 100.0f))
-            : juce::String::formatted ("%.2f", (double) parameter.convertFrom0to1 (v01));
+        juce::String text;
+        switch (mode)
+        {
+            case Mode::Percent:    text = juce::String::formatted ("%5.1f%%", (double) (v01 * 100.0f)); break;
+            case Mode::IntPercent: text = juce::String (juce::roundToInt (v01 * 100.0f)); break;
+            case Mode::Raw:        text = juce::String::formatted ("%.2f", (double) parameter.convertFrom0to1 (v01)); break;
+        }
 
         const auto lcd = getLocalBounds().reduced (4, 3);
         const auto lcdF = lcd.toFloat();

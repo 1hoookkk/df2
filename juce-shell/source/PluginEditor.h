@@ -1,14 +1,9 @@
 #pragma once
 
 #include "PluginProcessor.h"
-#include "TrenchShuttleControl.h"
-#include "TrenchValueBox.h"
-#include "TrenchBodyStrip.h"
 #include "TrenchResponseDisplay.h"
-#include "TrenchFxPane.h"
-#include "TrenchViewSwitch.h"
 #include "TrenchChassisGlass.h"
-#include "TrenchThumbwheel.h"
+#include "TrenchValueBox.h"
 
 #include <juce_gui_basics/juce_gui_basics.h>
 #include <juce_audio_processors/juce_audio_processors.h>
@@ -26,18 +21,28 @@ public:
 private:
     void timerCallback() override; // file-watch tick
     void refreshVariantWatchFile();
+    void makeWellSliderInvisible (juce::Slider&);
 
     PluginProcessor& processorRef;
 
     juce::Image chassisImage;
 
     std::unique_ptr<trench::TrenchResponseDisplay> responseDisplay;
-    std::unique_ptr<trench::TrenchFxPane>          fxPane;       // alternate screen face
-    std::unique_ptr<trench::TrenchViewSwitch>      viewSwitch;   // MAIN | FX tab
-    std::unique_ptr<trench::TrenchThumbwheel>     morphBand, qBand; // bitmap rollers
-    std::unique_ptr<trench::TrenchValueBox>       morphValue, qValue;
-    std::unique_ptr<trench::TrenchBodyStrip>      bodyStrip;
-    std::unique_ptr<trench::TrenchChassisGlass>   chassisGlass; // seating overlay (on top)
+
+    // The two left "wells" are invisible horizontal sliders dragged over the
+    // chassis cutouts: Morph (upper) and Q (lower). The chassis PNG is the
+    // visible identity; these add nothing visual of their own. A small bone /
+    // phosphor readout sits in the cutout to the right of each well.
+    juce::Slider                  morphWell;
+    juce::Slider                  qWell;
+    std::unique_ptr<trench::TrenchValueBox> morphReadout;
+    std::unique_ptr<trench::TrenchValueBox> qReadout;
+
+    using SliderAttachment = juce::AudioProcessorValueTreeState::SliderAttachment;
+    std::unique_ptr<SliderAttachment> morphAttachment;
+    std::unique_ptr<SliderAttachment> qAttachment;
+
+    std::unique_ptr<trench::TrenchChassisGlass>    chassisGlass; // seating overlay (on top)
 
     juce::File   layoutFile;
     juce::Time   layoutFileMtime;

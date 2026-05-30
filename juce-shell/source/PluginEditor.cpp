@@ -1,19 +1,18 @@
 #include "PluginEditor.h"
 #include "TrenchChassisLayout.h"
-#include "parameters/TrenchParameters.h"
 
 namespace
 {
-    constexpr int kFixedEditorDivisor = 2;
+    constexpr float kFixedEditorDivisor = 3.4f; // a touch bigger than the old 4.0
 
     int fixedEditorWidth()
     {
-        return trench::layout::chassisWidth() / kFixedEditorDivisor;
+        return juce::roundToInt ((float) trench::layout::chassisWidth() / kFixedEditorDivisor);
     }
 
     int fixedEditorHeight()
     {
-        return trench::layout::chassisHeight() / kFixedEditorDivisor;
+        return juce::roundToInt ((float) trench::layout::chassisHeight() / kFixedEditorDivisor);
     }
 }
 
@@ -34,8 +33,8 @@ PluginEditor::PluginEditor (PluginProcessor& p)
     setResizable (false, false);
     setSize (fixedEditorWidth(), fixedEditorHeight());
 
-    // The response scope is the main frequency-trace screen for the chassis.
-    // Deeper FX/debug panes still live behind TRENCH_PLAYER_DIAGNOSTICS.
+    // Shipping UI: a single frequency-response display seated in the chassis.
+    // No body selector, rollers, numeric readouts, or alternate panes.
     responseDisplay = std::make_unique<trench::TrenchResponseDisplay> (processorRef.dspBridge,
                                                                        processorRef.apvts,
                                                                        processorRef.getInputMeterLeftForUi(),
@@ -45,51 +44,28 @@ PluginEditor::PluginEditor (PluginProcessor& p)
                                                                         processorRef.isCleanGroundTruthAudio());
     addAndMakeVisible (*responseDisplay);
 
-#ifdef TRENCH_PLAYER_DIAGNOSTICS
-    fxPane = std::make_unique<trench::TrenchFxPane> (processorRef);
-    addChildComponent (*fxPane); // hidden until the switch flips to FX
+    // ---- The two invisible "well" sliders + their readouts -----------------
+    // Morph (upper well) and Q (lower well). Both render fully transparent so
+    // the chassis cutout shows through; the user just drags horizontally over
+    // the metal. Attached to the APVTS morph/q params (both 0..1).
+    makeWellSliderInvisible (morphWell);
+    makeWellSliderInvisible (qWell);
+    addAndMakeVisible (morphWell);
+    addAndMakeVisible (qWell);
 
-    viewSwitch = std::make_unique<trench::TrenchViewSwitch> (false);
-    viewSwitch->onToggle = [this] (bool showFx)
-    {
-        if (responseDisplay) responseDisplay->setVisible (! showFx);
-        if (fxPane)          fxPane->setVisible (showFx);
-    };
-    addAndMakeVisible (*viewSwitch);
-#endif // TRENCH_PLAYER_DIAGNOSTICS
+    morphAttachment = std::make_unique<SliderAttachment> (processorRef.apvts, ParamID::morph, morphWell);
+    qAttachment     = std::make_unique<SliderAttachment> (processorRef.apvts, ParamID::q,     qWell);
 
-    // ---- Band sliders inside the long MORPH / Q slot rects --------------
-    // The visible labels and the DSP parameters must agree: MORPH drives the
-    // morph axis, Q drives the q axis. Any hidden swap makes the instrument
-    // feel like it is lying under the hand.
     if (auto* mp = processorRef.apvts.getParameter (ParamID::morph))
-    {
-        morphBand  = std::make_unique<trench::TrenchThumbwheel> (*mp);
-        morphValue = std::make_unique<trench::TrenchValueBox>    (*mp, trench::TrenchValueBox::Mode::Percent);
-        addAndMakeVisible (*morphBand);
-        addAndMakeVisible (*morphValue);
-    }
+        morphReadout = std::make_unique<trench::TrenchValueBox> (*mp, trench::TrenchValueBox::Mode::IntPercent);
     if (auto* qp = processorRef.apvts.getParameter (ParamID::q))
-    {
-        qBand  = std::make_unique<trench::TrenchThumbwheel> (*qp);
-        qValue = std::make_unique<trench::TrenchValueBox>    (*qp, trench::TrenchValueBox::Mode::Percent);
-        addAndMakeVisible (*qBand);
-        addAndMakeVisible (*qValue);
-    }
+        qReadout = std::make_unique<trench::TrenchValueBox> (*qp, trench::TrenchValueBox::Mode::IntPercent);
+    if (morphReadout) addAndMakeVisible (*morphReadout);
+    if (qReadout)     addAndMakeVisible (*qReadout);
 
-    // PL-4: body strip is the consumer surface — always visible. The previous
-    // gate (`if (! isCleanGroundTruthAudio())`) hid it whenever the clean-audio
-    // toggle was on, which was correct for a null-parity test rig but wrong
-    // for the shipping player. Body switching is what the Morph/Q wheels are
-    // morphing *between*; the strip is how the user picks the world.
-    if (auto* bp = processorRef.apvts.getParameter (ParamID::body))
-    {
-        bodyStrip = std::make_unique<trench::TrenchBodyStrip> (*bp);
-        addAndMakeVisible (*bodyStrip);
-    }
-
-    // Seating overlay LAST so it paints on top of the chassis AND every control:
-    // inner-shadow gaskets + display glass that seat them into the chassis.
+    // Seating overlay LAST so it paints on top of the chassis and response line.
+    // It does NOT intercept mouse clicks (setInterceptsMouseClicks(false,false)
+    // in its ctor), so drags fall through to the well sliders beneath it.
     chassisGlass = std::make_unique<trench::TrenchChassisGlass>();
     addAndMakeVisible (*chassisGlass);
 
@@ -129,6 +105,24 @@ void PluginEditor::paint (juce::Graphics& g)
     }
 }
 
+void PluginEditor::makeWellSliderInvisible (juce::Slider& s)
+{
+    s.setSliderStyle (juce::Slider::LinearHorizontal);
+    s.setTextBoxStyle (juce::Slider::NoTextBox, true, 0, 0);
+    s.setRange (0.0, 1.0, 0.0); // mirrors morph/q normalised range; attachment owns the value
+    s.setMouseDragSensitivity (1); // 1:1 horizontal travel across the well
+    // Fully transparent: the chassis PNG cutout is the only visible surface.
+    for (auto id : { juce::Slider::backgroundColourId,
+                     juce::Slider::trackColourId,
+                     juce::Slider::thumbColourId,
+                     juce::Slider::rotarySliderFillColourId,
+                     juce::Slider::rotarySliderOutlineColourId,
+                     juce::Slider::textBoxTextColourId,
+                     juce::Slider::textBoxBackgroundColourId,
+                     juce::Slider::textBoxOutlineColourId })
+        s.setColour (id, juce::Colours::transparentBlack);
+}
+
 void PluginEditor::resized()
 {
     const auto w = getWidth();
@@ -136,18 +130,12 @@ void PluginEditor::resized()
 
     const auto disp = trench::layout::displayBounds (w, h);
     if (responseDisplay) responseDisplay->setBounds (disp);
-    if (fxPane)          fxPane->setBounds (disp);
-    if (viewSwitch)
-    {
-        const int sw = juce::jmax (56, disp.getWidth() * 28 / 100);
-        const int sh = juce::jmax (16, disp.getHeight() * 8 / 100);
-        viewSwitch->setBounds (disp.getRight() - sw - 5, disp.getY() + 5, sw, sh);
-    }
-    if (bodyStrip)  bodyStrip ->setBounds (trench::layout::typeBounds    (w, h));
-    if (morphBand)  morphBand ->setBounds (trench::layout::morphBounds   (w, h));
-    if (qBand)      qBand     ->setBounds (trench::layout::qBounds       (w, h));
-    if (morphValue) morphValue->setBounds (trench::layout::valueBounds   (w, h));
-    if (qValue)     qValue    ->setBounds (trench::layout::qValueBounds  (w, h));
+
+    morphWell.setBounds (trench::layout::morphBounds (w, h));
+    qWell.setBounds     (trench::layout::qBounds     (w, h));
+    if (morphReadout) morphReadout->setBounds (trench::layout::valueBounds  (w, h));
+    if (qReadout)     qReadout->setBounds     (trench::layout::qValueBounds (w, h));
+
     if (chassisGlass) chassisGlass->setBounds (getLocalBounds());
 }
 

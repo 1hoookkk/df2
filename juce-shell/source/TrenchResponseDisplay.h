@@ -38,7 +38,7 @@ public:
 
 private:
     static constexpr int   kSamples      = 256;
-    static constexpr float kDbFloor      = -60.0f;
+    static constexpr float kDbFloor      = -30.0f;
     static constexpr float kDbCeil       =  30.0f;
     static constexpr float kFreqLo       =  20.0f;
     static constexpr float kFreqHi       = 20000.0f;

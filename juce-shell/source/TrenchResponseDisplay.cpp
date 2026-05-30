@@ -181,8 +181,8 @@ void TrenchResponseDisplay::paint (juce::Graphics& g)
     }
 }
 
-// The shape: a cobalt glow blooming up from the floor under a bright ice-white
-// line. Built as a single smooth path so it reads as a living curve, not a plot.
+// The shape: one bright response line. No fill, grid, labels, or selection UI.
+// Identity/bypass is 0 dB, centered vertically by the -30..+30 dB display range.
 void TrenchResponseDisplay::drawTrace (juce::Graphics& g) const
 {
     if (traceSampleCount < 2) return;
@@ -192,22 +192,9 @@ void TrenchResponseDisplay::drawTrace (juce::Graphics& g) const
     for (int i = 1; i < traceSampleCount; ++i)
         curve.lineTo ((float) traceX[(std::size_t) i], (float) traceY[(std::size_t) i]);
 
-    // Under-fill: cobalt that fades to nothing toward the floor.
-    juce::Path fill = curve;
-    fill.lineTo ((float) traceX[(std::size_t) (traceSampleCount - 1)], (float) traceFloorY + 1.0f);
-    fill.lineTo ((float) traceX[0], (float) traceFloorY + 1.0f);
-    fill.closeSubPath();
-
-    const auto fb = screenBounds().toFloat();
-    juce::ColourGradient grad (style::oledBlue().withAlpha (0.42f), fb.getCentreX(), fb.getY(),
-                               style::oledBlue().withAlpha (0.015f), fb.getCentreX(), fb.getBottom(), false);
-    g.setGradientFill (grad);
-    g.fillPath (fill);
-
-    // Glow pass (wide soft cobalt) then the bright core line.
-    const juce::PathStrokeType glow (6.5f, juce::PathStrokeType::curved, juce::PathStrokeType::rounded);
+    const juce::PathStrokeType glow (4.0f, juce::PathStrokeType::curved, juce::PathStrokeType::rounded);
     const juce::PathStrokeType core (2.2f, juce::PathStrokeType::curved, juce::PathStrokeType::rounded);
-    g.setColour (style::oledBlue().withAlpha (0.30f));
+    g.setColour (style::oledBlue().withAlpha (0.24f));
     g.strokePath (curve, glow);
     g.setColour (style::oledWhite());
     g.strokePath (curve, core);
