@@ -4,6 +4,30 @@ What exists. What's broken. What's next. Update on every code change.
 
 ---
 
+## Now — 2026-05-31 NIGHT · Forge workflow rebuilt (painter UI) + heritage library recovered
+
+OBSERVED (fresh command output): `cargo build -p trench-forge` clean; `cargo test -p
+trench-forge` **32 pass, 5 ignored**. The Forge is painter-only, three workspaces
+(SHAPE / PLAYER / PUSH).
+- **Cube publishable** via its Z-crossfade slice (wire-A): `body()`/`packed_authority()`/
+  `publishability_error()` cube-aware, read-only; new test
+  `gen_cube_publishes_byte_authoritative_slice` proves ship == play at the four vertices.
+- **Corner index 68 → 112** via the off-stage-pad fix in `tools/reindex_corner_library.py`
+  (heritage 18→45, authored 4→16, design 1→6; 117 still rejected — ~95 unstable edge poles
+  + single-peak). The pad `(2,1,2,1,1)` decoded to an unstable r≈2.0 biquad and was sinking
+  otherwise-stable templates taken by `stages[:6]`. **Heritage = the source templates.**
+- **SHAPE** = 8 gradient per-corner response plots (2×4) + an AUDITION MIDDLE dock (live
+  Morph/Q sweep, live-middle scope, continuous ring-out readout). **TRAJECTORY merged into
+  PLAYER** (route picker). 3 EXTREME generators already in `generators.rs` (match spec).
+- **Doctrine pin (Tyson):** plots are the *validation* gate, the ear is the *judge*; the
+  curve only leans heavy now because the live audio is a tanh stand-in, not the chip drive.
+
+**NEXT:** route the live audition through the shipped engine (SLAM + AGC via **FFI, not a
+4th reimplementation**) + a drive knob; QSound as per-body spatial metadata; then
+per-section polish, each ear-verified through the real engine.
+
+---
+
 ## Now — 2026-05-30 · ONE owned corner-authoring primitive (the tooling fix — read this first)
 
 The session's repeated misfires (samey corners, sub gain, fake vowels, poles sliding) had

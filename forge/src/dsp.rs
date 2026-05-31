@@ -793,8 +793,8 @@ fn realize_stage(r: &Resonance, sr: f64) -> [f64; 5] {
             let a1 = -2.0 * rp * theta.cos();
             let a2 = rp * rp;
             let g = 1.0 - rp * rp; // tamed resonator (~unity peak before normalize)
-            // DC-nulling zero ~7 semitones below the pole → rolls off the lows,
-            // no pedestal (the `bp` shape proven by Neon Vane).
+                                   // DC-nulling zero ~7 semitones below the pole → rolls off the lows,
+                                   // no pedestal (the `bp` shape proven by Neon Vane).
             let fz = (f * 2.0_f64.powf(-7.0 / 12.0)).max(10.0);
             let rz = 0.9;
             let tz = TAU * fz / sr;
@@ -839,7 +839,11 @@ fn realize_stage(r: &Resonance, sr: f64) -> [f64; 5] {
             let g = 1.0 - rp * rp;
             // Default to a touching-but-not-overlapping offset if the actor
             // was constructed without one (e.g. legacy load path).
-            let semis = if r.cavity_semis < 0.5 { 3.0 } else { r.cavity_semis.clamp(0.5, 12.0) };
+            let semis = if r.cavity_semis < 0.5 {
+                3.0
+            } else {
+                r.cavity_semis.clamp(0.5, 12.0)
+            };
             let fz = (f * 2.0_f64.powf(semis / 12.0)).clamp(20.0, nyq);
             let rz: f64 = 0.98;
             let tz = TAU * fz / sr;
@@ -873,10 +877,7 @@ pub const STABILITY_RADIUS_LIMIT: f64 = 0.999;
 /// Returns `(max_r, (morph, q))`: the worst pole radius observed and the
 /// morph/Q cell where it occurred. This function never modifies anything —
 /// it's a diagnostic only. The caller decides whether to warn or block.
-pub fn morph_surface_max_pole_radius(
-    corners: &[CornerData; 4],
-    grid: usize,
-) -> (f64, (f64, f64)) {
+pub fn morph_surface_max_pole_radius(corners: &[CornerData; 4], grid: usize) -> (f64, (f64, f64)) {
     let grid = grid.max(2);
     let mut worst_r = 0.0_f64;
     let mut worst_loc = (0.0_f64, 0.0_f64);
@@ -1174,11 +1175,329 @@ pub fn trim_label(label: &str, max_chars: usize) -> String {
     s
 }
 
+// ── FSM: Frequency Sampling Method (the new DRAW) ─────────────────────────────
+//
+// FSM is the wild-corner path: you draw an arbitrary TARGET magnitude curve (a
+// polyline of `[freq_hz, db]` control points) and the deterministic ARMA solver
+// fits 6 biquads (poles + real zeros) to it. The SAME solver as `FitMode::Arma`,
+// but fed a hand-drawn / data-seeded curve instead of audio. The taste lives in
+// the curve; the fit stays dumb. Curve GENERATORS (Klatt vowels, tube modes,
+// PEQ, golden-ratio flanger, harmonic slicers) seed the curve for REAL corners;
+// freehand drawing makes the wild ones.
+
+/// One decoded pole or zero, for the "viewing spectrum of all the known
+/// pole/zero" overlay the FSM editor draws over the response.
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct PoleZero {
+    pub freq_hz: f64,
+    pub radius: f64,
+    /// true = pole (resonance), false = zero (notch/anti-resonance).
+    pub is_pole: bool,
+}
+
+/// Fit a hand-drawn / seeded target curve into one corner via the canonical ARMA
+/// solver. `curve` is `[freq_hz, db]` control points; they are sorted by
+/// frequency, then handed to `trench_core::arma::fit_corner_from_magnitude`
+/// (which linearly interpolates between them onto its FFT grid). Returns the
+/// kernel-form corner, leashed + normalized like the other fit modes so it packs
+/// and plays cleanly, or `None` if fewer than two points or the fit degenerates.
+pub fn fsm_fit(curve: &[[f64; 2]], sr: f64) -> Option<CornerData> {
+    if curve.len() < 2 {
+        return None;
+    }
+    let mut pts: Vec<(f64, f64)> = curve.iter().map(|p| (p[0], p[1])).collect();
+    pts.sort_by(|a, b| a.0.partial_cmp(&b.0).unwrap_or(Ordering::Equal));
+    let mut corner = trench_core::arma::fit_corner_from_magnitude(&pts, sr)?;
+    leash_zeros(&mut corner, ZERO_Q0_RADIUS);
+    trench_core::lpc::normalize_corner_peak(&mut corner, sr, 2.0);
+    Some(corner)
+}
+
+/// Decode a corner's six stages into their poles and zeros (frequency + radius)
+/// for the constellation overlay. Poles come from the denominator (a1,a2), zeros
+/// from the numerator (b0,b1,b2). Passthrough/degenerate stages are skipped.
+pub fn corner_poles_zeros(corner: &CornerData, sr: f64) -> Vec<PoleZero> {
+    let nyq = sr * 0.5;
+    let mut out = Vec::new();
+    let angle_hz = |coef_r: f64, lin: f64| -> f64 {
+        // lin = a1/b1-style linear coefficient; angle from cos = -lin/(2r).
+        (((-lin) / (2.0 * coef_r)).clamp(-1.0, 1.0)).acos() * sr / TAU
+    };
+    for stage in corner.iter() {
+        if is_passthrough(stage) {
+            continue;
+        }
+        let [b0, b1, b2, a1, a2] = kernel_to_biquad(stage);
+        // Pole: z² + a1 z + a2.
+        let rp = a2.max(0.0).sqrt();
+        if rp > 1.0e-3 && rp < 1.0 {
+            let f = angle_hz(rp, a1);
+            if f > 10.0 && f < nyq {
+                out.push(PoleZero {
+                    freq_hz: f,
+                    radius: rp,
+                    is_pole: true,
+                });
+            }
+        }
+        // Zero: b0 z² + b1 z + b2  →  z² + (b1/b0) z + (b2/b0).
+        if b0.abs() > 1.0e-9 {
+            let rz = (b2 / b0).max(0.0).sqrt();
+            if rz > 1.0e-3 && rz.is_finite() {
+                let f = angle_hz(rz.max(1.0e-3), b1 / b0);
+                if f > 10.0 && f < nyq {
+                    out.push(PoleZero {
+                        freq_hz: f,
+                        radius: rz,
+                        is_pole: false,
+                    });
+                }
+            }
+        }
+    }
+    out
+}
+
+// ── Curve generators: data/formula → target curve (seed the FSM fit) ──────────
+
+/// RBJ peaking-EQ magnitude in dB at `f` for a bell at (`fc`, `q`, `gain_db`).
+/// Ported from the cube_display prototype `rbjmag` (peaking branch). Negative
+/// `gain_db` makes a dip (used by the flanger / harmonic slicers).
+fn rbj_peak_db(f: f64, fc: f64, q: f64, gain_db: f64, sr: f64) -> f64 {
+    let a = 10f64.powf(gain_db / 40.0);
+    let w0 = TAU * fc / sr;
+    let (c, s) = (w0.cos(), w0.sin());
+    let al = s / (2.0 * q.max(0.05));
+    let b0 = 1.0 + al * a;
+    let b1 = -2.0 * c;
+    let b2 = 1.0 - al * a;
+    let a0 = 1.0 + al / a;
+    let a1 = -2.0 * c;
+    let a2 = 1.0 - al / a;
+    let (b0, b1, b2, a1, a2) = (b0 / a0, b1 / a0, b2 / a0, a1 / a0, a2 / a0);
+    let w = TAU * f / sr;
+    let (cw, sw) = (w.cos(), w.sin());
+    let (c2, s2) = ((2.0 * w).cos(), (2.0 * w).sin());
+    let nr = b0 + b1 * cw + b2 * c2;
+    let ni = -(b1 * sw + b2 * s2);
+    let dr = 1.0 + a1 * cw + a2 * c2;
+    let di = -(a1 * sw + a2 * s2);
+    10.0 * ((nr * nr + ni * ni) / (dr * dr + di * di)).log10()
+}
+
+/// Sum a set of `(fc, Q, gain_db)` peaking bells onto the standard log frequency
+/// grid → a target curve ready for `fsm_fit`. This is the shared backend for
+/// every formula-based seed.
+pub fn peq_curve(peaks: &[(f64, f64, f64)], sr: f64) -> Vec<[f64; 2]> {
+    let nyquist = (sr * 0.5).max(10_000.0);
+    (0..RESPONSE_BINS)
+        .map(|i| {
+            let t = i as f64 / (RESPONSE_BINS - 1) as f64;
+            let f = 20.0 * (nyquist / 20.0).powf(t);
+            let db: f64 = peaks
+                .iter()
+                .map(|&(fc, q, g)| rbj_peak_db(f, fc, q, g, sr))
+                .sum();
+            [f, db.clamp(-48.0, 30.0)]
+        })
+        .collect()
+}
+
+/// Klatt/Peterson-Barney vowel formant table: `(F_hz, BW_hz, gain_db)` per
+/// formant. Q = F/BW (the documented conversion). Hardcoded (small + stable) so
+/// the Forge core needs no JSON IO; matches `tables/klatt_1980_*.json`.
+pub fn klatt_vowel_formants(vowel: &str) -> &'static [(f64, f64, f64)] {
+    match vowel {
+        // /i/ "bead"
+        "i" => &[
+            (310.0, 45.0, 14.0),
+            (2020.0, 200.0, 12.0),
+            (2960.0, 400.0, 9.0),
+            (3300.0, 250.0, 6.0),
+        ],
+        // /a/ "bard"
+        "a" => &[
+            (700.0, 130.0, 14.0),
+            (1220.0, 70.0, 12.0),
+            (2600.0, 160.0, 9.0),
+            (3300.0, 250.0, 6.0),
+        ],
+        // /u/ "boot"
+        "u" => &[
+            (350.0, 65.0, 14.0),
+            (650.0, 110.0, 11.0),
+            (2200.0, 140.0, 8.0),
+            (3300.0, 250.0, 5.0),
+        ],
+        // /e/ "bait"
+        "e" => &[
+            (480.0, 70.0, 14.0),
+            (1720.0, 100.0, 12.0),
+            (2520.0, 200.0, 9.0),
+            (3300.0, 250.0, 6.0),
+        ],
+        // /o/ "boat"
+        "o" => &[
+            (500.0, 80.0, 14.0),
+            (1000.0, 90.0, 11.0),
+            (2400.0, 160.0, 8.0),
+            (3300.0, 250.0, 5.0),
+        ],
+        _ => &[
+            (700.0, 130.0, 14.0),
+            (1220.0, 70.0, 12.0),
+            (2600.0, 160.0, 9.0),
+        ],
+    }
+}
+
+/// A vowel formant target curve (Klatt data → peaking bells, Q=F/BW).
+pub fn klatt_vowel_curve(vowel: &str, sr: f64) -> Vec<[f64; 2]> {
+    let peaks: Vec<(f64, f64, f64)> = klatt_vowel_formants(vowel)
+        .iter()
+        .map(|&(f, bw, g)| (f, f / bw.max(1.0), g))
+        .collect();
+    peq_curve(&peaks, sr)
+}
+
+/// Speed of sound, cm/s (used by the tube/pipe modal curves).
+const SOUND_CM_S: f64 = 34_300.0;
+
+/// A tube/pipe modal target curve. `closed_open=true` → odd-harmonic series
+/// f=(2n−1)·c/(4L) (clarinet); else integer series f=n·c/(2L) (flute/open pipe).
+/// Six modes, high-Q, gain rolling off with mode number.
+pub fn tube_curve(length_cm: f64, closed_open: bool, sr: f64) -> Vec<[f64; 2]> {
+    let l = length_cm.max(1.0);
+    let mut peaks = Vec::new();
+    for n in 1..=6u32 {
+        let f = if closed_open {
+            (2.0 * n as f64 - 1.0) * SOUND_CM_S / (4.0 * l)
+        } else {
+            n as f64 * SOUND_CM_S / (2.0 * l)
+        };
+        if f >= 20.0 && f < sr * 0.49 {
+            let gain = (14.0 - 2.0 * (n as f64 - 1.0)).max(4.0);
+            peaks.push((f, 9.0, gain)); // rigid-wall high Q
+        }
+    }
+    peq_curve(&peaks, sr)
+}
+
+/// Golden-ratio flanger target curve: deep notches starting at `f0`, each next
+/// notch ×`ratio` (φ≈1.618 by default), `depth_db` negative. The smooth,
+/// synthetic, non-linear comb (Morpheus Flange3.4 spirit, original data).
+pub fn golden_flanger_curve(f0: f64, ratio: f64, depth_db: f64, sr: f64) -> Vec<[f64; 2]> {
+    let mut peaks = Vec::new();
+    let mut f = f0.max(20.0);
+    let nyq = sr * 0.49;
+    while f < nyq {
+        peaks.push((f, 4.0, -depth_db.abs()));
+        f *= ratio.max(1.05);
+    }
+    peq_curve(&peaks, sr)
+}
+
+/// Odd/even harmonic slicer target curve: notches on the odd (or even) harmonics
+/// of `f0`, hollowing the sound (Morpheus OddCuts/EvenCuts spirit).
+pub fn harmonic_slice_curve(f0: f64, odd: bool, sr: f64) -> Vec<[f64; 2]> {
+    let mut peaks = Vec::new();
+    let nyq = sr * 0.49;
+    let start = if odd { 1u32 } else { 2 };
+    let mut n = start;
+    while (n as f64) * f0 < nyq {
+        peaks.push((n as f64 * f0, 6.0, -18.0));
+        n += 2;
+    }
+    peq_curve(&peaks, sr)
+}
+
 // ── C++ export ──────────────────────────────────────────────────────────────
 
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    fn peak_hz_of(corner: &CornerData, sr: f64) -> f64 {
+        let mut best = (0.0f64, f64::NEG_INFINITY);
+        for p in magnitude_response(corner, sr) {
+            if p[1] > best.1 {
+                best = (p[0], p[1]);
+            }
+        }
+        best.0
+    }
+
+    #[test]
+    fn fsm_fit_matches_a_drawn_peak() {
+        // A single bell drawn at ~1 kHz must fit a corner that peaks near 1 kHz.
+        let sr = AUTHORING_RATE;
+        let curve = peq_curve(&[(1000.0, 6.0, 18.0)], sr);
+        let corner = fsm_fit(&curve, sr).expect("fit a single-peak curve");
+        assert!(corner.iter().all(|s| s.iter().all(|v| v.is_finite())));
+        let f = peak_hz_of(&corner, sr);
+        assert!(
+            (f / 1000.0).ln().abs() < 0.4,
+            "fitted peak {f:.0}Hz not near 1kHz"
+        );
+    }
+
+    #[test]
+    fn fsm_fit_rejects_short_curve() {
+        assert!(fsm_fit(&[[100.0, 0.0]], AUTHORING_RATE).is_none());
+    }
+
+    #[test]
+    fn corner_poles_zeros_decodes_finite_stable() {
+        let sr = AUTHORING_RATE;
+        let corner = realize_resonances(
+            &[
+                Resonance {
+                    freq_hz: 300.0,
+                    radius: 0.97,
+                    kind: ResoKind::Peak,
+                    cavity_semis: 0.0,
+                },
+                Resonance {
+                    freq_hz: 1800.0,
+                    radius: 0.95,
+                    kind: ResoKind::Peak,
+                    cavity_semis: 0.0,
+                },
+            ],
+            sr,
+        );
+        let pzs = corner_poles_zeros(&corner, sr);
+        assert!(pzs.iter().any(|p| p.is_pole), "expected at least one pole");
+        for pz in &pzs {
+            assert!(pz.freq_hz.is_finite() && pz.radius.is_finite());
+            if pz.is_pole {
+                assert!(pz.radius < 1.0, "pole radius {} >= 1", pz.radius);
+            }
+        }
+    }
+
+    #[test]
+    fn klatt_vowel_curve_peaks_near_formants() {
+        let sr = AUTHORING_RATE;
+        let curve = klatt_vowel_curve("i", sr);
+        // The drawn /i/ curve should have local maxima near F1≈310 and F2≈2020.
+        let near = |target: f64| {
+            curve
+                .iter()
+                .filter(|p| (p[0] / target).ln().abs() < 0.12)
+                .any(|p| p[1] > 6.0)
+        };
+        assert!(near(310.0), "/i/ curve missing F1 bump near 310Hz");
+        assert!(near(2020.0), "/i/ curve missing F2 bump near 2020Hz");
+    }
+
+    #[test]
+    fn fsm_fit_of_vowel_is_stable() {
+        let sr = AUTHORING_RATE;
+        let corner = fsm_fit(&klatt_vowel_curve("a", sr), sr).expect("fit vowel /a/");
+        let (max_r, _) = morph_surface_max_pole_radius(&[corner, corner, corner, corner], 4);
+        assert!(max_r < 1.0, "vowel fit unstable: max pole radius {max_r}");
+    }
 
     #[test]
     fn morph_surface_scan_catches_destabilised_middle() {
@@ -1243,7 +1562,10 @@ mod tests {
         let f_zero = cos_tz.acos() * sr / TAU;
 
         let expected_fz = f_in * 2.0_f64.powf(semis / 12.0);
-        assert!((f_pole - f_in).abs() < 20.0, "pole f = {f_pole}, want ~{f_in}");
+        assert!(
+            (f_pole - f_in).abs() < 20.0,
+            "pole f = {f_pole}, want ~{f_in}"
+        );
         assert!(
             (f_zero - expected_fz).abs() < 20.0,
             "zero f = {f_zero}, want ~{expected_fz} ({semis} semis above pole)"

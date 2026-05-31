@@ -281,6 +281,29 @@ impl PackedCorners {
         }
         result
     }
+
+    /// Z-axis crossfade between two 4-corner plane bodies in packed u16 space.
+    ///
+    /// The 8-corner morph CUBE (X=Morph, Y=Q, Z=Transform) is stored as two
+    /// 4-corner planes: a floor (z=0) and a ceiling (z=1). The runtime collapses
+    /// the cube to one playable 4-corner body by lerping the two planes'
+    /// packed words at the chosen `z`, then morph/Q-interpolating as usual.
+    ///
+    /// Additive: reuses `lerp_u16` (the same E-MU/MSVC u16 lerp the morph/Q
+    /// bilinear uses) and touches no cascade/AGC math. `z` is clamped to 0..1.
+    pub fn z_crossfade(floor: &PackedCorners, ceiling: &PackedCorners, z: f32) -> PackedCorners {
+        let z = z.clamp(0.0, 1.0);
+        let mut words = [[[0u16; NUM_COEFFS]; NUM_STAGES]; 4];
+        for ci in 0..4 {
+            for si in 0..NUM_STAGES {
+                for wi in 0..NUM_COEFFS {
+                    words[ci][si][wi] =
+                        lerp_u16(floor.words[ci][si][wi], ceiling.words[ci][si][wi], z);
+                }
+            }
+        }
+        PackedCorners { words }
+    }
 }
 
 /// Pole radius from direct DF2T biquad denominator coefficients (a1, a2).
@@ -435,5 +458,67 @@ mod unit_tests {
                 }
             }
         }
+    }
+
+    fn sample_body(seed: u16) -> PackedCorners {
+        let mut words = [[[0u16; NUM_COEFFS]; NUM_STAGES]; 4];
+        let mut v = seed;
+        for corner in words.iter_mut() {
+            for stage in corner.iter_mut() {
+                for w in stage.iter_mut() {
+                    *w = v;
+                    v = v.wrapping_add(0x0123).wrapping_mul(3);
+                }
+            }
+        }
+        PackedCorners { words }
+    }
+
+    #[test]
+    fn z_crossfade_identity() {
+        // Crossfading a body with itself returns it verbatim at any z.
+        let b = sample_body(0x2000);
+        for z in [0.0f32, 0.25, 0.5, 0.75, 1.0] {
+            assert_eq!(PackedCorners::z_crossfade(&b, &b, z), b, "z={z}");
+        }
+    }
+
+    #[test]
+    fn z_crossfade_endpoints() {
+        // z=0 → floor words verbatim; z=1 → ceiling words verbatim
+        // (lerp_u16 is exact at the endpoints for these values).
+        let floor = sample_body(0x1000);
+        let ceiling = sample_body(0x9000);
+        let at0 = PackedCorners::z_crossfade(&floor, &ceiling, 0.0);
+        assert_eq!(at0.words, floor.words, "z=0 must equal floor");
+        let at1 = PackedCorners::z_crossfade(&floor, &ceiling, 1.0);
+        for ci in 0..4 {
+            for si in 0..NUM_STAGES {
+                for wi in 0..NUM_COEFFS {
+                    let got = at1.words[ci][si][wi];
+                    let want = ceiling.words[ci][si][wi];
+                    // lerp_u16 at frac=1 can land one LSB short via f32 floor.
+                    let d = (got as i32 - want as i32).abs();
+                    assert!(
+                        d <= 1,
+                        "z=1 corner {ci} stage {si} word {wi}: got {got}, want {want}"
+                    );
+                }
+            }
+        }
+    }
+
+    #[test]
+    fn z_crossfade_clamps_z() {
+        let floor = sample_body(0x1000);
+        let ceiling = sample_body(0x9000);
+        assert_eq!(
+            PackedCorners::z_crossfade(&floor, &ceiling, -1.0).words,
+            PackedCorners::z_crossfade(&floor, &ceiling, 0.0).words
+        );
+        assert_eq!(
+            PackedCorners::z_crossfade(&floor, &ceiling, 2.0).words,
+            PackedCorners::z_crossfade(&floor, &ceiling, 1.0).words
+        );
     }
 }

@@ -1,11 +1,340 @@
 # NOW
 
-The only file that changes session-to-session. Rewrite the top half
-every time. Keep the bottom half stable.
+> **Incoming AI / GPT-5.5: start at `HANDOFF.md`** — it's the active prompt (primary task =
+> the full painted-code Blender-style UI rewrite). In this file read ONLY the top block;
+> everything below the first `---` is dated archive — verify against code before acting.
+
+The one current-state file. Read this, trust this. (STATE.md = older worklog, archive.)
 
 ---
 
-## 2026-05-29 LATE NIGHT — GAIN-STAGING + FILTER-TYPE VOCABULARY + METHOD CROSSROADS (next AI: START HERE)
+## THE ARCHITECTURE (locked — do not drift)
+
+**The 8-corner cube IS the hidden authored body.**
+- **X = Morph** · **Y = Q / stress / openness** · **Z = Transform / reality → nightmare**
+
+**The player has only TWO horizontal sliders:**
+- **Slider 1 = X (Morph)** · **Slider 2 = the authored path through Y + Z**
+
+**What's the actual asset:** the **runtime** — `trench-core` (frozen, X3-null DSP:
+cascade, AGC, packed math, interp) + the JUCE player that loads 240-byte bodies.
+That is the product and it's committed. **Everything else is disposable tooling**
+that just funnels poles → 240-byte bodies. Make a generator, throw it away, remake
+it — no pedestal. Nothing in `tools/` or `dev/tmp/` is load-bearing; the runtime
+imports none of it.
+
+**Home for authoring = the Forge** (`forge/src/`, egui). Corners placed
+INTENTIONALLY (the 5 architectures / source recipes), never randomly; every pole
+zero-paired; the morph middle is the product. The 5 generators live in
+`forge/src/generators.rs` (DF2T pole/zero math, 8 corners, tests pass): FORMANT ·
+OVERDRIVE · COMB/FLANGE · KINEMATIC EQ · PHASE SHEAR. Next build: the Forge UI on
+top of them (GEN menu + Z control + click-a-corner-to-tweak).
+
+**Engine truth** (`trench-core/src/cascade.rs`): a corner = 6 biquads
+(`CornerData=[[f64;5];6]`, kernel c0..c4); 12 cascade slots (6 active, 6 spare).
+Frozen — author into it, never change it.
+
+**Clean-room:** `dev/tmp/rom_poles_zeros.csv`, `bodies/rom/`, and
+`~/trench_re_vault/artifacts/morpheus_cubes_baked/` are STUDY ONLY — never shipped.
+
+## 2026-05-31 NIGHT — FORGE WORKFLOW REBUILT + HERITAGE RECOVERED (NEXT CHAT START HERE)
+
+**State (OBSERVED): the Forge is the painter-only Blender-style bench, builds green, 32
+tests pass.** Workspaces collapsed to **SHAPE → PLAYER → PUSH** (TRAJECTORY folded into
+PLAYER as a route picker). Files: `forge/src/{app,paint,style,shape,player,push,
+corner_library,source,generators}.rs`; thin `main.rs`. Done this session:
+- **Cube is publishable (wire-A).** A composed GEN field ships as its Z-crossfade slice —
+  byte-for-byte what PLAYER auditions. `forge_core::{body,packed_authority,
+  publishability_error}` are cube-aware (read-only). PUSH is no longer a dead-end. Test:
+  `gen_cube_publishes_byte_authoritative_slice`.
+- **Heritage library 68 → 112 corners** (heritage 18→45, authored 4→16, design 1→6). Root
+  cause: `tools/reindex_corner_library.py` defined `IDENTITY_WORDS` — the E-mu
+  "section-off" pad `(2,1,2,1,1)`, which encodes to an unstable r=2.0 biquad — but never
+  filtered it; `stages[:6]` grabbed pad stages interspersed with real ones and sank ~120
+  templates. Fix = drop pad stages, keep the real filter, bypass-fill. **Heritage = the
+  source templates.** Still rejected: ~95 genuinely-unstable edge poles + single-peak.
+- **SHAPE = 8 per-corner gradient response plots** (2×4: Z0 floor / Z1 ceiling) + a bottom
+  **AUDITION MIDDLE dock** (Morph + Q sliders + live-middle scope + continuous ring-out
+  readout) — sweep/hear the middle WHILE composing. **Plots = validation, ear = judge.**
+- The 3 EXTREME generators (TalkingHedz / Lucifer's Q / EarBender) already exist in
+  `generators.rs` and match the spec (6 biquads, radius capped at the morph-stable brink;
+  SLAM is the runtime violence, not unstable poles).
+
+**DO NEXT (agreed order):**
+1. **Real character in the LIVE audition.** Route the Forge audio through the SHIPPED
+   engine (SLAM pre-sat + AGC `&0xF`), expose a DRIVE knob, persist per-body. **Do NOT
+   reimplement SLAM/AGC in `audio.rs` (4th copy = `packed-math-triplicated`) — call
+   trench-core via FFI.** Today `audio.rs` ends in a tanh stand-in, not the chip drive
+   (the "judging it asleep" gap). Wrinkle: feed the engine ramped coeffs per block (no
+   clicks on drag).
+2. **QSound** as a per-body SPATIAL setting (can't bake into mono coeffs — store as body
+   metadata, audition live). 2nd sanctioned optional effect (with SLAM); was out-of-scope,
+   Tyson pulled it in.
+3. Then **section-by-section polish** (SHAPE → PLAYER → PUSH), each ear-verified through the
+   real engine before moving on.
+
+**QUARANTINED (NOT in the checkpoint commit — confirm provenance):** `CLAUDE.md`
+(pre-session edit), `### Permanent Master Acoustic Dictionary.txt` + `ref/p2k_variants/
+combined/` (clean-room study, never ship), `HANDOFF.md`, `.claude/tdd-guard/`.
+
+---
+
+## 2026-05-31 LATE — SESSION WRAP (earlier today — superseded by the block above)
+
+**① BLOCKER — DO THIS FIRST: the Forge CRASHED.** Not yet root-caused. OBSERVED this
+session: `cargo build` clean (exit 0), `cargo test` 27/27 pass, headless launch idles
+20s with NO startup panic → the crash is **interaction-triggered**, almost certainly in
+the un-eye-verified FSM/GEN/cube paths (the +1020 dirty lines in `main.rs`). DO NOT guess
+a fix. Get from Tyson: (a) the exact action right before the crash, (b) the panic text —
+`cd forge; $env:RUST_BACKTRACE=1; cargo run`, reproduce, paste the `file:line` + reason.
+Fix the root cause from there (used systematic-debugging skill; Iron Law = no fix without
+the panic).
+
+**② ARCHITECTURE LOCKED BY TYSON (2026-05-31) — memories updated:**
+- **df2 is the ONLY thing we ship.** The Forge is the INTERNAL authoring bench, not a
+  shipped product. (memory `df2-two-plugins`, rewritten — retires the old "two JUCE
+  plugins + pyruntime" framing.)
+- **One Rust surface** (the egui Forge app); the df2 plugin + Forge share the `trench-core`
+  engine via **FFI**. (memory `one-rust-surface-shared-ffi-engine`.) DO NOT infer
+  `juce-shell/` is retired — Tyson did not say that; don't touch it or the chassis.
+
+**③ DOWNLOADS E-MU DECODE = REJECTED (vetted this session).** `~/Downloads/
+decoded_emu_library.json` (+ `decode_emu_library.py`) is POLE-ONLY: it mis-modeled the
+240-byte body (8×7×2 instead of the real 4 corners × 6 stages × 5 coeffs) and DROPPED the
+numerator/zeros — every corner renders as one sliding resonant lowpass (all 13,872 PEQ
+gains ≤ 0.08 dB, verified `dev/tmp/emu_vet/vet_library.py`). The zeros ARE present in the
+real source (b0,b1,b2 = 3 of 5 packed words; `tools/extract_p2k_pz.py` + `bodies/rom/*.json`
+prove it). Use the **zero-bearing decode** (`bodies/rom/` + `ref/p2k_variants/`), never the
+Downloads file. (memory `deep-model-abstracts-corpus`.)
+
+**④ ACTIVE TASK (GSD todo, commit `b5e33c0`): RE-INDEX the corner library.** Strip every
+corner out of the scattered `dev/tmp/arma_source_pack/corners_audio_only` categories
+(`_rom`/`_design`/`_physics`/`_heritage`[69]/`_authored`/`_reference`/`_voice`) + loose
+`dev/tmp/*.body240` → **AUDIT each on ingest** (the vet gate: finite/alive/stable poles<1/
+≥2 peaks/sane, through the REAL engine) → organise survivors into ONE clean canonical
+index (compiled-v1 `.corner.json`: format/name/sampleRate 39062.5/stages 6/keyframes
+[label,boost,stages[c0..c4]]) → **fix the Forge navigation** (collapse `available_sources`/
+`available_presets`/`scan_bins`/`collect_corners` + the duplicated `source_pos` heuristic
+at `main.rs` ~629 & ~678 into one `CornerLibrary` index). "Audit them in as they go."
+dev/tmp + forge, ONE smooth change. Authentic corners supersede the synthetic
+`Architecture` generators (roadmap #3). See `.planning/todos/pending/2026-05-30-re-index-
+and-audit-the-forge-corner-library.md`.
+
+**⑤ DEEP-AUDIO-MODEL TRACK (parked, the genre-defining direction).** Corners are
+GENERATED by the model abstracting the corpus into a CLAP perceptual atlas (render real
+corpus → embed → target a region → differentiable engine gradient-authors an ORIGINAL
+corner → similarity-reject → ear). Built: `dev/tmp/diffengine/` (engine_v2/diff_trench/
+corner_bank). Blocked: CLAP on numpy-ABI (transformers `ClapModel` is the path). Feed it
+the CORRECT decode (③). The clean re-indexed library (④) is the corpus this later embeds.
+
+**DIRTY TREE (pre-session — NOT touched this session, confirm provenance before commit):**
+`forge/src/{dsp,forge_core,main}.rs` modified, `forge/src/generators.rs` untracked,
+`trench-core/src/minifloat.rs` modified = the FSM/GEN/cube work. This session only added
+`dev/tmp/emu_vet/`, `.planning/todos/`, and memories.
+
+**NEXT-CHAT ORDER:** (1) root-cause + fix the crash. (2) execute the re-index/audit/
+organise/fix-nav todo (④). (3) deep-model atlas stays parked until ①–④ land.
+
+---
+
+## 2026-05-31 (earlier) — converged Forge spec + roadmap (reference)
+
+**Read these memories first:** `forge-converged-spec`, `role-division-corners-vs-cubes`,
+`engine-unfrozen`, `naming-df2-not-trench`, `forge-source-recipe-spec`. They hold the
+hard-won design from a long iterative session.
+
+**Where the Forge is:** builds green, 27 tests pass. It has 4 sections
+(SOURCE/SHAPE/TRAJECTORY/PLAYER), a strong engine-verified corner BANK (physical
+modal + Klatt vowels + synthetic + 3 EXTREME generators TalkingHedz/Lucifer's Q/
+EarBender), corners rendered CLEAN through the real engine+AGC (no slam; slam =
+runtime/audition only), SHAPE = grid + click-a-corner → spectrum picker overlay (no
+response curve), a 2-slider PLAYER cube. BUT the UI is **patchwork** from ~20 in-session
+iterations.
+
+**NEXT SESSION (the plan Tyson locked):**
+1. **Full custom-painted UI REWRITE** — no generic egui widgets; painter-only custom
+   controls. SPLIT out of main.rs: `paint.rs` (painted button/slider/tab/knob +
+   hit-test), `style.rs`, `shape.rs`/`trajectory.rs`/`player.rs`, `app.rs`, thin
+   `main.rs`. Build it CLEAN to `forge-converged-spec`, incrementally.
+2. **Aesthetic split:** dev sections = ENGINEERING SCHEMATIC (precise, real units,
+   not abstracted) but pick-up-and-play; PLAYER = the one polished view (hi-fi cube +
+   auto-morph + Morph/Path/SLAM, nothing else). Section one = JUST the grid, no
+   response curve; click a corner → spectrum picker (low→high × open→closed).
+3. **AUTHENTIC corners replace synthetic generators.** Tyson hands a **clean-room
+   decoded E-mu corner library**. Load THOSE authentic corners into the Forge as the
+   bank; selection picks from loaded corners. New **canonical folder** for them; the
+   render script auto-renders previews there. (Clean-room: study/compose on the bench;
+   ship originals.)
+4. **14-pole / 7-biquad engine (v2)** — Tyson: "14 was the winner." INTEGRATED (one
+   `NUM_STAGES` 6→7 in `trench-core/src/cascade.rs`, propagate; no separate v1/v2
+   layer), body 240→280 bytes, re-run the null. Pairs with the E-mu library. Lets
+   TalkingHedz fit its full 7-section spec (LP+F1-4+nasal-notch+HF-shelf).
+
+**UNIFY: Forge + differentiable engine + CLAP = ONE instrument (Tyson, 2026-05-31).**
+Not a parked side-track — wired into the Forge:
+- **CLAP = the Forge's EAR.** The spectrum-picker axes / where a sound "sits" come from
+  CLAP embedding positions (not the brightness/openness heuristic); corners AUTO-LABEL
+  by what they actually sound like (zero-shot), live.
+- **Gradient = the Forge's HAND.** "Sound like THIS" (reference or text) → CLAP target →
+  the differentiable engine gradient-descends a body to it → real engine renders → ear
+  keeps/trashes. Author by intent, in the bench.
+- **Tyson's ear trains it.** KEEP/TRASH distills CLAP into a TINY model that runs LIVE in
+  the Rust Forge (labels/ranking); heavy CLAP does offline authoring + distillation.
+- **CLAP ON THE DECODED E-MU LIBRARY = the spine.** Render the whole authentic
+  decoded library through the real engine → CLAP-embed every render → a PERCEPTUAL
+  ATLAS of the real E-mu sound-space. The loop: **embed the real → target a region of
+  the atlas → gradient authors an ORIGINAL body that lands there → CLAP similarity-
+  reject confirms in-spirit-but-distinct → ear keeps.** Clean-room SOLVED: embeddings
+  are STUDY (analysis, never shipped); shipped bodies are originals in the same
+  perceptual neighborhood. The atlas also IS the picker (real sounds, real positions)
+  + auto-labels + "find one like X".
+- **THE FORGE IS THE SURFACE.** All of it — the atlas/picker, author-by-intent,
+  similarity-reject, labels — is driven from the Forge UI. The Python brain (CLAP +
+  differentiable engine) runs BEHIND it; the Forge is the face.
+- **Shape:** Python brain (CLAP + differentiable engine) ⟷ Rust Forge surface, unified
+  through the canonical corner library + a query channel (label / rank / author-by-intent).
+- **Built + working:** `dev/tmp/diffengine/` — engine_v2.py (gradients flow), diff_trench.py
+  (proxy↔REAL 0.17–0.66 dB — gradient steers the real engine), corner_bank.py (renders
+  through the real engine). CLAP blocked only on sklearn/pandas numpy-ABI; transformers
+  `ClapModel` is the path (differentiable, native torch).
+
+## ROADMAP (next builds, in order)
+
+1. ✅ **Forge UI on the generators (DONE 2026-05-30).** GEN menu (5 archs) + Z·XFORM
+   slider so the puck navigates the full cube; orbiting cube inset (ported from the
+   cube_display prototype: 8 named+colored corners, trilinear weight blend lines,
+   blend readout; Tab = hero view); live preview through the SHIPPED packed path
+   (`PackedCorners::z_crossfade` of the two planes → `interpolate`). **DRAW was
+   REPLACED by FSM** per Tyson: draw a target magnitude curve → `fsm_fit`
+   (`arma::fit_corner_from_magnitude`) → the fitted pole/zero CONSTELLATION overlays
+   the spectrum; SEED menu (Klatt vowels/tube/golden-flanger/harmonic-slice) pre-fills
+   the curve for real corners, freehand = wild. TWEAK→slot bakes the nearest cube
+   corner into FSM. New: `trench-core/src/minifloat.rs::z_crossfade` (additive,
+   reuses `lerp_u16`); `dsp.rs::{fsm_fit, corner_poles_zeros, peq/klatt/tube/flanger/
+   harmonic curve generators}`; `forge_core.rs::{CubeState, cube/FSM methods}`.
+   All 69 forge + core tests pass; binary launches clean. See memory `fsm-replaces-draw`.
+   **NOT YET ear/eye-verified by Tyson in the running Forge** — next session: open it,
+   pick a GEN arch, drive Morph/Q/Z + orbit, draw a wild FSM curve + SEED a vowel,
+   confirm it reads well on camera. (Pre-existing clippy eq_op errors in
+   `trench-core/src/qsound_spatial.rs` are unrelated/untouched.)
+2. **Cube-search skill** — drives the Forge generators: sweep each architecture's
+   X/Y/Z field → render survivors through the REAL engine (noise + saw only) →
+   CULL garbage (never pick) → diversity-cluster → audition for the ear. Reuses the
+   proven `dev/tmp/sweep.py` loop's spirit but the generators are the source, not
+   ad-hoc Python. NOT the deleted `df2-cube-search` (that reinvented sweep.py).
+3. **CLAP taste model** — real audio preference model (NOT an LLM, NOT
+   prompt-to-preset): generate cubes → render through real engine → frozen
+   CLAP/LAION-CLAP embeddings + df2 Bark/log features → one training row each →
+   small neural head → keep_prob / mutate_prob / tags / uncertainty → ranks future
+   audition batches. Freeze CLAP first. GPU: optional — frozen-CLAP forward + a tiny
+   head run fine on CPU for hundreds of candidates; GPU only pays off at 10k+ batch
+   scale. The ear is still the final judge; the model only pre-sorts.
+
+---
+
+## ARCHIVE BELOW — older notes, superseded by the block above
+
+## 2026-05-30 LATE — V2 3D CUBE + TWO-ROLLER UX + FIDELITY NOTES (next AI: START HERE)
+
+**Read `CLAUDE.md` first, then this, then memory `df2-v2-3d-cube-direction`.** df2 is an
+**insert FX** (processes 808/reese/vocal) — NOT a synth: no keyboard, no note-on, no
+velocity. Front panel = **two horizontal rollers + a SLAM drive knob**.
+
+This session designed **df2 v2 = the 8-corner 3D morph CUBE + its UX**, prototyped in
+HTML (no repo code changed — all scratch in `dev/tmp/cube_byear/`, gitignored).
+
+**LOCKED SURFACE (end of session) — the final architecture:**
+- **Player = Morph + Path + SLAM.** Morph = X (the free real-time axis). **Path = ONE
+  control that traverses the Forge-baked best route through the rest of the cube**
+  (Y×Z = Q×Transform). SLAM = drive/character knob. (Resolves "2 controls for 3 axes":
+  Morph is free, Path collapses the 3D volume into one designed sweep, SLAM is character.)
+- **Forge = (1) design the FULL 8-corner 3D cube, (2) FIND THE BEST PATH through it.**
+  The path is a 1D trajectory the Path roller follows. Forge PROPOSES the route that tours
+  the most musical territory (max spectral travel / most-distinct corners), human nudges it
+  by ear (machine proposes, ear curates). So the full 3D is designed; one curated 1D path
+  is what ships per body.
+
+**DECISIONS (this session):**
+- Decoder is DEAD ("fuck the decoder"). Permanently parked.
+- v2 = **8-corner 3D cube**: X=Morph, Y=Q, Z=Transform. Chosen over 4-corner+drive
+  ("the 3d path is the better one"). I'd been steering to the cheaper path; the honest
+  pricing showed 3D is better and NOT a core rewrite.
+- **ARCHITECTURE (frozen core UNTOUCHED):** 8 corners = TWO 4-corner planes (Floor Z0 +
+  Ceiling Z1). Runtime **Z-crossfades the two plane-bodies (packed u16 word-lerp) → ONE
+  4-corner body → the EXISTING engine**. = full trilinear, reuses the verified
+  packed-lerp morph. Proven in the prototype's `z_lerp`. So 3D costs authoring + UI, not
+  a core rewrite or re-null (each plane is a normal 4-corner body).
+- **Z = SHAPE morph.** SLAM drive stays a SEPARATE knob = the distortion/AGC character
+  (already shipped; the ".4 cube Z=clipping-drive+AGC" advice IS df2 doctrine).
+- **AUTHORING = KIN FIELD:** don't hand-place 8 corners. Define 6 REGISTERED slots
+  (body/F1/F2/F3/air/top), each a band that SLIDES across X/Y/Z via per-axis deltas;
+  the 8 corners are the field's vertex-readings → the whole VOLUME glides (no mush).
+  Verified clean: sub ≤0.8 dB all corners, peaks +8..+16, finite. Tyson: "it works."
+- **UX INTEGRATION:** two rollers stay. Roller1=Morph(X). Roller2 = a per-BODY baked
+  PATH through the Q×Transform plane (diagonal / pure-Q / pure-Transform / curated). SLAM
+  = knob. "Design in 3D (Forge), play in 2 (player)." Linking 2 axes = ZERO fidelity
+  loss (bit-identical at every reachable point), loses 1 DOF of REACH (off-diagonal
+  corners), recoverable per-body via the curated path.
+- **Per-body Z meaning:** Z is EITHER a shape axis (8-corner body) OR "spent" on drive
+  (.4 body — IronLung: peaks crash into a static distortion ceiling). Same engine, two
+  body types. The .4 ships on TODAY's engine (no new format).
+
+**PROTOTYPE (scratch, `dev/tmp/cube_byear/`):**
+- `cube_display_view.py` → `cube_display.html` = THE working prototype: real-time 3D
+  cube, TWO sliders (Morph + Intensity=Q+Transform linked), kin field, live Web Audio
+  (pink → 6 RBJ biquads), auto-morph, single-line response.
+- `design_surface.html` (drag bands on a Hz overlay); `author_cube.py` (renders the cube
+  through the REAL trench engine: pink full-cube sweep).
+- **HONEST CAVEAT:** prototype audio = CLEAN filter only (Web Audio RBJ), NO SLAM/AGC
+  chip character. It proves navigation + kin field + display-logic, NOT final sound. Real
+  chip audio = `pyruntime.trench_ffi.engine_render_slam` / the plugin.
+
+**CLEAN-ROOM STUDY REFS — NEVER SHIP (E-mu-derived names + shapes):**
+- `C:\Users\hooki\trenchwork_recovered\contracts\cleanroom\handoffs\emu_filter\cube_display\v1\`
+  — 72 E-mu filter DISPLAY shapes (6-section morph-endpoint FORMAT). Use the FORMAT/
+  display-logic for the visualizer; never the names/shapes.
+- `C:\Users\hooki\df2\### Permanent Master Acoustic Dictionary.txt` — behavioral spec of
+  ~20 Z-plane archetypes (Morph/Q/Transform behavior). Author originals in-spirit.
+- NotebookLM = the recipe faucet (drafts Hz/Q/dB RECIPES; never coefficients).
+
+**V2 ENGINE / FIDELITY NOTES (curated from NotebookLM; traps stripped):**
+- SHIPPED core stays FROZEN (DF2T + packed-u16 morph, X3-null). Notes are v2-engine only.
+- Sweep-stable topology (v2): Zavalishin TPT/ZDF (SVF) or normalized ladder/lattice —
+  stable under fast sweeps. Already our v2 foundation (TPT SVF proven stable at Q=1e9).
+- Interp in an ENCODED space, never raw biquad a1/a2 (warps pole paths). df2 ALREADY
+  does this via packed 16-bit minifloat lerp. NOT ARMAdillo (discarded — clean-room).
+- Cascade runtime safety (v2): L∞-norm peak scaling per stage (no overflow) + bandwidth/
+  coupling compensation when high-Q peaks collide (<~200 Hz → tens-of-dB surge). df2
+  already enforces the 200 Hz coupling FLOOR in authoring; L∞ + collision = runtime guard.
+- Minimum-phase IIR = analog character, zero latency, no pre-ring. df2 already is.
+- ".4 spent-Z" body type: saturation injected INTO the cascade so morphing peaks crash
+  into a static distortion ceiling (IronLung). DROP its synth framing (no keyboard
+  tracking / Note-On in an FX).
+
+**DO NEXT (staging, no frozen-core surgery):**
+1. (done) prototype proves navigation + Z-crossfade + kin field.
+2. Firm up the 8 kin corners by ear (first pass done; iterate on Tyson's ear).
+3. `compiled-v2` body format: two 4-corner planes + roller-2 path descriptor +
+   Z-crossfade wrapper; re-run null per plane.
+4. Forge 4→8 + Z + roller-path designer (egui; ~13 hardcoded "4" sites mapped by an
+   Explore pass — corner array, `body()` bilinear→trilinear, puck+Z, labels).
+5. Plugin: roller-2 = body path, two-plane load, display.
+
+**OPEN DECISIONS for Tyson:** (resolved — surface is LOCKED: Morph + Path + SLAM.)
+Remaining: how the Forge PROPOSES the best path (e.g. maximize cumulative spectral travel
+through the 8-corner volume, or hit the most-distinct corners — then ear-nudge); and build
+order — SHOW-IT (prototype a Path roller following a curated route) vs SPEC-IT (write the
+compiled-v2 two-plane + Path body format). Also offered but declined: build IronLung as a
+real .4 body through the chip engine (engine_render_slam) to hear the distortion ceiling.
+
+**BLOCKER reminder:** still SELLABLE BODIES. The cube is the vehicle; the kin field +
+by-ear loop authors the content. Don't let tool-building eclipse shipping auditionable
+bodies. The whole session was prototype with CLEAN audio — the real chip sound (SLAM+AGC)
+has not been heard on these corners yet.
+
+---
+
+## 2026-05-29 LATE NIGHT — GAIN-STAGING + FILTER-TYPE VOCABULARY + METHOD CROSSROADS (ARCHIVE — superseded by the v2 cube above)
 
 **Read `STATE.md` top entry first — it has the full picture.** Then memories
 `prefilter-slam-gainstaging`, `iconic-preset-constellation`, `authoring-surface-

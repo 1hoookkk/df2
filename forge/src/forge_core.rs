@@ -16,10 +16,11 @@ use trench_core::cartridge::{Cartridge, CornerData};
 use trench_core::minifloat::PackedCorners;
 
 use crate::dsp::{
-    self, condition_fit_window, corner_to_resonances, display_name, fit_window_mode,
-    load_wav_with_meta, magnitude_response, realize_resonances, source_envelope, FitMode,
-    Resonance, ResoKind, AUTHORING_RATE,
+    self, condition_fit_window, corner_to_resonances, display_name, fit_window_mode, fsm_fit,
+    load_wav_with_meta, magnitude_response, realize_resonances, source_envelope, FitMode, ResoKind,
+    Resonance, AUTHORING_RATE,
 };
+use crate::generators::{self, Architecture};
 
 /// Corner letters for naming hand-drawn corners.
 const SLOT_LETTERS: [&str; 4] = ["A", "B", "C", "D"];
@@ -171,7 +172,9 @@ fn p2k_variants_dir() -> Option<PathBuf> {
 /// can sort by spec order while showing names. The raw 240-byte path goes
 /// straight into `from_rom_bytes` like every other bin source.
 fn scan_p2k_variants(root: &Path, out: &mut Vec<SourceEntry>) {
-    let Ok(types) = std::fs::read_dir(root) else { return };
+    let Ok(types) = std::fs::read_dir(root) else {
+        return;
+    };
     for type_entry in types.flatten() {
         let type_path = type_entry.path();
         if !type_path.is_dir() {
@@ -189,10 +192,16 @@ fn scan_p2k_variants(root: &Path, out: &mut Vec<SourceEntry>) {
         };
         let pretty = prettify_slug(&slug);
 
-        let Ok(files) = std::fs::read_dir(&type_path) else { continue };
+        let Ok(files) = std::fs::read_dir(&type_path) else {
+            continue;
+        };
         for file in files.flatten() {
             let path = file.path();
-            if !path.extension().map(|x| x.eq_ignore_ascii_case("bin")).unwrap_or(false) {
+            if !path
+                .extension()
+                .map(|x| x.eq_ignore_ascii_case("bin"))
+                .unwrap_or(false)
+            {
                 continue;
             }
             // Filename: `variant_K_dat_NNN.bin` — extract K.
@@ -343,6 +352,56 @@ pub struct Corner {
     src_sr: f64,
 }
 
+/// The 8-corner CUBE the GEN architectures generate. Two 4-corner planes — a
+/// floor (z=0, corners 0..3) and a ceiling (z=1, corners 4..7) — that the
+/// runtime collapses to ONE playable 4-corner body by Z-crossfading their packed
+/// words at the active Z. That collapsed slice IS the publishable body: SHAPE
+/// composes the cube from audited corners, and `body()`/`packed_authority()`
+/// ship the exact crossfade bank PLAYER auditions (option A — Z is baked per
+/// body; a compiled-v2 two-plane export keeping Z live is the next step,
+/// `NOW.md` DO NEXT).
+pub struct CubeState {
+    pub arch: Architecture,
+    /// Z (Transform) position, 0..1.
+    pub z: f32,
+    /// The eight generated cube corners (index i: x=i&1, y=(i>>1)&1, z=(i>>2)&1).
+    pub corners: [CornerData; 8],
+    floor: PackedCorners,
+    ceiling: PackedCorners,
+}
+
+impl CubeState {
+    /// Re-pack the two plane bodies from the 8 corners (after a corner is edited).
+    fn rebuild_planes(&mut self) {
+        self.floor = PackedCorners::from_corner_data(&[
+            self.corners[0],
+            self.corners[1],
+            self.corners[2],
+            self.corners[3],
+        ]);
+        self.ceiling = PackedCorners::from_corner_data(&[
+            self.corners[4],
+            self.corners[5],
+            self.corners[6],
+            self.corners[7],
+        ]);
+    }
+}
+
+/// Reduce a dense magnitude response to `n` log-spaced `[freq_hz, db]` control
+/// points — an editable FSM curve seed from an existing corner's shape.
+fn downsample_curve(dense: &[[f64; 2]], n: usize) -> Vec<[f64; 2]> {
+    if dense.len() <= n || n == 0 {
+        return dense.to_vec();
+    }
+    (0..n)
+        .map(|i| {
+            let idx = i * (dense.len() - 1) / (n - 1);
+            dense[idx]
+        })
+        .collect()
+}
+
 /// Owns the source → body workflow. Construct with `Default`.
 pub struct ForgeCore {
     corners: [Option<Corner>; 4],
@@ -372,6 +431,17 @@ pub struct ForgeCore {
     design_mode: bool,
     /// The corner DRAW edits (0..3 = A/B/C/D). Selecting it snaps the puck there.
     active: usize,
+    /// FSM: the per-corner TARGET magnitude curve (`[freq_hz, db]` control
+    /// points). The new DRAW — you draw this curve, `refit` fits 6 biquads to it
+    /// via `dsp::fsm_fit`, and the result lands in `corners[i]`. Freehand = wild
+    /// corners; data/formula generators seed it for real corners.
+    fsm_curve: [Vec<[f64; 2]>; 4],
+    /// The active GEN cube, when an architecture is selected. The cube is the
+    /// main authoring object; cleared on any load / reset.
+    cube: Option<CubeState>,
+    /// Which CUBE corner (0..7) the FSM editor is reshaping in place, if any.
+    /// Set by `edit_cube_corner`; `refit` writes the fit back into the cube.
+    cube_fsm: Option<usize>,
 }
 
 impl Default for ForgeCore {
@@ -388,6 +458,9 @@ impl Default for ForgeCore {
             design: core::array::from_fn(|_| Vec::new()),
             design_mode: false,
             active: 0,
+            fsm_curve: core::array::from_fn(|_| Vec::new()),
+            cube: None,
+            cube_fsm: None,
         }
     }
 }
@@ -495,6 +568,7 @@ impl ForgeCore {
         self.design_mode = !self.design_mode;
         if self.design_mode {
             self.ensure_design_from_fit(self.active);
+            self.ensure_fsm_from_fit(self.active);
             self.snap_to_active();
         }
     }
@@ -505,6 +579,7 @@ impl ForgeCore {
         self.active = i.min(3);
         if self.design_mode {
             self.ensure_design_from_fit(self.active);
+            self.ensure_fsm_from_fit(self.active);
         }
         self.snap_to_active();
     }
@@ -547,7 +622,11 @@ impl ForgeCore {
             freq_hz,
             radius,
             kind,
-            cavity_semis: if matches!(kind, ResoKind::Cavity) { 3.0 } else { 0.0 },
+            cavity_semis: if matches!(kind, ResoKind::Cavity) {
+                3.0
+            } else {
+                0.0
+            },
         });
         self.rebuild(i);
         self.design[i].len() - 1
@@ -610,7 +689,302 @@ impl ForgeCore {
         }
         self.reference_body = None; // a drawn corner supersedes a loaded frame
         self.reference_packed = None;
+        self.cube = None;
         self.body_rev += 1;
+    }
+
+    // ── FSM: the curve editor (the new DRAW) ──────────────────────────────────
+
+    /// The active corner's target curve control points (for drawing the polyline).
+    pub fn fsm_points(&self, i: usize) -> &[[f64; 2]] {
+        &self.fsm_curve[i.min(3)]
+    }
+
+    /// Seed corner `i`'s FSM curve from its current fitted response if empty —
+    /// the editor-open bridge so you start from the shape that's there, not blank.
+    fn ensure_fsm_from_fit(&mut self, i: usize) {
+        let i = i.min(3);
+        if !self.fsm_curve[i].is_empty() {
+            return;
+        }
+        if let Some(c) = self.corners[i].as_ref() {
+            self.fsm_curve[i] = downsample_curve(&c.fit_db, 18);
+        }
+    }
+
+    /// Replace the active corner's curve wholesale (from a SEED generator) and refit.
+    pub fn seed_curve(&mut self, points: Vec<[f64; 2]>) {
+        let i = self.active.min(3);
+        self.fsm_curve[i] = points;
+        self.refit(i);
+    }
+
+    /// Add a control point to the active corner's curve and refit.
+    pub fn add_curve_point(&mut self, freq_hz: f64, db: f64) {
+        let i = self.active.min(3);
+        self.fsm_curve[i].push([freq_hz.max(20.0), db]);
+        self.refit(i);
+    }
+
+    /// Move control point `idx` of the active corner and refit.
+    pub fn move_curve_point(&mut self, idx: usize, freq_hz: f64, db: f64) {
+        let i = self.active.min(3);
+        if let Some(p) = self.fsm_curve[i].get_mut(idx) {
+            *p = [freq_hz.max(20.0), db];
+            self.refit(i);
+        }
+    }
+
+    /// Remove control point `idx` from the active corner's curve and refit.
+    pub fn remove_curve_point(&mut self, idx: usize) {
+        let i = self.active.min(3);
+        if idx < self.fsm_curve[i].len() {
+            self.fsm_curve[i].remove(idx);
+            self.refit(i);
+        }
+    }
+
+    /// Index of the control point nearest `freq_hz` (log distance) in the active
+    /// corner — for the drag/delete hit-test.
+    pub fn nearest_curve_point(&self, freq_hz: f64) -> Option<usize> {
+        let i = self.active.min(3);
+        self.fsm_curve[i]
+            .iter()
+            .enumerate()
+            .min_by(|(_, a), (_, b)| {
+                let da = (a[0] / freq_hz.max(1.0)).ln().abs();
+                let db = (b[0] / freq_hz.max(1.0)).ln().abs();
+                da.partial_cmp(&db).unwrap_or(core::cmp::Ordering::Equal)
+            })
+            .map(|(idx, _)| idx)
+    }
+
+    /// Fit the active corner's target curve into a corner via `dsp::fsm_fit` and
+    /// store the result. The constellation the UI overlays comes from decoding
+    /// this corner. Clears it (back to passthrough/None) when fewer than 2 points.
+    fn refit(&mut self, i: usize) {
+        let i = i.min(3);
+        let curve = self.fsm_curve[i].clone();
+        let fit = fsm_fit(&curve, AUTHORING_RATE);
+
+        // Editing a CUBE corner in place: write the fit back into the cube and
+        // rebuild that corner's plane. The cube stays the object.
+        if let Some(ci) = self.cube_fsm {
+            if let (Some(fit), Some(cube)) = (fit, self.cube.as_mut()) {
+                cube.corners[ci] = fit;
+                cube.rebuild_planes();
+                self.body_rev += 1;
+            }
+            return;
+        }
+
+        match fit {
+            Some(fit) => {
+                let fit_db = magnitude_response(&fit, AUTHORING_RATE);
+                self.corners[i] = Some(Corner {
+                    name: format!("FSM {}", SLOT_LETTERS[i]),
+                    fit,
+                    src_db: self.fsm_curve[i].clone(), // the drawn target = the ghost
+                    fit_db,
+                    duration_s: 0.0,
+                    sample_rate: AUTHORING_RATE as u32,
+                    channels: 1,
+                    bits: 32,
+                    samples: Vec::new(),
+                    src_sr: 0.0,
+                });
+            }
+            None => {
+                self.corners[i] = None;
+            }
+        }
+        self.reference_body = None;
+        self.reference_packed = None;
+        self.cube = None; // an authored corner supersedes a GEN cube
+        self.body_rev += 1;
+    }
+
+    /// Click a CUBE corner (0..7) to reshape its filter: load that corner into
+    /// the FSM editor (curve seeded from its response), snap the puck/Z to that
+    /// vertex so the scope shows it, and route refits back into the cube.
+    pub fn edit_cube_corner(&mut self, ci: usize) {
+        let Some(cube) = self.cube.as_ref() else {
+            return;
+        };
+        let ci = ci.min(7);
+        let corner = cube.corners[ci];
+        self.cube_fsm = Some(ci);
+        self.active = 0;
+        self.design_mode = true;
+        self.fsm_curve[0] = downsample_curve(&magnitude_response(&corner, AUTHORING_RATE), 18);
+        // Snap the navigator to this vertex so preview() shows exactly this corner.
+        self.morph = (ci & 1) as f32;
+        self.q = ((ci >> 1) & 1) as f32;
+        if let Some(c) = self.cube.as_mut() {
+            c.z = ((ci >> 2) & 1) as f32;
+        }
+        self.body_rev += 1;
+    }
+
+    /// Assign a bank architecture's sound to ONE cube corner (the spectrum-picker
+    /// action): write that architecture's corner at this vertex's coords into the
+    /// cube and re-pack the plane. Tyson composes the cube from bank corners.
+    pub fn assign_cube_corner(&mut self, ci: usize, arch: Architecture) {
+        let ci = ci.min(7);
+        let (x, y, z) = (
+            (ci & 1) as f64,
+            ((ci >> 1) & 1) as f64,
+            ((ci >> 2) & 1) as f64,
+        );
+        let corner = generators::eval_at(arch, x, y, z);
+        if let Some(cube) = self.cube.as_mut() {
+            cube.corners[ci] = corner;
+            cube.rebuild_planes();
+            self.body_rev += 1;
+        }
+    }
+
+    /// Assign one audited library posture to a cube vertex.
+    pub fn assign_cube_corner_data(&mut self, ci: usize, corner: CornerData) {
+        if let Some(cube) = self.cube.as_mut() {
+            cube.corners[ci.min(7)] = corner;
+            cube.rebuild_planes();
+            self.body_rev += 1;
+        }
+    }
+
+    /// The cube corner currently being FSM-edited (0..7), if any.
+    pub fn cube_fsm(&self) -> Option<usize> {
+        self.cube_fsm
+    }
+
+    /// Leave cube-corner editing, back to navigating the cube.
+    pub fn exit_cube_edit(&mut self) {
+        self.cube_fsm = None;
+        self.design_mode = false;
+        self.fsm_curve[0].clear();
+        self.body_rev += 1;
+    }
+
+    // ── GEN: the 8-corner cube navigator ──────────────────────────────────────
+
+    /// Select a generator architecture: build its 8 cube corners and the two
+    /// packed plane bodies (floor z=0, ceiling z=1). Resets the puck + Z to HOME.
+    pub fn set_architecture(&mut self, arch: Architecture) {
+        let corners = generators::generate(arch);
+        let floor =
+            PackedCorners::from_corner_data(&[corners[0], corners[1], corners[2], corners[3]]);
+        let ceiling =
+            PackedCorners::from_corner_data(&[corners[4], corners[5], corners[6], corners[7]]);
+        self.cube = Some(CubeState {
+            arch,
+            z: 0.0,
+            corners,
+            floor,
+            ceiling,
+        });
+        self.morph = 0.0;
+        self.q = 0.0;
+        self.design_mode = false;
+        self.cube_fsm = None;
+        self.body_rev += 1;
+    }
+
+    /// Leave cube mode (back to the loaded/FSM body, if any).
+    pub fn clear_cube(&mut self) {
+        self.cube_fsm = None;
+        self.design_mode = false;
+        if self.cube.take().is_some() {
+            self.body_rev += 1;
+        }
+    }
+
+    pub fn cube(&self) -> Option<&CubeState> {
+        self.cube.as_ref()
+    }
+
+    /// `(arch label, (x_axis, y_axis, z_axis))` when a cube is active — for the UI.
+    pub fn cube_axes(&self) -> Option<(&'static str, (&'static str, &'static str, &'static str))> {
+        self.cube.as_ref().map(|c| (c.arch.label(), c.arch.axes()))
+    }
+
+    pub fn z(&self) -> f32 {
+        self.cube.as_ref().map(|c| c.z).unwrap_or(0.0)
+    }
+
+    /// Move the Z (Transform) axis. Cheap; does not rebuild (preview re-derives).
+    pub fn set_z(&mut self, z: f32) {
+        if let Some(c) = self.cube.as_mut() {
+            c.z = z.clamp(0.0, 1.0);
+        }
+    }
+
+    /// Trilinear corner weights at the current (morph, q, z) — for the cube
+    /// display blend lines and the nearest-vertex bake. Index i: x=i&1, y=(i>>1)&1,
+    /// z=(i>>2)&1. Sums to 1.
+    pub fn cube_weights(&self) -> Option<[f32; 8]> {
+        let c = self.cube.as_ref()?;
+        let (x, y, z) = (self.morph, self.q, c.z);
+        let mut w = [0.0f32; 8];
+        for (i, wi) in w.iter_mut().enumerate() {
+            let fx = if i & 1 == 1 { x } else { 1.0 - x };
+            let fy = if (i >> 1) & 1 == 1 { y } else { 1.0 - y };
+            let fz = if (i >> 2) & 1 == 1 { z } else { 1.0 - z };
+            *wi = fx * fy * fz;
+        }
+        Some(w)
+    }
+
+    /// The current GEN cube collapsed to ONE publishable 4-corner packed bank:
+    /// the floor and ceiling plane bodies Z-crossfaded at the active Z (the
+    /// owner's `lerp_u16`). This is the exact bank `cube_preview` auditions and
+    /// `packed_authority` ships, so what plays at the four vertices is
+    /// byte-for-byte what publishes. `None` when no cube is active.
+    fn cube_bank(&self) -> Option<PackedCorners> {
+        let c = self.cube.as_ref()?;
+        Some(PackedCorners::z_crossfade(&c.floor, &c.ceiling, c.z))
+    }
+
+    /// The cube's coefficients at the current (morph, q, z): the Z-crossfaded
+    /// 4-corner bank, morph/Q bilinear. Kernel domain, matching `preview()`.
+    fn cube_preview(&self) -> Option<CornerData> {
+        let bank = self.cube_bank()?;
+        Some(bank.interpolate(self.morph.clamp(0.0, 1.0), self.q.clamp(0.0, 1.0)))
+    }
+
+    /// Drop the nearest cube vertex into slot `slot` and open FSM to refine it:
+    /// the bake bridge from the GEN navigator to the publishable corner pipeline.
+    /// Returns the cube corner index that was copied.
+    pub fn cube_corner_to_fsm(&mut self, slot: usize) -> Option<usize> {
+        let weights = self.cube_weights()?;
+        let ci = weights
+            .iter()
+            .enumerate()
+            .max_by(|(_, a), (_, b)| a.partial_cmp(b).unwrap_or(core::cmp::Ordering::Equal))
+            .map(|(i, _)| i)?;
+        let corner = self.cube.as_ref()?.corners[ci];
+        let slot = slot.min(3);
+        self.clear_cube();
+        let fit_db = magnitude_response(&corner, AUTHORING_RATE);
+        self.fsm_curve[slot] = downsample_curve(&fit_db, 18);
+        self.corners[slot] = Some(Corner {
+            name: format!("FSM {} ⟵ cube {ci}", SLOT_LETTERS[slot]),
+            fit: corner,
+            src_db: self.fsm_curve[slot].clone(),
+            fit_db,
+            duration_s: 0.0,
+            sample_rate: AUTHORING_RATE as u32,
+            channels: 1,
+            bits: 32,
+            samples: Vec::new(),
+            src_sr: 0.0,
+        });
+        self.active = slot;
+        self.design_mode = true;
+        self.reference_body = None;
+        self.reference_packed = None;
+        self.body_rev += 1;
+        Some(ci)
     }
 
     // ── loading ─────────────────────────────────────────────────────────────
@@ -655,6 +1029,8 @@ impl ForgeCore {
         });
         self.reference_body = None;
         self.reference_packed = None;
+        self.cube = None;
+        self.fsm_curve[i.min(3)].clear();
         self.body_rev += 1;
         Ok(())
     }
@@ -701,6 +1077,8 @@ impl ForgeCore {
         self.corners = loaded;
         self.reference_body = None;
         self.reference_packed = None;
+        self.cube = None;
+        self.fsm_curve = core::array::from_fn(|_| Vec::new());
         self.morph = 0.0;
         self.q = 0.0;
         self.body_rev += 1;
@@ -744,6 +1122,8 @@ impl ForgeCore {
         // Keep the EXACT ROM words alive so preview/export stay byte-authoritative
         // (decode→repack would lose verbatim parity). This is the gold path.
         self.reference_packed = Some(packed);
+        self.cube = None;
+        self.fsm_curve = core::array::from_fn(|_| Vec::new());
         self.morph = 0.0;
         self.q = 0.0;
         self.body_rev += 1;
@@ -771,6 +1151,8 @@ impl ForgeCore {
         self.corners[i] = Some(corner);
         self.reference_body = None; // a loaded source supersedes a reference frame
         self.reference_packed = None;
+        self.cube = None;
+        self.fsm_curve[i.min(3)].clear(); // re-seed FSM from the new fit on next edit
         self.body_rev += 1;
     }
 
@@ -809,6 +1191,16 @@ impl ForgeCore {
     /// the joint refit (warm-started from the tension seed, drift allowed while
     /// actor-locked) is the next step and is not yet wired.
     pub fn body(&self) -> Option<[CornerData; 4]> {
+        if let Some(bank) = self.cube_bank() {
+            // A composed GEN field publishes as its Z-crossfaded 4-corner slice —
+            // the exact bank PLAYER auditions at the four vertices.
+            return Some([
+                bank.corner_kernel(0),
+                bank.corner_kernel(1),
+                bank.corner_kernel(2),
+                bank.corner_kernel(3),
+            ]);
+        }
         if let Some(b) = self.reference_body {
             return Some(b); // a reference frame loaded verbatim — its own morph
         }
@@ -836,6 +1228,9 @@ impl ForgeCore {
     /// interpolation. None when nothing is loaded. A verbatim ROM body interpolates
     /// its EXACT words (no decode→repack); a fitted body packs then interpolates.
     pub fn preview(&self) -> Option<CornerData> {
+        if self.cube.is_some() {
+            return self.cube_preview(); // GEN cube takes priority while navigating
+        }
         if let Some(p) = &self.reference_packed {
             return Some(p.interpolate(self.morph.clamp(0.0, 1.0), self.q.clamp(0.0, 1.0)));
         }
@@ -846,6 +1241,9 @@ impl ForgeCore {
     /// loaded, otherwise derived-packed-canonical from the assembled four corners.
     /// This is the SINGLE coefficient surface every save/export goes through.
     fn packed_authority(&self) -> Option<PackedCorners> {
+        if let Some(bank) = self.cube_bank() {
+            return Some(bank); // byte-authoritative: ship the exact crossfade words
+        }
         if let Some(p) = &self.reference_packed {
             return Some(p.clone());
         }
@@ -884,6 +1282,9 @@ impl ForgeCore {
     /// publish. `save()` calls this; the underlying `export_json` /
     /// `export_body240` stay un-gated for preview and tests.
     pub fn publishability_error(&self) -> Option<String> {
+        if self.cube.is_some() {
+            return None; // a composed GEN field ships as its Z-crossfaded slice
+        }
         if self.reference_packed.is_some() {
             return None;
         }
@@ -914,6 +1315,9 @@ impl ForgeCore {
         self.reference_body = None;
         self.reference_packed = None;
         self.design = core::array::from_fn(|_| Vec::new());
+        self.fsm_curve = core::array::from_fn(|_| Vec::new());
+        self.cube = None;
+        self.cube_fsm = None;
         self.active = 0;
         self.morph = 0.0;
         self.q = 0.0;
@@ -1282,7 +1686,10 @@ mod tests {
             "drawn corner must be finite"
         );
 
-        assert!(core.can_save(), "a body must assemble from one drawn corner");
+        assert!(
+            core.can_save(),
+            "a body must assemble from one drawn corner"
+        );
         for &(m, q) in &[(0.0, 0.0), (1.0, 0.0), (0.0, 1.0), (1.0, 1.0), (0.5, 0.5)] {
             core.set_puck(m, q);
             let body = core.body().expect("body at every puck position");
@@ -1464,5 +1871,118 @@ mod tests {
             core.publishability_error().is_none(),
             "verbatim 240-byte ROM must publish without any corners[] set"
         );
+    }
+
+    #[test]
+    fn cube_navigates_and_previews_finite() {
+        for arch in Architecture::ALL {
+            let mut core = ForgeCore::default();
+            core.set_architecture(arch);
+            assert!(core.cube().is_some(), "{} cube not set", arch.label());
+            assert!(core.cube_axes().is_some());
+            for &z in &[0.0f32, 0.5, 1.0] {
+                core.set_z(z);
+                for &(m, q) in &[(0.0f32, 0.0f32), (1.0, 1.0), (0.5, 0.5)] {
+                    core.set_puck(m, q);
+                    let prev = core.preview().expect("cube preview");
+                    assert!(
+                        prev.iter().all(|s| s.iter().all(|v| v.is_finite())),
+                        "{} preview non-finite at m{m} q{q} z{z}",
+                        arch.label()
+                    );
+                }
+            }
+            // Trilinear weights sum to ~1.
+            core.set_puck(0.3, 0.6);
+            core.set_z(0.4);
+            let w = core.cube_weights().unwrap();
+            let sum: f32 = w.iter().sum();
+            assert!((sum - 1.0).abs() < 1e-4, "weights sum {sum}");
+        }
+    }
+
+    #[test]
+    fn cube_corner_to_fsm_bakes_into_slot() {
+        let mut core = ForgeCore::default();
+        core.set_architecture(Architecture::Tube);
+        core.set_puck(0.0, 0.0); // nearest vertex 0 (M0_Q0, z=0)
+        core.set_z(0.0);
+        let ci = core
+            .cube_corner_to_fsm(0)
+            .expect("bake nearest cube corner");
+        assert_eq!(ci, 0);
+        assert!(core.cube().is_none(), "cube cleared after bake");
+        assert!(core.design_mode(), "FSM editor opened");
+        assert!(core.corner(0).is_some(), "slot 0 populated");
+        assert!(
+            !core.fsm_points(0).is_empty(),
+            "FSM curve seeded from the corner"
+        );
+    }
+
+    // Option A (end-to-end): a composed GEN field is directly publishable as its
+    // Z-crossfaded 4-corner slice — no explicit corners[] needed. The published
+    // bytes ARE the exact crossfade bank, and what ships at the four vertices is
+    // byte-for-byte what PLAYER auditions there.
+    #[test]
+    fn gen_cube_publishes_byte_authoritative_slice() {
+        use trench_core::minifloat::{PackedCorners, BODY_BYTES};
+
+        let mut core = ForgeCore::default();
+        core.set_architecture(Architecture::Tube);
+        core.set_z(0.5); // a real crossfade, not a pure plane
+
+        // The composed field publishes without populating corners[].
+        assert!(
+            core.publishability_error().is_none(),
+            "a composed GEN field must publish as its Z slice"
+        );
+        assert!(core.can_save());
+
+        // The shipped bytes are the exact Z-crossfade of the two plane bodies.
+        let expected = {
+            let c = core.cube.as_ref().expect("cube active");
+            PackedCorners::z_crossfade(&c.floor, &c.ceiling, c.z).to_rom_bytes()
+        };
+        let bytes = core.export_body240().expect("body240");
+        assert_eq!(bytes.len(), BODY_BYTES);
+        assert_eq!(
+            bytes.as_slice(),
+            expected.as_slice(),
+            "published bytes must be the exact Z-crossfade slice"
+        );
+
+        // What ships at the four vertices == what PLAYER auditions there.
+        let body = core.body().expect("cube body");
+        for (ci, corner) in body.iter().enumerate() {
+            let (m, q) = [(0.0f32, 0.0f32), (1.0, 0.0), (0.0, 1.0), (1.0, 1.0)][ci];
+            core.set_puck(m, q);
+            let played = core.preview().expect("vertex preview");
+            for (a, b) in corner.iter().flatten().zip(played.iter().flatten()) {
+                assert!((a - b).abs() < 1e-9, "vertex {ci}: ship != play ({a} vs {b})");
+            }
+        }
+
+        // Loads back through the canonical loader as a PACKED body.
+        let json = core.export_json().expect("export json");
+        assert!(json.contains("packedWords"));
+        let cart = Cartridge::from_json(&json).expect("loader parses cube export");
+        assert!(cart.packed.is_some(), "cube export must be a packed body");
+    }
+
+    #[test]
+    fn fsm_seed_curve_fits_and_supersedes_cube() {
+        let mut core = ForgeCore::default();
+        core.set_architecture(Architecture::Comb);
+        core.toggle_design(); // open editor on slot 0
+        let curve = dsp::klatt_vowel_curve("a", AUTHORING_RATE);
+        core.seed_curve(curve);
+        assert!(
+            core.cube().is_none(),
+            "authored FSM corner supersedes the cube"
+        );
+        assert!(core.corner(0).is_some(), "FSM fit landed in slot 0");
+        let prev = core.preview().expect("preview after seed");
+        assert!(prev.iter().all(|s| s.iter().all(|v| v.is_finite())));
     }
 }
