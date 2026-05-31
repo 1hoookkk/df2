@@ -1,8 +1,6 @@
 #pragma once
 
 #include "PluginProcessor.h"
-#include "TrenchResponseDisplay.h"
-#include "TrenchChassisGlass.h"
 #include "TrenchValueBox.h"
 
 #include <juce_gui_basics/juce_gui_basics.h>
@@ -27,12 +25,8 @@ private:
 
     juce::Image chassisImage;
 
-    std::unique_ptr<trench::TrenchResponseDisplay> responseDisplay;
-
-    // The two left "wells" are invisible horizontal sliders dragged over the
-    // chassis cutouts: Morph (upper) and Q (lower). The chassis PNG is the
-    // visible identity; these add nothing visual of their own. A small bone /
-    // phosphor readout sits in the cutout to the right of each well.
+    // Invisible horizontal sliders keep the Morph and Q interaction regions
+    // live while the faceplate remains visually bare.
     juce::Slider                  morphWell;
     juce::Slider                  qWell;
     std::unique_ptr<trench::TrenchValueBox> morphReadout;
@@ -41,8 +35,6 @@ private:
     using SliderAttachment = juce::AudioProcessorValueTreeState::SliderAttachment;
     std::unique_ptr<SliderAttachment> morphAttachment;
     std::unique_ptr<SliderAttachment> qAttachment;
-
-    std::unique_ptr<trench::TrenchChassisGlass>    chassisGlass; // seating overlay (on top)
 
     juce::File   layoutFile;
     juce::Time   layoutFileMtime;

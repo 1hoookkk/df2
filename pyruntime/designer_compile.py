@@ -143,7 +143,7 @@ def _compile_packed(type_id: int, freq_packed: int, gain_packed: int, shift: int
         return type2_compile(freq_packed, gain_packed, global_shift=shift)
     if type_id == 3:
         return type3_compile(freq_packed, gain_packed, shift=shift)
-    return type1_compile(freq_packed, gain_packed, global_shift=shift)
+    return StageParams.passthrough(), PASSTHROUGH_ENC
 
 
 def _compile_section(sec: DesignerSection, morph: float, shift: int = 0) -> tuple[StageParams, EncodedCoeffs]:

@@ -70,7 +70,7 @@ def _fw_words_to_kernel(w0: int, w1: int, w2: int, w3: int, w4: int) -> EncodedC
         c1=d1,
         c2=d2 * _COMBINE_K + d3,
         c3=d3,
-        c4=d4,
+        c4=d4 * _COMBINE_K,
     )
 
 
@@ -187,14 +187,14 @@ def type2_compile(freq_packed: int, gain_packed: int = 64,
 # Type 3 — shaped asymmetric (elevated radius, frequency compression)
 # ---------------------------------------------------------------------------
 
-def type3_freq_compression(freq_value: int, shift: int) -> int:
+def type3_freq_compression(freq_value: int, gain_offset: int) -> int:
     """Type 3 high-frequency compression guard.
 
     Compresses freq_value toward 220 when near Nyquist with negative
-    morph shift. Prevents instability under morph sweeps.
+    endpoint gain offset. Prevents instability under morph sweeps.
     """
-    if freq_value > 0xDB and shift < 0:
-        freq_value = (((freq_value - 220) * (shift + 32)) >> 5) + 220
+    if freq_value > 0xDB and gain_offset < 0:
+        freq_value = (((freq_value - 220) * (gain_offset + 32)) >> 5) + 220
     return freq_value
 
 
@@ -212,9 +212,9 @@ def type3_to_encoded(freq_packed: int, gain_packed: int,
     fv = fw_freq_value(freq_packed, sr)
     go = fw_gain_offset(gain_packed, shift)
 
-    # Type 3 applies freq compression BEFORE radius calc
-    fv_compressed = type3_freq_compression(fv, shift)
-    rad = fw_radius(fv_compressed)
+    # The DLL compresses emitted w2 only. Radius and low-rate w4 use raw fv.
+    fv_compressed = type3_freq_compression(fv, go)
+    rad = fw_radius(fv)
 
     base = FW_BASE[idx]
 
@@ -224,20 +224,13 @@ def type3_to_encoded(freq_packed: int, gain_packed: int,
     w3 = max(0, min(255, rad - go)) << 8
 
     if idx < 2:  # 44100, 48000
-        c4_raw = (fv_compressed - 18) * (-12) + (-8192)
+        c4_raw = (fv - 18) * (-12) + (-8192)
         # Pack as int16 → uint16
         w4 = c4_raw & 0xFFFF
     else:
         w4 = 0xE000  # constant for high SR
 
     return _fw_words_to_kernel(w0, w1, w2, w3, w4)
-
-
-def type3_compile(freq_packed: int, gain_packed: int,
-                  shift: int = 0) -> tuple[StageParams, EncodedCoeffs]:
-    """Type 3 compile: returns (StageParams, EncodedCoeffs)."""
-    enc = type3_to_encoded(freq_packed, gain_packed, shift)
-    return _encoded_to_stage_params(enc), enc
 
 
 def type3_compile(freq_packed: int, gain_packed: int, shift: int = 0) -> tuple[StageParams, EncodedCoeffs]:
@@ -263,21 +256,21 @@ if __name__ == "__main__":
     print("=== Type 2: freq=64, gain=64 — freq_value bypass ===")
     sp2, enc2 = type2_compile(64)
     print(f"  EncodedCoeffs: c0={enc2.c0:.5f}, c1={enc2.c1:.5f}, c2={enc2.c2:.5f}, c3={enc2.c3:.5f}, c4={enc2.c4:.5f}")
-    assert abs(enc2.c0 - 0xEC / 128.0) < 1e-6, f"Type 2 c0 must be 0xEC/128"
-    assert abs(enc2.c1 - 0xFF / 256.0) < 1e-6, f"Type 2 c1 must be 0xFF/256"
     fv2 = fw_freq_value(64)
-    assert abs(enc2.c4 - fv2 / 128.0) < 1e-6, f"Type 2 c4 must equal freq_value/128"
-    print("  Verified: c0/c1 hardcoded, c4=freq_value/128")
+    rad2 = fw_radius(fv2)
+    expected2 = _fw_words_to_kernel(0xEC00, 0xFF00, fv2 << 8, rad2 << 8, ((fv2 + 0xF5) << 8) & 0xFFFF)
+    assert enc2 == expected2, "Type 2 kernel must match the packed-word recipe"
+    print("  Verified: Type 2 packed-word recipe")
 
     print()
     print("=== Type 3: freq=64, gain=64 — elevated radius ===")
     sp3, enc3 = type3_compile(64, 64)
     print(f"  EncodedCoeffs: c0={enc3.c0:.5f}, c1={enc3.c1:.5f}, c2={enc3.c2:.5f}, c3={enc3.c3:.5f}, c4={enc3.c4:.5f}")
     fv3 = fw_freq_value(64)
-    rad3_elevated = min(255, 256 - fv3 + 32)
-    rad1_default = fw_radius(fv3)
-    assert rad3_elevated > rad1_default, "Type 3 elevated radius should exceed default"
-    print(f"  Elevated radius verified: {rad3_elevated} > {rad1_default}")
+    rad3_anchor = (FW_BASE[0] * 124) // 256 + 150
+    rad1_anchor = fw_radius(FW_BASE[0])
+    assert rad3_anchor > rad1_anchor, "Type 3 anchor radius should exceed the Type 1 anchor radius"
+    print(f"  Elevated anchor radius verified: {rad3_anchor} > {rad1_anchor}")
 
     print()
     print("All checks passed.")

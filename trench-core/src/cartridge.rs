@@ -322,7 +322,7 @@ impl Cartridge {
     /// for cartridges built without `packedWords`.
     ///
     /// **Never used for shipping bodies.** Bodies authored after the canonical
-    /// 240-byte path (`STATE.md` 2026-05-26) all carry packed words; this
+    /// 240-byte path all carry packed words; this
     /// branch only fires for legacy compiled-v1 JSON files lacking
     /// `packedWords`. It is preserved so those files still load, not as a
     /// production interpolation path.

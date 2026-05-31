@@ -8,9 +8,7 @@
 namespace trench
 {
 
-/// Recessed LCD-style readout. Digits sit in **bone-white** at rest; on every
-/// parameter change they flash to **phosphor green** and fade back over ~180ms
-/// — the active-state cue from the chassis-tier 60:30:10 palette.
+/// Bold numeric ink painted directly over the physical faceplate.
 class TrenchValueBox final : public juce::Component,
                              private juce::Timer
 {
@@ -35,41 +33,15 @@ public:
             case Mode::Raw:        text = juce::String::formatted ("%.2f", (double) parameter.convertFrom0to1 (v01)); break;
         }
 
-        const auto lcd = getLocalBounds().reduced (4, 3);
-        const auto lcdF = lcd.toFloat();
-
-        g.setColour (juce::Colour (0xff010503).withAlpha (0.78f));
-        g.fillRoundedRectangle (lcdF, 2.0f);
-        g.setColour (style::primary().withAlpha (0.06f));
-        g.drawHorizontalLine (lcd.getY() + 1, (float) lcd.getX() + 2.0f, (float) lcd.getRight() - 2.0f);
-        g.setColour (juce::Colours::black.withAlpha (0.55f));
-        g.drawHorizontalLine (lcd.getBottom() - 2, (float) lcd.getX() + 2.0f, (float) lcd.getRight() - 2.0f);
-
-        // Subtle scanline texture in the well.
-        for (int y = lcd.getY() + 4; y < lcd.getBottom() - 3; y += 3)
-        {
-            g.setColour (style::primary().withAlpha (0.025f));
-            g.drawHorizontalLine (y, (float) lcd.getX() + 3.0f, (float) lcd.getRight() - 3.0f);
-        }
-
-        const auto textBounds = lcd.reduced (4, 1);
-        const float fontSize = juce::jlimit (8.0f, 28.0f, (float) textBounds.getHeight() * 0.58f);
-        auto font = style::readout (fontSize, true);
+        const auto textBounds = getLocalBounds().reduced (2, 1);
+        const float fontSize = juce::jlimit (10.0f, 34.0f, (float) textBounds.getHeight() * 0.82f);
+        auto font = style::wordmark (fontSize);
         const float textWidth = juce::GlyphArrangement::getStringWidth (font, text);
         if (textWidth > (float) textBounds.getWidth() && textWidth > 0.0f)
             font.setHeight (font.getHeight() * (float) textBounds.getWidth() / textWidth);
         g.setFont (font);
 
-        // Resting colour: bone. While the parameter is moving, blend toward
-        // phosphor green and fade back.
-        const float now = (float) juce::Time::getMillisecondCounterHiRes() * 0.001f;
-        const float fadeFor = 0.18f; // seconds
-        const float t = juce::jlimit (0.0f, 1.0f, (lastChangeTime + fadeFor - now) / fadeFor);
-        const auto col = style::primary().interpolatedWith (style::accent(), t);
-
-        g.setColour (juce::Colours::black.withAlpha (0.45f));
-        g.drawText (text, textBounds.translated (1, 1), juce::Justification::centred, false);
-        g.setColour (col);
+        g.setColour (style::chassisInk().darker (0.45f));
         g.drawText (text, textBounds, juce::Justification::centred, false);
     }
 
@@ -80,7 +52,6 @@ private:
         if (! juce::approximatelyEqual (v01, lastValue))
         {
             lastValue = v01;
-            lastChangeTime = (float) juce::Time::getMillisecondCounterHiRes() * 0.001f;
         }
         repaint();
     }
@@ -88,8 +59,6 @@ private:
     juce::RangedAudioParameter& parameter;
     Mode mode;
     float lastValue = 0.0f;
-    float lastChangeTime = -10.0f;
-
     JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR (TrenchValueBox)
 };
 

@@ -1,6 +1,6 @@
 use crate::cartridge::{Cartridge, BODY_BYTES};
 use crate::cascade::{NUM_COEFFS, NUM_STAGES};
-use crate::dsp::AGC_TABLE;
+use crate::dsp::BASE_AGC_TABLE;
 use crate::engine::{FilterEngine, InputMode, SpatialMode};
 use crate::minifloat::{decode, encode, pole_radius, PackedCorners};
 use libc::{c_char, c_void};
@@ -107,20 +107,19 @@ pub extern "C" fn trench_packed_encode(value: f64) -> u16 {
 
 /// Copy the canonical 16-entry AGC (global compression) curve into `out`.
 ///
-/// Stateless, read-only. `AGC_TABLE` (`crate::dsp`) is the engine's post-cascade
-/// gain curve — the single source of "loud without clipping." Python audit tools
-/// read these exact f32 values instead of hand-copying the literal, so they judge
-/// the SAME compression curve the engine applies and can never drift from it.
+/// Stateless, read-only. `BASE_AGC_TABLE` (`crate::dsp`) is the canonical DLL
+/// allocation before the engine applies its sample-rate adjustment. Python audit
+/// tools read these exact f32 values instead of hand-copying the literal.
 ///
 /// Returns the number of entries written (16), or -1 on null/short buffer.
 #[no_mangle]
 pub unsafe extern "C" fn trench_agc_table(out: *mut f32, len: usize) -> i32 {
-    if out.is_null() || len < AGC_TABLE.len() {
+    if out.is_null() || len < BASE_AGC_TABLE.len() {
         return -1;
     }
-    let dst = std::slice::from_raw_parts_mut(out, AGC_TABLE.len());
-    dst.copy_from_slice(&AGC_TABLE);
-    AGC_TABLE.len() as i32
+    let dst = std::slice::from_raw_parts_mut(out, BASE_AGC_TABLE.len());
+    dst.copy_from_slice(&BASE_AGC_TABLE);
+    BASE_AGC_TABLE.len() as i32
 }
 
 /// Factorize a TARGET magnitude curve into one fitted corner (kernel form).
@@ -329,6 +328,18 @@ pub unsafe extern "C" fn trench_engine_set_spatial_mode(engine: *mut c_void, mod
         _ => return,
     };
     engine.set_spatial_mode(m);
+}
+
+#[no_mangle]
+pub unsafe extern "C" fn trench_engine_set_agc_enabled(engine: *mut c_void, enabled: i32) {
+    let engine = &mut *(engine as *mut FilterEngine);
+    engine.debug.agc_enabled = enabled != 0;
+}
+
+#[no_mangle]
+pub unsafe extern "C" fn trench_engine_set_agc_drive(engine: *mut c_void, drive: f32) {
+    let engine = &mut *(engine as *mut FilterEngine);
+    engine.set_agc_drive(drive);
 }
 
 /// Set the four `TrenchMatrix` knobs in one call. Field semantics in

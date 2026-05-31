@@ -106,7 +106,7 @@ def fw_words_to_kernel(w0: int, w1: int, w2: int, w3: int, w4: int) -> tuple[flo
         d1,
         d2 * COMBINE_K + d3,
         d3,
-        d4,
+        d4 * COMBINE_K,
     )
 
 
@@ -155,9 +155,9 @@ def type2_kernel(freq_packed: int, gain_packed: int, global_shift: int, sr: int)
     return fw_words_to_kernel(w0, w1, w2, w3, w4)
 
 
-def type3_freq_compression(freq_value: int, shift: int) -> int:
-    if freq_value > 0xDB and shift < 0:
-        freq_value = (((freq_value - 220) * (shift + 32)) >> 5) + 220
+def type3_freq_compression(freq_value: int, gain_offset: int) -> int:
+    if freq_value > 0xDB and gain_offset < 0:
+        freq_value = (((freq_value - 220) * (gain_offset + 32)) >> 5) + 220
     return freq_value
 
 
@@ -165,15 +165,15 @@ def type3_kernel(freq_packed: int, gain_packed: int, shift: int, sr: int):
     idx = SR_FAMILY.get(sr, 0)
     fv = fw_freq_value(freq_packed, sr)
     go = fw_gain_offset(gain_packed, shift)
-    fv_compressed = type3_freq_compression(fv, shift)
-    rad = fw_radius(fv_compressed)
+    fv_compressed = type3_freq_compression(fv, go)
+    rad = fw_radius(fv)
     base = FW_BASE[idx]
     w0 = base << 8
     w1 = ((base * 124) // 256 + 150) << 8
     w2 = fv_compressed << 8
     w3 = max(0, min(255, rad - go)) << 8
     if idx < 2:
-        c4_raw = (fv_compressed - 18) * (-12) + (-8192)
+        c4_raw = (fv - 18) * (-12) + (-8192)
         w4 = c4_raw & 0xFFFF
     else:
         w4 = 0xE000
@@ -190,8 +190,7 @@ def compile_stage(type_id: int, freq_packed: int, gain_packed: int, shift: int, 
         return type2_kernel(freq_packed, gain_packed, shift, sr)
     if type_id == 3:
         return type3_kernel(freq_packed, gain_packed, shift, sr)
-    # Unknown type — fall back to type 1 (matches heritage_coeffs default)
-    return type1_kernel(freq_packed, gain_packed, shift, sr)
+    return (1.0, 0.0, 0.0, 0.0, 0.0)
 
 
 def f32_tuple(coeffs):

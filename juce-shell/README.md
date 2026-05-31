@@ -1,14 +1,24 @@
 # juce-shell
 
 TRENCH consumer plug-in shell (VST3 + Standalone). Hosts `trench-core` via FFI
-in the shipping audio path — see [`../REBUILD_PLAN.md`](../REBUILD_PLAN.md) for
-the architecture and boundaries.
+in the shipping audio path.
 
 ## Build
 
 ```powershell
-cmake -S juce-shell -B juce-shell/build -G "Visual Studio 17 2022"
-cmake --build juce-shell/build --config Release --target TRENCH_VST3 TRENCH_Standalone
+.\juce-shell\build-standalone.ps1 -Launch
+```
+
+This builds only the Rust static library needed by the JUCE shell, reuses the
+shared CPM source cache at `%USERPROFILE%\.cache\CPM`, relinks the standalone
+target in parallel, and launches it. JUCE is pinned to the current stable
+release in `CMakeLists.txt`; no workspace-local `JUCE` junction is required.
+
+To build the VST3 for DAW installation:
+
+```powershell
+.\juce-shell\build-standalone.ps1
+cmake --build juce-shell/build --config Release --target TRENCH_VST3 --parallel
 ```
 
 The Release VST3 lands in

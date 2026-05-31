@@ -12,6 +12,8 @@ extern "C"
     void trench_engine_set_parameters (void* engine, float morph, float q, float slamDrive, float fiveD);
     void trench_engine_set_input_mode (void* engine, unsigned int mode);  // 0=None, 1=MackieDeskSlam, 2=Cvsd
     void trench_engine_set_spatial_mode (void* engine, int mode);         // 0=QSound, 1=Trench, 2=Off
+    void trench_engine_set_agc_enabled (void* engine, int enabled);
+    void trench_engine_set_agc_drive (void* engine, float drive);
     void trench_engine_process_block (void* engine, float* left, float* right, int numSamples, double morph, double q);
     void trench_engine_get_coeffs (void* engine, float* outCoeffs, float* outBoost);
 }
@@ -41,7 +43,11 @@ public:
     void prepare (double sampleRate, int /*maxBlockSize*/)
     {
         if (engine != nullptr)
+        {
             trench_engine_prepare (engine, sampleRate);
+            trench_engine_set_agc_enabled (engine, 1);
+            trench_engine_set_agc_drive (engine, musicalAgcDrive);
+        }
     }
 
     bool loadCartridge (const juce::String& json)
@@ -115,9 +121,22 @@ public:
             trench_engine_set_spatial_mode (engine, juce::jlimit (0, 2, mode));
     }
 
+    void setAgcEnabled (bool enabled)
+    {
+        if (engine != nullptr)
+            trench_engine_set_agc_enabled (engine, enabled ? 1 : 0);
+    }
+
+    void setAgcDrive (float drive)
+    {
+        if (engine != nullptr)
+            trench_engine_set_agc_drive (engine, juce::jmax (1.0f, drive));
+    }
+
     void reset() {}
 
 private:
+    static constexpr float musicalAgcDrive = 4.0f;
     void* engine = nullptr;
 
     JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR (TrenchDspBridge)

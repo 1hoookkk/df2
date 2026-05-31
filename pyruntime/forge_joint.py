@@ -1,7 +1,6 @@
 """forge_joint.py — joint coherent 4-corner Forge fitter.
 
-Independent per-corner fitting is invalid for morph bodies (STATE.md "THE
-LESSON — locked", 2026-05-20). A morphing body is one staged instrument
+Independent per-corner fitting is invalid for morph bodies. A morphing body is one staged instrument
 with four coordinated corners: stage *i* must be the same actor — same
 physical resonator role — in every corner. When stages drift identity
 across corners, the runtime's u16 bilinear lerp blends nonsense and the

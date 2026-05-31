@@ -33,21 +33,9 @@ PluginEditor::PluginEditor (PluginProcessor& p)
     setResizable (false, false);
     setSize (fixedEditorWidth(), fixedEditorHeight());
 
-    // Shipping UI: a single frequency-response display seated in the chassis.
-    // No body selector, rollers, numeric readouts, or alternate panes.
-    responseDisplay = std::make_unique<trench::TrenchResponseDisplay> (processorRef.dspBridge,
-                                                                       processorRef.apvts,
-                                                                       processorRef.getInputMeterLeftForUi(),
-                                                                       processorRef.getInputMeterRightForUi(),
-                                                                       [this] (float* l, float* r, int n)
-                                                                       { return processorRef.copyScopeSamples (l, r, n); },
-                                                                        processorRef.isCleanGroundTruthAudio());
-    addAndMakeVisible (*responseDisplay);
-
-    // ---- The two invisible "well" sliders + their readouts -----------------
-    // Morph (upper well) and Q (lower well). Both render fully transparent so
-    // the chassis cutout shows through; the user just drags horizontally over
-    // the metal. Attached to the APVTS morph/q params (both 0..1).
+    // ---- The two invisible sliders + their readouts ------------------------
+    // Morph and Q remain draggable over the plain faceplate. The only painted
+    // UI components are their numeric values.
     makeWellSliderInvisible (morphWell);
     makeWellSliderInvisible (qWell);
     addAndMakeVisible (morphWell);
@@ -62,12 +50,6 @@ PluginEditor::PluginEditor (PluginProcessor& p)
         qReadout = std::make_unique<trench::TrenchValueBox> (*qp, trench::TrenchValueBox::Mode::IntPercent);
     if (morphReadout) addAndMakeVisible (*morphReadout);
     if (qReadout)     addAndMakeVisible (*qReadout);
-
-    // Seating overlay LAST so it paints on top of the chassis and response line.
-    // It does NOT intercept mouse clicks (setInterceptsMouseClicks(false,false)
-    // in its ctor), so drags fall through to the well sliders beneath it.
-    chassisGlass = std::make_unique<trench::TrenchChassisGlass>();
-    addAndMakeVisible (*chassisGlass);
 
     // Position all child controls now that they exist (setSize above ran
     // resized() before any of them were constructed).
@@ -128,15 +110,10 @@ void PluginEditor::resized()
     const auto w = getWidth();
     const auto h = getHeight();
 
-    const auto disp = trench::layout::displayBounds (w, h);
-    if (responseDisplay) responseDisplay->setBounds (disp);
-
     morphWell.setBounds (trench::layout::morphBounds (w, h));
     qWell.setBounds     (trench::layout::qBounds     (w, h));
     if (morphReadout) morphReadout->setBounds (trench::layout::valueBounds  (w, h));
     if (qReadout)     qReadout->setBounds     (trench::layout::qValueBounds (w, h));
-
-    if (chassisGlass) chassisGlass->setBounds (getLocalBounds());
 }
 
 void PluginEditor::refreshVariantWatchFile()

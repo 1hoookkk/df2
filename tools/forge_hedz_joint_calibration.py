@@ -5,8 +5,7 @@ The Clean Room calibration done right: ALL FOUR corners fitted together
 with one shared 6-stage layout, anchored by per-stage role bands and
 per-corner seed pole positions. Independent per-corner fitting was
 falsified on 2026-05-20 (M50/Q50 nulled -0.69 dB even with each corner
-fitting at -272 dB pre-encode); see STATE.md "THE LESSON — locked"
-lines 921-935.
+fitting at -272 dB pre-encode).
 
 Pipeline:
   1. Decode skin-13 ROM corner words to 4 complex cascade responses.
@@ -19,7 +18,7 @@ Pipeline:
      render, null against `hedzm50q50.wav`.
 
 Gate: <= -60 dB. Baselines: ROM words -95.41 dB, JSON-6dp derived-packed
--53.75 dB. Failure modes (STATE.md 2026-05-20 evening block):
+-53.75 dB. Failure modes:
   (a) stage anchors wrong  -> revise StageBands
   (b) joint constraints too loose  -> tighten _BOUNDS_PENALTY or add
                                       explicit coherence regularizer
@@ -60,8 +59,8 @@ SR = 44100.0
 BOOST = 1.0
 
 
-# Talking Hedz role bands, derived from STATE.md ROM stage-layout audit
-# (lines 713-720). Stages 1 and 5 are FLUID (F1/F2) — wide bands that
+# Talking Hedz role bands, derived from the ROM stage-layout audit. Stages 1
+# and 5 are FLUID (F1/F2) — wide bands that
 # span the formant migration; stages 0/2/3/4 are RIGID (stable across
 # corners). Stage 1 and stage 5 bands overlap (both cover ~150-2300 Hz);
 # disambiguation is by per-corner seed (below).
@@ -212,7 +211,7 @@ def main() -> int:
          "per-corner parameter variation within per-stage role bands; "
          "per-corner pole-frequency seeds from the ROM stage-layout audit. "
          "Independent per-corner fitting (the prior `forge_hedz_calibration.py` "
-         "approach) was falsified — see STATE.md 'THE LESSON — locked'.", "",
+         "approach) was falsified.", "",
          f"- profile: `{args.profile}`   restarts: {args.restarts}   "
          f"fit grid: {len(freqs)} log-spaced points",
          f"- bands: {'enabled' if bands else 'DISABLED (ablation)'}   "
@@ -250,8 +249,8 @@ def main() -> int:
               "capture path (snapshot factory) — that is a separate test."]
     else:
         L += [f"**FAIL.** Authored M50/Q50 nulls {auth_null:+.2f} dB, short of "
-              "the -60 dB gate. Failure-mode triage (STATE.md 2026-05-20 "
-              "evening): (a) stage anchors wrong → revise `HEDZ_BANDS`; "
+              "the -60 dB gate. Failure-mode triage: "
+              "(a) stage anchors wrong → revise `HEDZ_BANDS`; "
               "(b) joint constraints too loose → raise `_BOUNDS_PENALTY` or "
               "add a coherence regularizer to `forge_joint.py`; "
               "(c) optimizer found bad factorization → raise `--restarts` "

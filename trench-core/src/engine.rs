@@ -14,7 +14,7 @@
 //! `(b0, b1, b2, a1, a2)` — not the shifted minifloat-domain kernel from
 //! the `trenchwork_clean` engine. See SESSION_STATE rev 4 for the split.
 
-use crate::agc::agc_step;
+use crate::agc::{active_agc_table, agc_step_stereo};
 use crate::cartridge::{Cartridge, CornerData};
 use crate::cascade::{Cascade, BLOCK_SIZE};
 use crate::cvsd_input::CvsdInput;
@@ -132,9 +132,18 @@ pub struct FilterEngine {
     cvsd_r: CvsdInput,
 
     // AGC & Clean-up
-    agc_gain_l: f32,
-    agc_gain_r: f32,
+    agc_gain: f32,
     agc_mix: f32,
+    active_agc_table: [f32; 16],
+    /// Pre-AGC scale: the cascade output is multiplied by this BEFORE `agc_step`
+    /// and divided back after. The AGC table is indexed by `(gain·|x|) as int &
+    /// 0xF`, so in the float domain (|x| < 1) it floors to index 0 and never
+    /// engages — the curve is a no-op. Scaling into the chip's integer-magnitude
+    /// domain (~×4 puts a unity-peak cascade at the table's 0.50 tooth) is what
+    /// makes the verified curve actually compress. Default **1.0 = identity**
+    /// (no behavior change / null parity preserved); a higher value engages the
+    /// character. Measured in `diag_pre_agc_scaling`.
+    agc_drive: f32,
     dc_blocker_l: DcBlocker,
     dc_blocker_r: DcBlocker,
 
@@ -174,9 +183,10 @@ impl FilterEngine {
             desk_drive_r: DeskDrive::new(),
             cvsd_l: CvsdInput::new(),
             cvsd_r: CvsdInput::new(),
-            agc_gain_l: 1.0,
-            agc_gain_r: 1.0,
+            agc_gain: 1.0,
             agc_mix: 1.0,
+            active_agc_table: active_agc_table(sr),
+            agc_drive: 1.0,
             dc_blocker_l: DcBlocker::new(sr),
             dc_blocker_r: DcBlocker::new(sr),
             spatial: QSoundSpatial::new(sr as f32),
@@ -203,8 +213,8 @@ impl FilterEngine {
         self.desk_drive_r.prepare(sample_rate as f32);
         self.cvsd_l.prepare(sample_rate as f32);
         self.cvsd_r.prepare(sample_rate as f32);
-        self.agc_gain_l = 1.0;
-        self.agc_gain_r = 1.0;
+        self.agc_gain = 1.0;
+        self.active_agc_table = active_agc_table(sample_rate);
         self.dc_blocker_l = DcBlocker::new(sample_rate);
         self.dc_blocker_r = DcBlocker::new(sample_rate);
         self.spatial = QSoundSpatial::new(sample_rate as f32);
@@ -238,6 +248,12 @@ impl FilterEngine {
 
     pub fn set_slam_drive(&mut self, drive: f32) {
         self.target_slam_drive = drive.clamp(0.0, 1.0);
+    }
+
+    /// Pre-AGC scale (≥ 1.0). 1.0 = identity (curve stays asleep in float domain);
+    /// higher drives the cascade into the AGC table's teeth so it compresses.
+    pub fn set_agc_drive(&mut self, drive: f32) {
+        self.agc_drive = drive.max(1.0);
     }
 
     pub fn set_input_mode(&mut self, mode: InputMode) {
@@ -297,8 +313,13 @@ impl FilterEngine {
         sr = self.cascade_r.tick(sr);
 
         if self.debug.agc_enabled {
-            let agc_l = agc_step(sl, &mut self.agc_gain_l);
-            let agc_r = agc_step(sr, &mut self.agc_gain_r);
+            // Scale into the AGC's integer-magnitude domain, apply the curve,
+            // scale back. `agc_drive == 1.0` is exact identity (null parity).
+            let d = self.agc_drive;
+            let (agc_l, agc_r) =
+                agc_step_stereo(sl * d, sr * d, &mut self.agc_gain, &self.active_agc_table);
+            let agc_l = agc_l / d;
+            let agc_r = agc_r / d;
             sl += (agc_l - sl) * self.agc_mix;
             sr += (agc_r - sr) * self.agc_mix;
         }
@@ -525,6 +546,20 @@ mod tests {
         assert!(!engine.take_instability_flag());
     }
 
+    #[test]
+    fn prepare_installs_sample_rate_adjusted_agc_table() {
+        let mut engine = FilterEngine::new();
+
+        engine.prepare(65_000.0);
+        assert_eq!(engine.active_agc_table, active_agc_table(65_000.0));
+
+        engine.prepare(65_000.1);
+        assert_eq!(engine.active_agc_table, active_agc_table(65_000.1));
+
+        engine.prepare(130_000.1);
+        assert_eq!(engine.active_agc_table, active_agc_table(130_000.1));
+    }
+
     // NOTE: `gain_ceiling_clamps_runaway_boost` referenced
     // `engine.set_gain_ceiling(10.0)` — a method that doesn't exist on the
     // current `FilterEngine`. The clamp feature was either dropped or never
@@ -602,5 +637,225 @@ mod tests {
         // Compile-time sanity: corners are [[f64; 5]; NUM_STAGES].
         use crate::cascade::{NUM_COEFFS, NUM_STAGES};
         let _: [[f64; NUM_COEFFS]; NUM_STAGES] = [[0.0; NUM_COEFFS]; NUM_STAGES];
+    }
+
+    #[test]
+    fn agc_drive_unity_is_identity_higher_compresses() {
+        // Drives a steady 0.7 through a passthrough cartridge (saturate/DC off)
+        // so only the AGC can change the level. Unity drive = float-domain no-op
+        // (passes through); a higher drive scales into the table's teeth.
+        fn run(drive: f32) -> f32 {
+            let mut eng = FilterEngine::new();
+            eng.prepare(44_100.0);
+            eng.load_cartridge(make_passthrough_cartridge());
+            eng.debug.saturation_enabled = false;
+            eng.debug.dc_block_enabled = false;
+            eng.set_agc_drive(drive);
+            let mut l = vec![0.7f32; 512];
+            let mut r = l.clone();
+            eng.process_block(&mut l, &mut r, 0.5, 0.5);
+            let tail = &l[128..];
+            (tail.iter().map(|s| s * s).sum::<f32>() / tail.len() as f32).sqrt()
+        }
+        let unity = run(1.0);
+        let driven = run(8.0);
+        assert!(
+            (unity - 0.7).abs() < 0.02,
+            "unity drive must pass 0.7 ~untouched (AGC asleep in float domain), got {unity}"
+        );
+        assert!(
+            driven < unity * 0.85,
+            "agc_drive=8 must visibly compress; got driven={driven} vs unity={unity}"
+        );
+    }
+
+    /// Render audition WAVs: the SAME body + pink + morph sweep at three
+    /// `agc_drive` settings — 1 (dead/clean), 4 (engaged), 8 (heavy) — so the
+    /// AGC's contribution to the character can be A/B'd by ear. Boost is unity
+    /// (killed); `agc_drive` is the only difference. Writes 48 kHz mono WAVs to
+    /// `dev/tmp/agc_audition/`. Run:
+    ///   cargo test -p trench-core render_agc_audition -- --ignored --nocapture
+    #[test]
+    #[ignore = "renders audition WAVs to dev/tmp/agc_audition"]
+    fn render_agc_audition() {
+        use crate::cartridge::Cartridge;
+
+        let root = std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("..");
+        let dir = std::fs::read_dir(root.join("ref/p2k_variants/P2k_001_megasweepz"))
+            .expect("megasweepz dir")
+            .flatten()
+            .map(|e| e.path())
+            .find(|p| {
+                p.file_name()
+                    .and_then(|n| n.to_str())
+                    .map(|n| n.starts_with("variant_0_") && n.ends_with(".bin"))
+                    .unwrap_or(false)
+            })
+            .expect("megasweepz variant_0");
+        let bytes = std::fs::read(&dir).expect("read body");
+
+        let out = root.join("dev/tmp/agc_audition");
+        std::fs::create_dir_all(&out).expect("mkdir out");
+
+        let sr_emu = 39_062.5f64;
+        let out_sr = 48_000u32;
+        let secs = 6.0f64;
+        let total = (sr_emu * secs) as usize;
+        let block = 256usize;
+
+        // Minimal 16-bit mono WAV writer (no external dep).
+        let write_wav = |path: &std::path::Path, samples: &[f32]| {
+            let data_len = (samples.len() * 2) as u32;
+            let mut b: Vec<u8> = Vec::with_capacity(44 + data_len as usize);
+            b.extend_from_slice(b"RIFF");
+            b.extend_from_slice(&(36 + data_len).to_le_bytes());
+            b.extend_from_slice(b"WAVE");
+            b.extend_from_slice(b"fmt ");
+            b.extend_from_slice(&16u32.to_le_bytes());
+            b.extend_from_slice(&1u16.to_le_bytes()); // PCM
+            b.extend_from_slice(&1u16.to_le_bytes()); // mono
+            b.extend_from_slice(&out_sr.to_le_bytes());
+            b.extend_from_slice(&(out_sr * 2).to_le_bytes());
+            b.extend_from_slice(&2u16.to_le_bytes());
+            b.extend_from_slice(&16u16.to_le_bytes());
+            b.extend_from_slice(b"data");
+            b.extend_from_slice(&data_len.to_le_bytes());
+            for &s in samples {
+                b.extend_from_slice(&((s.clamp(-1.0, 1.0) * 32767.0) as i16).to_le_bytes());
+            }
+            std::fs::write(path, b).expect("write wav");
+        };
+
+        for &drive in &[1.0f32, 4.0, 8.0] {
+            let mut eng = FilterEngine::new();
+            eng.prepare(sr_emu);
+            eng.load_cartridge(Cartridge::from_body_bytes("megasweepz", &bytes, 1.0).unwrap());
+            eng.set_agc_drive(drive);
+
+            // Fresh pink seed per drive → identical noise across files (fair A/B).
+            let mut rng = 0x2545_F491_4F6C_DD1Du64;
+            let mut pb = [0f64; 7];
+            let mut wet: Vec<f32> = Vec::with_capacity(total);
+            let mut off = 0;
+            while off < total {
+                let len = block.min(total - off);
+                let mut l = vec![0f32; len];
+                for s in l.iter_mut() {
+                    rng = rng
+                        .wrapping_mul(6364136223846793005)
+                        .wrapping_add(1442695040888963407);
+                    let white = ((rng >> 40) as f64 / (1u64 << 23) as f64) - 1.0;
+                    pb[0] = 0.99886 * pb[0] + white * 0.0555179;
+                    pb[1] = 0.99332 * pb[1] + white * 0.0750759;
+                    pb[2] = 0.96900 * pb[2] + white * 0.1538520;
+                    pb[3] = 0.86650 * pb[3] + white * 0.3104856;
+                    pb[4] = 0.55000 * pb[4] + white * 0.5329522;
+                    pb[5] = -0.7616 * pb[5] - white * 0.0168980;
+                    let p =
+                        (pb[0] + pb[1] + pb[2] + pb[3] + pb[4] + pb[5] + pb[6] + white * 0.5362)
+                            * 0.11;
+                    pb[6] = white * 0.115926;
+                    *s = (p as f32) * 0.85;
+                }
+                let mut r = l.clone();
+                let morph = off as f64 / total as f64; // sweep 0 -> 1
+                eng.process_block(&mut l, &mut r, morph, 0.5);
+                wet.extend_from_slice(&l);
+                off += len;
+            }
+
+            // Linear resample EMU -> 48 kHz for clean playback.
+            let ratio = sr_emu / out_sr as f64;
+            let out_n = (wet.len() as f64 / ratio) as usize;
+            let resampled: Vec<f32> = (0..out_n)
+                .map(|i| {
+                    let pos = i as f64 * ratio;
+                    let i0 = pos.floor() as usize;
+                    let frac = (pos - i0 as f64) as f32;
+                    let a = wet.get(i0).copied().unwrap_or(0.0);
+                    let bb = wet.get(i0 + 1).copied().unwrap_or(a);
+                    a + (bb - a) * frac
+                })
+                .collect();
+
+            let peak = resampled.iter().fold(0.0f32, |m, &s| m.max(s.abs()));
+            let path = out.join(format!("megasweepz_pink_sweep_drive{drive}.wav"));
+            write_wav(&path, &resampled);
+            println!("wrote {} (peak {:.3})", path.display(), peak);
+        }
+    }
+
+    /// Diagnostic: the verified AGC curve indexes off `(gain·|x|) as int & 0xF`,
+    /// so in the float domain (|x| < 1) it floors to index 0 and never engages.
+    /// This takes a real resonant body's RAW cascade output and sweeps a PRE-AGC
+    /// scale factor, measuring how hard the curve compresses (dB after rescaling)
+    /// and the min gain it reaches — i.e. where the real character actually
+    /// starts. Run:
+    ///   cargo test -p trench-core diag_pre_agc_scaling -- --ignored --nocapture
+    #[test]
+    #[ignore = "diagnostic: pre-AGC scale vs AGC engagement"]
+    fn diag_pre_agc_scaling() {
+        use crate::agc::{active_agc_table, agc_step};
+        use crate::cartridge::Cartridge;
+
+        let dir = std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+            .join("../ref/p2k_variants/P2k_001_megasweepz");
+        let path = std::fs::read_dir(&dir)
+            .expect("megasweepz dir")
+            .flatten()
+            .map(|e| e.path())
+            .find(|p| {
+                p.file_name()
+                    .and_then(|n| n.to_str())
+                    .map(|n| n.starts_with("variant_0_") && n.ends_with(".bin"))
+                    .unwrap_or(false)
+            })
+            .expect("megasweepz variant_0 .bin");
+        let bytes = std::fs::read(&path).expect("read body");
+
+        // Raw cascade output: AGC / saturate / DC all OFF, unity boost, q1 (hot).
+        let mut eng = FilterEngine::new();
+        eng.prepare(39_062.5);
+        eng.load_cartridge(Cartridge::from_body_bytes("d", &bytes, 1.0).unwrap());
+        eng.debug.agc_enabled = false;
+        eng.debug.saturation_enabled = false;
+        eng.debug.dc_block_enabled = false;
+
+        let n = 39_062usize;
+        let mut ph = 0.0f64;
+        let mut l: Vec<f32> = (0..n)
+            .map(|_| {
+                let s = ((ph * 2.0 - 1.0) * 0.36) as f32 * 0.85;
+                ph = (ph + 110.0 / 39_062.5).fract();
+                s
+            })
+            .collect();
+        let mut r = l.clone();
+        eng.process_block(&mut l, &mut r, 0.5, 1.0);
+        let cascade = &l[4096..];
+        let rms = |v: &[f32]| (v.iter().map(|s| s * s).sum::<f32>() / v.len() as f32).sqrt();
+        let peak = |v: &[f32]| v.iter().fold(0.0f32, |m, &s| m.max(s.abs()));
+        let cas_rms = rms(cascade);
+        println!(
+            "\n=== megasweepz raw cascade (no AGC/sat/DC), q1, in=0.85: peak={:.3} rms={:.3} ===",
+            peak(cascade),
+            cas_rms
+        );
+        println!("pre-AGC scale -> compression after rescale, min agc_gain reached");
+        let agc_table = active_agc_table(39_062.5);
+        for scale in [1.0f32, 2.0, 4.0, 8.0, 16.0, 32.0, 64.0, 128.0] {
+            let mut gain = 1.0f32;
+            let mut min_gain = 1.0f32;
+            let out: Vec<f32> = cascade
+                .iter()
+                .map(|&s| {
+                    let y = agc_step(s * scale, &mut gain, &agc_table) / scale;
+                    min_gain = min_gain.min(gain);
+                    y
+                })
+                .collect();
+            let red_db = 20.0 * (rms(&out) / cas_rms).max(1e-9).log10();
+            println!("  x{scale:<6} -> {red_db:>7.2} dB   min_gain={min_gain:.4}");
+        }
     }
 }

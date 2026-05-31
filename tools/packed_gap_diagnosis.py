@@ -67,7 +67,7 @@ SR = 44100
 EPS = 1e-30
 
 # Canonical AGC / global-compression curve, read from trench-core via FFI (single
-# source of truth = trench-core/src/dsp/mod.rs::AGC_TABLE). No hand-copied literal.
+# source of truth = trench-core/src/dsp/mod.rs::BASE_AGC_TABLE). No hand-copied literal.
 AGC_TABLE = np.array(trench_ffi.agc_table(), dtype=np.float32)
 BLOCK_SIZE = 32
 

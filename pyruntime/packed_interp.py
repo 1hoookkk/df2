@@ -42,8 +42,8 @@ def _require_core(fn_name: str) -> None:
     in ``trench-core`` (see ``cartridge.rs::interpolate``). Tools that compare
     the shipped engine against authored words MUST go through it; the
     pure-Python reference below is a *reference*, never the production path.
-    Mirrors the AGC-table pattern in ``pyruntime/trench_ffi.py::agc_table()``
-    (STATE.md 2026-05-28): one Rust owner, Python delegates or raises.
+    Mirrors the AGC-table pattern in ``pyruntime/trench_ffi.py::agc_table()``:
+    one Rust owner, Python delegates or raises.
     """
     if _core is None or not _core.available():
         raise RuntimeError(

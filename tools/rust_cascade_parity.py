@@ -202,7 +202,7 @@ def main() -> int:
               "`cascade.rs` DF2T math is correct as written; no fix needed."]
     else:
         L += ["**FAIL.** The Rust render diverges from the Python reference. "
-              "Per STATE.md Active session, that divergence is the bug: "
+              "That divergence is the bug: "
               "investigate `cascade.rs` against the SPEC.md DF2T math."]
     L.append("")
 

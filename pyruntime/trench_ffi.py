@@ -21,6 +21,7 @@ NUM_STAGES = 6
 NUM_COEFFS = 5
 BODY_BYTES = 4 * NUM_STAGES * NUM_COEFFS * 2  # 240
 _OUT_LEN = NUM_STAGES * NUM_COEFFS            # 30
+MUSICAL_AGC_DRIVE = 4.0
 
 _lib = None
 _lib_path: Path | None = None
@@ -102,8 +103,12 @@ def _bind_engine(lib) -> None:
         lib.trench_engine_prepare.argtypes = [ctypes.c_void_p, ctypes.c_double]
         lib.trench_engine_load_body_bytes.argtypes = [ctypes.c_void_p, ctypes.c_char_p, ctypes.c_size_t]
         lib.trench_engine_load_body_bytes.restype = ctypes.c_int
+        lib.trench_engine_load_cartridge.argtypes = [ctypes.c_void_p, ctypes.c_char_p]
+        lib.trench_engine_load_cartridge.restype = ctypes.c_int
         lib.trench_engine_set_input_mode.argtypes = [ctypes.c_void_p, ctypes.c_int]
         lib.trench_engine_set_spatial_mode.argtypes = [ctypes.c_void_p, ctypes.c_int]
+        lib.trench_engine_set_agc_enabled.argtypes = [ctypes.c_void_p, ctypes.c_int]
+        lib.trench_engine_set_agc_drive.argtypes = [ctypes.c_void_p, ctypes.c_float]
         try:
             lib.trench_engine_set_parameters.argtypes = [
                 ctypes.c_void_p, ctypes.c_float, ctypes.c_float,
@@ -157,15 +162,15 @@ def _bind_fit(lib) -> None:
 
 
 # The canonical AGC / global-compression curve lives in exactly ONE place:
-# `trench-core/src/dsp/mod.rs::AGC_TABLE`. `agc_table()` reads it via FFI and
+# `trench-core/src/dsp/mod.rs::BASE_AGC_TABLE`. `agc_table()` reads it via FFI and
 # RAISES if the core isn't built — there is deliberately NO in-Python mirror, so
 # a stale copy can never silently stand in for the engine's real curve.
-_AGC_TABLE_LEN = 16  # trench-core AGC_TABLE is [f32; 16] — a length, not the data
+_AGC_TABLE_LEN = 16  # trench-core BASE_AGC_TABLE is [f32; 16] — a length, not the data
 
 
 def agc_table() -> tuple[float, ...]:
     """The canonical 16-entry AGC / global-compression curve, read from the
-    shipped trench-core (single source of truth = `AGC_TABLE` in
+    shipped trench-core (single source of truth = `BASE_AGC_TABLE` in
     `trench-core/src/dsp/mod.rs`).
 
     Raises RuntimeError if the library isn't built/loadable or is a stale build
@@ -231,7 +236,8 @@ def engine_available() -> bool:
 
 
 def engine_render(body_bytes: bytes, morph: float, q: float, in_f32_bytes: bytes,
-                  sr: float = 39062.5, input_mode: int = 0, spatial_mode: int = 2) -> bytes:
+                  sr: float = 39062.5, input_mode: int = 0, spatial_mode: int = 2,
+                  agc_enabled: bool = True, agc_drive: float = MUSICAL_AGC_DRIVE) -> bytes:
     """Render mono input through the SHIPPED FilterEngine at a held (morph, q).
 
     `in_f32_bytes` is little-endian float32 mono PCM; returns the processed
@@ -258,6 +264,8 @@ def engine_render(body_bytes: bytes, morph: float, q: float, in_f32_bytes: bytes
             raise RuntimeError(f"load_body_bytes failed (rc={rc})")
         lib.trench_engine_set_input_mode(eng, ctypes.c_int(int(input_mode)))
         lib.trench_engine_set_spatial_mode(eng, ctypes.c_int(int(spatial_mode)))
+        lib.trench_engine_set_agc_enabled(eng, ctypes.c_int(1 if agc_enabled else 0))
+        lib.trench_engine_set_agc_drive(eng, ctypes.c_float(max(1.0, float(agc_drive))))
         left = (ctypes.c_float * n).from_buffer_copy(in_f32_bytes)
         right = (ctypes.c_float * n).from_buffer_copy(in_f32_bytes)
         lib.trench_engine_process_block(eng, left, right, ctypes.c_int(n),
@@ -270,7 +278,8 @@ def engine_render(body_bytes: bytes, morph: float, q: float, in_f32_bytes: bytes
 def engine_render_automated(body_bytes: bytes, morph_per_block, q_per_block,
                             in_f32_bytes: bytes, sr: float = 39062.5,
                             input_mode: int = 0, spatial_mode: int = 2,
-                            block: int = 512) -> bytes:
+                            block: int = 512, agc_enabled: bool = True,
+                            agc_drive: float = MUSICAL_AGC_DRIVE) -> bytes:
     """Render mono input through the shipped engine while AUTOMATING (morph, q).
 
     Holds ONE engine instance and steps `(morph, q)` per `block` samples via
@@ -297,6 +306,8 @@ def engine_render_automated(body_bytes: bytes, morph_per_block, q_per_block,
             raise RuntimeError(f"load_body_bytes failed (rc={rc})")
         lib.trench_engine_set_input_mode(eng, ctypes.c_int(int(input_mode)))
         lib.trench_engine_set_spatial_mode(eng, ctypes.c_int(int(spatial_mode)))
+        lib.trench_engine_set_agc_enabled(eng, ctypes.c_int(1 if agc_enabled else 0))
+        lib.trench_engine_set_agc_drive(eng, ctypes.c_float(max(1.0, float(agc_drive))))
         out = bytearray()
         for bi in range(nb):
             s = bi * block * 4
@@ -319,7 +330,8 @@ def engine_render_automated(body_bytes: bytes, morph_per_block, q_per_block,
 def engine_render_slam(body_bytes: bytes, morph_per_block, q_per_block,
                        in_f32_bytes: bytes, slam_drive: float = 0.5,
                        five_d: float = 0.0, sr: float = 39062.5,
-                       block: int = 512) -> bytes:
+                       block: int = 512, agc_enabled: bool = True,
+                       agc_drive: float = MUSICAL_AGC_DRIVE) -> bytes:
     """Render through the shipped engine with the MACKIE DESK SLAM input stage
     engaged (input_mode=1): a PRE-cascade saturator (0..1 -> up to 36 dB desk
     drive) feeding the filter, then the AGC post-cascade. This is the full driven
@@ -345,6 +357,8 @@ def engine_render_slam(body_bytes: bytes, morph_per_block, q_per_block,
         if rc != 0:
             raise RuntimeError(f"load_body_bytes failed (rc={rc})")
         lib.trench_engine_set_input_mode(eng, ctypes.c_int(1))  # MackieDeskSlam
+        lib.trench_engine_set_agc_enabled(eng, ctypes.c_int(1 if agc_enabled else 0))
+        lib.trench_engine_set_agc_drive(eng, ctypes.c_float(max(1.0, float(agc_drive))))
         out = bytearray()
         for bi in range(nb):
             s = bi * block * 4
@@ -363,6 +377,61 @@ def engine_render_slam(body_bytes: bytes, morph_per_block, q_per_block,
                                             ctypes.c_double(m), ctypes.c_double(q))
             out += bytes(left)
         return bytes(out)
+    finally:
+        lib.trench_engine_destroy(eng)
+
+
+def engine_render_controls_stereo(cartridge_json: str, morph: float, q: float,
+                                  in_f32_bytes: bytes, slam_drive: float = 0.0,
+                                  qsound_enabled: bool = False, space: float = 0.75,
+                                  agc_enabled: bool = True,
+                                  agc_drive: float = MUSICAL_AGC_DRIVE,
+                                  sr: float = 39062.5, block: int = 512) -> tuple[bytes, bytes]:
+    """Render a held Talking-Hedz-style control state through the shipped engine.
+
+    This narrow helper exists for audible calibration: it loads the full JSON
+    cartridge, preserves stereo output for QSound, and exposes the real engine's
+    Mackie input slam, QSound, and AGC switches without recreating DSP in Python.
+    """
+    lib = _load()
+    if lib is None or not _engine_ok:
+        raise RuntimeError("trench_core engine FFI not available")
+    payload = cartridge_json.encode("utf-8")
+    total = len(in_f32_bytes) // 4
+    eng = lib.trench_engine_create()
+    if not eng:
+        raise RuntimeError("trench_engine_create returned null")
+    try:
+        lib.trench_engine_prepare(eng, ctypes.c_double(float(sr)))
+        rc = lib.trench_engine_load_cartridge(eng, ctypes.c_char_p(payload))
+        if rc != 0:
+            raise RuntimeError(f"load_cartridge failed (rc={rc})")
+        sd = max(0.0, min(1.0, float(slam_drive)))
+        sp = max(0.0, min(1.0, float(space)))
+        lib.trench_engine_set_input_mode(eng, ctypes.c_int(1 if sd > 0.0 else 0))
+        lib.trench_engine_set_spatial_mode(eng, ctypes.c_int(0 if qsound_enabled else 2))
+        lib.trench_engine_set_agc_enabled(eng, ctypes.c_int(1 if agc_enabled else 0))
+        lib.trench_engine_set_agc_drive(eng, ctypes.c_float(max(1.0, float(agc_drive))))
+        out_l = bytearray()
+        out_r = bytearray()
+        for start in range(0, total, block):
+            chunk = in_f32_bytes[start * 4:(start + block) * 4]
+            n = len(chunk) // 4
+            if n == 0:
+                break
+            lib.trench_engine_set_parameters(
+                eng, ctypes.c_float(float(morph)), ctypes.c_float(float(q)),
+                ctypes.c_float(sd), ctypes.c_float(sp),
+            )
+            left = (ctypes.c_float * n).from_buffer_copy(chunk)
+            right = (ctypes.c_float * n).from_buffer_copy(chunk)
+            lib.trench_engine_process_block(
+                eng, left, right, ctypes.c_int(n),
+                ctypes.c_double(float(morph)), ctypes.c_double(float(q)),
+            )
+            out_l += bytes(left)
+            out_r += bytes(right)
+        return bytes(out_l), bytes(out_r)
     finally:
         lib.trench_engine_destroy(eng)
 

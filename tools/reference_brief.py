@@ -71,7 +71,7 @@ BANDS = [("sub weight", 20.0, 120.0), ("low-mid body", 120.0, 800.0),
          ("forward midrange", 800.0, 4000.0), ("top-end sheen", 4000.0, 16000.0)]
 
 # The fitter leaves the top octave unconstrained (it parks a Nyquist-edge
-# resonance there -- STATE.md). Characterize the MUSICAL body, never that
+# resonance there). Characterize the MUSICAL body, never that
 # artifact: pick features only inside the band, and the identity only where a
 # real body/formant lives.
 ANALYSIS_BAND = (60.0, 10500.0)

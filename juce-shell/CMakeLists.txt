@@ -4,8 +4,7 @@ cmake_minimum_required(VERSION 3.25)
 #
 # PL-6: a single install location for every build configuration. Both Debug
 # and Release auto-copy into Program Files; we no longer maintain a parallel
-# LOCALAPPDATA destination for Debug. The reason — STATE.md `Now`,
-# 2026-05-28 — is that DAWs scan whatever they find first, and a stale
+# LOCALAPPDATA destination for Debug. DAWs scan whatever they find first, and a stale
 # LOCALAPPDATA copy from a previous Debug build silently masked Release
 # builds for hours. Dev iteration should go through TRENCH_Standalone.exe
 # (see juce-shell/README.md), not the auto-installed VST3.
@@ -17,6 +16,18 @@ cmake_minimum_required(VERSION 3.25)
 # This tells cmake we have goodies in the /cmake folder
 list(APPEND CMAKE_MODULE_PATH "${CMAKE_CURRENT_SOURCE_DIR}/cmake")
 include (PamplejuceVersion)
+
+# Cache fetched dependencies outside the build tree so fresh build directories
+# reuse the same pinned JUCE checkout.
+if (NOT DEFINED CPM_SOURCE_CACHE OR CPM_SOURCE_CACHE STREQUAL "OFF")
+    if (WIN32)
+        set(CPM_SOURCE_CACHE "$ENV{USERPROFILE}/.cache/CPM" CACHE PATH
+            "Shared CPM source cache" FORCE)
+    else ()
+        set(CPM_SOURCE_CACHE "$ENV{HOME}/.cache/CPM" CACHE PATH
+            "Shared CPM source cache" FORCE)
+    endif ()
+endif ()
 
 # Modern concise way to add dependencies to your project
 include (CPM)
@@ -43,7 +54,15 @@ project(${PROJECT_NAME} VERSION ${CURRENT_VERSION})
 # Log build environment info (after project() so compiler info is available)
 include(PamplejuceLog)
 
-add_subdirectory(JUCE)
+# Pin the current stable JUCE release. CPM keeps the checkout in the shared
+# source cache above, avoiding fragile workspace junctions and repeated clones.
+CPMAddPackage(
+    NAME JUCE
+    GITHUB_REPOSITORY juce-framework/JUCE
+    GIT_TAG 8.0.13
+    VERSION 8.0.13
+    GIT_SHALLOW TRUE
+    EXCLUDE_FROM_ALL YES)
 
 # Add CLAP format
 add_subdirectory(modules/clap-juce-extensions EXCLUDE_FROM_ALL)
@@ -99,8 +118,6 @@ set(SourceFiles
     source/TrenchShuttleControl.cpp
     source/TrenchValueBox.h
     source/TrenchBodyStrip.h
-    source/TrenchResponseDisplay.h
-    source/TrenchResponseDisplay.cpp
     source/parameters/TrenchParameters.h
     source/parameters/TrenchParameters.cpp
     source/dsp/TrenchDspBridge.h

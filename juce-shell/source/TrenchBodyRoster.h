@@ -33,8 +33,7 @@ inline const BodyEntry* bodyRoster (int& countOut) noexcept
         // across every stage of every corner. Silence in -> silence out by
         // construction, so a fresh plug-in does not amplify the host's noise
         // floor through Neon Vane's +20..+28 dB resonance into the AGC
-        // engagement zone (STATE.md `Now` 2026-05-29, "for ages" static
-        // diagnosis). Author a real body strip click to leave Bypass.
+        // engagement zone. Author a real body strip click to leave Bypass.
         { "Bypass",         "bypass"      },
         // Neon Vane = first character body. Was the boot default until the
         // AGC-engagement diagnosis above moved it down a slot.

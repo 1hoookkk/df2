@@ -38,7 +38,7 @@ BLOCK_SIZE = 32
 DEFAULT_CALIB = Path(__file__).resolve().parent.parent / "ref" / "p2k_skins" / "00_talking_hedz.json"
 
 # Canonical AGC / global-compression curve, read from trench-core via FFI (single
-# source of truth = trench-core/src/dsp/mod.rs::AGC_TABLE). No hand-copied literal.
+# source of truth = trench-core/src/dsp/mod.rs::BASE_AGC_TABLE). No hand-copied literal.
 AGC_TABLE = np.array(trench_ffi.agc_table(), dtype=np.float32)
 
 

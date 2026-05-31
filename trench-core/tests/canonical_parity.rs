@@ -41,13 +41,13 @@ use std::fs;
 use std::path::{Path, PathBuf};
 
 use serde::Deserialize;
-use trench_core::{dsp::AGC_TABLE, Cascade, CornerData, BLOCK_SIZE, NUM_STAGES};
+use trench_core::{dsp::BASE_AGC_TABLE, Cascade, CornerData, BLOCK_SIZE, NUM_STAGES};
 
 #[inline(always)]
 fn agc_step_f64(sample: f64, agc_gain: &mut f64) -> f64 {
     let abs_sample = sample.abs();
     let idx = ((*agc_gain * abs_sample) as u32 & 0xF) as usize;
-    let new_gain = *agc_gain * f64::from(AGC_TABLE[idx]);
+    let new_gain = *agc_gain * f64::from(BASE_AGC_TABLE[idx]);
     *agc_gain = if new_gain < 1.0 { new_gain } else { 1.0 };
     sample * *agc_gain
 }

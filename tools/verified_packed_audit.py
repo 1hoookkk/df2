@@ -53,7 +53,7 @@ EPS = 1e-30
 BLOCK = 32
 
 # Canonical AGC / global-compression curve, read from trench-core via FFI (single
-# source of truth = trench-core/src/dsp/mod.rs::AGC_TABLE). No hand-copied literal.
+# source of truth = trench-core/src/dsp/mod.rs::BASE_AGC_TABLE). No hand-copied literal.
 AGC_TABLE = np.array(trench_ffi.agc_table(), dtype=np.float32)
 
 
@@ -591,7 +591,7 @@ def write_md(path: Path, d: dict) -> None:
     A("1. **Audition first.** -53.75 dB is in the gate's 'structural agreement' "
       "band. It may already be perceptually transparent; if so, the packed "
       "midpoint is effectively done and ROM extraction is unnecessary.")
-    A("2. **Re-audit the Q100 corner nulls.** STATE.md records the M0_Q100 / "
+    A("2. **Re-audit the Q100 corner nulls.** Prior measurements record the M0_Q100 / "
       "M100_Q100 *corners* nulling at -35 / -27 dB against their X3 corner "
       "wets. A midpoint that blends both Q100 corners cannot reach -53.75 dB "
       "if those corners were truly -27 dB off — so those corner figures were "
