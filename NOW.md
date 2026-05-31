@@ -60,18 +60,33 @@ corner_library,source,generators}.rs`; thin `main.rs`. Done this session:
   `generators.rs` and match the spec (6 biquads, radius capped at the morph-stable brink;
   SLAM is the runtime violence, not unstable poles).
 
-**DO NEXT (agreed order):**
-1. **Real character in the LIVE audition.** Route the Forge audio through the SHIPPED
-   engine (SLAM pre-sat + AGC `&0xF`), expose a DRIVE knob, persist per-body. **Do NOT
-   reimplement SLAM/AGC in `audio.rs` (4th copy = `packed-math-triplicated`) — call
-   trench-core via FFI.** Today `audio.rs` ends in a tanh stand-in, not the chip drive
-   (the "judging it asleep" gap). Wrinkle: feed the engine ramped coeffs per block (no
-   clicks on drag).
-2. **QSound** as a per-body SPATIAL setting (can't bake into mono coeffs — store as body
-   metadata, audition live). 2nd sanctioned optional effect (with SLAM); was out-of-scope,
-   Tyson pulled it in.
-3. Then **section-by-section polish** (SHAPE → PLAYER → PUSH), each ear-verified through the
-   real engine before moving on.
+**DO NEXT — NEXT SESSION = INTERVIEW TYSON → WRITE THE FORGE SPEC.** Tyson's call
+(2026-05-31): do NOT implement more yet. Next session **opens by interviewing Tyson**, then
+writes `FORGE_SPEC.md` (the comprehensive Forge-bench spec). `BODY_TAXONOMY.md` (written this
+session — 4 Materials + MASS/SIZE × ENERGY/AIRFLOW picker) is the first input.
+
+INTERVIEW AGENDA (open decisions to resolve into the spec):
+- **Body taxonomy:** lock the 4 Materials + members (`BODY_TAXONOMY.md`) — trim Wood&Metal's
+  12 members? names (RUIN/ALIEN?)? keep the Signature shelf (TalkingHedz/Lucifer's Q/EarBender)?
+- **Picker axes:** confirm the MASS/SIZE × ENERGY/AIRFLOW relabel.
+- **Audition (real character):** confirm SLAM+AGC via the **FFI engine, not a 4th reimpl in
+  `audio.rs`** + a DRIVE knob (today it's a tanh stand-in = "judging it asleep").
+- **QSound (Tyson: a hero of the plugin's sound):** decide **clean re-capture** vs
+  **Ghidra-study** `~\trench_re_vault\analysis\qsound_lab\qcreator_extracted_auto\QMixer.dll`.
+  `trench-core/src/qsound_spatial.rs` is a sound ITD+ILD+shelf model but its coeffs are
+  regressed from a DEFECTIVE capture (state leakage). QSound = third-party IP → clean-room
+  applies (measure behaviour, ship original). Any cleaner dataset in "others"?
+- **Content/film layer:** are the visual hooks (cube cool→red on stress, throbbing poles,
+  glowing route spline) in-scope for the Forge or marketing-only? (Authoring stays live-first.)
+- **Assets:** ~20 cutaway chips, 4 Material visual languages — when to generate.
+- **Workflow:** SHAPE/PLAYER/PUSH locked this session (3 tabs, live-middle dock, TRAJ merged).
+
+QUEUED IMPLEMENTATION (post-spec — do NOT start before the spec is written):
+1. Real character in the live audition (FFI SLAM+AGC + drive knob; ramped coeffs per block).
+2. QSound per-body spatial (per the decision above).
+3. Refactor `Architecture` → 4 Materials + relabel picker axes; add INSTRUMENT modal ratios.
+4. Generate the asset set, one Material at a time.
+5. Section-by-section polish, each ear-verified through the real engine.
 
 **QUARANTINED (NOT in the checkpoint commit — confirm provenance):** `CLAUDE.md`
 (pre-session edit), `### Permanent Master Acoustic Dictionary.txt` + `ref/p2k_variants/
