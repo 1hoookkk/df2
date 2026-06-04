@@ -77,20 +77,39 @@ is a pairing of two frames + a Q-rule. Frames are mined, never random:
 Constraints that keep frames morphable: **fixed 6-section budget**; each frame
 carries a **loQ→hiQ scale** so Secondary works on any A/B pairing.
 
-## Forge v1 UI
+## Forge v1 — picker + player only
 
-- **Hero**: the packed-runtime magnitude plot (Morph/Q live), four corner ghosts,
-  selected-section pole+zero handles.
-- **Frame quarry strip**: a horizontal bank of **mini-plots**, one per frame,
-  **sorted low→high by spectral centroid**. Click a tile = Frame A, click another
-  = Frame B → instant body in the hero. The strip is the picker (retires the
-  template dropdown).
-- **Section editor** (selected section): `Freq · Shelf(LP↔peak↔HP) · Gain± · Q`.
-- **Audition**: through the shipped drive chain, **AGC always on** (one sound,
-  not a plain/driven split). Plot judges first, ear confirms.
-- **Save** = `.body240` (shipping truth) + an editable `.df2forge.json` source.
-- Behind **More**: raw words / decoded biquad / 5×5 audit grid / hash. Diagnostics
-  only.
+v1 Forge does **not** edit sections. It picks two frames and plays the result.
+No section editing, no pole/zero dragging, no Shelf/Gain knobs in v1.
+
+Layout:
+
+```
+┌ Frame A (endpoint plot) ─┬─ Frame B (endpoint plot) ─┐
+│        /\__              │            __/\            │
+│   ____/    \___          │      __/\_/    \___        │
+└──────────────────────────┴───────────────────────────┘
+        ┌ full cascade response (smaller) ─────┐
+        │   the live morphed body at Morph/Q   │
+        └──────────────────────────────────────┘
+  Morph ●───────   Q ●───────   ▶ play
+  frame quarry  low ◄ [▟][▖][█][╱][▔][▗] ► high   (click → load A or B)
+```
+
+- **Two frames side by side**: Frame A (left) | Frame B (right), each as its
+  static response plot — the morph endpoints.
+- **Smaller full-cascade response** below: the live packed-runtime curve of the
+  paired body at the current Morph/Q. The actual sound's shape.
+- **Player**: Morph + Q sliders, play/stop. Audition through the shipped drive
+  chain, **AGC always on** (one sound). Plot judges first, ear confirms.
+- **Frame quarry strip**: mini-plots sorted low→high by spectral centroid; click
+  a tile to load it into the A or B slot. The picker.
+- **Save** = `.body240` of the current pairing.
+
+Section-level editing (`Freq/Shelf/Gain/Q` per section) is **deferred to vNext** —
+frames are mined outside the Forge for now; the Forge only pairs and plays them.
+The section primitive below is the frame's internal representation, not a v1
+editing surface.
 
 ## v1 preset set (original 12th-order filter types)
 
@@ -118,9 +137,13 @@ cranks the upper sections.
 
 - Built (OBSERVED): WASM trench-core pack; faithful `packed.js` plot; the 4×6
   editor; LPC fitter; audition page.
-- v1 work: (a) **section primitive** = Freq/Shelf/Gain/Q → always pole+zero (the
-  fix); (b) **frame quarry** = mine + mini-plot strip sorted by centroid; (c) the
-  **6 preset types** authored through (a)+(b).
+- v1 work: (a) **mine a frame quarry** (LPC/physics/clean-room study) — each
+  frame a 6-section body; (b) **Forge = picker + player** — two frames side by
+  side + smaller full-cascade response + Morph/Q + audition + save; (c) assemble
+  the **6 preset bodies** by pairing mined frames and keeping by ear.
+- Deferred to vNext: the section editor (Freq/Shelf/Gain/Q), pole/zero handles,
+  `.df2forge.json` source format. The zero-mandatory fix lands in the frame
+  *compiler* (how mined frames pack), not in a v1 editing UI.
 
 ## Non-goals (the failure modes we already hit)
 
