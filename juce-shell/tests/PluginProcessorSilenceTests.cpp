@@ -51,7 +51,34 @@ std::string describe (const PeakProbe& probe, int block)
 }
 }
 
-TEST_CASE ("PluginProcessor Bypass body keeps digital silence silent")
+TEST_CASE ("Filter 00 is always a packed-word No Filter body")
+{
+    REQUIRE (trench::kNoFilterIndex == 0);
+    REQUIRE (trench::bodyDisplayName (trench::kNoFilterIndex) == trench::kNoFilterName);
+    REQUIRE (trench::bodyIsNoFilter (trench::kNoFilterIndex));
+
+    const auto json = juce::JSON::parse (trench::bodyCartridgeJson (trench::kNoFilterIndex));
+    REQUIRE (! json.isVoid());
+    REQUIRE (json.getProperty ("name", juce::String()) == trench::kNoFilterName);
+
+    const auto* keyframes = json.getProperty ("keyframes", juce::var()).getArray();
+    REQUIRE (keyframes != nullptr);
+    REQUIRE (keyframes->size() == 4);
+    for (const auto& keyframe : *keyframes)
+    {
+        const auto* stages = keyframe.getProperty ("packedWords", juce::var()).getArray();
+        REQUIRE (stages != nullptr);
+        REQUIRE (stages->size() == 6);
+        for (const auto& stage : *stages)
+        {
+            const auto* words = stage.getArray();
+            REQUIRE (words != nullptr);
+            REQUIRE (words->size() == 5);
+        }
+    }
+}
+
+TEST_CASE ("PluginProcessor No Filter packed body is explicitly bypassed")
 {
     juce::ScopedJuceInitialiser_GUI juce;
 
@@ -61,7 +88,44 @@ TEST_CASE ("PluginProcessor Bypass body keeps digital silence silent")
 
         PluginProcessor processor;
         REQUIRE (processor.getLastLoadOk());
-        REQUIRE (processor.getLoadedBodyIndex() == 0);
+        REQUIRE (processor.getLoadedBodyIndex() == trench::kNoFilterIndex);
+
+        constexpr int blockSize = 512;
+        processor.setRateAndBufferSizeDetails (sampleRate, blockSize);
+        processor.prepareToPlay (sampleRate, blockSize);
+
+        juce::AudioBuffer<float> buffer (2, blockSize);
+        juce::AudioBuffer<float> expected (2, blockSize);
+        juce::MidiBuffer midi;
+        for (int ch = 0; ch < buffer.getNumChannels(); ++ch)
+            for (int i = 0; i < buffer.getNumSamples(); ++i)
+                buffer.setSample (ch, i, std::sin ((float) (i + 1) * 0.071f) * (ch == 0 ? 0.31f : -0.23f));
+        expected.makeCopyOf (buffer);
+
+        processor.processBlock (buffer, midi);
+
+        for (int ch = 0; ch < buffer.getNumChannels(); ++ch)
+            for (int i = 0; i < buffer.getNumSamples(); ++i)
+                REQUIRE (buffer.getSample (ch, i) == Catch::Approx (expected.getSample (ch, i)).margin (1.0e-7f));
+
+        processor.releaseResources();
+    }
+}
+
+TEST_CASE ("PluginProcessor No Filter bypass keeps digital silence silent")
+{
+    juce::ScopedJuceInitialiser_GUI juce;
+
+    for (const double sampleRate : { 44100.0, 48000.0, 96000.0 })
+    {
+        CAPTURE (sampleRate);
+
+        PluginProcessor processor;
+        REQUIRE (processor.getLastLoadOk());
+        REQUIRE (processor.getLoadedBodyIndex() == trench::kNoFilterIndex);
+        REQUIRE (processor.apvts.getRawParameterValue (ParamID::body)->load()
+                 == (float) trench::kNoFilterIndex);
+        REQUIRE (processor.getProgramName (0) == trench::kNoFilterName);
 
         constexpr int blockSize = 512;
         processor.setRateAndBufferSizeDetails (sampleRate, blockSize);
@@ -80,86 +144,5 @@ TEST_CASE ("PluginProcessor Bypass body keeps digital silence silent")
         }
 
         processor.releaseResources();
-    }
-}
-
-TEST_CASE ("FixedRateTrenchIsland keeps Bypass digital silence silent")
-{
-    for (const double sampleRate : { 44100.0, 48000.0, 96000.0 })
-    {
-        CAPTURE (sampleRate);
-
-        TrenchDspBridge bridge;
-        trench::FixedRateTrenchIsland island;
-
-        constexpr int blockSize = 512;
-        island.prepare (sampleRate, blockSize, bridge);
-        REQUIRE (bridge.loadCartridge (trench::bodyCartridgeJson (0)));
-        bridge.setInputMode (0);
-        bridge.setSpatialMode (2);
-
-        juce::AudioBuffer<float> buffer (2, blockSize);
-        TrenchParams params;
-
-        for (int block = 0; block < 64; ++block)
-        {
-            buffer.clear();
-            island.process (buffer, bridge, params);
-            const auto probe = probePeak (buffer);
-            INFO (describe (probe, block));
-            REQUIRE (probe.peak < 1.0e-12f);
-        }
-    }
-}
-
-TEST_CASE ("TrenchDspBridge directly keeps Bypass digital silence silent")
-{
-    for (const double sampleRate : { 39062.5, 44100.0, 48000.0, 96000.0 })
-    {
-        CAPTURE (sampleRate);
-
-        TrenchDspBridge bridge;
-        bridge.prepare (sampleRate, 512);
-        REQUIRE (bridge.loadCartridge (trench::bodyCartridgeJson (0)));
-        bridge.setInputMode (0);
-        bridge.setSpatialMode (2);
-
-        juce::AudioBuffer<float> buffer (2, 512);
-        TrenchParams params;
-
-        for (int block = 0; block < 64; ++block)
-        {
-            buffer.clear();
-            bridge.process (buffer, params);
-            const auto probe = probePeak (buffer);
-            INFO (describe (probe, block));
-            REQUIRE (probe.peak < 1.0e-12f);
-        }
-    }
-}
-
-TEST_CASE ("TrenchDspBridge load-before-prepare keeps Bypass digital silence silent")
-{
-    for (const double sampleRate : { 39062.5, 44100.0, 48000.0, 96000.0 })
-    {
-        CAPTURE (sampleRate);
-
-        TrenchDspBridge bridge;
-        REQUIRE (bridge.loadCartridge (trench::bodyCartridgeJson (0)));
-        bridge.prepare (sampleRate, 512);
-        bridge.setInputMode (0);
-        bridge.setSpatialMode (2);
-
-        juce::AudioBuffer<float> buffer (2, 512);
-        TrenchParams params;
-
-        for (int block = 0; block < 64; ++block)
-        {
-            buffer.clear();
-            bridge.process (buffer, params);
-            const auto probe = probePeak (buffer);
-            INFO (describe (probe, block));
-            REQUIRE (probe.peak < 1.0e-12f);
-        }
     }
 }

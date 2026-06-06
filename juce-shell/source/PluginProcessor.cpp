@@ -1,6 +1,5 @@
 #include "PluginProcessor.h"
 #include "PluginEditor.h"
-#include "TrenchChassisLayout.h"
 #include "TrenchBodyRoster.h"
 #include "BinaryData.h"
 
@@ -25,7 +24,7 @@ PluginProcessor::PluginProcessor()
        apvts (*this, nullptr, "TRENCH_STATE", TrenchParameters::createParameterLayout())
 {
     // PL-2: a single startup path. Load whichever body the recall/host
-    // selected (defaults to roster index 0 = Neon Vane via TrenchBodyRoster),
+    // selected (defaults to roster index 0 = No Filter via TrenchBodyRoster),
     // then always register the body listener and start the audition timer.
     // The old "if (kEnabled()) load kBody240 and return" branch was a frozen-
     // body null-parity-test mode; with kEnabled() now meaning "extras off"
@@ -44,8 +43,8 @@ PluginProcessor::PluginProcessor()
                       std::memory_order_relaxed);
 
     dspBridge.setSpatialMode (kSpatialOff);
+    dspBridge.setQSoundFallbackPan (1.0f);
     apvts.addParameterListener (ParamID::body, this);
-    trench::layout::ensureDevDirs();
     startTimer (400);
 }
 
@@ -96,7 +95,7 @@ void PluginProcessor::setCurrentProgram (int index) { juce::ignoreUnused (index)
 const juce::String PluginProcessor::getProgramName (int index)
 {
     juce::ignoreUnused (index);
-    return trench::clean_audio::kBodyName;
+    return trench::bodyDisplayName (getLoadedBodyIndex());
 }
 void PluginProcessor::changeProgramName (int index, const juce::String& newName)
 {
@@ -111,6 +110,7 @@ void PluginProcessor::prepareToPlay (double sampleRate, int samplesPerBlock)
 
     dspBridge.setInputMode (kCleanInputMode);
     dspBridge.setSpatialMode (kSpatialOff);
+    dspBridge.setQSoundFallbackPan (1.0f);
     lastInputModeSent = kCleanInputMode;
 
     teleportEngine.prepare (sampleRate);
@@ -242,7 +242,11 @@ void PluginProcessor::processBlock (juce::AudioBuffer<float>& buffer, juce::Midi
     }
 #endif // TRENCH_PLAYER_EXTRAS
 
-    fixedRateIsland.process (buffer, dspBridge, params);
+    // Filter 00 is a real packed-word roster body, loaded through the same
+    // cartridge path as every other entry. Its player behavior is an explicit
+    // transparent bypass: do not run the DSP island while No Filter is active.
+    if (! trench::bodyIsNoFilter (loadedBodyIndex.load (std::memory_order_relaxed)))
+        fixedRateIsland.process (buffer, dspBridge, params);
 
     // Final user makeup gain — the only level control after the engine. AGC and
     // the saturate knee inside the engine are untouched; this is a transparent
@@ -415,7 +419,7 @@ void PluginProcessor::forceCleanAudioUiState()
     // setParameterDenormalized calls for them noop (null param lookup). The
     // #ifdef just makes that explicit so the next reader doesn't wonder why
     // it dead-ends. body / inputMode / output exist in every build.
-    setParameterDenormalized (ParamID::body, 0.0f);
+    setParameterDenormalized (ParamID::body, (float) trench::kNoFilterIndex);
     setParameterDenormalized (ParamID::inputMode, 0.0f);
     setParameterDenormalized (ParamID::output, 0.0f);
 #ifdef TRENCH_PLAYER_EXTRAS

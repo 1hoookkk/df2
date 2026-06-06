@@ -1,6 +1,7 @@
 {
   "format": "compiled-v1",
-  "name": "Bypass",
+  "name": "No Filter",
+  "provenance": "packed-bypass-carrier",
   "sampleRate": 39062.5,
   "keyframes": [
     {

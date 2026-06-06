@@ -25,7 +25,7 @@ juce::AudioProcessorValueTreeState::ParameterLayout createParameterLayout()
         "Body",
         0,
         juce::jmax (1, trench::bodyCount() - 1),
-        0));
+        trench::kNoFilterIndex));
 
     layout.add (std::make_unique<juce::AudioParameterFloat> (
         juce::ParameterID { ParamID::output, 1 },

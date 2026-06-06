@@ -12,6 +12,7 @@ extern "C"
     void trench_engine_set_parameters (void* engine, float morph, float q, float slamDrive, float fiveD);
     void trench_engine_set_input_mode (void* engine, unsigned int mode);  // 0=None, 1=MackieDeskSlam, 2=Cvsd
     void trench_engine_set_spatial_mode (void* engine, int mode);         // 0=QSound, 1=Trench, 2=Off
+    void trench_engine_set_qsound_fallback_pan (void* engine, float pan); // -1=left, 0=mono centre, +1=right
     void trench_engine_set_agc_enabled (void* engine, int enabled);
     void trench_engine_set_agc_drive (void* engine, float drive);
     void trench_engine_process_block (void* engine, float* left, float* right, int numSamples, double morph, double q);
@@ -84,6 +85,7 @@ public:
             return;
 
         // APVTS Morph/Q are already normalised 0..1. Do not divide by 100.
+        trench_engine_set_agc_drive (engine, slamToAgcDrive (params.slamDrive));
         trench_engine_set_parameters (engine, params.morph, params.q, params.slamDrive, params.fiveD);
         trench_engine_process_block (engine,
                                      buffer.getWritePointer (0),
@@ -112,13 +114,22 @@ public:
             trench_engine_set_input_mode (engine, static_cast<unsigned int> (juce::jlimit (0, 2, mode)));
     }
 
-    // Post-cascade spatial stage. 0 = QSound (realistic ITD/ILD/shelves; falls
-    // back to a symmetric widener when the body carries no spatial profile),
-    // 1 = Trench M/S matrix, 2 = Off. Clean ground-truth audio keeps this Off.
+    // Post-cascade spatial stage. 0 = QSound (profile ITD/ILD/shelves when
+    // present; otherwise the local QCreator-anchored recreation), 1 = Trench
+    // M/S matrix, 2 = Off. Clean ground-truth audio keeps this Off.
     void setSpatialMode (int mode)
     {
         if (engine != nullptr)
             trench_engine_set_spatial_mode (engine, juce::jlimit (0, 2, mode));
+    }
+
+    // Local no-profile QSound pose. The shipping path pins this to the
+    // recovered exaggerated-right anchor; the setter remains available for
+    // future authoring tools without adding another plug-in control.
+    void setQSoundFallbackPan (float pan)
+    {
+        if (engine != nullptr)
+            trench_engine_set_qsound_fallback_pan (engine, juce::jlimit (-1.0f, 1.0f, pan));
     }
 
     void setAgcEnabled (bool enabled)
@@ -137,6 +148,14 @@ public:
 
 private:
     static constexpr float musicalAgcDrive = 4.0f;
+    static constexpr float maxAgcDrive = 8.0f;
+
+    static float slamToAgcDrive (float slam)
+    {
+        const float amount = juce::jlimit (0.0f, 1.0f, slam);
+        return musicalAgcDrive + amount * (maxAgcDrive - musicalAgcDrive);
+    }
+
     void* engine = nullptr;
 
     JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR (TrenchDspBridge)

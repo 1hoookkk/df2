@@ -15,22 +15,19 @@
 namespace trench
 {
 
-/// Borderless plugin host window — uses the OS titlebar only.
-/// Inherits from `juce::DocumentWindow` directly so we get OS frame
-/// chrome but none of the "Options" / mute-warning toolbar that
-/// `StandaloneFilterWindow` paints by default.
+/// Borderless plugin host window. The plugin faceplate is the entire visible
+/// standalone window: no OS titlebar and no JUCE standalone toolbar.
 class StandaloneHostWindow : public juce::DocumentWindow
 {
 public:
     StandaloneHostWindow (const juce::String& title,
                           juce::Colour bg,
                           std::unique_ptr<juce::StandalonePluginHolder> holderIn)
-        : DocumentWindow (title, bg,
-                          juce::DocumentWindow::minimiseButton
-                              | juce::DocumentWindow::closeButton),
+        : DocumentWindow (title, bg, 0),
           holder (std::move (holderIn))
     {
-        setUsingNativeTitleBar (true);
+        setUsingNativeTitleBar (false);
+        setTitleBarHeight (0);
         setResizable (false, false);
 
         // The plugin editor IS the entire client area. No toolbar, no

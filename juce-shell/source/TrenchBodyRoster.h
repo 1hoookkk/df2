@@ -6,15 +6,13 @@
 
 namespace trench
 {
-// Canonical body roster — the single source of truth for the player's
-// selectable bodies. Both the chassis Body strip (display) and the processor
-// (cartridge load) read from here, so names and loaded sound can never drift
-// apart.
+// Canonical body roster: the single source of truth for selectable runtime
+// bodies. The processor reads from here when loading cartridge JSON.
 //
 // To ship a new body: bake its <base>.json into Assets (BinaryData symbol
 // <base>_json) and add a row below. A user can also drop a
 // Documents/TRENCH/bodies/<base>.cart.json (or <base>.json) to override or
-// extend at runtime with no rebuild — mirroring the chassis_variants path.
+// extend at runtime with no rebuild.
 struct BodyEntry
 {
     const char* displayName;
@@ -25,16 +23,17 @@ struct BodyEntry
 // loads (and hot-reloads) from Documents/TRENCH/authoring_slot.json. It only
 // reloads while it is the selected body, so it can never hijack the others.
 inline constexpr const char* kAuditionBase = "@audition";
+inline constexpr int kNoFilterIndex = 0;
+inline constexpr const char* kNoFilterName = "No Filter";
 
 inline const BodyEntry* bodyRoster (int& countOut) noexcept
 {
     static const BodyEntry entries[] = {
-        // Bypass = boot default. Pure-identity biquads (b0=1, all others 0)
-        // across every stage of every corner. Silence in -> silence out by
-        // construction, so a fresh plug-in does not amplify the host's noise
-        // floor through Neon Vane's +20..+28 dB resonance into the AGC
-        // engagement zone. Author a real body strip click to leave Bypass.
-        { "Bypass",         "bypass"      },
+        // No Filter = filter 00 and boot default. It remains a normal
+        // compiled-v1 packed-word cartridge so every roster row has the same
+        // load contract. PluginProcessor bypasses the DSP island while this
+        // row is selected, making the resting plug-in explicitly transparent.
+        { kNoFilterName,     "bypass"      },
         // Neon Vane = first character body. Was the boot default until the
         // AGC-engagement diagnosis above moved it down a slot.
         { "Neon Vane",      "neon_vane"   },
@@ -46,6 +45,7 @@ inline const BodyEntry* bodyRoster (int& countOut) noexcept
         // (no random pole placement). Clean-room: no legacy preset names copied.
         { "Voice Walk",     "voice_walk"  },   // Klatt vowel formant morph
         { "Mason Tube",     "mason_tube"  },   // physical Helmholtz cavity
+        { "Hollow Chamber", "hollow_chamber" }, // cavity foundation + hollow mouth contrast
         { "Knock Burst",    "knock_burst" },   // 808 knock + grit, sub-safe
         { "Metal Scream",   "metal_scream"},   // resonant modal cluster
         { "Phaser Slide",   "phaser_slide"},   // chambered phaser comb
@@ -139,6 +139,11 @@ inline int wrapBodyIndex (int index) noexcept
     if (index < 0)
         index += n;
     return index;
+}
+
+inline bool bodyIsNoFilter (int index) noexcept
+{
+    return wrapBodyIndex (index) == kNoFilterIndex;
 }
 
 inline juce::String bodyDisplayName (int index) noexcept

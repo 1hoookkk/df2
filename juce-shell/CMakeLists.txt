@@ -110,14 +110,7 @@ set(SourceFiles
     source/PluginEditor.h
     source/PluginEditor.cpp
     source/TrenchRates.h
-    source/TrenchChassisLayout.h
-    source/TrenchStyle.h
-    source/TrenchLookAndFeel.h
-    source/TrenchAuthoringSlot.h
-    source/TrenchShuttleControl.h
-    source/TrenchShuttleControl.cpp
-    source/TrenchValueBox.h
-    source/TrenchBodyStrip.h
+    source/TrenchBodyRoster.h
     source/parameters/TrenchParameters.h
     source/parameters/TrenchParameters.cpp
     source/dsp/TrenchDspBridge.h
@@ -163,6 +156,14 @@ target_link_libraries(SharedCode
     juce::juce_recommended_warning_flags)
 
 target_link_libraries("${PROJECT_NAME}" PRIVATE SharedCode)
+
+# Replace JUCE's default standalone wrapper. The custom host makes the plugin
+# faceplate the whole visible window: no Options button, mute-warning strip, or
+# native titlebar.
+target_sources("${PROJECT_NAME}_Standalone" PRIVATE source/TrenchStandaloneApp.cpp)
+target_compile_definitions("${PROJECT_NAME}_Standalone"
+    PRIVATE
+    JUCE_USE_CUSTOM_PLUGIN_STANDALONE_APP=1)
 
 # Dumb DAW tap: passes audio through and writes captured WAVs for Forge.
 set(CAPTURE_PROJECT_NAME "TRENCH_CAPTURE")

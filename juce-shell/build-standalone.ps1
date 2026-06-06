@@ -27,7 +27,7 @@ try {
     }
 
     if ($rustBuildRequired) {
-        cargo rustc -p trench-core --release --lib -- --crate-type staticlib
+        cargo rustc -p trench-core --release --lib --crate-type staticlib
         if ($LASTEXITCODE -ne 0) {
             throw "Rust static-library build failed with exit code $LASTEXITCODE"
         }
