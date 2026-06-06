@@ -1,5 +1,19 @@
 # CLAUDE.md — df2 working contract
 
+## Current operational override
+
+Read `AGENTS.md` first. It is the current short contract for this checkout.
+When this file and `AGENTS.md` disagree, `AGENTS.md` wins.
+
+Current Forge work is Law Author:
+
+```text
+small law source -> six root-domain stages -> packed .body240 -> trench_core audit
+```
+
+Do not turn active Forge work into a coefficient editor, a prompt-first body
+writer, or a production-training workflow unless the user explicitly asks.
+
 df2 is a destructive morphing filter FX plugin (808s, bass, vocals, drums, bus). The goal is a
 product that sounds expensive, violent, distinctive — not academic emulation. **Tyson owns** taste,
 product feel, body keep/kill, sellability. **Claude drives everything else** — code, builds, git,

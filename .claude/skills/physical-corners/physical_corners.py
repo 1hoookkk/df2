@@ -147,7 +147,7 @@ def modal_modes(kind, f0, q=55, n=6):
         ratios = MODAL[kind][:n]
     return [(f0 * r, f0 * r / q, 1.0 / (1 + i * 0.25)) for i, r in enumerate(ratios) if f0 * r < 13000]
 
-# ── a corner from any model (the wholesale unit — never tuned per-section) ──────
+# ── a deterministic starter corner from any physical model ─────────────────────
 def corner_from_spec(spec):
     m = spec[0]
     if m == "tract":
@@ -158,9 +158,8 @@ def corner_from_spec(spec):
         return build_corner(modal_modes(spec[1], spec[2]))
     raise ValueError(f"unknown corner spec {spec}")
 
-# Curated physical bodies = 4 whole corners each (M0_Q0 / M100_Q0 / M0_Q100 /
-# M100_Q100). Cross-physics presets morph between unrelated acoustic worlds —
-# the "magic in the middle", grounded in physics. PRIMARY way to build corners.
+# Curated physical starters = 4 audition corners each (M0_S0 / M1_S0 / M0_S1 /
+# M1_S1). They feed editable Forge lanes; they are not finished bodies.
 PRESETS = {
     # single-domain morphs
     "vox":          [("tract", "u"), ("tract", "a"), ("tract", "i"), ("tract", "ae")],
@@ -206,7 +205,7 @@ def report(corners, names):
 def main():
     ap = argparse.ArgumentParser(description=__doc__)
     ap.add_argument("--preset", choices=sorted(PRESETS), default=None,
-                    help="curated physical body (PRIMARY path) — 4 whole corners")
+                    help="curated physical starter — 4 audition corners for Forge editing")
     ap.add_argument("--list-presets", action="store_true")
     ap.add_argument("--model", choices=["tract", "tube", "modal"], default="tract")
     ap.add_argument("--vowels", nargs=4, default=["u", "a", "i", "ae"])

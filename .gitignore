@@ -1,5 +1,9 @@
 target/
 dev/
+data/*
+!data/.gitignore
+.venv/
+wandb/
 juce-shell/build/
 __pycache__/
 *.pyc
