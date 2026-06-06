@@ -566,17 +566,7 @@ fn arma_fit_from_logmag(logmag: &[f64], runtime_sr: f64) -> Option<CornerData> {
     let mut corner: CornerData = [PASSTHROUGH; NUM_STAGES];
     for i in 0..NUM_STAGES {
         let [_, a1, a2] = den[i];
-        let [_, mut b1, mut b2] = num[i]; // monic numerator (b0 = 1); level set below
-                                          // Drop a zero sitting on its paired pole (< ~1/3 octave): it just cancels the
-                                          // resonance into a notch — the "wasted section" peak-killer. Leave the section
-                                          // all-pole so the pole reads as a real peak, like the ROM frames (which carry
-                                          // almost no zeros). Only zeros that clearly carve elsewhere survive.
-        let pf = quad_freq(&den[i]);
-        let zf = quad_freq(&num[i]);
-        if pf > 0.0 && zf > 0.0 && (zf / pf).log2().abs() < 0.33 {
-            b1 = 0.0;
-            b2 = 0.0;
-        }
+        let [_, b1, b2] = num[i]; // monic numerator (b0 = 1); level set below
         // kernel form: c0 = 2 + b1/b0, c1 = 1 - b2/b0, c2 = a1 + 2, c3 = 1 - a2, c4 = b0
         corner[i] = [2.0 + b1, 1.0 - b2, a1 + 2.0, 1.0 - a2, 1.0];
     }

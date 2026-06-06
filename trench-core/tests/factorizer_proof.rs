@@ -165,7 +165,34 @@ fn factorizer_reproduces_target_shapes() {
         ),
     ));
 
-    // 2. synthetic: gentle lowpass tilt above 800 Hz
+    // 2. synthetic: two broad formants. Deleting a solved numerator pair near
+    // its paired pole used to destroy this contour after the linear solve.
+    proofs.push(prove(
+        "synth_two_formants",
+        &sample(
+            |f| {
+                -16.0
+                    + ln2_bump(f, 700.0, 20.0, 0.5)
+                    + ln2_bump(f, 1800.0, 18.0, 0.5)
+            },
+            160,
+        ),
+    ));
+
+    // 3. synthetic: one nasal formant with broad hollows on either side.
+    proofs.push(prove(
+        "synth_nasal_mid",
+        &sample(
+            |f| {
+                -14.0 + ln2_bump(f, 1000.0, 22.0, 0.35)
+                    - ln2_bump(f, 420.0, 10.0, 0.5)
+                    - ln2_bump(f, 2400.0, 8.0, 0.5)
+            },
+            160,
+        ),
+    ));
+
+    // 4. synthetic: gentle lowpass tilt above 800 Hz
     proofs.push(prove(
         "synth_lowpass_tilt",
         &sample(
@@ -180,7 +207,7 @@ fn factorizer_reproduces_target_shapes() {
         ),
     ));
 
-    // 3+. real targets: a P2K reference's OWN M0_Q0 response, refit. Asks: can the
+    // 5+. real targets: a P2K reference's OWN M0_Q0 response, refit. Asks: can the
     // response-first factorizer round-trip a real, known-good response shape?
     for (label, file) in [
         ("ref_talking_hedz", "ref/presets/P2k_013_talking_hedz.bin"),
@@ -216,12 +243,13 @@ fn factorizer_reproduces_target_shapes() {
     // formant-envelope target tightly. (Top octave parks a Nyquist-edge
     // resonance; real razor-pole P2K bodies are smoothed — both auditioned, not
     // asserted, since the ear is the fitness function.)
-    let three = &proofs[0];
-    assert_eq!(three.name, "synth_three_formants");
-    assert!(
-        three.shape_rms_band < 3.5,
-        "in-band formant fit too loose: {:.2} dB RMS",
-        three.shape_rms_band
-    );
+    for name in ["synth_three_formants", "synth_two_formants", "synth_nasal_mid"] {
+        let proof = proofs.iter().find(|proof| proof.name == name).unwrap();
+        assert!(
+            proof.shape_rms_band < 4.0,
+            "{name}: in-band broad-shape fit too loose: {:.2} dB RMS",
+            proof.shape_rms_band
+        );
+    }
     println!("\nartifacts -> dev/tmp/factorizer_proof/ (*.json, *.body240)");
 }

@@ -35,6 +35,34 @@ pub const LOW_SHELF_CORNER_HZ: f32 = 400.0;
 // TODO(qsound_spatial): verify against re-capture.
 pub const HIGH_SHELF_CORNER_HZ: f32 = 2_500.0;
 
+/// Clean vendor-engine fallback calibration recovered from QCreator/QMixer.dll
+/// at the exaggerated +90-degree position. The QCreator fixture was rendered
+/// at 11025 Hz from a 0.5-amplitude mono impulse. Dividing its left PCM16
+/// samples by 16384 converts the response into unity-input FIR coefficients.
+const FALLBACK_QRIGHT90_NATIVE_SAMPLE_RATE: f32 = 11_025.0;
+const FALLBACK_QRIGHT90_R_GAIN: f32 = 16_382.0 / 16_384.0;
+const FALLBACK_QRIGHT90_L_PCM16: [i16; 23] = [
+    0, -9616, -3474, -1891, -356, 1151, 937, 672, 282, -51, -156, -160, -100, -31, 10, 27, 25, 14,
+    3, -2, -4, -3, -2,
+];
+
+fn fallback_qright90_l_ir(sample_rate: f32) -> Vec<f32> {
+    let ratio = (sample_rate / FALLBACK_QRIGHT90_NATIVE_SAMPLE_RATE).max(1e-6);
+    let output_len = (((FALLBACK_QRIGHT90_L_PCM16.len() - 1) as f32 * ratio).ceil() as usize) + 1;
+    (0..output_len)
+        .map(|index| {
+            let source_pos =
+                (index as f32 / ratio).min((FALLBACK_QRIGHT90_L_PCM16.len() - 1) as f32);
+            let lower = source_pos.floor() as usize;
+            let upper = (lower + 1).min(FALLBACK_QRIGHT90_L_PCM16.len() - 1);
+            let frac = source_pos - lower as f32;
+            let lower_sample = FALLBACK_QRIGHT90_L_PCM16[lower] as f32;
+            let upper_sample = FALLBACK_QRIGHT90_L_PCM16[upper] as f32;
+            (lower_sample + frac * (upper_sample - lower_sample)) / 16_384.0 / ratio
+        })
+        .collect()
+}
+
 // ── Fractional delay line (4-point Lagrange interpolation) ──
 
 #[derive(Debug, Clone)]
@@ -248,6 +276,7 @@ fn eval_channel_shelves(band: &BandChannelCoeffs, features: &[f32; 12]) -> Chann
 pub struct QSoundSpatial {
     sample_rate: f32,
     space: f32,
+    fallback_pan: f32,
     profile: Option<SpatialProfile>,
     // ITD one-sided delay lines. Right-ear-lead convention: positive itd
     // delays L, leaves R passthrough; negative itd does the opposite.
@@ -257,6 +286,9 @@ pub struct QSoundSpatial {
     l_high: Biquad,
     r_low: Biquad,
     r_high: Biquad,
+    fallback_shadow_ir: Vec<f32>,
+    fallback_mono_history: Vec<f32>,
+    fallback_mono_write_idx: usize,
     // Broadband per-channel linear gain from the ILD law.
     gain_l: f32,
     gain_r: f32,
@@ -265,9 +297,11 @@ pub struct QSoundSpatial {
 
 impl QSoundSpatial {
     pub fn new(sample_rate: f32) -> Self {
+        let fallback_shadow_ir = fallback_qright90_l_ir(sample_rate);
         let mut this = Self {
             sample_rate,
             space: 0.0,
+            fallback_pan: 1.0,
             profile: None,
             delay_l: FractionalDelay::new(MAX_DELAY_SAMPLES),
             delay_r: FractionalDelay::new(MAX_DELAY_SAMPLES),
@@ -275,6 +309,9 @@ impl QSoundSpatial {
             l_high: Biquad::default(),
             r_low: Biquad::default(),
             r_high: Biquad::default(),
+            fallback_mono_history: vec![0.0; fallback_shadow_ir.len()],
+            fallback_shadow_ir,
+            fallback_mono_write_idx: 0,
             gain_l: 1.0,
             gain_r: 1.0,
             dirty: true,
@@ -295,6 +332,15 @@ impl QSoundSpatial {
         self.space = space.clamp(0.0, 1.0);
     }
 
+    /// Set the local-recreation pan when no cartridge spatial profile is
+    /// loaded. `-1` is exaggerated left, `0` is dry mono center, and `+1`
+    /// is the clean QCreator/QMixer.dll right-90 fixture. The default is
+    /// `+1` so the existing 5D SPACE control keeps the requested extreme
+    /// QSound-right behavior without another UI control.
+    pub fn set_fallback_pan(&mut self, pan: f32) {
+        self.fallback_pan = pan.clamp(-1.0, 1.0);
+    }
+
     /// Zero all delay-line and biquad state. Use on cartridge swap or
     /// sample-rate change; safe on the audio thread (no allocation —
     /// buffers are pre-sized at `new`).
@@ -305,6 +351,10 @@ impl QSoundSpatial {
         self.l_high.reset_state();
         self.r_low.reset_state();
         self.r_high.reset_state();
+        self.fallback_mono_history
+            .iter_mut()
+            .for_each(|sample| *sample = 0.0);
+        self.fallback_mono_write_idx = 0;
     }
 
     fn recompute(&mut self) {
@@ -395,18 +445,36 @@ impl QSoundSpatial {
 
     fn process_fallback_stereo(&mut self, l: &mut [f32], r: &mut [f32]) {
         let space = self.space.clamp(0.0, 1.0);
-        self.delay_l.set_delay(0.0);
-        self.delay_r.set_delay(4.0 + 20.0 * space);
-
+        let pan = self.fallback_pan.clamp(-1.0, 1.0);
+        let pan_amount = pan.abs();
         let n = l.len().min(r.len());
         for i in 0..n {
             let dry_l = l[i];
             let dry_r = r[i];
-            let lag_r = self.delay_r.process(dry_r);
-            let mid = 0.5 * (dry_l + lag_r);
-            let side = 0.5 * (dry_l - lag_r) * (1.0 + 1.25 * space);
-            let wet_l = (mid + side) * 0.96;
-            let wet_r = (mid - side) * 0.96;
+            let mono = 0.5 * (dry_l + dry_r);
+
+            self.fallback_mono_history[self.fallback_mono_write_idx] = mono;
+            let mut read_idx = self.fallback_mono_write_idx;
+            let mut shadow = 0.0;
+            for &coeff in &self.fallback_shadow_ir {
+                shadow += coeff * self.fallback_mono_history[read_idx];
+                read_idx = if read_idx == 0 {
+                    self.fallback_mono_history.len() - 1
+                } else {
+                    read_idx - 1
+                };
+            }
+            self.fallback_mono_write_idx =
+                (self.fallback_mono_write_idx + 1) % self.fallback_mono_history.len();
+
+            let lead = mono * FALLBACK_QRIGHT90_R_GAIN;
+            let (extreme_l, extreme_r) = if pan >= 0.0 {
+                (shadow, lead)
+            } else {
+                (lead, shadow)
+            };
+            let wet_l = mono + pan_amount * (extreme_l - mono);
+            let wet_r = mono + pan_amount * (extreme_r - mono);
             l[i] = dry_l + space * (wet_l - dry_l);
             r[i] = dry_r + space * (wet_r - dry_r);
         }

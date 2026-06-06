@@ -12,6 +12,7 @@ callers keep their pure-Python reference path.
 from __future__ import annotations
 
 import ctypes
+import os
 import sys
 from pathlib import Path
 
@@ -29,6 +30,9 @@ _load_attempted = False
 _engine_ok = False  # the stateful FilterEngine symbols (audition) bound OK
 _agc_ok = False     # the read-only trench_agc_table symbol bound OK
 _fit_ok = False     # the trench_fit_corner_from_magnitude symbol bound OK
+_raw_fit_ok = False # the trench_fit_corner_arma symbol bound OK
+_dc_block_toggle_ok = False
+_saturation_toggle_ok = False
 
 
 def _candidate_paths():
@@ -38,6 +42,9 @@ def _candidate_paths():
         names = ["libtrench_core.dylib"]
     else:
         names = ["libtrench_core.so"]
+    override = os.environ.get("TRENCH_CORE_DLL")
+    if override:
+        yield Path(override)
     # Prefer release (what ships) over debug.
     for profile in ("release", "debug"):
         for name in names:
@@ -84,6 +91,7 @@ def _load():
             _bind_engine(lib)  # optional: stateful audition path (separate, non-fatal)
             _bind_agc(lib)     # optional: read-only AGC curve accessor (non-fatal)
             _bind_fit(lib)     # optional: response-curve factorizer (non-fatal)
+            _bind_raw_fit(lib) # optional: recorded-audio ARMA fitter (non-fatal)
             return _lib
         except (OSError, AttributeError):
             continue
@@ -96,7 +104,7 @@ def _bind_engine(lib) -> None:
     Kept separate from the packed-math bindings so that a DLL missing these
     (older build) still delegates the codec/interp/probe math — audition just
     becomes unavailable instead of dropping the whole library."""
-    global _engine_ok
+    global _engine_ok, _dc_block_toggle_ok, _saturation_toggle_ok
     try:
         lib.trench_engine_create.restype = ctypes.c_void_p
         lib.trench_engine_destroy.argtypes = [ctypes.c_void_p]
@@ -109,6 +117,16 @@ def _bind_engine(lib) -> None:
         lib.trench_engine_set_spatial_mode.argtypes = [ctypes.c_void_p, ctypes.c_int]
         lib.trench_engine_set_agc_enabled.argtypes = [ctypes.c_void_p, ctypes.c_int]
         lib.trench_engine_set_agc_drive.argtypes = [ctypes.c_void_p, ctypes.c_float]
+        try:
+            lib.trench_engine_set_dc_block_enabled.argtypes = [ctypes.c_void_p, ctypes.c_int]
+            _dc_block_toggle_ok = True
+        except AttributeError:
+            _dc_block_toggle_ok = False
+        try:
+            lib.trench_engine_set_saturation_enabled.argtypes = [ctypes.c_void_p, ctypes.c_int]
+            _saturation_toggle_ok = True
+        except AttributeError:
+            _saturation_toggle_ok = False
         try:
             lib.trench_engine_set_parameters.argtypes = [
                 ctypes.c_void_p, ctypes.c_float, ctypes.c_float,
@@ -159,6 +177,23 @@ def _bind_fit(lib) -> None:
         _fit_ok = True
     except AttributeError:
         _fit_ok = False
+
+
+def _bind_raw_fit(lib) -> None:
+    """Bind the recorded-audio ARMA fitter. Non-fatal for older DLLs."""
+    global _raw_fit_ok
+    try:
+        lib.trench_fit_corner_arma.argtypes = [
+            ctypes.POINTER(ctypes.c_double),  # samples[n]
+            ctypes.c_size_t,                  # n
+            ctypes.c_double,                  # input sample rate
+            ctypes.c_double,                  # runtime sample rate
+            ctypes.POINTER(ctypes.c_double),  # out[30] kernel coeffs
+        ]
+        lib.trench_fit_corner_arma.restype = ctypes.c_int
+        _raw_fit_ok = True
+    except AttributeError:
+        _raw_fit_ok = False
 
 
 # The canonical AGC / global-compression curve lives in exactly ONE place:
@@ -225,6 +260,36 @@ def fit_corner_from_magnitude(curve, runtime_sr: float = 39062.5) -> list[tuple[
     return [tuple(flat[si * NUM_COEFFS:(si + 1) * NUM_COEFFS]) for si in range(NUM_STAGES)]
 
 
+def fit_corner_arma(samples, sr_in: float, runtime_sr: float = 39062.5) -> list[tuple[float, ...]]:
+    """Fit a mono recording slice as a six-stage pole-zero ARMA envelope.
+
+    This calls Rust `arma::fit_corner_arma`. Both numerator zeros and
+    denominator poles are fitted from the recording's minimum-phase spectral
+    envelope. The result is an envelope model, not a claim that the source's
+    unique physical pole-zero system is observable from one recording.
+    """
+    lib = _load()
+    if lib is None or not _raw_fit_ok:
+        raise RuntimeError(
+            "trench_core raw-audio ARMA fitter unavailable; rebuild trench-core "
+            "or set TRENCH_CORE_DLL to a current build"
+        )
+    values = [float(value) for value in samples]
+    n = len(values)
+    if n < 64:
+        raise ValueError("recording slice needs at least 64 samples")
+    src = (ctypes.c_double * n)(*values)
+    out = (ctypes.c_double * (NUM_STAGES * NUM_COEFFS))()
+    rc = lib.trench_fit_corner_arma(
+        src, ctypes.c_size_t(n), ctypes.c_double(float(sr_in)),
+        ctypes.c_double(float(runtime_sr)), out,
+    )
+    if rc != 0:
+        raise RuntimeError(f"trench_fit_corner_arma failed (rc={rc})")
+    flat = list(out)
+    return [tuple(flat[si * NUM_COEFFS:(si + 1) * NUM_COEFFS]) for si in range(NUM_STAGES)]
+
+
 def available() -> bool:
     return _load() is not None
 
@@ -237,7 +302,9 @@ def engine_available() -> bool:
 
 def engine_render(body_bytes: bytes, morph: float, q: float, in_f32_bytes: bytes,
                   sr: float = 39062.5, input_mode: int = 0, spatial_mode: int = 2,
-                  agc_enabled: bool = True, agc_drive: float = MUSICAL_AGC_DRIVE) -> bytes:
+                  agc_enabled: bool = True, agc_drive: float = MUSICAL_AGC_DRIVE,
+                  dc_block_enabled: bool = True,
+                  saturation_enabled: bool = True) -> bytes:
     """Render mono input through the SHIPPED FilterEngine at a held (morph, q).
 
     `in_f32_bytes` is little-endian float32 mono PCM; returns the processed
@@ -266,6 +333,14 @@ def engine_render(body_bytes: bytes, morph: float, q: float, in_f32_bytes: bytes
         lib.trench_engine_set_spatial_mode(eng, ctypes.c_int(int(spatial_mode)))
         lib.trench_engine_set_agc_enabled(eng, ctypes.c_int(1 if agc_enabled else 0))
         lib.trench_engine_set_agc_drive(eng, ctypes.c_float(max(1.0, float(agc_drive))))
+        if not dc_block_enabled:
+            if not _dc_block_toggle_ok:
+                raise RuntimeError("trench_engine_set_dc_block_enabled missing; rebuild trench-core")
+            lib.trench_engine_set_dc_block_enabled(eng, ctypes.c_int(0))
+        if not saturation_enabled:
+            if not _saturation_toggle_ok:
+                raise RuntimeError("trench_engine_set_saturation_enabled missing; rebuild trench-core")
+            lib.trench_engine_set_saturation_enabled(eng, ctypes.c_int(0))
         left = (ctypes.c_float * n).from_buffer_copy(in_f32_bytes)
         right = (ctypes.c_float * n).from_buffer_copy(in_f32_bytes)
         lib.trench_engine_process_block(eng, left, right, ctypes.c_int(n),
@@ -279,7 +354,9 @@ def engine_render_automated(body_bytes: bytes, morph_per_block, q_per_block,
                             in_f32_bytes: bytes, sr: float = 39062.5,
                             input_mode: int = 0, spatial_mode: int = 2,
                             block: int = 512, agc_enabled: bool = True,
-                            agc_drive: float = MUSICAL_AGC_DRIVE) -> bytes:
+                            agc_drive: float = MUSICAL_AGC_DRIVE,
+                            dc_block_enabled: bool = True,
+                            saturation_enabled: bool = True) -> bytes:
     """Render mono input through the shipped engine while AUTOMATING (morph, q).
 
     Holds ONE engine instance and steps `(morph, q)` per `block` samples via
@@ -308,6 +385,14 @@ def engine_render_automated(body_bytes: bytes, morph_per_block, q_per_block,
         lib.trench_engine_set_spatial_mode(eng, ctypes.c_int(int(spatial_mode)))
         lib.trench_engine_set_agc_enabled(eng, ctypes.c_int(1 if agc_enabled else 0))
         lib.trench_engine_set_agc_drive(eng, ctypes.c_float(max(1.0, float(agc_drive))))
+        if not dc_block_enabled:
+            if not _dc_block_toggle_ok:
+                raise RuntimeError("trench_engine_set_dc_block_enabled missing; rebuild trench-core")
+            lib.trench_engine_set_dc_block_enabled(eng, ctypes.c_int(0))
+        if not saturation_enabled:
+            if not _saturation_toggle_ok:
+                raise RuntimeError("trench_engine_set_saturation_enabled missing; rebuild trench-core")
+            lib.trench_engine_set_saturation_enabled(eng, ctypes.c_int(0))
         out = bytearray()
         for bi in range(nb):
             s = bi * block * 4
@@ -331,7 +416,9 @@ def engine_render_slam(body_bytes: bytes, morph_per_block, q_per_block,
                        in_f32_bytes: bytes, slam_drive: float = 0.5,
                        five_d: float = 0.0, sr: float = 39062.5,
                        block: int = 512, agc_enabled: bool = True,
-                       agc_drive: float = MUSICAL_AGC_DRIVE) -> bytes:
+                       agc_drive: float = MUSICAL_AGC_DRIVE,
+                       dc_block_enabled: bool = True,
+                       saturation_enabled: bool = True) -> bytes:
     """Render through the shipped engine with the MACKIE DESK SLAM input stage
     engaged (input_mode=1): a PRE-cascade saturator (0..1 -> up to 36 dB desk
     drive) feeding the filter, then the AGC post-cascade. This is the full driven
@@ -359,6 +446,14 @@ def engine_render_slam(body_bytes: bytes, morph_per_block, q_per_block,
         lib.trench_engine_set_input_mode(eng, ctypes.c_int(1))  # MackieDeskSlam
         lib.trench_engine_set_agc_enabled(eng, ctypes.c_int(1 if agc_enabled else 0))
         lib.trench_engine_set_agc_drive(eng, ctypes.c_float(max(1.0, float(agc_drive))))
+        if not dc_block_enabled:
+            if not _dc_block_toggle_ok:
+                raise RuntimeError("trench_engine_set_dc_block_enabled missing; rebuild trench-core")
+            lib.trench_engine_set_dc_block_enabled(eng, ctypes.c_int(0))
+        if not saturation_enabled:
+            if not _saturation_toggle_ok:
+                raise RuntimeError("trench_engine_set_saturation_enabled missing; rebuild trench-core")
+            lib.trench_engine_set_saturation_enabled(eng, ctypes.c_int(0))
         out = bytearray()
         for bi in range(nb):
             s = bi * block * 4

@@ -3,7 +3,7 @@ use crate::cascade::{NUM_COEFFS, NUM_STAGES};
 use crate::dsp::BASE_AGC_TABLE;
 use crate::engine::{FilterEngine, InputMode, SpatialMode};
 use crate::minifloat::{decode, encode, pole_radius, PackedCorners};
-use libc::{c_char, c_void};
+use std::ffi::{c_char, c_void};
 use std::ffi::CStr;
 
 #[no_mangle]
@@ -162,6 +162,44 @@ pub unsafe extern "C" fn trench_fit_corner_from_magnitude(
     }
 }
 
+/// Fit one recorded sound's minimum-phase spectral envelope into one six-stage
+/// pole-zero corner (kernel form).
+///
+/// `samples` contains the already-conditioned mono recording slice. Writes 30
+/// kernel coefficients (6 stages x 5: c0..c4, stage-major) into `out`. This is
+/// a thin FFI wrapper over `arma::fit_corner_arma`: the numerator and
+/// denominator are both fitted by the Rust ARMA solver.
+///
+/// Returns: 0 ok, -1 null ptr, -2 fewer than 64 samples, -3 fitter returned None.
+#[no_mangle]
+pub unsafe extern "C" fn trench_fit_corner_arma(
+    samples: *const f64,
+    n: usize,
+    sr_in: f64,
+    runtime_sr: f64,
+    out: *mut f64,
+) -> i32 {
+    if samples.is_null() || out.is_null() {
+        return -1;
+    }
+    if n < 64 {
+        return -2;
+    }
+    let input = std::slice::from_raw_parts(samples, n);
+    match crate::arma::fit_corner_arma(input, sr_in, runtime_sr) {
+        Some(corner) => {
+            let dst = std::slice::from_raw_parts_mut(out, NUM_STAGES * NUM_COEFFS);
+            for (si, stage) in corner.iter().enumerate() {
+                for (ki, &c) in stage.iter().enumerate() {
+                    dst[si * NUM_COEFFS + ki] = c;
+                }
+            }
+            0
+        }
+        None => -3,
+    }
+}
+
 /// Interpolate a 240-byte packed body at `(morph, q)` and write 30 kernel-form
 /// coefficients (6 stages × 5: c0..c4), stage-major, into `out`.
 ///
@@ -300,6 +338,14 @@ pub unsafe extern "C" fn trench_engine_set_input_mode(engine: *mut c_void, mode:
     engine.set_input_mode(m);
 }
 
+/// Local no-profile QSound recreation pan: -1 = left, 0 = mono center,
+/// +1 = right. Cartridge-backed spatial profiles ignore this control.
+#[no_mangle]
+pub unsafe extern "C" fn trench_engine_set_qsound_fallback_pan(engine: *mut c_void, pan: f32) {
+    let engine = &mut *(engine as *mut FilterEngine);
+    engine.set_qsound_fallback_pan(pan);
+}
+
 #[no_mangle]
 pub unsafe extern "C" fn trench_engine_process_block(
     engine: *mut c_void,
@@ -334,6 +380,18 @@ pub unsafe extern "C" fn trench_engine_set_spatial_mode(engine: *mut c_void, mod
 pub unsafe extern "C" fn trench_engine_set_agc_enabled(engine: *mut c_void, enabled: i32) {
     let engine = &mut *(engine as *mut FilterEngine);
     engine.debug.agc_enabled = enabled != 0;
+}
+
+#[no_mangle]
+pub unsafe extern "C" fn trench_engine_set_dc_block_enabled(engine: *mut c_void, enabled: i32) {
+    let engine = &mut *(engine as *mut FilterEngine);
+    engine.debug.dc_block_enabled = enabled != 0;
+}
+
+#[no_mangle]
+pub unsafe extern "C" fn trench_engine_set_saturation_enabled(engine: *mut c_void, enabled: i32) {
+    let engine = &mut *(engine as *mut FilterEngine);
+    engine.debug.saturation_enabled = enabled != 0;
 }
 
 #[no_mangle]

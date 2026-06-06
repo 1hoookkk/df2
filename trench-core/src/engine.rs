@@ -246,6 +246,10 @@ impl FilterEngine {
         self.space = space.clamp(0.0, 1.0);
     }
 
+    pub fn set_qsound_fallback_pan(&mut self, pan: f32) {
+        self.spatial.set_fallback_pan(pan);
+    }
+
     pub fn set_slam_drive(&mut self, drive: f32) {
         self.target_slam_drive = drive.clamp(0.0, 1.0);
     }

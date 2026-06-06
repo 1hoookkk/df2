@@ -37,11 +37,35 @@ from scipy.optimize import least_squares
 from pyruntime.forge_fit import (
     NUM_STAGES, NUM_COEFFS, PASSTHRU_D,
     _seed_peak_picked, _seed_random, _stability_penalty,
-    cascade_response, d_to_kernel, perceptual_weight,
+    cascade_response, d_to_kernel, kernel_to_d, perceptual_weight,
 )
 
 _BOUNDS_PENALTY = 1.0e2
 _STAB_PENALTY = 1.0e3
+
+
+# ── robust complex residual ────────────────────────────────────────────────
+
+def bounded_complex_residual(
+    residual: np.ndarray,
+    target: np.ndarray,
+    delta: float = 3.0,
+) -> np.ndarray:
+    """Apply a pseudo-Huber-like bounded-influence transform to complex error.
+
+    The target-relative scale keeps deep numerical notches and isolated
+    alignment artifacts from consuming a six-lane fit. Small residuals pass
+    through almost unchanged; large residuals grow sub-linearly.
+    """
+    residual = np.asarray(residual, dtype=np.complex128)
+    target = np.asarray(target, dtype=np.complex128)
+    if delta <= 0.0:
+        return residual
+    target_mag = np.abs(target)
+    floor = max(float(np.median(target_mag)) * 0.05, 1.0e-8)
+    scale = np.maximum(target_mag, floor) * float(delta)
+    ratio = np.abs(residual) / scale
+    return residual * (1.0 + ratio * ratio) ** -0.25
 
 
 # ── role bounds ────────────────────────────────────────────────────────────
@@ -159,11 +183,13 @@ def joint_fit_corners(
     sr: float,
     bands: list[StageBand] | None = None,
     seeds: dict[str, np.ndarray] | None = None,
+    initial_kernels: dict[str, np.ndarray] | None = None,
     profile: str = "vocal",
     weight: np.ndarray | None = None,
     n_restarts: int = 8,
     seed: int = 0,
     max_nfev: int = 2500,
+    robust_delta: float = 3.0,
     verbose: bool = False,
 ) -> JointFit:
     """Fit 4 corners jointly with a shared 6-stage layout.
@@ -184,12 +210,21 @@ def joint_fit_corners(
                    these via ``_seed_from_pole_freqs``. When None, each
                    corner falls back to ``_seed_peak_picked`` on its own
                    target.
+        initial_kernels:
+                   optional {letter -> (NUM_STAGES, NUM_COEFFS)} packable
+                   actor-kernel priors. The first restart starts from these
+                   exact six-row actors. This is an explicit prior, not a
+                   claim that captures uniquely reveal a factorization.
         profile:   perceptual weighting profile for ``perceptual_weight``
                    (used when ``weight`` is None).
         weight:    explicit per-frequency weight (same across corners).
         n_restarts: random restarts. ``n_restarts // 2`` start from seeds
                    (with jitter on later iterations); the rest are random.
         seed:      RNG seed.
+        robust_delta:
+                   target-relative bounded-influence knee. ``3`` keeps small
+                   complex residuals nearly linear while preventing isolated
+                   bins and deep notches from dominating the six lanes.
 
     Returns a ``JointFit`` with per-corner d/kernel/null-db.
     """
@@ -219,6 +254,7 @@ def joint_fit_corners(
             kernel = d_to_kernel(d[ci])
             h = cascade_response(kernel, z_inv)
             r = weight * (h - target_arr[ci])
+            r = bounded_complex_residual(r, weight * target_arr[ci], robust_delta)
             parts.append(r.real)
             parts.append(r.imag)
             parts.append(_STAB_PENALTY * _stability_penalty(kernel))
@@ -230,7 +266,9 @@ def joint_fit_corners(
     def make_seed(ri: int) -> np.ndarray:
         out = np.empty((n_corners, NUM_STAGES, NUM_COEFFS), dtype=np.float64)
         for ci, L in enumerate(letters):
-            if seeds is not None and L in seeds and ri < n_restarts // 2:
+            if initial_kernels is not None and L in initial_kernels and ri == 0:
+                out[ci] = kernel_to_d(np.asarray(initial_kernels[L], dtype=np.float64))
+            elif seeds is not None and L in seeds and ri < n_restarts // 2:
                 jitter = 0.0 if ri == 0 else 0.08 * (ri / max(n_restarts // 2 - 1, 1))
                 freqs_hz = np.asarray(seeds[L], dtype=np.float64)
                 if jitter:
