@@ -103,13 +103,25 @@ SWEEP_CLIPS = [
 
 # ── bold twin-anchor generation ──────────────────────────────────────────────
 
+def _push_character(feats, rng, hotter=1.0):
+    """Bias structured sweeps toward stronger visible terrain.
+
+    This is intentionally authoring-side only. It does not alter runtime DSP; it
+    makes the target curves more mountainous before the existing fitter packs
+    them into legal six-row bodies.
+    """
+    out = []
+    for feat in feats:
+        f = dict(feat)
+        f["gain"] *= rng.uniform(1.18, 1.62) * rng.uniform(1.0, hotter)
+        f["bw"] *= rng.uniform(0.68, 0.92)
+        out.append(f)
+    return out
+
+
 def _draw_anchor(spec, rng, hotter=1.0):
     """Random anchor — no named intent. Used only when a family has no intent table."""
-    feats = tb.sample_features(spec, rng)
-    if hotter != 1.0:
-        for f in feats:
-            f["gain"] *= rng.uniform(1.0, hotter)
-    return feats
+    return _push_character(tb.sample_features(spec, rng), rng, hotter=hotter)
 
 
 def _draw_anchor_intent(spec, rng, intent_freqs, hotter=1.0):
@@ -123,10 +135,10 @@ def _draw_anchor_intent(spec, rng, intent_freqs, hotter=1.0):
         feats.append({
             "kind": f["kind"],
             "freq": freq,
-            "gain": rng.uniform(*f["gain_db"]) * rng.uniform(1.0, hotter),
+            "gain": rng.uniform(*f["gain_db"]),
             "bw": rng.uniform(*f["bw_oct"]),
         })
-    return feats
+    return _push_character(feats, rng, hotter=hotter)
 
 
 def generate_bold(spec, seed, count, intents=None, smart_pairs=None):
@@ -289,9 +301,16 @@ def generate_wild(seed, count):
         cs = [tb.centroid(tb.shipped_response(body, m, 0.0)) for m in _np.linspace(0, 1, 12)]
         net = abs(cs[-1] - cs[0])
         path = sum(abs(cs[k + 1] - cs[k]) for k in range(len(cs) - 1))
+        terrain = tb.terrain_metrics([
+            tb.shipped_response(body, 0.0, 0.0),
+            tb.shipped_response(body, 1.0, 0.0),
+            tb.shipped_response(body, 0.0, 1.0),
+            tb.shipped_response(body, 1.0, 1.0),
+        ])
         cands.append({"name": name, "dir": cdir, "max_pole_radius": maxr,
                       "motion": float(net), "path": float(path),
-                      "home_scheme": schemes["M0_Q0"], "away_scheme": schemes["M100_Q0"]})
+                      "home_scheme": schemes["M0_Q0"], "away_scheme": schemes["M100_Q0"],
+                      "terrain": terrain})
     return run, cands
 
 
@@ -313,8 +332,10 @@ def run_wild(sweep_id, seeds, count):
         survivors.extend(cands)
         print(f"  [s{seed}] {len(cands)}/{count} stable")
     totals["survivors"] = len(survivors)
-    # Soft pre-sort: most motion first, then stability margin.
-    survivors.sort(key=lambda c: (-c["motion"], c["max_pole_radius"]))
+    # Soft pre-sort: biggest terrain first, then motion, then stability margin.
+    survivors.sort(key=lambda c: (-c.get("terrain", {}).get("character_score", 0.0),
+                                  -c.get("terrain", {}).get("terrain_db", 0.0),
+                                  -c["motion"], c["max_pole_radius"]))
     shortlist = survivors[:SHORTLIST_K]
 
     def _rec(c):
@@ -328,7 +349,7 @@ def run_wild(sweep_id, seeds, count):
                 "advisory": [],
                 "summary": {"moves_on_morph_hz": round(c["motion"]),
                             "max_pole_radius": round(c["max_pole_radius"], 4),
-                            "peak_db": None},
+                            "peak_db": None, **c.get("terrain", {})},
                 "keep_cmd": keep}
 
     out = {
@@ -580,7 +601,14 @@ def run_insane(sweep_id, seeds, count):
 def soft_rank_key(c):
     g = c["gate"]
     s = g["summary"]
-    return (len(g["advisory_failed"]), -s.get("moves_on_morph_hz", 0.0), s.get("max_pole_radius", 1.0))
+    return (
+        -s.get("character_score", 0.0),
+        -s.get("terrain_db", 0.0),
+        -s.get("tilt_db", 0.0),
+        len(g["advisory_failed"]),
+        -s.get("moves_on_morph_hz", 0.0),
+        s.get("max_pole_radius", 1.0),
+    )
 
 
 def _cand_record(c):
@@ -688,7 +716,9 @@ def _write_family_md(path, out):
         ih, ia = c.get("home_intent"), c.get("away_intent")
         intent = f"**{ih} -> {ia}**" if ih else "(random)"
         lines.append(f"{i:>2}. {intent}  `{c['name']}`  motion={s.get('moves_on_morph_hz')}Hz "
-                     f"maxR={s.get('max_pole_radius')} peak={s.get('peak_db')}dB  [{adv}]")
+                     f"char={s.get('character_score')} terrain={s.get('terrain_db')}dB "
+                     f"tilt={s.get('tilt_db')}dB maxR={s.get('max_pole_radius')} "
+                     f"peak={s.get('peak_db')}dB  [{adv}]")
         lines.append(f"    keep: `{c['keep_cmd']}`")
     lines += ["", "## Analysis", "",
               "_(per-family subagent appends its thorough readout below)_", ""]
@@ -808,6 +838,9 @@ def _analyze_family(fam_path: Path, intents_root, templates):
         return (
             0 if c["complete_morph"] else 1,
             0 if c["third_state"] else 1,
+            -s.get("character_score", 0.0),
+            -s.get("terrain_db", 0.0),
+            -s.get("tilt_db", 0.0),
             c["trajectory"]["monotonicity"],
             len(adv),
             -s.get("moves_on_morph_hz", 0.0),

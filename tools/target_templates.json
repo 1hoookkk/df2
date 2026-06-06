@@ -176,6 +176,178 @@
       "level_guidance_db": 0,
       "failure_modes": ["polite", "balanced", "tilt", "anything safe-sounding"],
       "gates": {"low_rolloff_min_db": 0, "peak_max_db": 18, "morph_motion_min_hz": 60, "morph_chaos_max": 3.0, "q_center_shift_max_hz": 4000, "packed_residual_max_db": 50}
+    },
+    {
+      "name": "plate_fracture",
+      "label": "plate fracture",
+      "listening_goal": "Clamped metal plate character without becoming six polite modal peaks: low inharmonic shell modes, a tight fracture canyon, and a remote upper counterweight.",
+      "family": "metallic_fracture",
+      "floor_db": -23,
+      "features": [
+        {"kind": "peak", "freq_hz": [85, 145], "gain_db": [8, 15], "bw_oct": [0.18, 0.42]},
+        {"kind": "peak", "freq_hz": [175, 245], "gain_db": [8, 16], "bw_oct": [0.14, 0.36]},
+        {"kind": "notch", "freq_hz": [250, 430], "gain_db": [5, 12], "bw_oct": [0.10, 0.26]},
+        {"kind": "peak", "freq_hz": [300, 650], "gain_db": [6, 14], "bw_oct": [0.12, 0.34]},
+        {"kind": "peak", "freq_hz": [850, 2100], "gain_db": [4, 10], "bw_oct": [0.16, 0.42]},
+        {"kind": "notch", "freq_hz": [2600, 6200], "gain_db": [4, 11], "bw_oct": [0.18, 0.44]}
+      ],
+      "morph_axis_rule": {"type": "glide", "factor": [0.82, 1.32]},
+      "q_axis_rule": {"type": "contrast", "peak_boost_db": [2.0, 6.5], "dip_boost_db": [2.5, 7.5], "bw_scale": [0.44, 0.70]},
+      "level_guidance_db": -3,
+      "failure_modes": ["turns into six bell EQ peaks", "fracture notch disappears", "low plate modes fuse into mud"],
+      "gates": {"low_rolloff_min_db": 2, "peak_max_db": 8, "morph_motion_min_hz": 70, "morph_chaos_max": 1.2, "q_center_shift_max_hz": 900, "packed_residual_max_db": 19}
+    },
+    {
+      "name": "nasal_chamber",
+      "label": "nasal chamber",
+      "listening_goal": "Human cavity body with antiformant bite: rounded vocal peaks, one nasal canyon, and a high mouth-air counterweight.",
+      "family": "vocal",
+      "floor_db": -24,
+      "features": [
+        {"kind": "peak", "freq_hz": [230, 420], "gain_db": [9, 16], "bw_oct": [0.30, 0.62]},
+        {"kind": "peak", "freq_hz": [620, 1120], "gain_db": [8, 15], "bw_oct": [0.28, 0.58]},
+        {"kind": "notch", "freq_hz": [1050, 1900], "gain_db": [5, 13], "bw_oct": [0.18, 0.40]},
+        {"kind": "peak", "freq_hz": [1850, 3100], "gain_db": [7, 14], "bw_oct": [0.22, 0.50]},
+        {"kind": "notch", "freq_hz": [3200, 5600], "gain_db": [4, 11], "bw_oct": [0.20, 0.46]},
+        {"kind": "peak", "freq_hz": [5400, 9200], "gain_db": [3, 9], "bw_oct": [0.28, 0.62]}
+      ],
+      "morph_axis_rule": {"type": "glide", "factor": [0.72, 1.42]},
+      "q_axis_rule": {"type": "contrast", "peak_boost_db": [1.5, 5.0], "dip_boost_db": [3.0, 8.0], "bw_scale": [0.50, 0.76]},
+      "level_guidance_db": -3,
+      "failure_modes": ["sounds like a normal vowel", "nasal notch erases the whole body", "high air peak becomes hiss"],
+      "gates": {"low_rolloff_min_db": 3, "peak_max_db": 8, "morph_motion_min_hz": 95, "morph_chaos_max": 1.1, "q_center_shift_max_hz": 900, "packed_residual_max_db": 18}
+    },
+    {
+      "name": "metal_comb_grate",
+      "label": "metal comb grate",
+      "listening_goal": "A toothed metal obstruction: two body peaks with several moving notches that read as physical slots, not a delay effect.",
+      "family": "comb_fracture",
+      "floor_db": -13,
+      "features": [
+        {"kind": "peak", "freq_hz": [420, 1100], "gain_db": [4, 10], "bw_oct": [0.36, 0.78]},
+        {"kind": "notch", "freq_hz": [1150, 2300], "gain_db": [8, 17], "bw_oct": [0.10, 0.28]},
+        {"kind": "peak", "freq_hz": [1900, 4300], "gain_db": [4, 10], "bw_oct": [0.28, 0.66]},
+        {"kind": "notch", "freq_hz": [2400, 4700], "gain_db": [8, 18], "bw_oct": [0.10, 0.28]},
+        {"kind": "notch", "freq_hz": [5000, 9000], "gain_db": [7, 16], "bw_oct": [0.12, 0.30]},
+        {"kind": "notch", "freq_hz": [9000, 14500], "gain_db": [5, 13], "bw_oct": [0.14, 0.34]}
+      ],
+      "morph_axis_rule": {"type": "translate_comb", "factor": [1.10, 1.55]},
+      "q_axis_rule": {"type": "deepen", "notch_extra_db": [3.0, 8.5], "bw_scale": [0.46, 0.72]},
+      "level_guidance_db": -3,
+      "failure_modes": ["notches too shallow", "regular delay-comb cliche", "body peaks disappear between teeth"],
+      "gates": {"low_rolloff_min_db": 0, "peak_max_db": 8, "morph_motion_min_hz": 80, "morph_chaos_max": 1.1, "q_center_shift_max_hz": 900, "packed_residual_max_db": 20}
+    },
+    {
+      "name": "ported_cabinet_tear",
+      "label": "ported cabinet tear",
+      "listening_goal": "Ported box pressure plus broken cone edge: bass weight, port antiresonance, mid knock, and an upper tear that moves without losing the low body.",
+      "family": "cabinet_damage",
+      "floor_db": -18,
+      "features": [
+        {"kind": "peak", "freq_hz": [45, 95], "gain_db": [7, 13], "bw_oct": [0.35, 0.80]},
+        {"kind": "notch", "freq_hz": [95, 210], "gain_db": [4, 10], "bw_oct": [0.20, 0.48]},
+        {"kind": "peak", "freq_hz": [170, 420], "gain_db": [6, 13], "bw_oct": [0.34, 0.74]},
+        {"kind": "peak", "freq_hz": [650, 1500], "gain_db": [5, 11], "bw_oct": [0.28, 0.66]},
+        {"kind": "notch", "freq_hz": [1800, 4300], "gain_db": [5, 12], "bw_oct": [0.18, 0.44]},
+        {"kind": "peak", "freq_hz": [4200, 9500], "gain_db": [4, 10], "bw_oct": [0.16, 0.40]}
+      ],
+      "morph_axis_rule": {"type": "anchored", "anchor_hz": 520, "factor": [1.12, 1.55]},
+      "q_axis_rule": {"type": "contrast", "peak_boost_db": [1.5, 5.5], "dip_boost_db": [2.5, 7.0], "bw_scale": [0.50, 0.76]},
+      "level_guidance_db": -3,
+      "failure_modes": ["pedestal sub", "port notch kills the kick body", "upper tear moves but bass collapses"],
+      "gates": {"low_rolloff_min_db": 0, "peak_max_db": 8, "morph_motion_min_hz": 70, "morph_chaos_max": 1.1, "q_center_shift_max_hz": 900, "packed_residual_max_db": 20}
+    },
+    {
+      "name": "gear_clank",
+      "label": "gear clank",
+      "listening_goal": "Mechanical mesh impact: low clank, uneven mid teeth, and two destructive bands so it feels like metal contact rather than a harmonic stack.",
+      "family": "mechanical_fracture",
+      "floor_db": -17,
+      "features": [
+        {"kind": "peak", "freq_hz": [160, 360], "gain_db": [7, 14], "bw_oct": [0.22, 0.52]},
+        {"kind": "peak", "freq_hz": [430, 930], "gain_db": [6, 13], "bw_oct": [0.20, 0.50]},
+        {"kind": "notch", "freq_hz": [720, 1550], "gain_db": [5, 12], "bw_oct": [0.14, 0.36]},
+        {"kind": "peak", "freq_hz": [1250, 2800], "gain_db": [6, 14], "bw_oct": [0.16, 0.42]},
+        {"kind": "notch", "freq_hz": [2500, 6200], "gain_db": [6, 14], "bw_oct": [0.14, 0.34]},
+        {"kind": "peak", "freq_hz": [5200, 11200], "gain_db": [4, 10], "bw_oct": [0.14, 0.36]}
+      ],
+      "morph_axis_rule": {"type": "glide", "factor": [0.88, 1.46]},
+      "q_axis_rule": {"type": "contrast", "peak_boost_db": [2.0, 6.5], "dip_boost_db": [2.5, 7.5], "bw_scale": [0.42, 0.70]},
+      "level_guidance_db": -3,
+      "failure_modes": ["turns into motor hum", "teeth become a polite harmonic ladder", "clank loses low mass"],
+      "gates": {"low_rolloff_min_db": 1, "peak_max_db": 8, "morph_motion_min_hz": 80, "morph_chaos_max": 1.2, "q_center_shift_max_hz": 1000, "packed_residual_max_db": 20}
+    },
+    {
+      "name": "steam_vent_scream",
+      "label": "steam vent scream",
+      "listening_goal": "Flow-driven whistle under pressure: a readable throat tone, harsh upper bands, and notches that keep it from becoming one static sine whistle.",
+      "family": "air_pressure",
+      "floor_db": -16,
+      "features": [
+        {"kind": "peak", "freq_hz": [460, 920], "gain_db": [9, 17], "bw_oct": [0.12, 0.32]},
+        {"kind": "peak", "freq_hz": [1250, 2500], "gain_db": [8, 16], "bw_oct": [0.10, 0.30]},
+        {"kind": "notch", "freq_hz": [1800, 3600], "gain_db": [6, 14], "bw_oct": [0.10, 0.30]},
+        {"kind": "peak", "freq_hz": [3200, 6600], "gain_db": [7, 15], "bw_oct": [0.08, 0.24]},
+        {"kind": "notch", "freq_hz": [6500, 12000], "gain_db": [5, 13], "bw_oct": [0.12, 0.34]},
+        {"kind": "peak", "freq_hz": [9000, 15500], "gain_db": [4, 11], "bw_oct": [0.10, 0.28]}
+      ],
+      "morph_axis_rule": {"type": "glide", "factor": [0.86, 1.62]},
+      "q_axis_rule": {"type": "sharpen", "bw_scale": [0.28, 0.56], "gain_boost_db": [3.0, 8.5]},
+      "level_guidance_db": -2,
+      "failure_modes": ["single whistle", "painful fixed upper peak", "notches erase all pressure body"],
+      "gates": {"low_rolloff_min_db": 2, "peak_max_db": 12, "morph_motion_min_hz": 100, "morph_chaos_max": 1.6, "q_center_shift_max_hz": 1600, "packed_residual_max_db": 24}
+    },
+    {
+      "name": "corner_actor_field",
+      "label": "corner actor field",
+      "listening_goal": "P2K-style four-corner authoring experiment: each endpoint is a distinct six-actor terrain with its own pole/zero program, not a transformed copy of one base curve.",
+      "family": "corner_program",
+      "floor_db": -20,
+      "features": [
+        {"kind": "peak", "freq_hz": [120, 260], "gain_db": [7, 14], "bw_oct": [0.40, 0.85]},
+        {"kind": "peak", "freq_hz": [700, 1500], "gain_db": [6, 13], "bw_oct": [0.24, 0.58]},
+        {"kind": "notch", "freq_hz": [1900, 4500], "gain_db": [5, 12], "bw_oct": [0.16, 0.38]},
+        {"kind": "peak", "freq_hz": [4800, 10500], "gain_db": [4, 10], "bw_oct": [0.14, 0.36]}
+      ],
+      "corner_features": {
+        "M0_Q0": [
+          {"kind": "peak", "freq_hz": [80, 180], "gain_db": [8, 15], "bw_oct": [0.46, 0.92]},
+          {"kind": "peak", "freq_hz": [260, 620], "gain_db": [6, 12], "bw_oct": [0.38, 0.78]},
+          {"kind": "notch", "freq_hz": [760, 1500], "gain_db": [5, 12], "bw_oct": [0.20, 0.46]},
+          {"kind": "peak", "freq_hz": [1300, 2900], "gain_db": [5, 11], "bw_oct": [0.26, 0.62]},
+          {"kind": "notch", "freq_hz": [3600, 7800], "gain_db": [4, 10], "bw_oct": [0.20, 0.50]},
+          {"kind": "peak", "freq_hz": [7600, 13000], "gain_db": [3, 8], "bw_oct": [0.18, 0.44]}
+        ],
+        "M100_Q0": [
+          {"kind": "peak", "freq_hz": [420, 950], "gain_db": [5, 11], "bw_oct": [0.30, 0.70]},
+          {"kind": "notch", "freq_hz": [900, 1900], "gain_db": [6, 14], "bw_oct": [0.12, 0.34]},
+          {"kind": "peak", "freq_hz": [1800, 4200], "gain_db": [7, 15], "bw_oct": [0.14, 0.38]},
+          {"kind": "notch", "freq_hz": [3600, 7400], "gain_db": [6, 15], "bw_oct": [0.12, 0.32]},
+          {"kind": "peak", "freq_hz": [6800, 12500], "gain_db": [5, 12], "bw_oct": [0.10, 0.28]},
+          {"kind": "notch", "freq_hz": [11500, 17000], "gain_db": [4, 11], "bw_oct": [0.14, 0.34]}
+        ],
+        "M0_Q100": [
+          {"kind": "notch", "freq_hz": [55, 140], "gain_db": [3, 8], "bw_oct": [0.32, 0.70]},
+          {"kind": "peak", "freq_hz": [190, 460], "gain_db": [8, 16], "bw_oct": [0.24, 0.56]},
+          {"kind": "peak", "freq_hz": [760, 1500], "gain_db": [9, 18], "bw_oct": [0.14, 0.36]},
+          {"kind": "notch", "freq_hz": [1300, 2700], "gain_db": [7, 16], "bw_oct": [0.10, 0.30]},
+          {"kind": "peak", "freq_hz": [2400, 5200], "gain_db": [7, 15], "bw_oct": [0.12, 0.32]},
+          {"kind": "notch", "freq_hz": [6200, 13000], "gain_db": [5, 13], "bw_oct": [0.12, 0.34]}
+        ],
+        "M100_Q100": [
+          {"kind": "peak", "freq_hz": [110, 260], "gain_db": [6, 13], "bw_oct": [0.34, 0.78]},
+          {"kind": "notch", "freq_hz": [320, 760], "gain_db": [5, 12], "bw_oct": [0.16, 0.40]},
+          {"kind": "peak", "freq_hz": [900, 2100], "gain_db": [7, 15], "bw_oct": [0.16, 0.40]},
+          {"kind": "notch", "freq_hz": [1900, 4300], "gain_db": [8, 18], "bw_oct": [0.09, 0.26]},
+          {"kind": "peak", "freq_hz": [4200, 8800], "gain_db": [8, 17], "bw_oct": [0.08, 0.24]},
+          {"kind": "peak", "freq_hz": [9800, 17000], "gain_db": [5, 12], "bw_oct": [0.08, 0.24]}
+        ]
+      },
+      "morph_axis_rule": {"type": "glide", "factor": [0.70, 1.70]},
+      "q_axis_rule": {"type": "contrast", "peak_boost_db": [2.0, 7.0], "dip_boost_db": [2.5, 8.5], "bw_scale": [0.40, 0.72]},
+      "level_guidance_db": -3,
+      "failure_modes": ["corners collapse into one response", "center becomes mush", "one endpoint dominates the whole surface", "looks like ordinary EQ instead of four endpoint programs"],
+      "gates": {"low_rolloff_min_db": 0, "peak_max_db": 10, "morph_motion_min_hz": 120, "morph_chaos_max": 2.2, "q_center_shift_max_hz": 2400, "packed_residual_max_db": 28}
     }
   ]
 }

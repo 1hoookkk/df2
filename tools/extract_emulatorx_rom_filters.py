@@ -9,8 +9,12 @@ Outputs:
     The four DAT variants per skin. Variant 0 is the bank that matches the
     known Talking Hedz CE dump for P2k_013.
 
-  - ref/batman/batman_rom.json
-    Decoded CPhantomBatman / Bat Phaser ROM loaders and the fixed LP2Pole.
+  - P2K artifacts only.
+
+For the correctly classified X3 computed menu classes, including Bat Phaser,
+Flanger Lite, both vocals, the Morph family, and Morph Designer, run:
+
+  python tools/extract_x3_menu_filters.py
 
 This is extraction-only: it does not touch runtime code or cartridge formats.
 """
@@ -88,73 +92,6 @@ P2K_NAMES = [
     "Ooh-To-Aah 6 VOW",
 ]
 
-BATMAN_LOADERS = [
-    {
-        "name": "loader0_44100",
-        "slot": 1,
-        "function": "FUN_1802c5620",
-        "rom_base": 0x1806D6CC0,
-        "stride": 0x50,
-        "stages": 2,
-        "sample_rate": 44100,
-        "format": "Q14",
-        "divisor": 16384,
-    },
-    {
-        "name": "loader1_48000",
-        "slot": 5,
-        "function": "FUN_1802c5710",
-        "rom_base": 0x1806D6E00,
-        "stride": 0x78,
-        "stages": 3,
-        "sample_rate": 48000,
-        "format": "Q14",
-        "divisor": 16384,
-    },
-    {
-        "name": "loader2_96000",
-        "slot": 9,
-        "function": "FUN_1802c57F0",
-        "rom_base": 0x1806D6FE0,
-        "stride": 0x78,
-        "stages": 3,
-        "sample_rate": 96000,
-        "format": "Q15",
-        "divisor": 32768,
-    },
-    {
-        "name": "loader3_192000",
-        "slot": 13,
-        "function": "FUN_1802c58D0",
-        "rom_base": 0x1806D71C0,
-        "stride": 0x78,
-        "stages": 3,
-        "sample_rate": 192000,
-        "format": "Q15",
-        "divisor": 32768,
-    },
-]
-
-LP2POLE = {
-    "name": "lp2pole_44100_192000",
-    "vtable": "0x1806d5e50",
-    "function": "FUN_1802c4b80",
-    "rom_base": 0x1806D65E0,
-    "stride": 0x28,
-    "entries": [
-        ("44100", 0),
-        ("48000", 1),
-        ("96000", 2),
-        ("192000", 3),
-    ],
-    "stages": 1,
-    "format": "Q15",
-    "divisor": 32768,
-}
-
-CORNER_LABELS = ["M0_Q0", "M100_Q0", "M0_Q100", "M100_Q100"]
-
-
 def slug(text: str) -> str:
     return re.sub(r"_+", "_", re.sub(r"[^a-z0-9]+", "_", text.lower())).strip("_")
 
@@ -218,17 +155,6 @@ def transpose_p2k_bank(image: PeImage, dat_index: int) -> bytes:
             start = stage_off + corner * 10
             corners[corner].extend(image.data[start : start + 10])
     return b"".join(corners)
-
-
-def decode_stage_major_coeffs(raw: bytes, stages: int, divisor: int) -> dict[str, list[list[float]]]:
-    corners = {label: [] for label in CORNER_LABELS}
-    for stage in range(stages):
-        stage_off = stage * 40
-        for corner, label in enumerate(CORNER_LABELS):
-            start = stage_off + corner * 10
-            words = struct.unpack_from("<5h", raw, start)
-            corners[label].append([round(w / divisor, 9) for w in words])
-    return corners
 
 
 def p2k_name(index: int) -> str:
@@ -301,58 +227,10 @@ def write_p2k(image: PeImage, out_dir: Path, variants_dir: Path, skin_count: int
     return manifest
 
 
-def write_batman(image: PeImage, out_dir: Path) -> dict[str, object]:
-    out_dir.mkdir(parents=True, exist_ok=True)
-    payload: dict[str, object] = {
-        "name": "Bat Phaser / CPhantomBatman",
-        "source_dll": str(image.path),
-        "vtable": "0x1806d6030",
-        "note": "Batman is fixed-point ROM, not P2K minifloat. Do not load these as ref/presets/*.bin.",
-        "corners": CORNER_LABELS,
-        "loaders": [],
-    }
-
-    loaders = []
-    for loader in BATMAN_LOADERS:
-        raw = image.bytes_at(loader["rom_base"], loader["stride"])
-        raw_name = f"batman_{loader['name']}.raw"
-        (out_dir / raw_name).write_bytes(raw)
-        entry = dict(loader)
-        entry["rom_base"] = hex(loader["rom_base"])
-        entry["raw_file"] = raw_name
-        entry["bytes"] = len(raw)
-        entry["sha256"] = sha256(raw)
-        entry["decoded_coefficients"] = decode_stage_major_coeffs(
-            raw, loader["stages"], loader["divisor"]
-        )
-        loaders.append(entry)
-    payload["loaders"] = loaders
-
-    lp_entries = []
-    lp_raw_all = image.bytes_at(LP2POLE["rom_base"], LP2POLE["stride"] * len(LP2POLE["entries"]))
-    lp_raw_name = "batman_lp2pole_all_sample_rates.raw"
-    (out_dir / lp_raw_name).write_bytes(lp_raw_all)
-    for label, idx in LP2POLE["entries"]:
-        raw = lp_raw_all[idx * LP2POLE["stride"] : (idx + 1) * LP2POLE["stride"]]
-        lp_entries.append(
-            {
-                "sample_rate": int(label),
-                "decoded_coefficients": decode_stage_major_coeffs(
-                    raw, LP2POLE["stages"], LP2POLE["divisor"]
-                ),
-            }
-        )
-    payload["lp2pole"] = {
-        **{k: v for k, v in LP2POLE.items() if k != "entries"},
-        "rom_base": hex(LP2POLE["rom_base"]),
-        "raw_file": lp_raw_name,
-        "bytes": len(lp_raw_all),
-        "sha256": sha256(lp_raw_all),
-        "entries": lp_entries,
-    }
-
-    (out_dir / "batman_rom.json").write_text(json.dumps(payload, indent=2) + "\n", encoding="utf-8")
-    return payload
+def write_batman(_image: PeImage, _out_dir: Path) -> dict[str, object]:
+    raise RuntimeError(
+        "Deprecated misclassified extractor. Run tools/extract_x3_menu_filters.py instead."
+    )
 
 
 def main() -> None:
@@ -360,7 +238,6 @@ def main() -> None:
     parser.add_argument("--dll", type=Path, default=DEFAULT_DLL)
     parser.add_argument("--p2k-out", type=Path, default=ROOT / "ref" / "presets")
     parser.add_argument("--p2k-variants-out", type=Path, default=ROOT / "ref" / "p2k_variants")
-    parser.add_argument("--batman-out", type=Path, default=ROOT / "ref" / "batman")
     parser.add_argument("--p2k-skin-count", type=int, default=DEFAULT_P2K_SKIN_COUNT)
     args = parser.parse_args()
 
@@ -369,8 +246,6 @@ def main() -> None:
         raise ValueError(f"Unexpected image base {image.image_base:#x}; expected {IMAGE_BASE:#x}")
 
     p2k_manifest = write_p2k(image, args.p2k_out, args.p2k_variants_out, args.p2k_skin_count)
-    batman = write_batman(image, args.batman_out)
-
     hedz_new = args.p2k_out / "P2k_013_talking_hedz.bin"
     hedz_old = ROOT / "ref" / "presets" / "talking_hedz.bin"
     hedz_status = "not checked"
@@ -381,8 +256,7 @@ def main() -> None:
     print(f"P2k_013_talking_hedz.bin vs talking_hedz.bin: {hedz_status}")
     print(f"DJ Alkaline: {args.p2k_out / 'P2k_015_dj_alkaline.bin'}")
     print(f"P2K variants: {args.p2k_variants_out}")
-    print(f"wrote Batman ROM -> {args.batman_out / 'batman_rom.json'}")
-    print(f"Batman loaders: {len(batman['loaders'])} + LP2Pole")
+    print("X3 computed menu classes: run python tools/extract_x3_menu_filters.py")
 
 
 if __name__ == "__main__":

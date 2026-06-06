@@ -72,6 +72,7 @@ GATE_WORDS = {
     "morph_chaos": "Morph thrashes (not musical)",
     "q_center_shift": "Q relocates instead of sharpening",
     "packed_residual": "off-target after packing",
+    "terrain": "too flat / not enough mountain character",
 }
 
 
@@ -155,6 +156,24 @@ def prov_string(spec, base):
     if notches:
         s += " · notch " + "/".join(str(n) for n in notches) + " Hz"
     return s
+
+
+def sample_corner_features(spec, rng):
+    """Sample four endpoint programs directly when an archetype supplies them.
+
+    Normal templates derive corners from one base target. `corner_features`
+    templates instead describe each packed endpoint as its own target terrain,
+    closer to the P2K study bodies where the four corners are distinct actor
+    programs rather than simple offsets from one curve.
+    """
+    corner_specs = spec["corner_features"]
+    out = {}
+    for lab in LABELS:
+        feats = corner_specs.get(lab)
+        if feats is None:
+            raise KeyError(f"{spec['name']} missing corner_features.{lab}")
+        out[lab] = sample_features({"features": feats}, rng)
+    return out
 
 
 # ── producer audition audio ──────────────────────────────────────────────────
@@ -282,11 +301,43 @@ def shape_rms(a, b):
     return float(np.sqrt((r * r).mean()))
 
 
+def terrain_metrics(responses):
+    """Measure visible response character for shortlist ranking.
+
+    Higher values mean stronger mountains/valleys and more obvious spectral tilt.
+    These are selection/readout metrics, not hard runtime safety gates.
+    """
+    terrain = 0.0
+    mountain = 0.0
+    tilt = 0.0
+    for db in responses:
+        mid = db[(FREQS >= 120.0) & (FREQS <= 12000.0)]
+        if mid.size:
+            p95 = float(np.percentile(mid, 95))
+            p05 = float(np.percentile(mid, 5))
+            terrain = max(terrain, p95 - p05)
+            mountain = max(mountain, float(np.max(mid) - np.median(mid)))
+        low = band_mean(db, 80.0, 350.0)
+        high = band_mean(db, 2500.0, 10000.0)
+        if math.isfinite(low) and math.isfinite(high):
+            tilt = max(tilt, abs(high - low))
+    score = 0.55 * terrain + 0.30 * mountain + 0.15 * tilt
+    return {
+        "terrain_db": round(terrain, 1),
+        "mountain_db": round(mountain, 1),
+        "tilt_db": round(tilt, 1),
+        "character_score": round(score, 1),
+    }
+
+
 def evaluate_gates(body, corner_feats, spec, boost):
     g = spec["gates"]
     maxr, unstable, nonfinite = grid_stability(body)
     r_home = shipped_response(body, 0.0, 0.0)
     r_tens = shipped_response(body, 0.0, 1.0)
+    r_away = shipped_response(body, 1.0, 0.0)
+    r_tight_away = shipped_response(body, 1.0, 1.0)
+    terrain = terrain_metrics([r_home, r_away, r_tens, r_tight_away])
     peak = float(r_home.max()) + 20.0 * math.log10(boost)
     low = band_mean(r_home, 20.0, 120.0)
     cs = [centroid(shipped_response(body, float(m), 0.0)) for m in np.linspace(0, 1, 16)]
@@ -306,11 +357,12 @@ def evaluate_gates(body, corner_feats, spec, boost):
         "morph_chaos": chaos <= g["morph_chaos_max"],
         "q_center_shift": q_shift <= g["q_center_shift_max_hz"],
         "packed_residual": resid <= g["packed_residual_max_db"],
+        "terrain": terrain["character_score"] >= g.get("character_score_min", 0.0),
     }
     # HARD cull = brokenness only (guardrail, not boss). Off-target / Q-drift / chaos
     # are advisory readouts — the ear judges those, not a reject gate.
     hard = ("stable", "finite", "low_rolloff", "peak", "morph_motion")
-    advisory = ("morph_chaos", "q_center_shift", "packed_residual")
+    advisory = ("terrain", "morph_chaos", "q_center_shift", "packed_residual")
     return {
         "pass": all(checks[k] for k in hard),
         "checks": checks,
@@ -318,7 +370,7 @@ def evaluate_gates(body, corner_feats, spec, boost):
         "advisory_failed": [k for k in advisory if not checks[k]],
         "summary": {"moves_on_morph_hz": round(net, 0), "q_relocate_hz": round(q_shift, 0),
                     "max_pole_radius": round(maxr, 4), "packed_drift_db": round(resid, 1),
-                    "peak_db": round(peak, 1), "boost": round(boost, 3)},
+                    "peak_db": round(peak, 1), "boost": round(boost, 3), **terrain},
     }
 
 
@@ -340,17 +392,21 @@ def generate(spec, seed, count):
     if run.exists():
         shutil.rmtree(run)
     run.mkdir(parents=True)
-    morph_rule, q_rule = spec["morph_axis_rule"], spec["q_axis_rule"]
+    morph_rule, q_rule = spec.get("morph_axis_rule"), spec.get("q_axis_rule")
     cands = []
     for i in range(count):
         rng = random.Random(seed * 1_000_003 + i)
-        base = sample_features(spec, rng)
-        mp = sample_morph_params(morph_rule, len(base), rng)
-        qp = sample_q_params(q_rule, rng)
-        morphed = apply_morph(base, morph_rule, mp)
-        corner_feats = {"M0_Q0": base, "M100_Q0": morphed,
-                        "M0_Q100": apply_q(base, q_rule, qp),
-                        "M100_Q100": apply_q(morphed, q_rule, qp)}
+        if "corner_features" in spec:
+            corner_feats = sample_corner_features(spec, rng)
+            base = corner_feats["M0_Q0"]
+        else:
+            base = sample_features(spec, rng)
+            mp = sample_morph_params(morph_rule, len(base), rng)
+            qp = sample_q_params(q_rule, rng)
+            morphed = apply_morph(base, morph_rule, mp)
+            corner_feats = {"M0_Q0": base, "M100_Q0": morphed,
+                            "M0_Q100": apply_q(base, q_rule, qp),
+                            "M100_Q100": apply_q(morphed, q_rule, qp)}
         corner_words = {}
         for lab in LABELS:
             curve = feats_to_curve(corner_feats[lab], spec["floor_db"], FIT_FREQS)
