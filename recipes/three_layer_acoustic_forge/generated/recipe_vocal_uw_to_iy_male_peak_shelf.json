@@ -1,0 +1,168 @@
+{
+  "format": "three-layer-acoustic-recipe-v1",
+  "name": "recipe_vocal_uw_to_iy_male_peak_shelf",
+  "sample_rate_hz": 39062.5,
+  "clean_room_note": "Generated from clean acoustic tables. Recovered q_radius_table is used only as range calibration metadata.",
+  "table_sources": [
+    "vowel_formants.json",
+    "klatt_1980_formants.json",
+    "klatt_1980_bandwidths.json",
+    "q_radius_table.json"
+  ],
+  "calibration": {
+    "q_radius_table": {
+      "policy": "calibration_range_only_not_exact_value_copy",
+      "entries": 45,
+      "radius_min": 0.1238632,
+      "radius_max": 0.9862709,
+      "radius_median": 0.9100761
+    }
+  },
+  "notes": {
+    "source": "vowel formants plus bandwidth-derived radii",
+    "from": "uw",
+    "to": "iy",
+    "voice": "male",
+    "foundation": "peak_shelf",
+    "f0_hz": null,
+    "home_shape": "two low bumps, close \u2014 dark/rounded",
+    "away_shape": "low bump + high bump, far apart"
+  },
+  "anatomy": {
+    "poles": [
+      {
+        "lane": 0,
+        "role": "F1 body",
+        "pole_hz": 284.604989,
+        "pole_radius_q0": 0.989002513,
+        "pole_radius_q100": 0.997570108,
+        "morph_octaves": -0.152003,
+        "note": "table-derived endpoints 300.0 -> 270.0 Hz"
+      },
+      {
+        "lane": 1,
+        "role": "F2 mouth",
+        "pole_hz": 1411.488576,
+        "pole_radius_q0": 0.983549208,
+        "pole_radius_q100": 0.996357376,
+        "morph_octaves": 1.39626,
+        "note": "table-derived endpoints 870.0 -> 2290.0 Hz"
+      },
+      {
+        "lane": 2,
+        "role": "F3 presence",
+        "pole_hz": 2596.613179,
+        "pole_radius_q0": 0.974200591,
+        "pole_radius_q100": 0.994266131,
+        "morph_octaves": 0.426265,
+        "note": "table-derived endpoints 2240.0 -> 3010.0 Hz"
+      },
+      {
+        "lane": 3,
+        "role": "F4 air",
+        "pole_hz": 3300.0,
+        "pole_radius_q0": 0.980094589,
+        "pole_radius_q100": 0.995586406,
+        "morph_octaves": 0.0,
+        "note": "table-derived endpoints 3300.0 -> 3300.0 Hz"
+      },
+      {
+        "lane": 4,
+        "role": "upper peak shelf",
+        "pole_hz": 6864.400921,
+        "pole_radius_q0": 0.988008759,
+        "pole_radius_q100": 0.997590165,
+        "morph_octaves": 0.293731,
+        "note": "table-derived endpoints 6200.0 -> 7600.0 Hz"
+      },
+      {
+        "lane": 5,
+        "role": "ceiling peak shelf",
+        "pole_hz": 9391.485505,
+        "pole_radius_q0": 0.990395449,
+        "pole_radius_q100": 0.998071667,
+        "morph_octaves": 0.122857,
+        "note": "table-derived endpoints 9000.0 -> 9800.0 Hz"
+      }
+    ]
+  },
+  "articulation": {
+    "zero_table_archetype": "vowel:uw->iy",
+    "zeros": [
+      {
+        "lane": 0,
+        "mode": "F1-canyon",
+        "zero_home_ratio": 2.15,
+        "zero_away_ratio": 2.35,
+        "zero_radius_q0": 0.84,
+        "zero_radius_q100": 0.965,
+        "depth": 0.86,
+        "note": "clean-room zero relation generated from table endpoints"
+      },
+      {
+        "lane": 1,
+        "mode": "F2-mouth-canyon",
+        "zero_home_ratio": 0.317241,
+        "zero_away_ratio": 1.02524,
+        "zero_radius_q0": 0.885,
+        "zero_radius_q100": 0.972,
+        "depth": 0.86,
+        "note": "clean-room zero relation generated from table endpoints"
+      },
+      {
+        "lane": 2,
+        "mode": "F3-presence-canyon",
+        "zero_home_ratio": 1.266964,
+        "zero_away_ratio": 0.821661,
+        "zero_radius_q0": 0.93,
+        "zero_radius_q100": 0.979,
+        "depth": 0.86,
+        "note": "clean-room zero relation generated from table endpoints"
+      },
+      {
+        "lane": 3,
+        "mode": "air-canyon",
+        "zero_home_ratio": 0.624485,
+        "zero_away_ratio": 1.796364,
+        "zero_radius_q0": 0.975,
+        "zero_radius_q100": 0.986,
+        "depth": 0.86,
+        "note": "clean-room zero relation generated from table endpoints"
+      },
+      {
+        "lane": 4,
+        "mode": "peak-shelf-canyon",
+        "zero_home_ratio": 1.248387,
+        "zero_away_ratio": 0.468947,
+        "zero_radius_q0": 1.02,
+        "zero_radius_q100": 0.993,
+        "depth": 0.86,
+        "note": "clean-room zero relation generated from table endpoints"
+      },
+      {
+        "lane": 5,
+        "mode": "ceiling-shelf-canyon",
+        "zero_home_ratio": 0.633778,
+        "zero_away_ratio": 0.78,
+        "zero_radius_q0": 1.02,
+        "zero_radius_q100": 0.993,
+        "depth": 0.86,
+        "note": "clean-room zero relation generated from table endpoints"
+      }
+    ]
+  },
+  "survival": {
+    "gain_compensation_strategy": "normalize_stages",
+    "factor": 0.45,
+    "cap_db": 12.0,
+    "loss_percentile": 60.0,
+    "band_ratio": 2.3,
+    "depth_weight_min": 0.35,
+    "pressure_weight_base": 0.7,
+    "pressure_weight_q": 0.55,
+    "base_gain": 0.54,
+    "low_lane_gain_bias": 1.18,
+    "high_lane_pressure_trim": 0.9,
+    "high_lane_pressure_start": 4
+  }
+}

@@ -1,0 +1,165 @@
+name: original_specialist_bank_v1
+
+# Product-facing clean-room roles. These names and palettes are original DF2
+# vocabulary. They intentionally do not mirror private reference preset names.
+slots:
+  - {id: sub_foundation, profile: sub_mass}
+  - {id: horizon_sweep, profile: wide_motion}
+  - {id: dawn_lift, profile: lift_field}
+  - {id: epoch_motion, profile: wide_motion}
+  - {id: dense_mechanism, profile: slope_cross}
+  - {id: club_pressure, profile: descent_field}
+  - {id: acid_box, profile: band_focus}
+  - {id: fuzz_mask, profile: slope_cross}
+  - {id: bell_decay, profile: comb_field}
+  - {id: dual_acid, profile: band_focus}
+  - {id: vowel_open_to_bright, profile: vowel_field}
+  - {id: round_sub, profile: sub_mass}
+  - {id: multi_resonant_voice, profile: vowel_field}
+  - {id: speech_stack, profile: vowel_field}
+  - {id: zoomed_peaks, profile: comb_field}
+  - {id: alkaline_motion, profile: lift_field}
+  - {id: bass_tracking, profile: sub_mass}
+  - {id: rogue_resonance, profile: q_pressure}
+  - {id: blade_field, profile: descent_field}
+  - {id: radio_formant, profile: vowel_field}
+  - {id: vowel_bright_to_open, profile: vowel_field}
+  - {id: orator_stack, profile: vowel_field}
+  - {id: deep_mouth, profile: deep_cavity}
+  - {id: irregular_shift, profile: wide_motion}
+  - {id: crossing_push, profile: slope_cross}
+  - {id: air_filament, profile: lift_field}
+  - {id: dream_field, profile: phase_field}
+  - {id: acid_storm, profile: q_pressure}
+  - {id: bass_machine, profile: sub_mass}
+  - {id: q_inferno, profile: q_pressure}
+  - {id: comb_field, profile: comb_field}
+  - {id: ear_twist, profile: q_pressure}
+  - {id: metallic_ring, profile: comb_field}
+  - {id: four_stage_descent, profile: descent_field}
+  - {id: smooth_descent, profile: descent_field}
+  - {id: steep_descent, profile: descent_field}
+  - {id: shallow_ascent, profile: ascent_field}
+  - {id: deep_ascent, profile: ascent_field}
+  - {id: narrow_band, profile: band_focus}
+  - {id: broad_band, profile: band_focus}
+  - {id: contrary_band, profile: slope_cross}
+  - {id: one_octave_sweep, profile: band_focus}
+  - {id: tapered_sweep, profile: band_focus}
+  - {id: wide_tapered_sweep, profile: wide_motion}
+  - {id: phase_field_one, profile: phase_field}
+  - {id: phase_field_two, profile: phase_field}
+  - {id: bliss_phase_field, profile: phase_field}
+  - {id: light_flange, profile: phase_field}
+  - {id: vowel_open_mid_bright, profile: vowel_field}
+  - {id: vowel_round_to_open, profile: vowel_field}
+
+profiles:
+  sub_mass:
+    bases_hz: [105.0, 210.0, 430.0, 880.0, 1800.0, 3700.0]
+    direction_signs: [-1, -1, 1, -1, 1, -1]
+    contrary_indices: [0, 1, 2, 4, 5]
+    local_indices: [1, 2, 3, 4]
+    morph_motion_octaves: [0.35, 1.55]
+    zero_counter_motion_octaves: [0.55, 2.20]
+    secondary_shift_octaves: [0.10, 0.75]
+    secondary_pole_scale: 0.45
+  wide_motion:
+    bases_hz: [150.0, 340.0, 760.0, 1650.0, 3600.0, 7600.0]
+    direction_signs: [1, -1, 1, -1, 1, -1]
+    contrary_indices: [0, 1, 2, 3, 4, 5]
+    local_indices: [1, 3]
+    morph_motion_octaves: [0.75, 2.25]
+    zero_counter_motion_octaves: [0.90, 2.70]
+    secondary_shift_octaves: [0.15, 0.90]
+    secondary_pole_scale: 0.55
+  lift_field:
+    bases_hz: [120.0, 260.0, 560.0, 1200.0, 2600.0, 5600.0]
+    direction_signs: [1, 1, 1, 1, 1, 1]
+    contrary_indices: [0, 2, 4]
+    local_indices: [1, 2, 3, 4]
+    morph_motion_octaves: [0.45, 1.65]
+    zero_counter_motion_octaves: [0.55, 2.10]
+    secondary_shift_octaves: [0.10, 0.80]
+    secondary_pole_scale: 0.45
+  deep_cavity:
+    bases_hz: [180.0, 360.0, 720.0, 1450.0, 2900.0, 5900.0]
+    direction_signs: [1, -1, 1, -1, 1, -1]
+    contrary_indices: [1, 3, 5]
+    local_indices: [0, 1, 2, 3, 4, 5]
+    morph_motion_octaves: [0.30, 1.30]
+    zero_counter_motion_octaves: [0.35, 1.55]
+    secondary_shift_octaves: [0.20, 0.95]
+    secondary_pole_scale: 0.55
+  q_pressure:
+    bases_hz: [140.0, 320.0, 720.0, 1550.0, 3400.0, 7400.0]
+    direction_signs: [1, -1, 1, -1, 1, -1]
+    contrary_indices: [0, 1, 2, 3, 4, 5]
+    local_indices: [2, 3]
+    morph_motion_octaves: [0.45, 1.85]
+    zero_counter_motion_octaves: [0.75, 2.55]
+    secondary_shift_octaves: [0.55, 1.55]
+    secondary_pole_scale: 0.85
+  comb_field:
+    bases_hz: [280.0, 430.0, 660.0, 1020.0, 1580.0, 2450.0]
+    direction_signs: [1, -1, 1, -1, 1, -1]
+    contrary_indices: [0, 2, 4]
+    local_indices: [0, 1, 2, 3, 4, 5]
+    morph_motion_octaves: [0.45, 1.45]
+    zero_counter_motion_octaves: [0.50, 1.85]
+    secondary_shift_octaves: [0.15, 0.90]
+    secondary_pole_scale: 0.50
+  descent_field:
+    bases_hz: [240.0, 520.0, 1100.0, 2300.0, 4900.0, 9800.0]
+    direction_signs: [-1, -1, -1, -1, -1, -1]
+    contrary_indices: [0, 2, 4]
+    local_indices: [1, 3, 5]
+    morph_motion_octaves: [0.40, 1.70]
+    zero_counter_motion_octaves: [0.55, 2.30]
+    secondary_shift_octaves: [0.10, 0.85]
+    secondary_pole_scale: 0.45
+  ascent_field:
+    bases_hz: [95.0, 210.0, 460.0, 1000.0, 2200.0, 4800.0]
+    direction_signs: [1, 1, 1, 1, 1, 1]
+    contrary_indices: [1, 3, 5]
+    local_indices: [0, 2, 4]
+    morph_motion_octaves: [0.40, 1.70]
+    zero_counter_motion_octaves: [0.55, 2.30]
+    secondary_shift_octaves: [0.10, 0.85]
+    secondary_pole_scale: 0.45
+  phase_field:
+    bases_hz: [170.0, 350.0, 720.0, 1480.0, 3050.0, 6300.0]
+    direction_signs: [1, -1, 1, -1, 1, -1]
+    contrary_indices: [1, 3, 5]
+    local_indices: [0, 1, 2, 3, 4, 5]
+    morph_motion_octaves: [0.35, 1.15]
+    zero_counter_motion_octaves: [0.30, 1.20]
+    secondary_shift_octaves: [0.20, 0.95]
+    secondary_pole_scale: 0.55
+  vowel_field:
+    bases_hz: [230.0, 520.0, 1050.0, 2050.0, 3900.0, 7000.0]
+    direction_signs: [1, -1, 1, -1, 1, -1]
+    contrary_indices: [1, 2, 4]
+    local_indices: [0, 1, 2, 3, 4, 5]
+    morph_motion_octaves: [0.35, 1.55]
+    zero_counter_motion_octaves: [0.45, 2.05]
+    secondary_shift_octaves: [0.15, 0.95]
+    secondary_pole_scale: 0.55
+  slope_cross:
+    bases_hz: [130.0, 300.0, 680.0, 1500.0, 3300.0, 7200.0]
+    direction_signs: [1, -1, 1, -1, 1, -1]
+    contrary_indices: [0, 1, 2, 3, 4, 5]
+    local_indices: [2, 4]
+    morph_motion_octaves: [0.55, 1.95]
+    zero_counter_motion_octaves: [0.80, 2.60]
+    secondary_shift_octaves: [0.25, 1.05]
+    secondary_pole_scale: 0.60
+  band_focus:
+    bases_hz: [180.0, 400.0, 880.0, 1900.0, 4100.0, 8200.0]
+    direction_signs: [1, -1, 1, -1, 1, -1]
+    contrary_indices: [0, 2, 4]
+    local_indices: [0, 1, 2, 3, 4, 5]
+    morph_motion_octaves: [0.45, 1.55]
+    zero_counter_motion_octaves: [0.50, 1.95]
+    secondary_shift_octaves: [0.15, 0.90]
+    secondary_pole_scale: 0.50

@@ -1,0 +1,70 @@
+{
+  "format": "lpc-pole-zero-plan-v1",
+  "name": "AAA_Fit",
+  "boundary": "LPC supplied endpoint denominator candidates. Lane identity and every numerator-zero treatment are authored choices, not recovered facts.",
+  "mode": "rank-paired-local-zero-sketch",
+  "inputs": {
+    "m0": "dev/tmp/recordings/aaa - aa.wav",
+    "m100": "dev/tmp/recordings/aaa_start - aaaa.wav"
+  },
+  "slots": [
+    {
+      "slot": 1,
+      "actor": {
+        "label": "rank_sketch_1",
+        "pole_m0_hz": 405.6582247926417,
+        "radius_m0": 0.9411540276164053,
+        "pole_m100_hz": 920.5463691388287,
+        "radius_m100": 0.937834865755427,
+        "source": "author accepted rank-pair sketch a1->b1",
+        "zero_role": "local",
+        "zero_m0_hz": null,
+        "zero_m100_hz": null,
+        "zero_radius": 0.9
+      }
+    },
+    {
+      "slot": 2,
+      "actor": {
+        "label": "rank_sketch_2",
+        "pole_m0_hz": 1017.2450482330062,
+        "radius_m0": 0.9706720634773509,
+        "pole_m100_hz": 2903.6576882365184,
+        "radius_m100": 0.8989559325439772,
+        "source": "author accepted rank-pair sketch a2->b2",
+        "zero_role": "local",
+        "zero_m0_hz": null,
+        "zero_m100_hz": null,
+        "zero_radius": 0.9
+      }
+    },
+    {
+      "slot": 3,
+      "actor": {
+        "label": "rank_sketch_3",
+        "pole_m0_hz": 2575.3989571334464,
+        "radius_m0": 0.9256530974282421,
+        "pole_m100_hz": 3711.1689463967673,
+        "radius_m100": 0.9645462457084727,
+        "source": "author accepted rank-pair sketch a3->b3",
+        "zero_role": "local",
+        "zero_m0_hz": null,
+        "zero_m100_hz": null,
+        "zero_radius": 0.9
+      }
+    },
+    {
+      "slot": 4,
+      "actor": null
+    },
+    {
+      "slot": 5,
+      "actor": null
+    },
+    {
+      "slot": 6,
+      "actor": null
+    }
+  ],
+  "latent_slots": 3
+}

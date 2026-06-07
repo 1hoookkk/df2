@@ -1,0 +1,92 @@
+{
+  "format": "lpc-pole-zero-plan-v1",
+  "name": "AAA_Vowel_Slide",
+  "boundary": "LPC supplied endpoint denominator candidates. Lane identity and every numerator-zero treatment are authored choices, not recovered facts.",
+  "mode": "rank-paired-local-zero-sketch",
+  "inputs": {
+    "m0": "dev/tmp/recordings/aaa - aa.lpc.json",
+    "m100": "dev/tmp/recordings/aaa_slid.lpc.json"
+  },
+  "slots": [
+    {
+      "slot": 1,
+      "actor": {
+        "label": "rank_sketch_1",
+        "pole_m0_hz": 405.6582247926417,
+        "radius_m0": 0.9411540276164053,
+        "pole_m100_hz": 706.29199219788,
+        "radius_m100": 0.9411540276164053,
+        "source": "author accepted rank-pair sketch a1->b1",
+        "zero_role": "local",
+        "zero_m0_hz": null,
+        "zero_m100_hz": null,
+        "zero_radius": 0.9
+      }
+    },
+    {
+      "slot": 2,
+      "actor": {
+        "label": "rank_sketch_2",
+        "pole_m0_hz": 1017.2450482330062,
+        "radius_m0": 0.9706720634773509,
+        "pole_m100_hz": 1771.126499498873,
+        "radius_m100": 0.9706720634773509,
+        "source": "author accepted rank-pair sketch a2->b2",
+        "zero_role": "local",
+        "zero_m0_hz": null,
+        "zero_m100_hz": null,
+        "zero_radius": 0.9
+      }
+    },
+    {
+      "slot": 3,
+      "actor": {
+        "label": "rank_sketch_3",
+        "pole_m0_hz": 2575.3989571334464,
+        "radius_m0": 0.9256530974282421,
+        "pole_m100_hz": 4484.030025689544,
+        "radius_m100": 0.9256530974282421,
+        "source": "author accepted rank-pair sketch a3->b3",
+        "zero_role": "local",
+        "zero_m0_hz": null,
+        "zero_m100_hz": null,
+        "zero_radius": 0.9
+      }
+    },
+    {
+      "slot": 4,
+      "actor": {
+        "label": "rank_sketch_4",
+        "pole_m0_hz": 3534.2630586674286,
+        "radius_m0": 0.980372268804277,
+        "pole_m100_hz": 6153.509393119225,
+        "radius_m100": 0.980372268804277,
+        "source": "author accepted rank-pair sketch a4->b4",
+        "zero_role": "local",
+        "zero_m0_hz": null,
+        "zero_m100_hz": null,
+        "zero_radius": 0.9
+      }
+    },
+    {
+      "slot": 5,
+      "actor": {
+        "label": "rank_sketch_5",
+        "pole_m0_hz": 6083.2698670484415,
+        "radius_m0": 0.9161731112371762,
+        "pole_m100_hz": 10591.588018882718,
+        "radius_m100": 0.9161731112371762,
+        "source": "author accepted rank-pair sketch a5->b5",
+        "zero_role": "local",
+        "zero_m0_hz": null,
+        "zero_m100_hz": null,
+        "zero_radius": 0.9
+      }
+    },
+    {
+      "slot": 6,
+      "actor": null
+    }
+  ],
+  "latent_slots": 1
+}

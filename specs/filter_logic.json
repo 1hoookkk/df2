@@ -1,0 +1,151 @@
+{
+  "format": "df2-filter-logic-v1",
+  "study_boundary": {
+    "clean_room": true,
+    "do_not_ship": [
+      "vendor bytes",
+      "packed words",
+      "coefficient tables",
+      "exact endpoint tables",
+      "product-facing vendor preset names"
+    ],
+    "allowed": [
+      "DSP structure",
+      "aggregate counts",
+      "pole/zero grammar",
+      "runtime verification requirements"
+    ]
+  },
+  "runtime_ground_truth": {
+    "body_bytes": 240,
+    "corners": [
+      "M0_Q0",
+      "M100_Q0",
+      "M0_Q100",
+      "M100_Q100"
+    ],
+    "sections_per_corner": 6,
+    "packed_words_per_section": 5,
+    "pipeline": [
+      "body240",
+      "PackedCorners",
+      "packed_u16_morph_q_interpolation",
+      "minifloat_decode",
+      "kernel_c0_c1_c2_c3_c4",
+      "biquad_b0_b1_b2_a1_a2",
+      "six_section_cascade",
+      "post_cascade_agc_output"
+    ],
+    "biquad_mapping": {
+      "b0": "c4",
+      "b1": "(c0 - 2) * c4",
+      "b2": "(1 - c1) * c4",
+      "a1": "c2 - 2",
+      "a2": "1 - c3"
+    },
+    "root_mapping": {
+      "denominator_roots": "poles",
+      "numerator_roots": "zeros"
+    }
+  },
+  "p2k_shared_fundamentals": {
+    "scope": {
+      "skins": 50,
+      "variant_bodies": 200
+    },
+    "observed": [
+      "same 4x6x5 packed body structure",
+      "section index is corner correspondence, not fixed frequency rank",
+      "active sections include numerator and denominator behavior",
+      "zeros are first-class",
+      "pole and zero motion often differ",
+      "Q/Push often shifts or tightens cuts",
+      "family variants are mostly pitch transpositions of the same grammar"
+    ],
+    "inferred": [
+      "likely table/grid assisted with manual finishing",
+      "shared grammar is pole target plus zero target plus radii plus gain, not a single universal zero table"
+    ]
+  },
+  "aggregate_counts": {
+    "move_families": {
+      "high bank collapse": 25,
+      "remote-cut violence": 13,
+      "talking vowel glide": 7,
+      "shelf/cliff frame": 3,
+      "comb/phaser field": 2
+    },
+    "construction_reads": {
+      "likely table assisted": 29,
+      "clearly table/grid driven": 19,
+      "impossible to tell": 2
+    },
+    "row_roles": {
+      "remote cut": 463,
+      "air kill": 176,
+      "air cap": 144,
+      "bite": 129,
+      "mouth": 114,
+      "blade": 47,
+      "color row": 29,
+      "frame": 28,
+      "shelf": 25,
+      "cliff": 17,
+      "broad frame": 16,
+      "low anchor": 12
+    },
+    "motion_tags": {
+      "push shift": 799,
+      "push cut walks away": 665,
+      "big sweep": 489,
+      "push tightens": 358,
+      "high cut falls": 293,
+      "crossing": 235,
+      "cut walks away": 210,
+      "small sweep": 183,
+      "high bank falls": 146,
+      "low keep": 58
+    },
+    "stage_ordering": {
+      "strict_low_to_high_percent": 29.5,
+      "mostly_ascending_percent": 11.5,
+      "strict_high_to_low_percent": 5.0,
+      "scrambled_or_clustered_percent": 54.0
+    },
+    "unstable_skin_count_under_study_audit": 17
+  },
+  "implementation_rules": [
+    "author four corners jointly",
+    "preserve section identity across corners",
+    "give every active section both pole and zero targets",
+    "allow pole and zero motion to differ",
+    "bound zero radius explicitly; do not rely on silent clamping",
+    "bound gain compensation explicitly",
+    "verify through body240 and trench_core packed_probe",
+    "plot cascade and individual sections",
+    "audit corners, center, edges, and diagonals"
+  ],
+  "do_not_do": [
+    "do not copy P2K bytes, words, coefficients, endpoint tables, or product names",
+    "do not treat AGC as filter grammar",
+    "do not assume a universal zero table",
+    "do not assume section number equals frequency order",
+    "do not assume S1 is the fundamental",
+    "do not sort sections by frequency before packing",
+    "do not judge endpoints only",
+    "do not promote recipes that rely on silent radius clamping"
+  ],
+  "evidence": [
+    "ref/presets/README.md",
+    "pyruntime/packed_interp.py",
+    "pyruntime/trench_ffi.py",
+    "trench-core/src/minifloat.rs",
+    "trench-core/src/ffi.rs",
+    "dev/tmp/p2k_full_vocabulary/report.md",
+    "dev/tmp/p2k_full_vocabulary/row_motion_vocab.json",
+    "dev/tmp/notebooklm_hz_pack/01_stage_logic.md",
+    "dev/tmp/notebooklm_hz_pack/06_corner_and_stage_patterns.md",
+    "C:/Users/hooki/Downloads/emu-mophatt-manual.pdf",
+    "C:/Users/hooki/Downloads/EMU Dillusion_PeakShelfMorph_Tutorial_WEB.pdf"
+  ]
+}

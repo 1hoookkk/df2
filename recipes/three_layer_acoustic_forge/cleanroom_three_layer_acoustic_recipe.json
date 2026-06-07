@@ -1,0 +1,143 @@
+{
+  "format": "three-layer-acoustic-recipe-v1",
+  "name": "cleanroom_three_layer_acoustic_recipe",
+  "sample_rate_hz": 39062.5,
+  "clean_room_note": "Original mathematical recipe. No vendor bytes, coefficient tables, filter names, or presets.",
+  "anatomy": {
+    "poles": [
+      {
+        "lane": 0,
+        "role": "chest floor",
+        "pole_hz": 92.0,
+        "pole_radius_q0": 0.946,
+        "pole_radius_q100": 0.985,
+        "morph_octaves": 0.08,
+        "note": "low mass; defines the body floor"
+      },
+      {
+        "lane": 1,
+        "role": "throat wall",
+        "pole_hz": 330.0,
+        "pole_radius_q0": 0.962,
+        "pole_radius_q100": 0.991,
+        "morph_octaves": 0.1,
+        "note": "low-mid room boundary"
+      },
+      {
+        "lane": 2,
+        "role": "mouth dome",
+        "pole_hz": 920.0,
+        "pole_radius_q0": 0.974,
+        "pole_radius_q100": 0.996,
+        "morph_octaves": 0.12,
+        "note": "main vowel pressure peak"
+      },
+      {
+        "lane": 3,
+        "role": "bite ridge",
+        "pole_hz": 1850.0,
+        "pole_radius_q0": 0.97,
+        "pole_radius_q100": 0.997,
+        "morph_octaves": -0.1,
+        "note": "counter ridge for speaking motion"
+      },
+      {
+        "lane": 4,
+        "role": "tear rail",
+        "pole_hz": 3950.0,
+        "pole_radius_q0": 0.966,
+        "pole_radius_q100": 0.9982,
+        "morph_octaves": 0.14,
+        "note": "upper high-Q rail"
+      },
+      {
+        "lane": 5,
+        "role": "air rail",
+        "pole_hz": 7900.0,
+        "pole_radius_q0": 0.952,
+        "pole_radius_q100": 0.9985,
+        "morph_octaves": -0.06,
+        "note": "top rail / phaser-like pressure"
+      }
+    ]
+  },
+  "articulation": {
+    "zero_table_archetype": "custom",
+    "zeros": [
+      {
+        "lane": 0,
+        "mode": "shelf-knee",
+        "zero_home_ratio": 2.15,
+        "zero_away_ratio": 2.75,
+        "zero_radius_q0": 0.66,
+        "zero_radius_q100": 0.82,
+        "depth": 0.45,
+        "note": "zero above F0, avoids killing the floor"
+      },
+      {
+        "lane": 1,
+        "mode": "opposing-canyon",
+        "zero_home_ratio": 1.7,
+        "zero_away_ratio": 0.78,
+        "zero_radius_q0": 0.88,
+        "zero_radius_q100": 0.97,
+        "depth": 0.8,
+        "note": "low-mid canyon crosses down toward the wall"
+      },
+      {
+        "lane": 2,
+        "mode": "mouth-word",
+        "zero_home_ratio": 1.18,
+        "zero_away_ratio": 0.64,
+        "zero_radius_q0": 0.91,
+        "zero_radius_q100": 0.985,
+        "depth": 0.92,
+        "note": "primary moving mouth cut"
+      },
+      {
+        "lane": 3,
+        "mode": "bite-word",
+        "zero_home_ratio": 0.72,
+        "zero_away_ratio": 1.58,
+        "zero_radius_q0": 0.9,
+        "zero_radius_q100": 0.988,
+        "depth": 0.95,
+        "note": "counter-motion cut for vowel contrast"
+      },
+      {
+        "lane": 4,
+        "mode": "phaser-canyon",
+        "zero_home_ratio": 1.42,
+        "zero_away_ratio": 0.92,
+        "zero_radius_q0": 0.94,
+        "zero_radius_q100": 0.995,
+        "depth": 1.0,
+        "note": "near-pole canyon, pressure sensitive"
+      },
+      {
+        "lane": 5,
+        "mode": "air-canyon",
+        "zero_home_ratio": 0.86,
+        "zero_away_ratio": 1.26,
+        "zero_radius_q0": 0.91,
+        "zero_radius_q100": 0.996,
+        "depth": 0.86,
+        "note": "upper rail shimmer and collapse control"
+      }
+    ]
+  },
+  "survival": {
+    "gain_compensation_strategy": "normalize_stages",
+    "factor": 0.45,
+    "cap_db": 12.0,
+    "loss_percentile": 60.0,
+    "band_ratio": 2.3,
+    "depth_weight_min": 0.35,
+    "pressure_weight_base": 0.7,
+    "pressure_weight_q": 0.55,
+    "base_gain": 0.54,
+    "low_lane_gain_bias": 1.18,
+    "high_lane_pressure_trim": 0.9,
+    "high_lane_pressure_start": 4
+  }
+}

@@ -1,0 +1,93 @@
+<!doctype html>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<title>df2 filter card bake</title>
+<style>
+  :root{
+    --bg:#ece8df; --panel:#f8f5ee; --ink:#171717; --muted:#696b70;
+    --line:#cfc7ba; --hot:#b35b20; --good:#287a4d; --bad:#b23b3b; --blue:#315f88;
+  }
+  *{box-sizing:border-box}
+  html,body{margin:0;min-height:100%;background:var(--bg);color:var(--ink);font:13px/1.35 ui-monospace,SFMono-Regular,Consolas,monospace}
+  body{padding:14px;padding-bottom:calc(18px + env(safe-area-inset-bottom))}
+  header{display:flex;align-items:center;justify-content:space-between;gap:12px;margin:0 0 12px}
+  h1{margin:0;font-size:16px;letter-spacing:0;color:#111}
+  .status{color:var(--muted);font-size:11px;text-align:right}
+  main{display:grid;grid-template-columns:minmax(360px,560px) 1fr;gap:12px;align-items:start}
+  section{background:var(--panel);border:1px solid var(--line);border-radius:8px;padding:12px}
+  .top{display:grid;grid-template-columns:1fr 150px 110px 110px;gap:8px;margin-bottom:10px}
+  label{display:block;color:var(--muted);font-size:10px;margin:0 0 4px;text-transform:uppercase}
+  input,select,button{width:100%;border:1px solid var(--line);border-radius:6px;background:#fff;color:var(--ink);font:inherit;padding:9px 10px}
+  input:focus,select:focus{outline:2px solid rgba(49,95,136,.22);border-color:var(--blue)}
+  button{cursor:pointer;background:#171717;color:#f8f5ee;border-color:#171717;font-weight:700}
+  button.secondary{background:#fff;color:#171717;border-color:var(--line)}
+  button:disabled{opacity:.55;cursor:wait}
+  .actions{display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-top:10px}
+  .stage{border-top:1px solid var(--line);padding:10px 0}
+  .stage:first-of-type{border-top:0}
+  .stageHead{display:grid;grid-template-columns:42px 1fr 110px;gap:8px;align-items:end;margin-bottom:8px}
+  .frames{display:grid;grid-template-columns:1fr 1fr;gap:8px}
+  .frame{border:1px solid #ded7cd;border-radius:7px;padding:8px;background:#fffaf3}
+  .frame b{display:block;margin-bottom:7px;color:var(--hot);font-size:11px}
+  .grid3{display:grid;grid-template-columns:1fr 1fr 1fr;gap:7px}
+  .resultHead{display:flex;align-items:center;justify-content:space-between;gap:10px;margin-bottom:8px}
+  .pill{border:1px solid var(--line);border-radius:999px;padding:4px 8px;color:var(--muted);background:#fff;font-size:11px}
+  .pill.good{color:var(--good);border-color:rgba(40,122,77,.45)}
+  .pill.bad{color:var(--bad);border-color:rgba(178,59,59,.45)}
+  pre{white-space:pre-wrap;margin:0;background:#171717;color:#e8e2d9;border-radius:7px;padding:10px;min-height:104px;max-height:260px;overflow:auto;font-size:11px}
+  .links{display:grid;grid-template-columns:repeat(auto-fit,minmax(130px,1fr));gap:7px;margin:10px 0}
+  .links a{display:block;text-decoration:none;color:#171717;border:1px solid var(--line);border-radius:6px;background:#fff;padding:8px 9px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+  img{display:none;width:100%;border:1px solid var(--line);border-radius:8px;background:#fff;margin-top:10px}
+  .note{color:var(--muted);font-size:11px;margin-top:8px}
+  @media (max-width: 860px){
+    body{padding:10px;padding-bottom:calc(14px + env(safe-area-inset-bottom))}
+    main{grid-template-columns:1fr}
+    .top{grid-template-columns:1fr}
+    .stageHead{grid-template-columns:38px 1fr}
+    .stageHead .kindWrap{grid-column:1 / -1}
+    .frames{grid-template-columns:1fr}
+    .grid3{grid-template-columns:1fr 1fr 1fr}
+  }
+</style>
+<header>
+  <h1>filter card bake</h1>
+  <div class="status" id="health">engine unknown</div>
+</header>
+<main>
+  <section>
+    <div class="top">
+      <div>
+        <label for="cardName">card</label>
+        <input id="cardName" value="contrary_peak_shelf_sweep">
+      </div>
+      <div>
+        <label for="foundation">foundation</label>
+        <select id="foundation"></select>
+      </div>
+      <div>
+        <label for="grid">grid</label>
+        <input id="grid" inputmode="numeric" value="17">
+      </div>
+      <div>
+        <label for="session">session</label>
+        <input id="session" value="">
+      </div>
+    </div>
+    <div id="stages"></div>
+    <div class="actions">
+      <button id="bake">BAKE</button>
+      <button class="secondary" id="reset">RESET</button>
+    </div>
+    <div class="note">Python owns the bake. Rust trench_core owns packed probe and audit.</div>
+  </section>
+  <section>
+    <div class="resultHead">
+      <strong>runtime output</strong>
+      <span class="pill" id="verdict">idle</span>
+    </div>
+    <pre id="log">idle</pre>
+    <div class="links" id="links"></div>
+    <img id="plot" alt="packed runtime response">
+  </section>
+</main>
+<script type="module" src="js/zedit.js?v=strip-rust-python-20260607"></script>

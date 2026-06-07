@@ -1,0 +1,26 @@
+defaults:
+  - datamodule: p2k_calibration
+  - specialists: full_bank
+  - model: v1
+  - _self_
+
+run_name: extreme_qd_v1_${now:%Y%m%d_%H%M%S}
+seed: 20260602
+output_dir: dev/tmp/production_authoring/${run_name}
+
+telemetry:
+  mode: offline
+  project: trench-production-authoring
+  entity: null
+
+export:
+  top_k: 50
+  render_audio: true
+  audition_drive: 4.0
+
+hydra:
+  run:
+    dir: .
+  output_subdir: null
+  job:
+    chdir: false

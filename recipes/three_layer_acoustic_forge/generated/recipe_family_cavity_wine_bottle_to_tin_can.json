@@ -1,0 +1,163 @@
+{
+  "format": "three-layer-acoustic-recipe-v1",
+  "name": "recipe_family_cavity_wine_bottle_to_tin_can",
+  "sample_rate_hz": 39062.5,
+  "clean_room_note": "Generated from clean acoustic tables. Recovered q_radius_table is used only as range calibration metadata.",
+  "table_sources": [
+    "family_intents.json",
+    "physical_models.py",
+    "q_radius_table.json"
+  ],
+  "calibration": {
+    "q_radius_table": {
+      "policy": "calibration_range_only_not_exact_value_copy",
+      "entries": 45,
+      "radius_min": 0.1238632,
+      "radius_max": 0.9862709,
+      "radius_median": 0.9100761
+    }
+  },
+  "notes": {
+    "source": "family intent table",
+    "family": "cavity",
+    "from": "Helmholtz 119Hz (V=0.75L, neck d=1.85cm L=6.0cm) + body modes 357/1072Hz (closed-pipe, L=24.0cm)",
+    "to": "steel shell R=3.5cm L=11.0cm h=0.25mm \u2014 flexural modes 1591/2347/4594Hz"
+  },
+  "anatomy": {
+    "poles": [
+      {
+        "lane": 0,
+        "role": "fundamental",
+        "pole_hz": 435.119524,
+        "pole_radius_q0": 0.99238876,
+        "pole_radius_q100": 0.998232219,
+        "morph_octaves": 3.7409,
+        "note": "table-derived endpoints 119.0 -> 1591.0 Hz"
+      },
+      {
+        "lane": 1,
+        "role": "second_mode",
+        "pole_hz": 915.357307,
+        "pole_radius_q0": 0.99238876,
+        "pole_radius_q100": 0.998232219,
+        "morph_octaves": 2.716822,
+        "note": "table-derived endpoints 357.0 -> 2347.0 Hz"
+      },
+      {
+        "lane": 2,
+        "role": "scoop_notch",
+        "pole_hz": 1425.544457,
+        "pole_radius_q0": 0.99238876,
+        "pole_radius_q100": 0.998232219,
+        "morph_octaves": 2.407003,
+        "note": "table-derived endpoints 619.0 -> 3283.0 Hz"
+      },
+      {
+        "lane": 3,
+        "role": "upper_mode",
+        "pole_hz": 2219.181831,
+        "pole_radius_q0": 0.99238876,
+        "pole_radius_q100": 0.998232219,
+        "morph_octaves": 2.099446,
+        "note": "table-derived endpoints 1072.0 -> 4594.0 Hz"
+      },
+      {
+        "lane": 4,
+        "role": "mode 1",
+        "pole_hz": 3328.772747,
+        "pole_radius_q0": 0.99238876,
+        "pole_radius_q100": 0.998232219,
+        "morph_octaves": 2.099446,
+        "note": "table-derived endpoints 1608.0 -> 6891.0 Hz"
+      },
+      {
+        "lane": 5,
+        "role": "mode 2",
+        "pole_hz": 4993.15912,
+        "pole_radius_q0": 0.99238876,
+        "pole_radius_q100": 0.998232219,
+        "morph_octaves": 2.099446,
+        "note": "table-derived endpoints 2412.0 -> 10336.5 Hz"
+      }
+    ]
+  },
+  "articulation": {
+    "zero_table_archetype": "family:cavity:wine_bottle->tin_can",
+    "zeros": [
+      {
+        "lane": 0,
+        "mode": "fundamental-canyon",
+        "zero_home_ratio": 2.15,
+        "zero_away_ratio": 2.35,
+        "zero_radius_q0": 0.84,
+        "zero_radius_q100": 0.965,
+        "depth": 0.58,
+        "note": "clean-room zero relation generated from table endpoints"
+      },
+      {
+        "lane": 1,
+        "mode": "second_mode-canyon",
+        "zero_home_ratio": 0.306667,
+        "zero_away_ratio": 1.091069,
+        "zero_radius_q0": 0.885,
+        "zero_radius_q100": 0.972,
+        "depth": 0.58,
+        "note": "clean-room zero relation generated from table endpoints"
+      },
+      {
+        "lane": 2,
+        "mode": "scoop_notch-canyon",
+        "zero_home_ratio": 1.48937,
+        "zero_away_ratio": 0.772087,
+        "zero_radius_q0": 0.93,
+        "zero_radius_q100": 0.979,
+        "depth": 0.58,
+        "note": "clean-room zero relation generated from table endpoints"
+      },
+      {
+        "lane": 3,
+        "mode": "upper_mode-canyon",
+        "zero_home_ratio": 0.531231,
+        "zero_away_ratio": 1.17,
+        "zero_radius_q0": 0.975,
+        "zero_radius_q100": 0.986,
+        "depth": 0.58,
+        "note": "clean-room zero relation generated from table endpoints"
+      },
+      {
+        "lane": 4,
+        "mode": "mode 1-canyon",
+        "zero_home_ratio": 1.29,
+        "zero_away_ratio": 0.72,
+        "zero_radius_q0": 1.02,
+        "zero_radius_q100": 0.993,
+        "depth": 0.58,
+        "note": "clean-room zero relation generated from table endpoints"
+      },
+      {
+        "lane": 5,
+        "mode": "mode 2-canyon",
+        "zero_home_ratio": 0.613333,
+        "zero_away_ratio": 0.78,
+        "zero_radius_q0": 1.02,
+        "zero_radius_q100": 0.993,
+        "depth": 0.58,
+        "note": "clean-room zero relation generated from table endpoints"
+      }
+    ]
+  },
+  "survival": {
+    "gain_compensation_strategy": "normalize_stages",
+    "factor": 0.45,
+    "cap_db": 12.0,
+    "loss_percentile": 60.0,
+    "band_ratio": 2.3,
+    "depth_weight_min": 0.35,
+    "pressure_weight_base": 0.7,
+    "pressure_weight_q": 0.55,
+    "base_gain": 0.54,
+    "low_lane_gain_bias": 1.18,
+    "high_lane_pressure_trim": 0.9,
+    "high_lane_pressure_start": 4
+  }
+}

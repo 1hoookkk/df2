@@ -1,0 +1,89 @@
+{
+  "format": "section-law-v1",
+  "name": "family_phaser_comb",
+  "family": "phaser_comb",
+  "source_contract": "C:/Users/hooki/df2/dev/tmp/x3_p2k_family_browser/contracts/phaser_comb.json",
+  "clean_room_note": "Generated from aggregate family contract bounds only; no reference bytes, coefficient rows, endpoint curves, names, or preset tables are copied.",
+  "anchor_hz": 317.7906,
+  "anchor_gain_db": 6.5,
+  "tilt_db": 17.6682,
+  "canyon_depth": 26.2391,
+  "q_crank": 0.7999,
+  "morph_spread": 0.6506,
+  "density": 0.82,
+  "sections": [
+    {
+      "role": "anchor",
+      "fc_hz": 317.7906,
+      "gain_db": 5.8,
+      "bw_oct": 0.95,
+      "zero_offset_oct": -0.51457,
+      "morph_oct": 0.1,
+      "zero_morph_oct": 0.0,
+      "zero_secondary_oct": 0.0,
+      "q_weight": 1.0
+    },
+    {
+      "role": "comb_cut_low",
+      "fc_hz": 701.8263,
+      "gain_db": -5.0,
+      "bw_oct": 0.55,
+      "zero_offset_oct": -0.31142,
+      "morph_oct": 0.9,
+      "zero_morph_oct": 0.35,
+      "zero_secondary_oct": 0.0,
+      "q_weight": 0.75
+    },
+    {
+      "role": "comb_peak_mouth",
+      "fc_hz": 1623.787,
+      "gain_db": 3.0,
+      "bw_oct": 0.62,
+      "zero_offset_oct": -0.07741,
+      "morph_oct": 0.85,
+      "zero_morph_oct": 0.25,
+      "zero_secondary_oct": 0.0,
+      "q_weight": 0.85
+    },
+    {
+      "role": "comb_cut_bite",
+      "fc_hz": 4362.9837,
+      "gain_db": -6.0,
+      "bw_oct": 0.52,
+      "zero_offset_oct": -0.26222,
+      "morph_oct": 0.85,
+      "zero_morph_oct": -0.25,
+      "zero_secondary_oct": 0.0,
+      "q_weight": 0.8
+    },
+    {
+      "role": "comb_peak_air",
+      "fc_hz": 10267.6979,
+      "gain_db": 1.0,
+      "bw_oct": 0.55,
+      "zero_offset_oct": -0.02749,
+      "morph_oct": 0.65,
+      "zero_morph_oct": -0.3,
+      "zero_secondary_oct": 0.0,
+      "q_weight": 0.65
+    },
+    {
+      "role": "air_kill",
+      "fc_hz": 10073.9345,
+      "gain_db": -8.0,
+      "bw_oct": 0.5,
+      "zero_offset_oct": 0.71184,
+      "morph_oct": 0.25,
+      "zero_morph_oct": 0.4,
+      "zero_secondary_oct": 0.0,
+      "q_weight": 0.65
+    }
+  ],
+  "aggregate_metrics": {
+    "x3_median_morph_motion_rms_db": 6.494,
+    "p2k_median_morph_motion_rms_db": 18.216,
+    "x3_median_q_pressure_rms_db": 2.78,
+    "p2k_median_q_pressure_rms_db": 14.399,
+    "median_low_minus_high_tilt_db": 32.124
+  }
+}

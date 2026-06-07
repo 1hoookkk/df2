@@ -1,0 +1,380 @@
+[
+  {
+    "type": "2 Pole Lowpass",
+    "family": "lowpass",
+    "dsp_identity": "One 2-pole Butterworth-style SOS; 12 dB/oct above cutoff; pole pair moves at cutoff, zero pair fixed at Nyquist z=-1.",
+    "sections": [
+      {"role":"cutoff pole pair","pole_hz_home":420,"pole_hz_away":7200,"pole_r_q0":0.9900,"pole_r_q1":0.9972,"zero_hz":[19531.25,19531.25],"zero_r":1.0,"zero_moves":"fixed at Nyquist","gain_db":0.0},
+      {"role":"idle 2","pole_hz_home":800,"pole_hz_away":800,"pole_r_q0":0.9900,"pole_r_q1":0.9900,"zero_hz":[800,800],"zero_r":0.9900,"zero_moves":"idle: coincident with pole","gain_db":0.0},
+      {"role":"idle 3","pole_hz_home":1600,"pole_hz_away":1600,"pole_r_q0":0.9900,"pole_r_q1":0.9900,"zero_hz":[1600,1600],"zero_r":0.9900,"zero_moves":"idle: coincident with pole","gain_db":0.0},
+      {"role":"idle 4","pole_hz_home":3200,"pole_hz_away":3200,"pole_r_q0":0.9900,"pole_r_q1":0.9900,"zero_hz":[3200,3200],"zero_r":0.9900,"zero_moves":"idle: coincident with pole","gain_db":0.0},
+      {"role":"idle 5","pole_hz_home":6400,"pole_hz_away":6400,"pole_r_q0":0.9900,"pole_r_q1":0.9900,"zero_hz":[6400,6400],"zero_r":0.9900,"zero_moves":"idle: coincident with pole","gain_db":0.0},
+      {"role":"idle 6","pole_hz_home":12000,"pole_hz_away":12000,"pole_r_q0":0.9900,"pole_r_q1":0.9900,"zero_hz":[12000,12000],"zero_r":0.9900,"zero_moves":"idle: coincident with pole","gain_db":0.0}
+    ],
+    "morph_moves": "Cutoff opens 420 -> 7200 Hz.",
+    "q_exposes": "Resonance at the cutoff only.",
+    "carve_zeros_where": "Move the Nyquist zero down toward 10-14 kHz for darker caps.",
+    "audition_on": "808, saw, noise",
+    "note": "Keep this plain; its usefulness is as a trustworthy open/close card."
+  },
+  {
+    "type": "4 Pole Lowpass",
+    "family": "lowpass",
+    "dsp_identity": "Two cascaded 2-pole lowpass SOS sections; Butterworth/Chebyshev-family 24 dB/oct slope; zeros fixed at Nyquist.",
+    "sections": [
+      {"role":"lower cutoff pair","pole_hz_home":360,"pole_hz_away":5900,"pole_r_q0":0.9900,"pole_r_q1":0.9964,"zero_hz":[19531.25,19531.25],"zero_r":1.0,"zero_moves":"fixed at Nyquist","gain_db":-0.5},
+      {"role":"upper cutoff pair","pole_hz_home":520,"pole_hz_away":8400,"pole_r_q0":0.9905,"pole_r_q1":0.9976,"zero_hz":[19531.25,19531.25],"zero_r":1.0,"zero_moves":"fixed at Nyquist","gain_db":-0.5},
+      {"role":"idle 3","pole_hz_home":1600,"pole_hz_away":1600,"pole_r_q0":0.9900,"pole_r_q1":0.9900,"zero_hz":[1600,1600],"zero_r":0.9900,"zero_moves":"idle","gain_db":0.0},
+      {"role":"idle 4","pole_hz_home":3200,"pole_hz_away":3200,"pole_r_q0":0.9900,"pole_r_q1":0.9900,"zero_hz":[3200,3200],"zero_r":0.9900,"zero_moves":"idle","gain_db":0.0},
+      {"role":"idle 5","pole_hz_home":6400,"pole_hz_away":6400,"pole_r_q0":0.9900,"pole_r_q1":0.9900,"zero_hz":[6400,6400],"zero_r":0.9900,"zero_moves":"idle","gain_db":0.0},
+      {"role":"idle 6","pole_hz_home":12000,"pole_hz_away":12000,"pole_r_q0":0.9900,"pole_r_q1":0.9900,"zero_hz":[12000,12000],"zero_r":0.9900,"zero_moves":"idle","gain_db":0.0}
+    ],
+    "morph_moves": "Two cutoff pole pairs open together, staggered about 0.8x and 1.2x.",
+    "q_exposes": "Sharper knee and small Chebyshev-like edge lift.",
+    "carve_zeros_where": "Keep both zeros at Nyquist unless the top end needs restraint.",
+    "audition_on": "reece, saw, noise",
+    "note": "The stagger prevents the cutoff from becoming a single whistling pole."
+  },
+  {
+    "type": "6 Pole Lowpass",
+    "family": "lowpass",
+    "dsp_identity": "Three cascaded 2-pole lowpass SOS sections; 36 dB/oct ladder-like slope; zeros fixed at Nyquist.",
+    "sections": [
+      {"role":"low cutoff pair","pole_hz_home":300,"pole_hz_away":4800,"pole_r_q0":0.9900,"pole_r_q1":0.9958,"zero_hz":[19531.25,19531.25],"zero_r":1.0,"zero_moves":"fixed at Nyquist","gain_db":-0.7},
+      {"role":"mid cutoff pair","pole_hz_home":430,"pole_hz_away":7000,"pole_r_q0":0.9905,"pole_r_q1":0.9970,"zero_hz":[19531.25,19531.25],"zero_r":1.0,"zero_moves":"fixed at Nyquist","gain_db":-0.7},
+      {"role":"high cutoff pair","pole_hz_home":620,"pole_hz_away":9800,"pole_r_q0":0.9910,"pole_r_q1":0.9980,"zero_hz":[19531.25,19531.25],"zero_r":1.0,"zero_moves":"fixed at Nyquist","gain_db":-0.7},
+      {"role":"idle 4","pole_hz_home":3200,"pole_hz_away":3200,"pole_r_q0":0.9900,"pole_r_q1":0.9900,"zero_hz":[3200,3200],"zero_r":0.9900,"zero_moves":"idle","gain_db":0.0},
+      {"role":"idle 5","pole_hz_home":6400,"pole_hz_away":6400,"pole_r_q0":0.9900,"pole_r_q1":0.9900,"zero_hz":[6400,6400],"zero_r":0.9900,"zero_moves":"idle","gain_db":0.0},
+      {"role":"idle 6","pole_hz_home":12000,"pole_hz_away":12000,"pole_r_q0":0.9900,"pole_r_q1":0.9900,"zero_hz":[12000,12000],"zero_r":0.9900,"zero_moves":"idle","gain_db":0.0}
+    ],
+    "morph_moves": "Steep cutoff opens with three staggered pole pairs.",
+    "q_exposes": "Ladder-like edge pressure; use Q100 carefully.",
+    "carve_zeros_where": "Nyquist cap only; add extra zero canyons only after plotting the passband.",
+    "audition_on": "saw, reece, noise",
+    "note": "This is the cleanest heavy close/open filter, but it can over-darken unless gain is normalized."
+  },
+  {
+    "type": "2 Pole Highpass",
+    "family": "highpass",
+    "dsp_identity": "One 2-pole highpass SOS; 12 dB/oct below cutoff; zero pair fixed at DC z=1.",
+    "sections": [
+      {"role":"cutoff pole pair","pole_hz_home":65,"pole_hz_away":1800,"pole_r_q0":0.9900,"pole_r_q1":0.9970,"zero_hz":[0,0],"zero_r":1.0,"zero_moves":"fixed at DC","gain_db":0.0},
+      {"role":"idle 2","pole_hz_home":800,"pole_hz_away":800,"pole_r_q0":0.9900,"pole_r_q1":0.9900,"zero_hz":[800,800],"zero_r":0.9900,"zero_moves":"idle","gain_db":0.0},
+      {"role":"idle 3","pole_hz_home":1600,"pole_hz_away":1600,"pole_r_q0":0.9900,"pole_r_q1":0.9900,"zero_hz":[1600,1600],"zero_r":0.9900,"zero_moves":"idle","gain_db":0.0},
+      {"role":"idle 4","pole_hz_home":3200,"pole_hz_away":3200,"pole_r_q0":0.9900,"pole_r_q1":0.9900,"zero_hz":[3200,3200],"zero_r":0.9900,"zero_moves":"idle","gain_db":0.0},
+      {"role":"idle 5","pole_hz_home":6400,"pole_hz_away":6400,"pole_r_q0":0.9900,"pole_r_q1":0.9900,"zero_hz":[6400,6400],"zero_r":0.9900,"zero_moves":"idle","gain_db":0.0},
+      {"role":"idle 6","pole_hz_home":12000,"pole_hz_away":12000,"pole_r_q0":0.9900,"pole_r_q1":0.9900,"zero_hz":[12000,12000],"zero_r":0.9900,"zero_moves":"idle","gain_db":0.0}
+    ],
+    "morph_moves": "Cutoff rises 65 -> 1800 Hz.",
+    "q_exposes": "Low-edge thump or whistle at the moving cutoff.",
+    "carve_zeros_where": "Keep the DC zero exact; carve extra low-mid notches in non-idle rows only if needed.",
+    "audition_on": "808, break, reece",
+    "note": "Useful for cleaning sub without inventing midrange character."
+  },
+  {
+    "type": "4 Pole Highpass",
+    "family": "highpass",
+    "dsp_identity": "Two cascaded 2-pole highpass SOS sections; 24 dB/oct below cutoff; zeros fixed at DC.",
+    "sections": [
+      {"role":"lower cutoff pair","pole_hz_home":55,"pole_hz_away":1250,"pole_r_q0":0.9900,"pole_r_q1":0.9962,"zero_hz":[0,0],"zero_r":1.0,"zero_moves":"fixed at DC","gain_db":-0.4},
+      {"role":"upper cutoff pair","pole_hz_home":90,"pole_hz_away":2500,"pole_r_q0":0.9905,"pole_r_q1":0.9974,"zero_hz":[0,0],"zero_r":1.0,"zero_moves":"fixed at DC","gain_db":-0.4},
+      {"role":"idle 3","pole_hz_home":1600,"pole_hz_away":1600,"pole_r_q0":0.9900,"pole_r_q1":0.9900,"zero_hz":[1600,1600],"zero_r":0.9900,"zero_moves":"idle","gain_db":0.0},
+      {"role":"idle 4","pole_hz_home":3200,"pole_hz_away":3200,"pole_r_q0":0.9900,"pole_r_q1":0.9900,"zero_hz":[3200,3200],"zero_r":0.9900,"zero_moves":"idle","gain_db":0.0},
+      {"role":"idle 5","pole_hz_home":6400,"pole_hz_away":6400,"pole_r_q0":0.9900,"pole_r_q1":0.9900,"zero_hz":[6400,6400],"zero_r":0.9900,"zero_moves":"idle","gain_db":0.0},
+      {"role":"idle 6","pole_hz_home":12000,"pole_hz_away":12000,"pole_r_q0":0.9900,"pole_r_q1":0.9900,"zero_hz":[12000,12000],"zero_r":0.9900,"zero_moves":"idle","gain_db":0.0}
+    ],
+    "morph_moves": "Two highpass cutoff pairs rise together.",
+    "q_exposes": "Sharper low cut and edge bite.",
+    "carve_zeros_where": "Do not move the DC zeros for the generic card.",
+    "audition_on": "break, vocal, reece",
+    "note": "The two staggered rows make it feel surgical without killing the whole body at once."
+  },
+  {
+    "type": "2 Pole Bandpass",
+    "family": "bandpass",
+    "dsp_identity": "Textbook digital bandpass needs one DC zero and one Nyquist zero; this root UI represents that exactly as two skirt SOS lanes: lower highpass skirt plus upper lowpass skirt.",
+    "sections": [
+      {"role":"lower skirt highpass","pole_hz_home":90,"pole_hz_away":450,"pole_r_q0":0.9905,"pole_r_q1":0.9968,"zero_hz":[0,0],"zero_r":1.0,"zero_moves":"fixed at DC","gain_db":-0.3},
+      {"role":"upper skirt lowpass","pole_hz_home":520,"pole_hz_away":2400,"pole_r_q0":0.9905,"pole_r_q1":0.9968,"zero_hz":[19531.25,19531.25],"zero_r":1.0,"zero_moves":"fixed at Nyquist","gain_db":-0.3},
+      {"role":"idle 3","pole_hz_home":1600,"pole_hz_away":1600,"pole_r_q0":0.9900,"pole_r_q1":0.9900,"zero_hz":[1600,1600],"zero_r":0.9900,"zero_moves":"idle","gain_db":0.0},
+      {"role":"idle 4","pole_hz_home":3200,"pole_hz_away":3200,"pole_r_q0":0.9900,"pole_r_q1":0.9900,"zero_hz":[3200,3200],"zero_r":0.9900,"zero_moves":"idle","gain_db":0.0},
+      {"role":"idle 5","pole_hz_home":6400,"pole_hz_away":6400,"pole_r_q0":0.9900,"pole_r_q1":0.9900,"zero_hz":[6400,6400],"zero_r":0.9900,"zero_moves":"idle","gain_db":0.0},
+      {"role":"idle 6","pole_hz_home":12000,"pole_hz_away":12000,"pole_r_q0":0.9900,"pole_r_q1":0.9900,"zero_hz":[12000,12000],"zero_r":0.9900,"zero_moves":"idle","gain_db":0.0}
+    ],
+    "morph_moves": "Band window moves upward: about 90-520 Hz -> 450-2400 Hz.",
+    "q_exposes": "Narrower window and stronger edge resonance.",
+    "carve_zeros_where": "DC and Nyquist are the textbook endpoints; add mid zero canyons only after the basic band plots correctly.",
+    "audition_on": "808, reece, vocal",
+    "note": "The musical part is the moving window, not a single peak."
+  },
+  {
+    "type": "4 Pole Bandpass",
+    "family": "bandpass",
+    "dsp_identity": "Four skirt SOS lanes: two highpass edges plus two lowpass edges; 24 dB/oct nominal skirts.",
+    "sections": [
+      {"role":"lower skirt outer","pole_hz_home":75,"pole_hz_away":360,"pole_r_q0":0.9900,"pole_r_q1":0.9960,"zero_hz":[0,0],"zero_r":1.0,"zero_moves":"fixed at DC","gain_db":-0.4},
+      {"role":"lower skirt inner","pole_hz_home":130,"pole_hz_away":620,"pole_r_q0":0.9910,"pole_r_q1":0.9974,"zero_hz":[0,0],"zero_r":1.0,"zero_moves":"fixed at DC","gain_db":-0.4},
+      {"role":"upper skirt inner","pole_hz_home":720,"pole_hz_away":3200,"pole_r_q0":0.9910,"pole_r_q1":0.9974,"zero_hz":[19531.25,19531.25],"zero_r":1.0,"zero_moves":"fixed at Nyquist","gain_db":-0.4},
+      {"role":"upper skirt outer","pole_hz_home":1100,"pole_hz_away":5200,"pole_r_q0":0.9900,"pole_r_q1":0.9960,"zero_hz":[19531.25,19531.25],"zero_r":1.0,"zero_moves":"fixed at Nyquist","gain_db":-0.4},
+      {"role":"idle 5","pole_hz_home":6400,"pole_hz_away":6400,"pole_r_q0":0.9900,"pole_r_q1":0.9900,"zero_hz":[6400,6400],"zero_r":0.9900,"zero_moves":"idle","gain_db":0.0},
+      {"role":"idle 6","pole_hz_home":12000,"pole_hz_away":12000,"pole_r_q0":0.9900,"pole_r_q1":0.9900,"zero_hz":[12000,12000],"zero_r":0.9900,"zero_moves":"idle","gain_db":0.0}
+    ],
+    "morph_moves": "A steeper band window slides upward.",
+    "q_exposes": "Skirt tightness and band edge pressure.",
+    "carve_zeros_where": "Keep endpoint zeros fixed; carve one extra canyon only if the passband is too bland.",
+    "audition_on": "reece, saw, vocal",
+    "note": "The inner/outer skirt split gives a real band instead of a nasal EQ bump."
+  },
+  {
+    "type": "Contrary Bandpass",
+    "family": "bandpass",
+    "dsp_identity": "Two bandpass windows move in opposite directions; derived from cascaded HP/LP skirts, with extra moving zero canyons for crossing motion.",
+    "sections": [
+      {"role":"rising band lower skirt","pole_hz_home":85,"pole_hz_away":520,"pole_r_q0":0.9905,"pole_r_q1":0.9970,"zero_hz":[0,0],"zero_r":1.0,"zero_moves":"fixed at DC","gain_db":-0.4},
+      {"role":"rising band upper skirt","pole_hz_home":420,"pole_hz_away":2100,"pole_r_q0":0.9905,"pole_r_q1":0.9970,"zero_hz":[19531.25,19531.25],"zero_r":1.0,"zero_moves":"fixed at Nyquist","gain_db":-0.4},
+      {"role":"falling band lower skirt","pole_hz_home":900,"pole_hz_away":260,"pole_r_q0":0.9910,"pole_r_q1":0.9976,"zero_hz":[0,0],"zero_r":1.0,"zero_moves":"fixed at DC","gain_db":-0.4},
+      {"role":"falling band upper skirt","pole_hz_home":4200,"pole_hz_away":1200,"pole_r_q0":0.9910,"pole_r_q1":0.9976,"zero_hz":[19531.25,19531.25],"zero_r":1.0,"zero_moves":"fixed at Nyquist","gain_db":-0.4},
+      {"role":"crossing canyon","pole_hz_home":650,"pole_hz_away":1050,"pole_r_q0":0.9910,"pole_r_q1":0.9965,"zero_hz":[650,1050],"zero_r":0.9996,"zero_moves":"tracks the band crossing","gain_db":-2.5},
+      {"role":"nasal counter notch","pole_hz_home":2600,"pole_hz_away":1700,"pole_r_q0":0.9910,"pole_r_q1":0.9965,"zero_hz":[2600,1700],"zero_r":0.9995,"zero_moves":"moves contrary to crossing canyon","gain_db":-2.0}
+    ],
+    "morph_moves": "One band rises while another falls.",
+    "q_exposes": "Tighter crossing and more vocal cancellation.",
+    "carve_zeros_where": "Carve the crossing canyon first: 650 -> 1050 Hz.",
+    "audition_on": "reece, saw, vocal",
+    "note": "Opposed motion creates vowel-like change without needing a literal vowel table."
+  },
+  {
+    "type": "Swept EQ 1 Octave",
+    "family": "swept_eq",
+    "dsp_identity": "RBJ peaking-EQ style root form: poles and zeros share angle, pole radius exceeds zero radius for boost; one-octave center travel.",
+    "sections": [
+      {"role":"main swept peak","pole_hz_home":700,"pole_hz_away":1400,"pole_r_q0":0.9920,"pole_r_q1":0.9986,"zero_hz":[700,1400],"zero_r":0.9860,"zero_moves":"tracks peak 1:1","gain_db":3.0},
+      {"role":"lower support peak","pole_hz_home":495,"pole_hz_away":990,"pole_r_q0":0.9910,"pole_r_q1":0.9972,"zero_hz":[495,990],"zero_r":0.9880,"zero_moves":"tracks one half-octave below","gain_db":1.0},
+      {"role":"upper support peak","pole_hz_home":990,"pole_hz_away":1980,"pole_r_q0":0.9910,"pole_r_q1":0.9972,"zero_hz":[990,1980],"zero_r":0.9880,"zero_moves":"tracks one half-octave above","gain_db":1.0},
+      {"role":"lower canyon","pole_hz_home":350,"pole_hz_away":700,"pole_r_q0":0.9910,"pole_r_q1":0.9965,"zero_hz":[350,700],"zero_r":0.9993,"zero_moves":"tracks below peak","gain_db":-1.8},
+      {"role":"upper canyon","pole_hz_home":1400,"pole_hz_away":2800,"pole_r_q0":0.9910,"pole_r_q1":0.9965,"zero_hz":[1400,2800],"zero_r":0.9993,"zero_moves":"tracks above peak","gain_db":-1.8},
+      {"role":"air restraint","pole_hz_home":7000,"pole_hz_away":9000,"pole_r_q0":0.9900,"pole_r_q1":0.9940,"zero_hz":[19531.25,19531.25],"zero_r":0.9990,"zero_moves":"fixed high cap","gain_db":-0.7}
+    ],
+    "morph_moves": "Peak center sweeps one octave upward.",
+    "q_exposes": "Peak sharpness and canyon depth.",
+    "carve_zeros_where": "Move the lower/upper canyon rows around the main peak.",
+    "audition_on": "saw, vocal, hat",
+    "note": "The support peaks keep the sweep from sounding like a lone sine whistle."
+  },
+  {
+    "type": "Swept EQ 2/1 Octave",
+    "family": "swept_eq",
+    "dsp_identity": "RBJ peaking-EQ style root form with two-octave center travel; same pole/zero angle, radius contrast sets boost.",
+    "sections": [
+      {"role":"main swept peak","pole_hz_home":500,"pole_hz_away":2000,"pole_r_q0":0.9920,"pole_r_q1":0.9988,"zero_hz":[500,2000],"zero_r":0.9860,"zero_moves":"tracks peak 1:1","gain_db":3.2},
+      {"role":"lower octave echo","pole_hz_home":250,"pole_hz_away":1000,"pole_r_q0":0.9910,"pole_r_q1":0.9972,"zero_hz":[250,1000],"zero_r":0.9880,"zero_moves":"tracks one octave below","gain_db":1.2},
+      {"role":"upper octave echo","pole_hz_home":1000,"pole_hz_away":4000,"pole_r_q0":0.9910,"pole_r_q1":0.9972,"zero_hz":[1000,4000],"zero_r":0.9880,"zero_moves":"tracks one octave above","gain_db":1.2},
+      {"role":"lower canyon","pole_hz_home":350,"pole_hz_away":1400,"pole_r_q0":0.9910,"pole_r_q1":0.9968,"zero_hz":[350,1400],"zero_r":0.9994,"zero_moves":"tracks between lower echo and main","gain_db":-2.0},
+      {"role":"upper canyon","pole_hz_home":700,"pole_hz_away":2800,"pole_r_q0":0.9910,"pole_r_q1":0.9968,"zero_hz":[700,2800],"zero_r":0.9994,"zero_moves":"tracks between main and upper echo","gain_db":-2.0},
+      {"role":"air restraint","pole_hz_home":6500,"pole_hz_away":9500,"pole_r_q0":0.9900,"pole_r_q1":0.9945,"zero_hz":[19531.25,19531.25],"zero_r":0.9990,"zero_moves":"fixed high cap","gain_db":-0.8}
+    ],
+    "morph_moves": "Peak center sweeps 500 -> 2000 Hz.",
+    "q_exposes": "Sharper peak and deeper flanking canyons.",
+    "carve_zeros_where": "Tune 350->1400 and 700->2800 Hz canyons by ear.",
+    "audition_on": "reece, saw, vocal",
+    "note": "Two-octave travel starts to sound like articulation rather than EQ automation."
+  },
+  {
+    "type": "Swept EQ 3/1 Octave",
+    "family": "swept_eq",
+    "dsp_identity": "RBJ peaking-EQ style root form with three-octave center travel; wide sweep needs support rows to stay musical.",
+    "sections": [
+      {"role":"main swept peak","pole_hz_home":350,"pole_hz_away":2800,"pole_r_q0":0.9920,"pole_r_q1":0.9990,"zero_hz":[350,2800],"zero_r":0.9860,"zero_moves":"tracks peak 1:1","gain_db":3.4},
+      {"role":"lower echo","pole_hz_home":175,"pole_hz_away":1400,"pole_r_q0":0.9910,"pole_r_q1":0.9974,"zero_hz":[175,1400],"zero_r":0.9880,"zero_moves":"tracks one octave below","gain_db":1.2},
+      {"role":"upper echo","pole_hz_home":700,"pole_hz_away":5600,"pole_r_q0":0.9910,"pole_r_q1":0.9974,"zero_hz":[700,5600],"zero_r":0.9880,"zero_moves":"tracks one octave above","gain_db":1.2},
+      {"role":"low canyon","pole_hz_home":245,"pole_hz_away":1960,"pole_r_q0":0.9910,"pole_r_q1":0.9968,"zero_hz":[245,1960],"zero_r":0.9994,"zero_moves":"tracks lower gap","gain_db":-2.2},
+      {"role":"high canyon","pole_hz_home":490,"pole_hz_away":3920,"pole_r_q0":0.9910,"pole_r_q1":0.9968,"zero_hz":[490,3920],"zero_r":0.9994,"zero_moves":"tracks upper gap","gain_db":-2.2},
+      {"role":"air restraint","pole_hz_home":6000,"pole_hz_away":12000,"pole_r_q0":0.9900,"pole_r_q1":0.9950,"zero_hz":[19531.25,19531.25],"zero_r":0.9990,"zero_moves":"fixed high cap","gain_db":-1.0}
+    ],
+    "morph_moves": "Peak center sweeps 350 -> 2800 Hz.",
+    "q_exposes": "Aggressive narrowness; Q100 should be plotted for whistle risk.",
+    "carve_zeros_where": "The low and high canyon rows are the musical control.",
+    "audition_on": "reece, saw, noise",
+    "note": "The huge travel needs canyons; otherwise it is just a moving resonator."
+  },
+  {
+    "type": "Phaser 1",
+    "family": "phaser",
+    "dsp_identity": "Classic phaser is dry plus cascaded allpass; in this pure body, the audible notches are represented directly as unit-near zero pairs with nearby poles.",
+    "sections": [
+      {"role":"notch 1","pole_hz_home":320,"pole_hz_away":780,"pole_r_q0":0.9920,"pole_r_q1":0.9985,"zero_hz":[320,780],"zero_r":0.9997,"zero_moves":"tracks pole notch","gain_db":-1.4},
+      {"role":"notch 2","pole_hz_home":680,"pole_hz_away":1650,"pole_r_q0":0.9920,"pole_r_q1":0.9985,"zero_hz":[680,1650],"zero_r":0.9997,"zero_moves":"tracks pole notch","gain_db":-1.4},
+      {"role":"notch 3","pole_hz_home":1450,"pole_hz_away":3500,"pole_r_q0":0.9920,"pole_r_q1":0.9985,"zero_hz":[1450,3500],"zero_r":0.9997,"zero_moves":"tracks pole notch","gain_db":-1.4},
+      {"role":"notch 4","pole_hz_home":3100,"pole_hz_away":7200,"pole_r_q0":0.9920,"pole_r_q1":0.9985,"zero_hz":[3100,7200],"zero_r":0.9997,"zero_moves":"tracks pole notch","gain_db":-1.4},
+      {"role":"shallow notch 5","pole_hz_home":5800,"pole_hz_away":11000,"pole_r_q0":0.9910,"pole_r_q1":0.9965,"zero_hz":[5800,11000],"zero_r":0.9992,"zero_moves":"tracks upper phase notch","gain_db":-0.7},
+      {"role":"shallow notch 6","pole_hz_home":10000,"pole_hz_away":14500,"pole_r_q0":0.9910,"pole_r_q1":0.9960,"zero_hz":[10000,14500],"zero_r":0.9990,"zero_moves":"tracks upper phase notch","gain_db":-0.5}
+    ],
+    "morph_moves": "Notch bank sweeps upward.",
+    "q_exposes": "Notch narrowness and whoosh depth.",
+    "carve_zeros_where": "Move notches 2 and 3 first; they carry most audible phaser motion.",
+    "audition_on": "hat, saw, noise",
+    "note": "The pole keeps each notch from becoming a dead static hole."
+  },
+  {
+    "type": "Phaser 2",
+    "family": "phaser",
+    "dsp_identity": "Six moving phaser notches, modeled as zero-dominant SOS rows; maps allpass-plus-dry cancellation frequencies into direct z-plane zeros.",
+    "sections": [
+      {"role":"notch 1","pole_hz_home":220,"pole_hz_away":520,"pole_r_q0":0.9930,"pole_r_q1":0.9992,"zero_hz":[220,520],"zero_r":0.9999,"zero_moves":"tracks notch bank","gain_db":-2.0},
+      {"role":"notch 2","pole_hz_home":420,"pole_hz_away":1000,"pole_r_q0":0.9930,"pole_r_q1":0.9992,"zero_hz":[420,1000],"zero_r":0.9999,"zero_moves":"tracks notch bank","gain_db":-2.0},
+      {"role":"notch 3","pole_hz_home":800,"pole_hz_away":1900,"pole_r_q0":0.9930,"pole_r_q1":0.9992,"zero_hz":[800,1900],"zero_r":0.9999,"zero_moves":"tracks notch bank","gain_db":-2.2},
+      {"role":"notch 4","pole_hz_home":1500,"pole_hz_away":3600,"pole_r_q0":0.9930,"pole_r_q1":0.9992,"zero_hz":[1500,3600],"zero_r":0.9999,"zero_moves":"tracks notch bank","gain_db":-2.2},
+      {"role":"notch 5","pole_hz_home":2850,"pole_hz_away":6800,"pole_r_q0":0.9925,"pole_r_q1":0.9988,"zero_hz":[2850,6800],"zero_r":0.9997,"zero_moves":"tracks notch bank","gain_db":-1.8},
+      {"role":"notch 6","pole_hz_home":5400,"pole_hz_away":12000,"pole_r_q0":0.9920,"pole_r_q1":0.9984,"zero_hz":[5400,12000],"zero_r":0.9995,"zero_moves":"tracks notch bank","gain_db":-1.5}
+    ],
+    "morph_moves": "Dense notch bank sweeps upward.",
+    "q_exposes": "Deep phase hollows and narrow cancellations.",
+    "carve_zeros_where": "Rows 3-5 define the vocal mid scoop.",
+    "audition_on": "hat, break, saw",
+    "note": "Six notches make it unmistakably phase-like even without a dry/wet allpass sum."
+  },
+  {
+    "type": "Bat Phaser",
+    "family": "phaser",
+    "dsp_identity": "Asymmetric phaser notch map: low notches rise while upper notches fold downward, giving winged contrary cancellation.",
+    "sections": [
+      {"role":"low wing notch","pole_hz_home":180,"pole_hz_away":420,"pole_r_q0":0.9930,"pole_r_q1":0.9990,"zero_hz":[180,420],"zero_r":0.9998,"zero_moves":"low wing rises","gain_db":-1.8},
+      {"role":"low-mid wing notch","pole_hz_home":360,"pole_hz_away":820,"pole_r_q0":0.9930,"pole_r_q1":0.9990,"zero_hz":[360,820],"zero_r":0.9998,"zero_moves":"low wing rises","gain_db":-2.0},
+      {"role":"mid hinge notch","pole_hz_home":740,"pole_hz_away":1550,"pole_r_q0":0.9930,"pole_r_q1":0.9992,"zero_hz":[740,1550],"zero_r":0.9999,"zero_moves":"hinge rises","gain_db":-2.4},
+      {"role":"upper hinge notch","pole_hz_home":1850,"pole_hz_away":1300,"pole_r_q0":0.9930,"pole_r_q1":0.9992,"zero_hz":[1850,1300],"zero_r":0.9999,"zero_moves":"folds downward","gain_db":-2.4},
+      {"role":"upper wing notch","pole_hz_home":4100,"pole_hz_away":2900,"pole_r_q0":0.9925,"pole_r_q1":0.9988,"zero_hz":[4100,2900],"zero_r":0.9997,"zero_moves":"folds downward","gain_db":-1.8},
+      {"role":"air wing notch","pole_hz_home":8700,"pole_hz_away":6200,"pole_r_q0":0.9920,"pole_r_q1":0.9984,"zero_hz":[8700,6200],"zero_r":0.9995,"zero_moves":"folds downward","gain_db":-1.2}
+    ],
+    "morph_moves": "Low wing rises while top wing falls.",
+    "q_exposes": "Wing narrowness and hinge bite.",
+    "carve_zeros_where": "Mid hinge rows 3 and 4 make or break the sound.",
+    "audition_on": "saw, hat, reece",
+    "note": "Contrary notch motion gives a memorable phase vowel instead of a generic sweep."
+  },
+  {
+    "type": "Flanger Lite",
+    "family": "flanger",
+    "dsp_identity": "Feedforward comb excerpt: notches at odd multiples of 1/(2*delay); six z-plane zeros approximate a short moving delay from 2.0 ms to 0.7 ms.",
+    "sections": [
+      {"role":"comb notch 1","pole_hz_home":250,"pole_hz_away":714,"pole_r_q0":0.9905,"pole_r_q1":0.9955,"zero_hz":[250,714],"zero_r":0.9998,"zero_moves":"delay 2.0 ms -> 0.7 ms","gain_db":-0.8},
+      {"role":"comb notch 2","pole_hz_home":750,"pole_hz_away":2143,"pole_r_q0":0.9905,"pole_r_q1":0.9955,"zero_hz":[750,2143],"zero_r":0.9998,"zero_moves":"delay 2.0 ms -> 0.7 ms","gain_db":-0.8},
+      {"role":"comb notch 3","pole_hz_home":1250,"pole_hz_away":3571,"pole_r_q0":0.9905,"pole_r_q1":0.9955,"zero_hz":[1250,3571],"zero_r":0.9998,"zero_moves":"delay 2.0 ms -> 0.7 ms","gain_db":-0.8},
+      {"role":"comb notch 4","pole_hz_home":1750,"pole_hz_away":5000,"pole_r_q0":0.9905,"pole_r_q1":0.9955,"zero_hz":[1750,5000],"zero_r":0.9998,"zero_moves":"delay 2.0 ms -> 0.7 ms","gain_db":-0.8},
+      {"role":"comb notch 5","pole_hz_home":2250,"pole_hz_away":6429,"pole_r_q0":0.9905,"pole_r_q1":0.9955,"zero_hz":[2250,6429],"zero_r":0.9997,"zero_moves":"delay 2.0 ms -> 0.7 ms","gain_db":-0.7},
+      {"role":"comb notch 6","pole_hz_home":2750,"pole_hz_away":7857,"pole_r_q0":0.9905,"pole_r_q1":0.9955,"zero_hz":[2750,7857],"zero_r":0.9997,"zero_moves":"delay 2.0 ms -> 0.7 ms","gain_db":-0.7}
+    ],
+    "morph_moves": "Comb delay shortens, pushing notch train upward.",
+    "q_exposes": "Feedback-like notch sharpness, kept lighter than phaser.",
+    "carve_zeros_where": "Keep harmonic spacing; move all six together.",
+    "audition_on": "hat, break, saw",
+    "note": "The exact spacing matters more than the individual notch depths."
+  },
+  {
+    "type": "Vocal Ah-Ay-Ee",
+    "family": "vowel",
+    "dsp_identity": "Clean-room Klatt/Peterson-Barney-style formant map: Ah endpoints near F1/F2/F3 = 730/1090/2440 Hz, Ee near 270/2290/3010 Hz; midpoint should approximate Ay.",
+    "sections": [
+      {"role":"F1 ridge","pole_hz_home":730,"pole_hz_away":270,"pole_r_q0":0.9930,"pole_r_q1":0.9992,"zero_hz":[450,350],"zero_r":0.9880,"zero_moves":"low anti-formant follows F1","gain_db":2.0},
+      {"role":"F2 ridge","pole_hz_home":1090,"pole_hz_away":2290,"pole_r_q0":0.9930,"pole_r_q1":0.9992,"zero_hz":[1450,1650],"zero_r":0.9880,"zero_moves":"canyon between F1 and F2","gain_db":2.4},
+      {"role":"F3 ridge","pole_hz_home":2440,"pole_hz_away":3010,"pole_r_q0":0.9925,"pole_r_q1":0.9988,"zero_hz":[1850,2600],"zero_r":0.9890,"zero_moves":"canyon below F3","gain_db":1.6},
+      {"role":"low anti-formant","pole_hz_home":520,"pole_hz_away":430,"pole_r_q0":0.9910,"pole_r_q1":0.9965,"zero_hz":[520,430],"zero_r":0.9994,"zero_moves":"tracks low vowel hollow","gain_db":-2.0},
+      {"role":"F1-F2 canyon","pole_hz_home":900,"pole_hz_away":1250,"pole_r_q0":0.9910,"pole_r_q1":0.9970,"zero_hz":[900,1250],"zero_r":0.9996,"zero_moves":"tracks midpoint canyon","gain_db":-3.0},
+      {"role":"F2-F3 canyon","pole_hz_home":1650,"pole_hz_away":2650,"pole_r_q0":0.9910,"pole_r_q1":0.9968,"zero_hz":[1650,2650],"zero_r":0.9993,"zero_moves":"tracks upper vowel hollow","gain_db":-2.2}
+    ],
+    "morph_moves": "Ah -> Ee endpoints, with Ay expected near Morph50.",
+    "q_exposes": "Formant sharpness and canyon articulation.",
+    "carve_zeros_where": "F1-F2 canyon row first; it determines whether the midpoint says Ay.",
+    "audition_on": "vocal, saw, reece",
+    "note": "The vowel comes from ridge plus canyon spacing, not from formant peaks alone."
+  },
+  {
+    "type": "Vocal Oo-Ah",
+    "family": "vowel",
+    "dsp_identity": "Clean-room vowel formant map: Oo near 300/870/2240 Hz, Ah near 730/1090/2440 Hz; zeros supply lip/tract anti-formant hollows.",
+    "sections": [
+      {"role":"F1 ridge","pole_hz_home":300,"pole_hz_away":730,"pole_r_q0":0.9930,"pole_r_q1":0.9992,"zero_hz":[420,520],"zero_r":0.9880,"zero_moves":"moves with low vowel cavity","gain_db":2.2},
+      {"role":"F2 ridge","pole_hz_home":870,"pole_hz_away":1090,"pole_r_q0":0.9930,"pole_r_q1":0.9990,"zero_hz":[620,900],"zero_r":0.9880,"zero_moves":"opens from rounded to open vowel","gain_db":2.0},
+      {"role":"F3 ridge","pole_hz_home":2240,"pole_hz_away":2440,"pole_r_q0":0.9925,"pole_r_q1":0.9986,"zero_hz":[1500,1650],"zero_r":0.9890,"zero_moves":"upper canyon follows F3","gain_db":1.4},
+      {"role":"rounding anti-formant","pole_hz_home":520,"pole_hz_away":650,"pole_r_q0":0.9910,"pole_r_q1":0.9970,"zero_hz":[520,650],"zero_r":0.9996,"zero_moves":"reduces rounded hollow into Ah","gain_db":-3.0},
+      {"role":"F2-F3 canyon","pole_hz_home":1350,"pole_hz_away":1600,"pole_r_q0":0.9910,"pole_r_q1":0.9968,"zero_hz":[1350,1600],"zero_r":0.9994,"zero_moves":"tracks upper hollow","gain_db":-2.2},
+      {"role":"air restraint","pole_hz_home":5200,"pole_hz_away":6200,"pole_r_q0":0.9905,"pole_r_q1":0.9950,"zero_hz":[19531.25,19531.25],"zero_r":0.9990,"zero_moves":"fixed high cap","gain_db":-1.0}
+    ],
+    "morph_moves": "Rounded Oo opens into Ah.",
+    "q_exposes": "Lip/formant focus and hollow depth.",
+    "carve_zeros_where": "The 520->650 Hz anti-formant controls the rounded character.",
+    "audition_on": "vocal, reece, saw",
+    "note": "Oo needs the low anti-formant; without it this becomes a dull Ah sweep."
+  },
+  {
+    "type": "Dual EQ Morph",
+    "family": "eq_morph",
+    "dsp_identity": "Two RBJ-style peaking EQ ridges moving in opposite directions, with zero canyons between them.",
+    "sections": [
+      {"role":"low peak rises","pole_hz_home":180,"pole_hz_away":720,"pole_r_q0":0.9925,"pole_r_q1":0.9990,"zero_hz":[180,720],"zero_r":0.9860,"zero_moves":"tracks low peak","gain_db":2.4},
+      {"role":"high peak falls","pole_hz_home":2400,"pole_hz_away":900,"pole_r_q0":0.9925,"pole_r_q1":0.9990,"zero_hz":[2400,900],"zero_r":0.9860,"zero_moves":"tracks high peak","gain_db":2.4},
+      {"role":"sub anchor","pole_hz_home":95,"pole_hz_away":120,"pole_r_q0":0.9930,"pole_r_q1":0.9984,"zero_hz":[70,90],"zero_r":0.9900,"zero_moves":"small body follow","gain_db":1.0},
+      {"role":"mid canyon","pole_hz_home":430,"pole_hz_away":780,"pole_r_q0":0.9910,"pole_r_q1":0.9970,"zero_hz":[430,780],"zero_r":0.9996,"zero_moves":"tracks between peaks","gain_db":-3.0},
+      {"role":"upper canyon","pole_hz_home":1250,"pole_hz_away":1650,"pole_r_q0":0.9910,"pole_r_q1":0.9968,"zero_hz":[1250,1650],"zero_r":0.9994,"zero_moves":"tracks upper hollow","gain_db":-2.2},
+      {"role":"air trim","pole_hz_home":7000,"pole_hz_away":9500,"pole_r_q0":0.9900,"pole_r_q1":0.9945,"zero_hz":[19531.25,19531.25],"zero_r":0.9990,"zero_moves":"fixed high cap","gain_db":-0.8}
+    ],
+    "morph_moves": "Low ridge rises while high ridge falls.",
+    "q_exposes": "Peak contrast and canyon bite.",
+    "carve_zeros_where": "Mid canyon row is the main sculpting handle.",
+    "audition_on": "reece, saw, 808",
+    "note": "Opposed EQ motion gives bass movement while preserving a body anchor."
+  },
+  {
+    "type": "Dual EQ + LP Morph",
+    "family": "eq_morph",
+    "dsp_identity": "Dual peaking EQ morph plus moving lowpass cap; combines RBJ peaks with a textbook Nyquist-zero lowpass row.",
+    "sections": [
+      {"role":"body anchor","pole_hz_home":90,"pole_hz_away":140,"pole_r_q0":0.9930,"pole_r_q1":0.9988,"zero_hz":[65,90],"zero_r":0.9880,"zero_moves":"small sub/body follow","gain_db":1.5},
+      {"role":"growl peak","pole_hz_home":180,"pole_hz_away":520,"pole_r_q0":0.9925,"pole_r_q1":0.9992,"zero_hz":[180,520],"zero_r":0.9860,"zero_moves":"tracks growl ridge","gain_db":2.4},
+      {"role":"bite peak","pole_hz_home":900,"pole_hz_away":2400,"pole_r_q0":0.9920,"pole_r_q1":0.9990,"zero_hz":[900,2400],"zero_r":0.9870,"zero_moves":"tracks bite ridge","gain_db":2.2},
+      {"role":"mid canyon","pole_hz_home":350,"pole_hz_away":800,"pole_r_q0":0.9910,"pole_r_q1":0.9974,"zero_hz":[350,800],"zero_r":0.9996,"zero_moves":"tracks between growl and bite","gain_db":-3.2},
+      {"role":"lowpass cap","pole_hz_home":3200,"pole_hz_away":9500,"pole_r_q0":0.9910,"pole_r_q1":0.9970,"zero_hz":[19531.25,19531.25],"zero_r":0.9998,"zero_moves":"fixed at Nyquist","gain_db":-0.7},
+      {"role":"air notch","pole_hz_home":7200,"pole_hz_away":12500,"pole_r_q0":0.9905,"pole_r_q1":0.9960,"zero_hz":[7200,12500],"zero_r":0.9994,"zero_moves":"tracks top harshness","gain_db":-1.6}
+    ],
+    "morph_moves": "Body stays low, growl and bite move upward, top cap opens.",
+    "q_exposes": "Growl/bite sharpness and canyon aggression.",
+    "carve_zeros_where": "Mid canyon at 350->800 Hz and air notch at 7200->12500 Hz.",
+    "audition_on": "reece, 808, saw",
+    "note": "This gives bass motion, zero-carving, and high restraint in one six-row card."
+  },
+  {
+    "type": "Dual EQ Morph/Expression",
+    "family": "eq_morph",
+    "dsp_identity": "Dual/tri peaking EQ with Q as expression pressure; derived from RBJ peaking rows plus zero-dominant articulation cuts.",
+    "sections": [
+      {"role":"growl expression peak","pole_hz_home":160,"pole_hz_away":420,"pole_r_q0":0.9930,"pole_r_q1":0.9994,"zero_hz":[160,420],"zero_r":0.9860,"zero_moves":"tracks growl expression","gain_db":2.5},
+      {"role":"vowel expression peak","pole_hz_home":700,"pole_hz_away":1800,"pole_r_q0":0.9930,"pole_r_q1":0.9996,"zero_hz":[700,1800],"zero_r":0.9860,"zero_moves":"tracks vowel expression","gain_db":2.5},
+      {"role":"air expression peak","pole_hz_home":2600,"pole_hz_away":5200,"pole_r_q0":0.9915,"pole_r_q1":0.9988,"zero_hz":[2600,5200],"zero_r":0.9880,"zero_moves":"tracks upper expression","gain_db":1.0},
+      {"role":"growl-vowel canyon","pole_hz_home":330,"pole_hz_away":900,"pole_r_q0":0.9910,"pole_r_q1":0.9976,"zero_hz":[330,900],"zero_r":0.9996,"zero_moves":"tracks first articulation hollow","gain_db":-3.0},
+      {"role":"vowel-air canyon","pole_hz_home":1400,"pole_hz_away":3100,"pole_r_q0":0.9910,"pole_r_q1":0.9972,"zero_hz":[1400,3100],"zero_r":0.9994,"zero_moves":"tracks second articulation hollow","gain_db":-2.5},
+      {"role":"contrary expression notch","pole_hz_home":5200,"pole_hz_away":1800,"pole_r_q0":0.9905,"pole_r_q1":0.9965,"zero_hz":[5200,1800],"zero_r":0.9992,"zero_moves":"falls while peaks rise","gain_db":-1.2}
+    ],
+    "morph_moves": "Peaks rise while one expression notch falls.",
+    "q_exposes": "Performance pressure: Q100 is deliberately more animated than utility EQ.",
+    "carve_zeros_where": "Rows 4-6; they decide the expressive syllable.",
+    "audition_on": "reece, vocal, saw",
+    "note": "It behaves like an instrument macro because Q changes articulation, not only resonance."
+  },
+  {
+    "type": "Peak/Shelf Morph",
+    "family": "eq_morph",
+    "dsp_identity": "Morph from RBJ peaking behavior toward high-shelf behavior using stacked pole/zero radius contrast plus a Nyquist cap.",
+    "sections": [
+      {"role":"peak core","pole_hz_home":750,"pole_hz_away":2200,"pole_r_q0":0.9925,"pole_r_q1":0.9990,"zero_hz":[750,2200],"zero_r":0.9860,"zero_moves":"tracks peak-to-shelf knee","gain_db":3.0},
+      {"role":"shelf knee low","pole_hz_home":1200,"pole_hz_away":3200,"pole_r_q0":0.9915,"pole_r_q1":0.9980,"zero_hz":[900,2200],"zero_r":0.9870,"zero_moves":"lags below pole for shelf tilt","gain_db":1.5},
+      {"role":"shelf knee high","pole_hz_home":2500,"pole_hz_away":6500,"pole_r_q0":0.9910,"pole_r_q1":0.9974,"zero_hz":[1800,4600],"zero_r":0.9880,"zero_moves":"lags below pole for shelf tilt","gain_db":1.2},
+      {"role":"low counter zero","pole_hz_home":450,"pole_hz_away":900,"pole_r_q0":0.9910,"pole_r_q1":0.9968,"zero_hz":[450,900],"zero_r":0.9994,"zero_moves":"tracks counter-cut","gain_db":-1.8},
+      {"role":"shelf cap","pole_hz_home":8000,"pole_hz_away":14000,"pole_r_q0":0.9905,"pole_r_q1":0.9955,"zero_hz":[19531.25,19531.25],"zero_r":0.9990,"zero_moves":"fixed Nyquist cap","gain_db":-0.6},
+      {"role":"expression bite","pole_hz_home":1600,"pole_hz_away":4200,"pole_r_q0":0.9915,"pole_r_q1":0.9982,"zero_hz":[1600,4200],"zero_r":0.9920,"zero_moves":"tracks bite ridge","gain_db":0.8}
+    ],
+    "morph_moves": "Narrow peak opens into broader high lift.",
+    "q_exposes": "Peak narrowness at home, shelf edge bite away.",
+    "carve_zeros_where": "Low counter zero controls whether the shelf feels musical or harsh.",
+    "audition_on": "hat, saw, vocal",
+    "note": "The lagging zero rows are what make it read as a shelf instead of a louder peak."
+  }
+]

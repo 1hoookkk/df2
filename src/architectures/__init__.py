@@ -1,0 +1,1 @@
+"""Pure mathematical body architectures."""

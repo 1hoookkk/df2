@@ -1,0 +1,37 @@
+<!doctype html>
+<meta charset="utf-8">
+<title>df2 frame quarry</title>
+<style>
+  html,body{margin:0;background:#0d0e11;color:#c4cad2;font:13px Consolas,monospace}
+  header{padding:10px 16px;border-bottom:1px solid #24272d}
+  header b{color:#e8923a}
+  header span{color:#5a606a}
+  #grid{display:flex;flex-wrap:wrap;gap:10px;padding:14px}
+  .tile{width:180px;background:#15171b;border:1px solid #24272d;border-radius:6px;padding:8px}
+  .tile canvas{width:164px;height:64px;display:block;background:#0d0e11;border-radius:3px}
+  .nm{color:#c4cad2;margin:6px 2px 2px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+  .meta{color:#5a606a;margin:0 2px 6px;font-size:11px}
+  .btns{display:flex;gap:6px}
+  .btns button{flex:1;background:#1b1e23;color:#c4cad2;border:1px solid #2a2e35;border-radius:4px;
+    padding:5px 0;cursor:pointer;font:600 12px Consolas,monospace}
+  .btns button:hover{border-color:#e8923a;color:#e8923a}
+  .btns .b:hover{border-color:#6fa8d0;color:#6fa8d0}
+  #msg{color:#5fae6e;padding:0 16px 10px}
+  #fitbar{display:flex;gap:8px;align-items:center;padding:10px 16px;border-bottom:1px solid #24272d}
+  #fitbar span{color:#5a606a}
+  #fitbar input{flex:1;background:#0d0e11;color:#c4cad2;border:1px solid #2a2e35;border-radius:4px;
+    padding:6px 8px;font:12px Consolas,monospace}
+  #fitbar input:focus{outline:none;border-color:#e8923a}
+  #fitbar button{background:#1b1e23;color:#e8923a;border:1px solid #e8923a;border-radius:4px;
+    padding:6px 12px;cursor:pointer;font:600 12px Consolas,monospace}
+  #fitbar button:hover{background:#e8923a;color:#0d0e11}
+</style>
+<header><b>df2 section palette</b> &nbsp;<span>grounded resonances (vowels · physics · voice · your fits), low&rarr;high · click &rarr;A / &rarr;B to drop into the next open lane of the open zedit tab</span></header>
+<div id="fitbar">
+  <span>audio fitter:</span>
+  <input id="fitpath" type="text" placeholder="paste a WAV path  (e.g. C:\Users\hooki\Downloads\vox.wav)" spellcheck="false">
+  <button id="fitbtn">Fit &rarr; sections</button>
+</div>
+<div id="msg">loading…</div>
+<div id="grid"></div>
+<script type="module" src="js/quarry.js"></script>

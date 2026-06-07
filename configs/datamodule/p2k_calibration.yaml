@@ -1,0 +1,6 @@
+name: p2k_calibration
+reference_jsonl: ref/p2k_variants/study_best_of_best/exact_packed_bodies.jsonl
+reference_variant: 0
+runtime_sample_rate_hz: 39062.5
+reference_policy: aggregate_metrics_only
+audition_source: reese

@@ -1,0 +1,58 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<title>df2 — vowel pad</title>
+<style>
+  :root{ --bg:#0c0e11; --panel:#14171b; --line:#262a31; --ink:#cdd3db; --dim:#727a86;
+         --accent:#e8923a; --good:#5fae6e; --warn:#d6564c; --cool:#6fa8d0; }
+  *{ box-sizing:border-box; }
+  html,body{ margin:0; height:100%; background:var(--bg); color:var(--ink);
+             font:13px/1.4 Consolas,ui-monospace,monospace; -webkit-text-size-adjust:100%; }
+  #wrap{ display:flex; gap:14px; padding:14px; height:100%; }
+  @media(max-width:760px){ #wrap{ flex-direction:column; } }
+  #left,#right{ display:flex; flex-direction:column; gap:10px; }
+  #left{ flex:0 0 auto; }
+  #right{ flex:1 1 auto; min-width:0; }
+  h1{ font-size:14px; margin:0 0 2px; color:var(--accent); font-weight:600; }
+  .sub{ color:var(--dim); font-size:11px; }
+  canvas{ display:block; background:var(--panel); border:1px solid var(--line); border-radius:6px; touch-action:none; }
+  #pad{ width:min(70vw,460px); height:min(70vw,460px); cursor:crosshair; }
+  #plot{ width:100%; height:200px; }
+  #ctrls{ display:flex; flex-wrap:wrap; gap:10px 16px; align-items:center;
+          background:var(--panel); border:1px solid var(--line); border-radius:6px; padding:10px 12px; }
+  label{ display:flex; align-items:center; gap:7px; color:var(--dim); }
+  input[type=range]{ width:120px; accent-color:var(--accent); }
+  select,button{ background:#1b1f25; color:var(--ink); border:1px solid var(--line);
+                 border-radius:5px; padding:7px 12px; font:inherit; cursor:pointer; }
+  button#play.on{ background:var(--accent); color:#0c0e11; border-color:var(--accent); }
+  button:hover{ border-color:var(--accent); }
+  #readout{ color:var(--dim); font-size:11px; min-height:16px; }
+  b{ color:var(--ink); } .hot{ color:var(--accent); } .warnc{ color:var(--warn); }
+</style>
+</head>
+<body>
+<div id="wrap">
+  <div id="left">
+    <div><h1>df2 vowel pad</h1><div class="sub">drag anywhere — blends every vowel in word-space · plot == engine</div></div>
+    <canvas id="pad"></canvas>
+  </div>
+  <div id="right">
+    <canvas id="plot"></canvas>
+    <div id="ctrls">
+      <label>Q <input id="q" type="range" min="0" max="100" value="0"></label>
+      <label>drive <input id="drive" type="range" min="0" max="100" value="30"></label>
+      <label>src <select id="src">
+        <option value="3">voice</option><option value="0">saw</option>
+        <option value="2">808</option><option value="1">noise</option></select></label>
+      <button id="play">▶ play</button>
+      <button id="save">save .body240</button>
+    </div>
+    <div id="readout"></div>
+  </div>
+</div>
+<script src="data/vowel_pool.js"></script>
+<script type="module" src="js/vowel_pad.js"></script>
+</body>
+</html>

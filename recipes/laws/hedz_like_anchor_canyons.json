@@ -1,0 +1,10 @@
+{
+  "name": "hedz_like_anchor_canyons",
+  "anchor_hz": 680.0,
+  "anchor_gain_db": 5.5,
+  "tilt_db": 8.0,
+  "canyon_depth": 18.0,
+  "q_crank": 0.72,
+  "morph_spread": 0.86,
+  "density": 0.78
+}

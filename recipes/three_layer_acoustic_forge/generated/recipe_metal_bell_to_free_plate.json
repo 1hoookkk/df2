@@ -1,0 +1,163 @@
+{
+  "format": "three-layer-acoustic-recipe-v1",
+  "name": "recipe_metal_bell_to_free_plate",
+  "sample_rate_hz": 39062.5,
+  "clean_room_note": "Generated from clean acoustic tables. Recovered q_radius_table is used only as range calibration metadata.",
+  "table_sources": [
+    "metallic_modes.json",
+    "physical_models.py",
+    "q_radius_table.json"
+  ],
+  "calibration": {
+    "q_radius_table": {
+      "policy": "calibration_range_only_not_exact_value_copy",
+      "entries": 45,
+      "radius_min": 0.1238632,
+      "radius_max": 0.9862709,
+      "radius_median": 0.9100761
+    }
+  },
+  "notes": {
+    "source": "metallic modal ratios",
+    "from": "tuned church bell (minor-third partial set)",
+    "to": "free flat circular plate (cymbal-ish / sheet / 'anvil' plate)",
+    "fundamental_hz": 500.0
+  },
+  "anatomy": {
+    "poles": [
+      {
+        "lane": 0,
+        "role": "low mode",
+        "pole_hz": 387.298335,
+        "pole_radius_q0": 0.996387426,
+        "pole_radius_q100": 0.999356809,
+        "morph_octaves": 1.263034,
+        "note": "table-derived endpoints 250.0 -> 600.0 Hz"
+      },
+      {
+        "lane": 1,
+        "role": "tierce/mid mode",
+        "pole_hz": 720.416546,
+        "pole_radius_q0": 0.996387426,
+        "pole_radius_q100": 0.999356809,
+        "morph_octaves": 1.053806,
+        "note": "table-derived endpoints 500.0 -> 1038.0 Hz"
+      },
+      {
+        "lane": 2,
+        "role": "body mode",
+        "pole_hz": 915.860251,
+        "pole_radius_q0": 0.996387426,
+        "pole_radius_q100": 0.999356809,
+        "morph_octaves": 1.22033,
+        "note": "table-derived endpoints 600.0 -> 1398.0 Hz"
+      },
+      {
+        "lane": 3,
+        "role": "clang mode",
+        "pole_hz": 1092.016483,
+        "pole_radius_q0": 0.996387426,
+        "pole_radius_q100": 0.999356809,
+        "morph_octaves": 1.084064,
+        "note": "table-derived endpoints 750.0 -> 1590.0 Hz"
+      },
+      {
+        "lane": 4,
+        "role": "shimmer mode",
+        "pole_hz": 1449.137675,
+        "pole_radius_q0": 0.996387426,
+        "pole_radius_q100": 0.999356809,
+        "morph_octaves": 1.070389,
+        "note": "table-derived endpoints 1000.0 -> 2100.0 Hz"
+      },
+      {
+        "lane": 5,
+        "role": "ceiling mode",
+        "pole_hz": 1716.828471,
+        "pole_radius_q0": 0.996387426,
+        "pole_radius_q100": 0.999356809,
+        "morph_octaves": 0.915636,
+        "note": "table-derived endpoints 1250.0 -> 2358.0 Hz"
+      }
+    ]
+  },
+  "articulation": {
+    "zero_table_archetype": "metal:bell->free_plate",
+    "zeros": [
+      {
+        "lane": 0,
+        "mode": "modal-canyon",
+        "zero_home_ratio": 2.15,
+        "zero_away_ratio": 2.35,
+        "zero_radius_q0": 0.84,
+        "zero_radius_q100": 0.965,
+        "depth": 0.72,
+        "note": "clean-room zero relation generated from table endpoints"
+      },
+      {
+        "lane": 1,
+        "mode": "strike-canyon",
+        "zero_home_ratio": 0.46,
+        "zero_away_ratio": 1.05052,
+        "zero_radius_q0": 0.885,
+        "zero_radius_q100": 0.972,
+        "depth": 0.72,
+        "note": "clean-room zero relation generated from table endpoints"
+      },
+      {
+        "lane": 2,
+        "mode": "inharmonic-canyon",
+        "zero_home_ratio": 1.075,
+        "zero_away_ratio": 0.801888,
+        "zero_radius_q0": 0.93,
+        "zero_radius_q100": 0.979,
+        "depth": 0.72,
+        "note": "clean-room zero relation generated from table endpoints"
+      },
+      {
+        "lane": 3,
+        "mode": "ring-canyon",
+        "zero_home_ratio": 0.736,
+        "zero_away_ratio": 1.030189,
+        "zero_radius_q0": 0.975,
+        "zero_radius_q100": 0.986,
+        "depth": 0.72,
+        "note": "clean-room zero relation generated from table endpoints"
+      },
+      {
+        "lane": 4,
+        "mode": "shimmer-canyon",
+        "zero_home_ratio": 1.075,
+        "zero_away_ratio": 0.817714,
+        "zero_radius_q0": 1.02,
+        "zero_radius_q100": 0.993,
+        "depth": 0.72,
+        "note": "clean-room zero relation generated from table endpoints"
+      },
+      {
+        "lane": 5,
+        "mode": "ceiling-canyon",
+        "zero_home_ratio": 0.736,
+        "zero_away_ratio": 0.78,
+        "zero_radius_q0": 1.02,
+        "zero_radius_q100": 0.993,
+        "depth": 0.72,
+        "note": "clean-room zero relation generated from table endpoints"
+      }
+    ]
+  },
+  "survival": {
+    "gain_compensation_strategy": "normalize_stages",
+    "factor": 0.45,
+    "cap_db": 12.0,
+    "loss_percentile": 60.0,
+    "band_ratio": 2.3,
+    "depth_weight_min": 0.35,
+    "pressure_weight_base": 0.7,
+    "pressure_weight_q": 0.55,
+    "base_gain": 0.54,
+    "low_lane_gain_bias": 1.18,
+    "high_lane_pressure_trim": 0.9,
+    "high_lane_pressure_start": 4
+  }
+}
