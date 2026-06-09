@@ -1,0 +1,194 @@
+<!doctype html><html><head><meta charset="utf-8"><title>TRENCH · 4-corner pole/zero editor</title>
+<style>
+:root{--bg:#0a0d0c;--pan:#0e1513;--line:#1c2a25;--ink:#cfe9df;--dim:#6b7d75;--pole:#f0913e;--zero:#46c8ff;--hot:#9ff2c2}
+*{box-sizing:border-box}body{margin:0;background:var(--bg);color:var(--ink);font:12px ui-monospace,Consolas,monospace}
+#bar{display:flex;flex-wrap:wrap;gap:8px;align-items:center;padding:8px 12px;background:var(--pan);border-bottom:1px solid var(--line)}
+select,button{background:#141c19;color:var(--ink);border:1px solid #2c3d36;border-radius:5px;padding:5px 8px;font:inherit;cursor:pointer}
+button.on{background:#1d3a2c;border-color:#3a6}
+.tab{padding:5px 12px}.tab.sel{background:#243; border-color:#5b8}
+label{color:var(--dim)}input[type=range]{vertical-align:middle;width:130px}
+#wrap{display:grid;grid-template-columns:440px 1fr;gap:10px;padding:10px}
+canvas{background:#070a09;border:1px solid var(--line);border-radius:6px;display:block}
+#strip{display:grid;grid-template-columns:repeat(6,1fr);gap:6px;margin-top:8px}
+#strip canvas{width:100%;height:84px}
+.hint{color:var(--dim);font-size:11px;margin:2px 0}
+h3{margin:0 0 4px;color:var(--hot);font-size:12px;font-weight:600}
+.col{min-width:0}
+</style></head><body>
+<div id="bar">
+  <label>preset</label><select id="preset"></select>
+  <span>frame</span><button class="tab sel" data-frame="home">HOME (M0)</button><button class="tab" data-frame="away">AWAY (M100)</button>
+  <label>overlay</label><select id="ovtype"><option value="none">none</option><option value="formant">formants</option><option value="source">source-pack</option><option value="p2k">P2K</option></select>
+  <select id="ovitem"></select>
+  <label>Morph</label><input id="morph" type="range" min="0" max="1" step="0.01" value="0.5">
+  <label>Q</label><input id="q" type="range" min="0" max="1" step="0.01" value="1">
+  <button id="save">save .body240</button>
+  <span id="stat" class="hint"></span>
+</div>
+<div id="wrap">
+  <div class="col">
+    <h3>z-plane · drag X poles / O zeros (selected frame bright; corners faint)</h3>
+    <canvas id="zp" width="420" height="420"></canvas>
+    <div class="hint">X = pole (Q = distance to rim) · O = zero (the character) · angle = frequency. Q0 corner auto-broadens; the morph interior is the engine's interp.</div>
+  </div>
+  <div class="col">
+    <h3>response · plot==engine · grey=4 corners, green=live Morph/Q</h3>
+    <canvas id="resp" width="760" height="300"></canvas>
+    <h3 style="margin-top:8px">all 6 biquads (at live Morph/Q)</h3>
+    <div id="strip"></div>
+  </div>
+</div>
+<script type="module">
+import { wordsFromBytes, packedDb, hexFromWords } from "./js/packed.js";
+import { packWithCore } from "./js/pack-core.js";
+const SR=39062.5, NYQ=SR/2, FLO=30, FHI=18000;
+const $=id=>document.getElementById(id);
+const st={card:null, frame:"home", morph:0.5, q:1.0, ov:{type:"none",item:0}, words:null, drag:null};
+const broaden=r=>0.55+(Math.max(0.1,r)-0.55)*0.55;        // Q0 derives from the sharp frame (pole radius)
+const clampHz=f=>Math.min(NYQ*0.999,Math.max(20,f));
+
+// ---- data ----
+let PRESETS=[], SOURCES=[], P2K={}, FORMANTS=[];
+async function loadData(){
+  PRESETS=await (await fetch("data/foundations.json")).json();
+  for(const u of ["data/sources.js","data/p2k_overlay.js","data/formants.js"]){
+    await new Promise((ok,err)=>{const s=document.createElement("script");s.src=u;s.onload=ok;s.onerror=ok;document.head.append(s);});
+  }
+  SOURCES=window.SOURCES||[]; P2K=window.P2K_OVERLAY||{}; FORMANTS=window.FORMANTS||[];
+  const ps=$("preset"); PRESETS.forEach((p,i)=>ps.append(new Option(p.type||p.name||("preset "+i),i)));
+  fromPreset(0);
+}
+function fromPreset(i){
+  const p=PRESETS[i]; const secs=(p.sections||[]).slice(0,6);
+  while(secs.length<6) secs.push({pole_hz_home:8000,pole_hz_away:8000,pole_r_q0:0.5,pole_r_q1:0.6,zero_hz:[8000,8000],zero_r:0.0,gain_db:0});
+  st.card={name:p.type||p.name||("preset"+i), sections:secs.map(s=>({
+    on:1, zon:(s.zero_r||0)>0.02?1:0,
+    hzH:s.pole_hz_home??s.pole_hz??1000, hzA:s.pole_hz_away??s.pole_hz_home??1000,
+    rq1:s.pole_r_q1??s.pole_r_q0??0.97, rq0:s.pole_r_q0??broaden(s.pole_r_q1??0.97),
+    zfH:(s.zero_hz&&s.zero_hz[0])||s.pole_hz_home||1000, zfA:(s.zero_hz&&s.zero_hz[1])||s.pole_hz_away||1000,
+    zr:s.zero_r??0.0, gain:Math.pow(10,(s.gain_db||0)/20),
+  }))};
+  rebuildOverlayItems(); repack();
+}
+// ---- corners derive (you edit 2 frames; Q0 + interior derive) ----
+function corners(){
+  const C=[[],[],[],[]];
+  for(const s of st.card.sections){
+    const mk=(hz,r,zf)=>({on:s.on,hz:clampHz(hz),r:Math.min(0.99985,Math.max(0.1,r)),gain:s.gain,cutOn:s.zon,cutHz:clampHz(zf),cutDepth:s.zr});
+    C[0].push(mk(s.hzH,s.rq0,s.zfH)); C[1].push(mk(s.hzA,s.rq0,s.zfA));
+    C[2].push(mk(s.hzH,s.rq1,s.zfH)); C[3].push(mk(s.hzA,s.rq1,s.zfA));
+  }
+  return C;
+}
+async function repack(){
+  try{ const body=await packWithCore(corners()); st.body=body; st.words=wordsFromBytes(body); window.__body=()=>Array.from(st.body); window.__corners=()=>corners(); $("stat").textContent="packed ✓ plot==engine";}
+  catch(e){ $("stat").textContent="pack error: "+e.message; }
+  draw();
+}
+// ---- geometry ----
+const fx=(c,f)=>{const lo=Math.log2(FLO),hi=Math.log2(FHI);return 36+(c.width-50)*(Math.log2(f)-lo)/(hi-lo);};
+const dy=(c,db)=>{const top=8,bot=c.height-20,mx=30,mn=-48;return top+(bot-top)*(mx-db)/(mx-mn);};
+function curve(ctx,c,m,q,color,lw,alpha){
+  if(!st.words)return; ctx.strokeStyle=color;ctx.lineWidth=lw;ctx.globalAlpha=alpha;ctx.beginPath();
+  for(let px=36;px<c.width-14;px+=2){const lo=Math.log2(FLO),hi=Math.log2(FHI);const f=Math.pow(2,lo+(hi-lo)*(px-36)/(c.width-50));
+    const db=packedDb(st.words,m,q,f); const y=dy(c,db); px===36?ctx.moveTo(px,y):ctx.lineTo(px,y);}
+  ctx.stroke();ctx.globalAlpha=1;
+}
+// ---- response panel ----
+function drawResp(){
+  const c=$("resp"),ctx=c.getContext("2d");ctx.clearRect(0,0,c.width,c.height);
+  ctx.strokeStyle="#16201c";ctx.lineWidth=1;
+  for(const f of [100,1000,10000]){const x=fx(c,f);ctx.globalAlpha=.6;ctx.beginPath();ctx.moveTo(x,8);ctx.lineTo(x,c.height-20);ctx.stroke();ctx.fillStyle="#4a5a52";ctx.globalAlpha=1;ctx.fillText((f>=1000?f/1000+"k":f),x-6,c.height-7);}
+  for(const db of [0,-20,-40]){const y=dy(c,db);ctx.globalAlpha=.5;ctx.strokeStyle="#16201c";ctx.beginPath();ctx.moveTo(36,y);ctx.lineTo(c.width-14,y);ctx.stroke();ctx.globalAlpha=1;ctx.fillStyle="#4a5a52";ctx.fillText(db,4,y+3);}
+  curve(ctx,c,0,0,"#556",1,.5);curve(ctx,c,1,0,"#556",1,.5);curve(ctx,c,0,1,"#677",1,.5);curve(ctx,c,1,1,"#677",1,.5);
+  curve(ctx,c,st.morph,st.q,"#5bef9f",2,1);
+  drawOverlayLines(ctx,c);
+}
+// ---- 6 biquad strip ----
+function buildStrip(){const s=$("strip");s.innerHTML="";for(let i=0;i<6;i++){const cv=document.createElement("canvas");cv.width=160;cv.height=84;cv.id="bq"+i;s.append(cv);}}
+function drawStrip(){
+  if(!st.words)return;
+  for(let i=0;i<6;i++){const c=$("bq"+i),ctx=c.getContext("2d");ctx.clearRect(0,0,c.width,c.height);
+    ctx.fillStyle="#2a3a33";ctx.fillText("S"+(i+1),4,12);
+    ctx.strokeStyle="#5bef9f";ctx.lineWidth=1.4;ctx.beginPath();
+    const lo=Math.log2(FLO),hi=Math.log2(FHI);
+    for(let px=4;px<c.width-2;px+=2){const f=Math.pow(2,lo+(hi-lo)*(px-4)/(c.width-6));
+      // one section's response from the live interpolated words
+      const row=__rowAt(i,st.morph,st.q); const db=__bqDb(row,f);
+      const y=42-(db)*1.3; px===4?ctx.moveTo(px,Math.max(2,Math.min(82,y))):ctx.lineTo(px,Math.max(2,Math.min(82,y)));}
+    ctx.stroke();}
+}
+import { wordsAt, stageWordsToKernel, kernelToBiquad, biquadDbCoeffs } from "./js/packed.js";
+function __rowAt(s,m,q){return wordsAt(st.words,m,q)[s];}
+function __bqDb(row,f){return biquadDbCoeffs(kernelToBiquad(stageWordsToKernel(row)),f);}
+// ---- z-plane panel ----
+function zxy(c,r,f){const cx=c.width/2,cy=c.height/2,R=c.width/2-24;const th=Math.PI*f/NYQ;return [cx+R*r*Math.cos(th),cy-R*r*Math.sin(th)];}
+function zinv(c,mx,my){const cx=c.width/2,cy=c.height/2,R=c.width/2-24;const dx=(mx-cx)/R,dy2=(cy-my)/R;const r=Math.min(0.99985,Math.hypot(dx,dy2));const th=Math.atan2(Math.max(0,dy2),dx);return {r,f:clampHz(th*NYQ/Math.PI)};}
+function drawZ(){
+  const c=$("zp"),ctx=c.getContext("2d");ctx.clearRect(0,0,c.width,c.height);
+  const cx=c.width/2,cy=c.height/2,R=c.width/2-24;
+  ctx.strokeStyle="#22312b";ctx.lineWidth=1;ctx.beginPath();ctx.arc(cx,cy,R,Math.PI,Math.PI*2);ctx.stroke();
+  ctx.strokeStyle="#172019";ctx.beginPath();ctx.moveTo(cx-R,cy);ctx.lineTo(cx+R,cy);ctx.stroke();
+  for(const f of [100,1000,10000]){const th=Math.PI*f/NYQ;ctx.globalAlpha=.4;ctx.strokeStyle="#1a241f";ctx.beginPath();ctx.moveTo(cx,cy);ctx.lineTo(cx+R*Math.cos(th),cy-R*Math.sin(th));ctx.stroke();ctx.globalAlpha=1;ctx.fillStyle="#3a4a42";ctx.fillText((f>=1000?f/1000+"k":f),cx+R*Math.cos(th)*1.02-4,cy-R*Math.sin(th)*1.02);}
+  drawOverlayZ(ctx,c);
+  // faint other corners
+  const C=corners(); [[0,"#3a2e22"],[1,"#3a2e22"],[2,"#22303a"],[3,"#22303a"]].forEach(([ci,col])=>{
+    for(const s of C[ci]){const [x,y]=zxy(c,s.r,s.hz);ctx.globalAlpha=.35;ctx.fillStyle=col;ctx.fillRect(x-2,y-2,4,4);ctx.globalAlpha=1;}});
+  // selected frame bright + draggable
+  const sel=st.frame==="home"?{hz:"hzH",zf:"zfH"}:{hz:"hzA",zf:"zfA"};
+  st.card.sections.forEach((s,i)=>{
+    const [px,py]=zxy(c,s.rq1,s[sel.hz]);
+    ctx.strokeStyle="#f0913e";ctx.lineWidth=2;ctx.beginPath();ctx.moveTo(px-5,py-5);ctx.lineTo(px+5,py+5);ctx.moveTo(px+5,py-5);ctx.lineTo(px-5,py+5);ctx.stroke();
+    if(s.zon){const [zx,zy]=zxy(c,s.zr||0.5,s[sel.zf]);ctx.strokeStyle="#46c8ff";ctx.lineWidth=1.8;ctx.beginPath();ctx.arc(zx,zy,5,0,7);ctx.stroke();}
+  });
+}
+function draw(){ drawZ(); drawResp(); drawStrip(); }
+// ---- overlays ----
+function rebuildOverlayItems(){
+  const sel=$("ovitem");sel.innerHTML="";const t=$("ovtype").value;
+  let items=[];
+  if(t==="formant")items=FORMANTS.map((v,i)=>[i,v.key+" ("+v.ex+")"]);
+  else if(t==="source")items=SOURCES.map((v,i)=>[i,v.name]);
+  else if(t==="p2k")items=Object.keys(P2K).map((k,i)=>[k,k]);
+  items.forEach(([v,l])=>sel.append(new Option(l,v)));
+  st.ov={type:t,item:items.length?items[0][0]:0};
+}
+function overlayFreqs(){
+  const t=st.ov.type,it=st.ov.item;
+  if(t==="formant"&&FORMANTS[it])return FORMANTS[it].f.map(f=>({f,r:0.97,kind:"pole"}));
+  if(t==="source"&&SOURCES[it])return SOURCES[it].sections.map(s=>({f:s.pf,r:s.pr,kind:"pole"}));
+  if(t==="p2k"&&P2K[it]){const cor=st.frame==="home"?"M0_Q100":"M100_Q100";return (P2K[it][cor]||[]).flatMap(s=>[{f:s.pf,r:s.pr,kind:"pole"},{f:s.zf,r:s.zr,kind:"zero"}]).filter(o=>o.f>20);}
+  return [];
+}
+function drawOverlayLines(ctx,c){for(const o of overlayFreqs()){const x=fx(c,o.f);ctx.strokeStyle=o.kind==="zero"?"#2b556b":"#6b4a2b";ctx.globalAlpha=.7;ctx.setLineDash([3,3]);ctx.beginPath();ctx.moveTo(x,8);ctx.lineTo(x,c.height-20);ctx.stroke();ctx.setLineDash([]);ctx.globalAlpha=1;}}
+function drawOverlayZ(ctx,c){for(const o of overlayFreqs()){const [x,y]=zxy(c,o.r,o.f);ctx.globalAlpha=.8;ctx.fillStyle=o.kind==="zero"?"#2b6b86":"#86552b";ctx.beginPath();ctx.arc(x,y,3,0,7);ctx.fill();ctx.globalAlpha=1;}}
+// ---- drag ----
+const zp=$("zp");
+zp.addEventListener("mousedown",e=>{
+  const r=zp.getBoundingClientRect(),mx=e.clientX-r.left,my=e.clientY-r.top;
+  const sel=st.frame==="home"?{hz:"hzH",zf:"zfH"}:{hz:"hzA",zf:"zfA"};
+  let best=null,bd=14;
+  st.card.sections.forEach((s,i)=>{
+    const [px,py]=zxy(zp,s.rq1,s[sel.hz]);const d=Math.hypot(px-mx,py-my);if(d<bd){bd=d;best={i,kind:"pole"};}
+    if(s.zon){const [zx,zy]=zxy(zp,s.zr||0.5,s[sel.zf]);const d2=Math.hypot(zx-mx,zy-my);if(d2<bd){bd=d2;best={i,kind:"zero"};}}
+  });
+  st.drag=best;
+});
+window.addEventListener("mousemove",e=>{
+  if(!st.drag)return;const r=zp.getBoundingClientRect();const {r:rr,f}=zinv(zp,e.clientX-r.left,e.clientY-r.top);
+  const s=st.card.sections[st.drag.i],sel=st.frame==="home"?{hz:"hzH",zf:"zfH"}:{hz:"hzA",zf:"zfA"};
+  if(st.drag.kind==="pole"){s[sel.hz]=f; s.rq1=rr; s.rq0=broaden(rr);}     // Q0 auto-derives from the sharp frame
+  else {s[sel.zf]=f; s.zr=rr; s.zon=1;}
+  repack();
+});
+window.addEventListener("mouseup",()=>{st.drag=null;});
+// ---- wire ----
+$("preset").onchange=e=>fromPreset(+e.target.value);
+document.querySelectorAll(".tab").forEach(b=>b.onclick=()=>{document.querySelectorAll(".tab").forEach(x=>x.classList.remove("sel"));b.classList.add("sel");st.frame=b.dataset.frame;draw();});
+$("ovtype").onchange=()=>{rebuildOverlayItems();draw();};
+$("ovitem").onchange=e=>{st.ov.item=isNaN(+e.target.value)?e.target.value:+e.target.value;draw();};
+$("morph").oninput=e=>{st.morph=+e.target.value;draw();};
+$("q").oninput=e=>{st.q=+e.target.value;draw();};
+$("save").onclick=()=>{if(!st.body)return;const a=document.createElement("a");a.href=URL.createObjectURL(new Blob([st.body]));a.download=(st.card.name.replace(/\W+/g,"_"))+".body240";a.click();};
+buildStrip(); loadData();
+</script></body></html>

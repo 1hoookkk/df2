@@ -39,7 +39,9 @@ sys.path.insert(0, str(ROOT))
 from tools import target_browser as tb
 from tools import make_class_bodies as mc
 from pyruntime import trench_ffi
-from pyruntime.packed_interp import coeffs_to_words
+from pyruntime.packed_interp import coeffs_to_words  # noqa: F401 (legacy; bodies now via compile_body)
+from src.compiler import encode
+from src.utils.body240 import CORNER_ORDER
 
 SWEEP_ROOT = ROOT / "dev" / "tmp" / "sweep"
 INTENTS_FILE = ROOT / "tables" / "family_intents.json"
@@ -178,13 +180,14 @@ def generate_bold(spec, seed, count, intents=None, smart_pairs=None):
             "M0_Q100": tb.apply_q(home, q_rule, qp),
             "M100_Q100": tb.apply_q(away, q_rule, qp),
         }
-        corner_words = {}
+        kern = {}
         for lab in LABELS:
             curve = tb.feats_to_curve(corner_feats[lab], spec["floor_db"], FIT_FREQS)
-            rows = trench_ffi.fit_corner_from_magnitude(
+            kern[lab] = trench_ffi.fit_corner_from_magnitude(
                 list(zip(FIT_FREQS.tolist(), curve.tolist())), AUTH_SR)
-            corner_words[KEY[lab]] = [coeffs_to_words(*r) for r in rows]
-        body = tb.body_bytes(corner_words)
+        body = encode.body_from_kernels([kern[c] for c in CORNER_ORDER])  # ONE encoder (compile_body)
+        cw = encode.words_from_body(body)
+        corner_words = {KEY[lab]: cw[lab] for lab in LABELS}
         boost = tb.derive_boost(body, spec["level_guidance_db"])
         gate = tb.evaluate_gates(body, corner_feats, spec, boost)
         name = f"cand_{i + 1:02d}"
@@ -271,13 +274,14 @@ def generate_wild(seed, count):
         corner_feats["M0_Q100"],  schemes["M0_Q100"]  = _draw_grid_corner(rng, home_zone)
         corner_feats["M100_Q100"], schemes["M100_Q100"] = _draw_grid_corner(rng, away_zone)
         floors = {lab: rng.uniform(-30.0, -10.0) for lab in LABELS}
-        corner_words = {}
+        kern = {}
         for lab in LABELS:
             curve = tb.feats_to_curve(corner_feats[lab], floors[lab], FIT_FREQS)
-            rows = trench_ffi.fit_corner_from_magnitude(
+            kern[lab] = trench_ffi.fit_corner_from_magnitude(
                 list(zip(FIT_FREQS.tolist(), curve.tolist())), AUTH_SR)
-            corner_words[KEY[lab]] = [coeffs_to_words(*r) for r in rows]
-        body = tb.body_bytes(corner_words)
+        body = encode.body_from_kernels([kern[c] for c in CORNER_ORDER])  # ONE encoder (compile_body)
+        cw = encode.words_from_body(body)
+        corner_words = {KEY[lab]: cw[lab] for lab in LABELS}
         maxr, unstable, nonfinite = tb.grid_stability(body)
         passes = (maxr < 1.0 and unstable == 0 and nonfinite == 0)
         name = f"cand_{i + 1:02d}"
