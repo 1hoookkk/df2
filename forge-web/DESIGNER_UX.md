@@ -1,5 +1,10 @@
 # Filter Designer — UX spec (v2: the plot IS the editor)
 
+> **2026-06-10:** the Tier-3 layer of this spec (layout, color, hierarchy, glyphs) is
+> superseded by `forge-web/FORGE_DESIGN_BRIEF.md` (design brief v2, invariants-verified).
+> Tier-1 invariants and Tier-2 measured defaults in this file remain the source of truth
+> and are absorbed by the brief as constraints.
+
 `forge-web/filter-designer.html` (current, typed-card surface) → `forge-web/plot-editor.html`
 (v2, this spec). Served by `python tools/forge_author_server.py 8141`.
 
