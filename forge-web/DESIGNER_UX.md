@@ -1,138 +1,106 @@
-# Filter Designer — UX spec
+# Filter Designer — UX spec (v2: the plot IS the editor)
 
-`forge-web/filter-designer.html`, served by `python tools/forge_author_server.py 8141`.
+`forge-web/filter-designer.html` (current, typed-card surface) → `forge-web/plot-editor.html`
+(v2, this spec). Served by `python tools/forge_author_server.py 8141`.
 
 **Contexts (in priority order):**
-1. **Internal dev tool** — Tyson authoring production bodies; the only judging surface.
-2. **On camera** — Tyson records himself using it (Instagram Reels / Shorts / TikTok,
-   mostly 9:16 vertical crops). The tool's look IS marketing material.
-3. **Pipeline demo** — the recorded arc runs designer → KEEP → plugin (Forge Audition
-   slot hot-reload) → FL Studio. Every step must be visually legible to a viewer.
+1. **Internal dev tool** — Tyson authoring production bodies; the judging surface.
+2. **On camera** — short-form recordings (9:16 Reels/Shorts). The tool's look is marketing.
+3. **Pipeline demo** — designer → KEEP → plugin (Forge Audition hot-reload) → FL Studio.
 
-## Design principles
+## Evidence state (verified 2026-06-10, all OBSERVED by execution)
 
-- **Textbook DSP labels only.** Magnitude response, biquad section, f_c, Q₀/Q₁,
-  peaking EQ, notch, formants F1/F2, modal frequencies. No invented metaphors.
-- **The magnitude response plot is the hero.** Biggest element, always engine-true
-  (|H| computed from the same packed words the plugin runs; 0.0000 dB match proven).
-- **Engine-true or absent.** No feature may display anything the shipped engine
-  doesn't produce. Verification through `trench_core` before a feature ships.
-- **One screen.** No scrolling during a take. 920 px column today; record mode (E9)
-  reflows for vertical crop.
-- **Every keep is auditable.** KEEP = compile → null vs DLL → 17×17 stability audit
-  → bank artifacts. Failure states must be visible and honest on camera.
+- `packed.js` (browser plot) vs `trench_core packed_probe` (shipped DLL):
+  **max |diff| = 0.000000 dB** over 6 (morph,Q) points × 200 freqs.
+  Harness: `python tools/plot_engine_null.py` (PASS gate < 1e-4 dB). This upgrades the
+  previously-INFERRED `plot == engine` claim (PROJECT_STATE.md §5.1) to OBSERVED.
+- WASM `forge_pack_typed` == DLL `compile_body_typed`: byte-identical (0 diff).
+- WASM `forge_pack_params` (168-param pole/zero path) == DLL `compile_body`: byte-exact.
+- Audition chain in WASM = filter → AGC → Mackie saturation, `SpatialMode::Off`.
+  **This MATCHES the shipped plugin's default** (`PluginProcessor.cpp`: `kSpatialOff`;
+  QSound engages only via the 5D toggle). Do NOT enable QSound in the audition without
+  also defaulting it in the plugin — the judge chain must equal the product chain.
+  (Root CLAUDE.md's "QSound on by default" line is stale vs live code — flagged.)
 
-## Current state (shipped, verified)
+## v2 architecture (Tyson 2026-06-10)
 
-| area | feature |
-|---|---|
-| plot | live \|H\| dB vs log f; frame A/B endpoint ghosts (dashed blue/orange); engine-exact |
-| morph/Q | sliders + hands-free triangle sweep (4 s period); Q axis interpolates Q₀→Q₁ geometrically |
-| sections | 6 biquads: type, f_c A/B, gain, Q₀, Q₁; checkbox enable |
-| value boxes | drag both axes (f_c 1 oct/96 px log, gain 1 dB/6 px, Q log), shift = fine, wheel = grid step, click = type; fill bars show position in range |
-| quantization | f_c → measured-resonance table, or 12-TET in selected key/scale (peaking + bandpass only), or off |
-| generators | seeds (8, level-calibrated); vowel formant pair F1/F2 (Peterson-Barney + Klatt BW); modal series (tube harmonics, inharmonic bar/plate/bell ratios × f0); LPC formant fit from audio file |
-| audition | source (saw/noise/808/voice) through AGC → saturation → QSound; drive control; level meter |
-| bank | KEEP: compile_body_typed null vs browser WASM bytes → 17×17 audit → desk/bank/v1/ (.body240 + cart + png + BANK.md row) → Documents/TRENCH/bodies/ + live Forge Audition slot. KILL → desk/KILLS.md |
-| persistence | autosave cards to localStorage; restore on load |
+**The magnitude response plot is the editor, not a display.** Direct manipulation;
+the table is demoted to an inspector for the selected section.
 
-## Enhancements
+```
++--------------------------------------------------------------+
+| MAIN CANVAS  |H(f)| dB vs log f                              |
+|   - spectrum analyzer behind (post-chain FFT, low alpha)     |
+|   - frame A ghost (blue dashed) + frame B ghost (orange)     |
+|   - live morph/Q trace (green, brightest — hero rule)        |
+|   - X handles = pole pairs   O handles = zero pairs          |
+|     blue X/O sit on frame A, orange X/O on frame B           |
++--------------------------------------------------------------+
+| INSPECTOR (selected section only)                            |
+|   pole: f Hz · radius r     zero: f Hz · radius r_z          |
+|   gain · enabled · which frame the handle belongs to         |
+|   SECTION STRIP: per-section mini plot |Hₖ(f)| at current    |
+|   morph/Q (the cascade = sum of these in dB); click selects  |
++--------------------------------------------------------------+
+| TRANSPORT                                                    |
+|   Morph — Q — sweep — play — source — drive — meter          |
+|   name — KEEP (audit verdict inline) — KILL                  |
++--------------------------------------------------------------+
+```
 
-### E1 — Real-time spectrum analyzer (tier 1)
-Post-chain output spectrum rendered behind the magnitude response; optional input
-(pre-filter) spectrum as a dimmer layer.
-- FFT 4096, Hann, ~30 fps, exponential decay ≈ 0.85/frame; log-f remap to the plot's
-  axis; ~−90..0 dBFS mapped to plot height.
-- Filled area, low alpha (≤ .25) under the |H| line. The response curve stays the
-  brightest object (hero rule).
-- Toggle in the curve panel caption. ON by default — it's the money shot on camera:
-  source harmonics visibly pushed through notches during a sweep.
-- Verify: sine at f → single ridge at f; ridge attenuates by the plotted |H(f)| dB
-  within ±1 dB.
+**Interaction grammar (Pro-Q lineage, two-frame extension):**
+- Drag X horizontally = pole frequency; vertically = pole radius
+  (r mapped so handle height tracks the local |H| contribution).
+- Drag O horizontally = zero frequency; vertically = zero radius r_z
+  (deeper notch as r_z → 1).
+- Each section owns 2 X and 2 O handles (frame A pair, frame B pair).
+  Section index is the morph pairing — A↔B handles of one section are linked visually.
+- Wheel on a handle = the orthogonal fine axis (X: radius, O: r_z).
+- Click selects → inspector shows numbers; double-click a number to type.
+- Quantize modes apply to handle drags: measured-resonance table / 12-TET in key / off.
 
-### E2 — WebMIDI control (tier 1)
-Physical knobs for the on-camera workflow (hands on hardware > mouse).
-- Web MIDI API; "MIDI learn": click a control, turn a knob, bound. Map targets:
-  morph, Q axis, drive, selected section's f_c A, f_c B, gain, Q₀, Q₁.
-- Mapping persisted to localStorage; indicator chip when a device is connected.
-- CC 0–127 → parameter range via the same log/linear laws as drag.
-- Verify: scripted MIDI message moves the slider and repacks (plot changes).
+**Section model (general SOS — first-class zeros, foundation of v2):**
+Every section = pole pair + zero pair, independently placed:
+`H_k(z) = g·(1 − 2 r_z cosω_z z⁻¹ + r_z² z⁻²) / (1 − 2 r_p cosω_p z⁻¹ + r_p² z⁻²)`
+- Maps to the EXISTING `compile_body` 168-param path: per corner per section
+  `[on, pole_hz, pole_r, gain, zero_on, zero_hz, zero_depth]`.
+- **`zero_depth` is the zero-pair RADIUS r_z, a 0..MAX_RADIUS scalar — NOT dB**
+  (`compiler.rs stage_biquad`: `nb1 = −2·r_z·cosω_z`). The UI may DISPLAY depth in dB
+  but must convert before packing.
+- **Zero-mandatory:** `stage_biquad`'s all-pole branch rolls off −12 dB/oct (the known
+  corner-collapse bug). The v2 surface always places a zero per section (`zero_on=1`);
+  "no notch" = park the zero near the pole (masked) or at low r_z, never `zero_on=0`.
+- Corners from the four handle sets: C0=A·Q₀, C1=B·Q₀, C2=A·Q₁, C3=B·Q₁ where Q axis
+  scales pole radius (per-section r at Q₀ and Q₁).
+- KEEP routes through `/keep` with the 168-param payload; server recompiles via DLL
+  `compile_body`, nulls vs browser `packWithCore` bytes, 17×17 audit, bank artifacts.
 
-### E3 — Undo/redo (tier 1)
-- Snapshot the 6-card state on every committed change (change event, not per drag
-  frame); ring buffer ≥ 100 states in memory, persisted tail in localStorage.
-- Ctrl+Z / Ctrl+Shift+Z. Status line shows depth ("undo 12/40").
-- Verify: 50 random edits, 50 undos → byte-identical packed body to start.
+**Generators (kept from v1, write into the section model):**
+seeds · vowel formant pairs (Peterson-Barney F1/F2, Q from Klatt BW) · modal series
+(tube harmonics / inharmonic ratios × f0) · LPC formant fit. All set pole pairs;
+zeros default masked (on the pole) until dragged away — the unmask gesture.
 
-### E4 — Loudness-matched audition (tier 1)
-Constant integrated loudness (ITU-R BS.1770 / LUFS) on the audition output so a Q or
-gain increase can't win keep/kill by being louder.
-- Short-term LUFS estimate in the worklet; slow AGC (≥ 400 ms window) trimming output
-  to −16 LUFS target; toggle ("level match") for when raw level IS the point.
-- Verify: +12 dB section gain change settles back to target ±1 LU within 2 s.
+## Enhancements (resequenced 2026-06-10)
 
-### E5 — Vector fitting capture (tier 2)
-Upgrade the audio-capture path from all-pole LPC to full rational fit.
-- Gustavsen–Semlyen vector fitting on the Welch PSD of the dropped audio → stable
-  poles AND zeros, order ≤ 12 → 6 general SOS.
-- Server-side (`/fit` gains `method: "vectfit"`); falls back to LPC.
-- Depends on E8 (general SOS rows) to receive independent zeros.
-- Verify: fit a known synthetic H(z) (random stable 12th-order), reconstruction
-  error < 1 dB RMS over 40 Hz–16 kHz.
+| # | item | status |
+|---|---|---|
+| E8 | general SOS sections (first-class zeros) | **PREREQUISITE — the v2 section model** |
+| E11 | plot-as-editor handles (X/O, two-frame) | **PREREQUISITE — the v2 surface** |
+| E1 | spectrum analyzer behind the plot | v2 launch feature (the money shot) |
+| E3 | undo/redo (snapshot per committed edit) | v2 launch feature |
+| E2 | WebMIDI (morph/Q/drive + selected handle) | after v2 ships |
+| E4 | loudness-matched audition (BS.1770) | after v2 ships |
+| E5 | vector fitting capture (poles AND zeros) | after E8 (needs independent zeros) |
+| E6 | draw-the-target fit | after E5 |
+| E9 | record mode (9:16 reflow, big handles) | before first shoot |
+| E10 | pipeline legibility (KEEP moment, ?body= param) | before first shoot |
+| E7 | morph-interior optimization (differentiable) | own project; bank ≥ 3 entries first |
 
-### E6 — Draw-the-target fit (tier 2)
-Sketch a magnitude curve on the plot; solve sections to realize it.
-- Pencil mode per frame (draw A, draw B); freehand polyline → smoothed target.
-- Solve: weighted least squares over log-f grid (AAA rational approximation or
-  Levenberg–Marquardt on SOS parameters), stability constrained (|p| < 0.9992).
-- Show residual honestly: target as ghost line + RMS error in dB in the caption.
-- Verify: draw a curve matching a known body's |H| → solver returns ≤ 2 dB RMS.
+Verification criteria per item as in v1 of this spec; in addition every v2 keep runs
+the compile_body byte-null and `tools/plot_engine_null.py` stays green in any session
+that touches packed.js or the compilers.
 
-### E7 — Morph-interior optimization (tier 3, own project)
-Choose the emergent middle instead of discovering it.
-- The interpolation law is fixed and known: linear on log-encoded (minifloat)
-  coefficient words, C(x) = C_A + x(C_B − C_A). Implement it differentiably
-  (straight-through estimator over the minifloat quantizer).
-- Pose: targets at morph = {0, 0.5, 1} (each a drawn or referenced |H|) → gradient
-  solve for frames A and B jointly.
-- Out of designer scope until the bank has entries (this is the trap if built early).
-- Verify: 3-target synthetic problem reaches < 3 dB RMS at all three morph points
-  through the REAL packed runtime (not the surrogate).
+## Boot behavior
 
-### E8 — General SOS row mode (tier 2; unlocked by the Talking Hedz analysis)
-The 7 RBJ prototypes weld the zero pair to the pole pair. Real P2K sections place
-them independently (pole pair (θ_p, r_p), zero pair (θ_z, r_z) unrelated).
-- Per-row toggle: "general SOS" expands the row to pole f_c A/B + Q₀/Q₁ AND zero
-  f_c A/B + depth (dB). Maps to the EXISTING `compile_body` 168-param path
-  (`packWithCore` in pack-core.js — already byte-nulled vs the DLL).
-- KEEP must route through `compile_body` when any row is general (null check stays).
-- Verify: a general-SOS body's browser bytes == DLL `compile_body` bytes; 17×17 audit.
-
-### E9 — Record mode (camera)
-One keypress (`R`) reflows for capture:
-- Plot height ×1.6; font 13 → 15 px; fill bars brighten; status line hides.
-- 9:16 safe area: column narrows to ~520 px, panels stack with the plot on top,
-  morph/Q sliders directly beneath (the two things a viewer must see move).
-- Cursor halo (CSS) so the pointer reads at phone size; slider thumbs enlarged.
-- Sweep period selectable 2/4/8 s (2 s reads better in a 15-second reel).
-- No layout shift during interaction (no reflow on status text changes).
-- Verify: 1080×1920 screenshot — all six rows + plot + transport legible.
-
-### E10 — Pipeline legibility on camera
-The recorded arc: seed → shape → sweep → KEEP → plugin plays it → FL.
-- KEEP success state becomes a visible moment: brief full-card flash with the body
-  name + "PASS · max |p| 0.99" (1.5 s, then back). No modal, no click-through.
-- The Forge Audition slot already hot-reloads in the plugin — document the two-window
-  OBS layout (designer left, FL with TRENCH right) in this file once first recorded.
-- A `?body=<slug>` URL param to reload any banked body for retakes.
-
-## Sequencing
-
-1. E1 + E2 + E3 (one session; all client-side except nothing)
-2. E4 (worklet change, then re-verify meter behavior)
-3. E8 → E5 → E6 (each unlocks the next; E8 first because it's free at the compiler)
-4. E9 + E10 before the first recorded session
-5. E7 as its own project once `desk/bank/v1/BANK.md` has ≥ 3 rows
-
-Every enhancement lands with its verification step run and shown, same as everything
-else in this repo: no claim without engine output.
+Fresh default template every time (no autosave restore — Tyson 2026-06-10).
+Undo (E3) provides in-session safety; the bank provides permanence.

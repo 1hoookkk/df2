@@ -18,11 +18,14 @@ header .sub b{color:var(--A);font-weight:400} header .sub i{color:var(--B);font-
 .legend i{display:inline-block;width:16px;height:0;border-top:2px solid;margin-right:5px;vertical-align:middle}
 .legend .swA{border-color:var(--A);border-top-style:dashed} .legend .swB{border-color:var(--B);border-top-style:dashed}
 .legend .swL{border-color:var(--hot)}
-#plotwrap{border:1px solid var(--line);border-radius:8px;background:#0a0f0d;padding:6px}
-canvas{width:100%;height:230px;display:block}
-.morphrow{display:flex;gap:10px;align-items:center;margin:10px 0 2px;flex-wrap:wrap}
+#plotwrap{border:1px solid var(--line);border-radius:8px;background:#0a0f0d;padding:6px;width:470px;max-width:100%}
+canvas{width:100%;height:300px;display:block}
+.curveflex{display:flex;gap:18px;align-items:stretch;flex-wrap:wrap}
+.curvectl{flex:1;min-width:230px;display:flex;flex-direction:column;justify-content:center;gap:16px}
+.morphrow{display:flex;gap:10px;align-items:center;flex-wrap:wrap}
 .morphrow label{color:var(--dim);min-width:48px;letter-spacing:.1em;font-size:11px}
 .morphrow input[type=range]{flex:1;min-width:140px;accent-color:var(--hot)}
+.morphrow #slam{flex:0 0 80px;min-width:80px}
 .val{min-width:38px;text-align:right;color:var(--hot)}
 table{width:100%;border-collapse:collapse}
 th{color:var(--dim);font-weight:400;text-align:center;font-size:10px;letter-spacing:.08em;padding:3px 4px;border-bottom:1px solid var(--line)}
@@ -42,6 +45,9 @@ input[type=text]{padding:6px 8px}
 input[type=number]:focus,input[type=text]:focus,select:focus{outline:none;border-color:#2a5e3a}
 .row{display:flex;gap:10px;align-items:center;flex-wrap:wrap;margin-top:8px}
 .row:first-of-type{margin-top:0}
+.grp{display:inline-flex;gap:6px;align-items:center;padding:3px 8px;border:1px solid var(--line);border-radius:6px}
+#bodyname{width:140px}
+.mini{width:96px;height:30px;display:block;background:#0a0f0d;border:1px solid #121a17;border-radius:3px}
 .lbl{color:var(--dim);font-size:11px}
 button{background:#13201b;color:var(--ink);border:1px solid var(--line);border-radius:5px;padding:6px 12px;font:inherit;cursor:pointer;white-space:nowrap}
 button:hover{border-color:var(--hot)} button.go{background:#16321f;color:var(--hot);border-color:#2a5e3a}
@@ -63,11 +69,32 @@ button:hover{border-color:var(--hot)} button.go{background:#16321f;color:var(--h
 <section class=panel>
   <div class=cap><span>MAGNITUDE RESPONSE — dB vs log f</span>
     <span class=legend><span><i class=swA></i>Frame A</span><span><i class=swB></i>Frame B</span><span><i class=swL></i>now</span></span></div>
-  <div id=plotwrap><canvas id=plot></canvas></div>
-  <div class=morphrow>
-    <label>MORPH</label><input id=morph type=range min=0 max=1 step=0.001 value=0><span class=val id=morphv>A</span>
-    <button id=sweep title="hands-free: cycle Morph A↔B while you shape">↻ sweep</button>
-    <label style="margin-left:8px">Q</label><input id=q type=range min=0 max=1 step=0.001 value=0><span class=val id=qv>0</span>
+  <div class=curveflex>
+    <div id=plotwrap><canvas id=plot></canvas></div>
+    <div class=curvectl>
+      <div class=morphrow>
+        <label>MORPH</label><input id=morph type=range min=0 max=1 step=0.001 value=0><span class=val id=morphv>A</span>
+      </div>
+      <div class=morphrow>
+        <label>Q</label><input id=q type=range min=0 max=1 step=0.001 value=0><span class=val id=qv>0</span>
+      </div>
+      <div class=morphrow>
+        <button id=sweep title="triangle modulation of the morph parameter, 4 s period">↻ sweep</button>
+        <button id=play class=go>▶ play</button>
+        <select id=src><option value=0>saw bass</option><option value=1>noise</option><option value=2 selected>808</option><option value=3>voice</option></select>
+        <span class=lbl title="input gain into the saturation stage">drive</span><input id=slam type=range min=0 max=1 step=0.01 value=0 style="width:80px;accent-color:var(--B)">
+        <div id=meter title="post-drive level"><div id=meterfill></div></div>
+      </div>
+      <div class=morphrow>
+        <input id=bodyname type=text placeholder="name it">
+        <button id=keep class=go>★ KEEP</button>
+        <button id=kill>✖ kill</button>
+        <button id=save title="download the 240-byte packed body">⤓ save</button>
+      </div>
+      <div class=morphrow>
+        <input id=words type=text placeholder="why — kept with the verdict" style="flex:1">
+      </div>
+    </div>
   </div>
 </section>
 
@@ -80,48 +107,30 @@ button:hover{border-color:var(--hot)} button.go{background:#16321f;color:var(--h
       <select id=scale title="scale" style="display:none"><option value=minor selected>minor</option><option value=major>major</option></select>
     </span></div>
   <table id=secs><thead><tr>
-    <th>on</th><th>section type</th><th class=fa title="center/corner frequency in coefficient frame A">f_c A (Hz)</th><th class=fb title="center/corner frequency in coefficient frame B">f_c B (Hz)</th>
+    <th>on</th><th>section type</th><th title="this section's own |Hₖ(f)| at the current Morph/Q — the cascade is the sum of these in dB">|Hₖ|</th><th class=fa title="center/corner frequency in coefficient frame A">f_c A (Hz)</th><th class=fb title="center/corner frequency in coefficient frame B">f_c B (Hz)</th>
     <th title="peaking/shelf gain; notch: cut depth (negative dB)">gain (dB)</th><th title="section Q at Q-axis = 0. Q = f_c / BW(−3 dB)">Q₀</th><th title="section Q at Q-axis = 1; the Q axis interpolates Q₀→Q₁ geometrically">Q₁</th>
   </tr></thead><tbody></tbody></table>
-  <div class=row id=mouthrow style="display:none">
-    <span class=lbl title="sets sections 2+3 to peaking EQs at the vowel's formant frequencies F1/F2 (Peterson-Barney 1952), Q = F/BW from measured formant bandwidths">vowel formants F1·F2:</span>
-    <select id=vowelA><option value="">Frame A vowel…</option></select>
-    <span class=lbl>→</span>
-    <select id=vowelB><option value="">Frame B vowel…</option></select>
-    <span class=lbl id=vowelhint></span>
-  </div>
-  <div class=row id=bodyrow style="display:none">
-    <span class=lbl title="fills sections 2–5 with the first 4 modal frequencies: tube fₙ = n·c/2L (open-open) or (2n−1)·c/4L (closed-open); bar/plate/bell = inharmonic modal ratios × f0. Q = f/BW from the material's bandwidth">modal series:</span>
-    <select id=resA><option value="">Frame A body…</option></select>
-    <span class=lbl>→</span>
-    <select id=resB><option value="">Frame B body…</option></select>
-    <span class=lbl>f0</span><input id=resF0 type=number min=30 max=2000 step=1 value=220 title="fundamental for metal objects (ratios × f0) — drag it; snaps to your key in notes mode">
-    <span class=lbl id=reshint></span>
-  </div>
-  <div class=row>
-    <span class=lbl title="LPC analysis (order 12, LSF-stabilized) of the file; the 4 strongest pole pairs in 80–8250 Hz become peaking sections 2–5, Q from pole radius: Q = −π·f/(fs·ln r)">LPC formant fit:</span>
-    <input type=file id=fitfile accept=audio/*>
-    <button id=fitA title="fitted pole-pair frequencies → frame A f_c">→ Frame A</button>
-    <button id=fitB title="fitted pole-pair frequencies → frame B f_c">→ Frame B</button>
-  </div>
-</section>
-
-<section class=panel>
-  <div class=cap><span>AUDITION (AGC → saturation → QSound) · BANK</span></div>
-  <div class=row>
-    <span class=lbl>source</span>
-    <select id=src><option value=0>saw bass</option><option value=1>noise</option><option value=2 selected>808</option><option value=3>voice</option></select>
-    <button id=play class=go>▶ play</button>
-    <span class=lbl title="input gain into the saturation stage">drive</span><input id=slam type=range min=0 max=1 step=0.01 value=0 style="width:90px;accent-color:var(--B)">
-    <div id=meter title="post-drive level"><div id=meterfill></div></div>
-    <button id=save>⤓ save .body240</button>
-  </div>
-  <div class=row>
-    <select id=seed style="min-width:160px"><option value="">load a seed…</option></select>
-    <input id=bodyname type=text placeholder="name it">
-    <input id=words type=text placeholder="why — your words (kept with the verdict)">
-    <button id=keep class=go>★ KEEP</button>
-    <button id=kill>✖ kill</button>
+  <div class=row id=startrow>
+    <button id=newbtn title="start over from the default template; clears seed/name">new</button>
+    <button id=resetbtn title="discard edits — reload the selected seed (or the default template)">↺ reset</button>
+    <select id=seed style="max-width:160px"><option value="">seed…</option></select>
+    <span class=grp id=mouthgrp style="display:none" title="sections 2+3 → peaking EQs at the vowel's formant frequencies F1/F2 (Peterson-Barney 1952), Q = F/BW from measured bandwidths">
+      <span class=lbl>vowel</span>
+      <select id=vowelA><option value="">A…</option></select><span class=lbl>→</span>
+      <select id=vowelB><option value="">B…</option></select>
+    </span>
+    <span class=grp id=modalgrp style="display:none" title="sections 2–5 → first 4 modal frequencies: tube fₙ=n·c/2L or (2n−1)·c/4L; bar/plate/bell = inharmonic ratios × f0. Q = f/BW of the material">
+      <span class=lbl>modal</span>
+      <select id=resA style="max-width:150px"><option value="">A…</option></select><span class=lbl>→</span>
+      <select id=resB style="max-width:150px"><option value="">B…</option></select>
+      <span class=lbl>f0</span><input id=resF0 type=number min=30 max=2000 step=1 value=220 title="fundamental for inharmonic ratios — drag; quantizes to the key in 12-TET mode">
+    </span>
+    <span class=grp title="LPC analysis (order 12, LSF-stabilized); 4 strongest pole pairs in 80–8250 Hz → peaking sections 2–5, Q = −π·f/(fs·ln r)">
+      <span class=lbl>LPC fit</span>
+      <input type=file id=fitfile accept=audio/* style="max-width:170px">
+      <button id=fitA title="fitted pole pairs → frame A f_c">→A</button>
+      <button id=fitB title="fitted pole pairs → frame B f_c">→B</button>
+    </span>
   </div>
 </section>
 
@@ -129,7 +138,7 @@ button:hover{border-color:var(--hot)} button.go{background:#16321f;color:var(--h
 </main>
 
 <script type=module>
-import { wordsFromBytes, packedDb } from "./js/packed.js";
+import { wordsFromBytes, packedDb, wordsAt, stageWordsToKernel, kernelToBiquad, biquadDbCoeffs } from "./js/packed.js";
 import { packTyped, bodyHex } from "./js/pack-core.js";
 
 const TYPES=["Peaking EQ","Low shelf","Notch","Lowpass","Highpass","Bandpass","High shelf"];
@@ -147,6 +156,7 @@ const cards=[
 ];
 const st={body:null,morph:0,q:0,src:2,slam:0,playing:false};
 const ENGINE_SR=39062.5;
+const DEFAULT_CARDS=cards.map(c=>({...c}));   // the boot template, captured before autosave restore
 
 // the good Hz — real resonance rails (docs/study/frequency_rails.csv); typed freqs snap here
 const RAILS=[134,200,270,300,450,530,700,780,870,1090,1420,1840,2180,2220,2290,2840,3790,4130,4440,5450,7000,8250,16500];
@@ -177,11 +187,7 @@ function gridFor(type){
 }
 const snapHz=(v,type)=>{const g=gridFor(type);return g?nearestIn(g,v):v;};
 
-// autosave — never lose a design to a refresh
-const SAVEKEY="filter-designer.cards.v1";
-let restored=false;
-try{const s=JSON.parse(localStorage.getItem(SAVEKEY)||"null");
-  if(Array.isArray(s)&&s.length===6){s.forEach((sc,i)=>Object.assign(cards[i],sc));restored=true;}}catch(e){}
+// boot = fresh default template every time (Tyson 2026-06-10); no autosave restore
 
 const cv=document.getElementById("plot"),cx=cv.getContext("2d");
 function fit(){const r=cv.getBoundingClientRect(),d=devicePixelRatio||1;cv.width=r.width*d;cv.height=r.height*d;cx.setTransform(d,0,0,d,0,0);}
@@ -203,12 +209,12 @@ function draw(){
   line(gA,"rgba(46,196,255,.55)",1.2,[4,3]);   // Frame A ghost
   line(gB,"rgba(255,122,62,.55)",1.2,[4,3]);   // Frame B ghost
   line(live,"#5bef6f",2.2);                     // live morph/Q
+  if(minis.length) drawMinis(words);
 }
 
 async function repack(){
   st.body=await packTyped(cards);
   draw();
-  try{localStorage.setItem(SAVEKEY,JSON.stringify(cards));}catch(e){}
   if(anode) anode.port.postMessage({body:st.body.slice().buffer});
 }
 
@@ -277,6 +283,25 @@ function dragify(inp,kind,getType){
 
 // section table
 const tb=document.querySelector("#secs tbody");
+const minis=[];   // per-row |Hk| thumbnail canvases
+const MINI_FREQS=Array.from({length:64},(_,i)=>30*Math.pow(16000/30,i/63));
+function drawMinis(words){
+  const rows=wordsAt(words,st.morph,st.q);
+  minis.forEach((cv,i)=>{
+    if(!cv) return;
+    const mx=cv.getContext("2d"),W=cv.width,H=cv.height;
+    mx.clearRect(0,0,W,H);
+    mx.strokeStyle="#16241d";mx.beginPath();mx.moveTo(0,H/2);mx.lineTo(W,H/2);mx.stroke();  // 0 dB line
+    const bq=kernelToBiquad(stageWordsToKernel(rows[i]));
+    mx.strokeStyle=cards[i].on?"#5bef6f":"#2c423a";mx.lineWidth=1.3;mx.beginPath();
+    MINI_FREQS.forEach((f,k)=>{
+      const db=Math.max(-24,Math.min(24,biquadDbCoeffs(bq,f)));
+      const x=k/(MINI_FREQS.length-1)*W, y=H/2-db/24*(H/2-1);
+      k?mx.lineTo(x,y):mx.moveTo(x,y);
+    });
+    mx.stroke();
+  });
+}
 function freqInput(v,on){const i=document.createElement("input");i.type="number";i.min=20;i.max=18000;i.step=10;i.value=Math.round(v);return i;}
 function buildTable(){
   tb.replaceChildren();
@@ -293,8 +318,9 @@ function buildTable(){
     fa.dataset.tint="rgba(46,196,255,.22)";fb.dataset.tint="rgba(255,122,62,.22)";
     g.dataset.tint="rgba(91,239,111,.16)";ql.dataset.tint="rgba(207,233,223,.10)";qh.dataset.tint="rgba(207,233,223,.10)";
     dragify(fa,"freq",gt);dragify(fb,"freq",gt);dragify(g,"gain");dragify(ql,"q");dragify(qh,"q");
-    const cells=[on,sel,fa,fb,g,ql,qh];
-    cells.forEach((el,ci)=>{const td=document.createElement("td");if(ci===2)td.className="fa-cell";if(ci===3)td.className="fb-cell";td.appendChild(el);tr.appendChild(td);});
+    const mini=document.createElement("canvas");mini.className="mini";mini.width=96;mini.height=30;minis[si]=mini;
+    const cells=[on,sel,mini,fa,fb,g,ql,qh];
+    cells.forEach((el,ci)=>{const td=document.createElement("td");if(ci===3)td.className="fa-cell";if(ci===4)td.className="fb-cell";td.appendChild(el);tr.appendChild(td);});
     tb.appendChild(tr);
   });
 }
@@ -308,11 +334,21 @@ fetch("/seeds").then(r=>r.json()).then(d=>{
   seedList=d.seeds||[];
   seedList.forEach((s,i)=>{const o=document.createElement("option");o.value=i;o.textContent=s.name;o.title=s.hint||"";seedSel.appendChild(o);});
 }).catch(()=>{seedSel.disabled=true;seedSel.title="no backend — serve with tools/forge_author_server.py for seeds + KEEP";});
+function applyCards(list){list.forEach((sc,i)=>Object.assign(cards[i],sc));buildTable();repack();}
 seedSel.onchange=()=>{
   const s=seedList[+seedSel.value]; if(!s) return;
-  s.cards.forEach((sc,i)=>Object.assign(cards[i],sc));
-  buildTable(); repack();
+  applyCards(s.cards);
   status.textContent=`seed loaded: ${s.name} — ${s.hint||""}`;
+};
+document.getElementById("newbtn").onclick=()=>{
+  applyCards(DEFAULT_CARDS);
+  seedSel.value="";document.getElementById("bodyname").value="";document.getElementById("words").value="";
+  status.textContent="new design — default template";
+};
+document.getElementById("resetbtn").onclick=()=>{
+  const s=seedList[+seedSel.value];
+  applyCards(s?s.cards:DEFAULT_CARDS);
+  status.textContent=s?`reset to seed: ${s.name}`:"reset to default template";
 };
 async function post(url,payload){
   const r=await fetch(url,{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify(payload)});
@@ -345,7 +381,7 @@ const vA=document.getElementById("vowelA"),vB=document.getElementById("vowelB");
 let VOWELS=null;
 fetch("/tables/vowel_formants.json").then(r=>r.json()).then(d=>{
   VOWELS=d.vowels;
-  document.getElementById("mouthrow").style.display="";
+  document.getElementById("mouthgrp").style.display="";
   for(const sel of [vA,vB]) VOWELS.forEach(v=>{
     const o=document.createElement("option");o.value=v.key;o.textContent=`${v.key} — ${v.example}`;sel.appendChild(o);});
 }).catch(()=>{});
@@ -358,8 +394,7 @@ function applyVowel(frame,key){
     c.qLo=+Math.min(q,8).toFixed(1);c.qHi=+Math.min(12,q*1.6).toFixed(1);
   });
   buildTable();repack();
-  document.getElementById("vowelhint").textContent=
-    `${key} → F1 ${v.f1} · F2 ${v.f2} Hz, Q from real bandwidths (lanes 2+3)`;
+  status.textContent=`${key} → frame ${frame}: F1 ${v.f1} · F2 ${v.f2} Hz, Q from measured bandwidths (sections 2+3)`;
 }
 vA.onchange=()=>applyVowel("A",vA.value);
 vB.onchange=()=>applyVowel("B",vB.value);
@@ -372,7 +407,7 @@ Promise.all([fetch("/tables/tube_resonances.json").then(r=>r.json()),
              fetch("/tables/metallic_modes.json").then(r=>r.json())]).then(([tu,me])=>{
   tu.tubes.forEach(t=>RESONATORS.push({key:"tube:"+t.key,label:"tube — "+t.name.split("(")[0].trim(),partials:()=>t.partials_hz,bw:30}));
   me.objects.forEach(o=>RESONATORS.push({key:"metal:"+o.key,label:"metal — "+o.name.split("(")[0].trim(),partials:f0=>o.ratios.map(r=>r*f0),bw:12}));
-  document.getElementById("bodyrow").style.display="";
+  document.getElementById("modalgrp").style.display="";
   for(const sel of [rA,rB]) RESONATORS.forEach(x=>{
     const o=document.createElement("option");o.value=x.key;o.textContent=x.label;sel.appendChild(o);});
 }).catch(()=>{});
@@ -387,7 +422,7 @@ function applyResonator(frame,key){
     c.qLo=+Math.min(q,8).toFixed(1); c.qHi=+Math.min(12,q*1.6).toFixed(1);
   });
   buildTable();repack();
-  document.getElementById("reshint").textContent=`→ ${ps.map(f=>Math.round(f)).join(" · ")} Hz`;
+  status.textContent=`${key.replace(":"," ")} → frame ${frame}: ${ps.map(f=>Math.round(f)).join(" · ")} Hz (sections 2–${1+ps.length})`;
 }
 rA.onchange=()=>applyResonator("A",rA.value);
 rB.onchange=()=>applyResonator("B",rB.value);
@@ -483,5 +518,5 @@ document.getElementById("save").onclick=()=>{
 };
 
 fit();
-repack().then(()=>{status.textContent=(restored?"restored your last design — ":"ready — ")+"design two frames, turn Morph, press play. Curve is the shipped engine.";});
+repack().then(()=>{status.textContent="ready — design two frames, turn Morph, press play. Curve is the shipped engine.";});
 </script></body></html>
