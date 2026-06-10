@@ -49,11 +49,22 @@ rails apply), vertical = radius (pole up = resonant, zero down = deeper notch),
 Alt = per-frame gain, wheel = pole radius, Shift = fine. This grip is structure-
 preserving by definition and teaches the instrument. (BUILT, OBSERVED.)
 
-**Grip 2 — the curve grip (edit the sum; the stages follow).** The cascade in dB is the
-sum of six section responses; wherever skirts overlap no single handle owns the
-composite. Grab the combined curve anywhere that isn't a handle: a damped Gauss-Newton
-solver moves the **K = 2 nearest unlocked sections** in root domain
-[log2 f_p, ln(1 − r_p), gain dB] to chase a Gaussian target bump under the finger.
+**Grip 2 — the pottery grip (mould the sum; the stages follow).** The cascade in dB is
+the sum of six section responses; wherever skirts overlap no single handle owns the
+composite. Grab the combined curve anywhere that isn't a handle and mould it like clay:
+- **The hand has width.** Wheel sets the brush (Gaussian σ, 0.12–1.2 oct); the footprint
+  band is drawn on the plot. Fingertip moves one section; palm moves the band.
+- **Recruitment under the brush:** every unlocked enabled section whose pole sits within
+  ~1.5 σ of the brush center (cap 4), re-evaluated every frame.
+- **Viscous following, both axes:** each frame the material steps toward the finger from
+  where it is *now* (target re-based per frame; minimum motion toward the frame start —
+  clay keeps what you pressed, no spring-back). Sideways drag smears the brush center
+  and drags pole frequencies with it. Damped Gauss-Newton in root domain
+  [log2 f_p, ln(1 − r_p), gain dB], small per-step trust region so sections never swap
+  roles.
+- **Stiff where structure lives:** locks and parked zeros are never moved by the brush —
+  clay with tendons. The cascade can't hold arbitrary shapes (120 numbers, not infinite
+  plasticity); the live residual in dB is where the material resists.
 (BUILT for docked corners, OBSERVED.)
 
 Constraint system (this is what makes the inverse problem usable — the solver may only
