@@ -106,14 +106,32 @@ antiresonance.
   double-click a number to type
 - quantize modes apply to handle drags: measured-resonance table / 12-TET in key / off
 
-**Hard rules:**
+**Rule tiers (don't mix their authority):**
+
+*Tier 1 — INVARIANTS (format + stability physics; truly hard):*
 - poles locked inside the unit circle (compiler clamps: r_p ∈ [0.5, MAX_RADIUS),
   UI ceiling 0.9992)
-- zeros allowed but visibly bounded (r_z ∈ [0, 1), UI ceiling 0.9995)
+- zeros bounded (r_z ∈ [0, 1), UI ceiling 0.9995)
 - conjugate pairs only (the format packs nothing else)
-- gain normalized/readable: displayed per-frame in dB, packed linear ∈ [0.05, 4.0]
+- gain packed linear ∈ [0.05, 4.0] (displayed per-frame in dB)
 - packed-runtime plot always shown (plot==engine, harness-verified)
 - 17×17 packed audit before KEEP — FAIL never enters the bank
+
+*Tier 2 — MEASURED DEFAULTS (what the 50 references did; one gesture to override,
+never a cage — the bent-audit lesson):*
+- zeros boot parked (low = high frame, linked) — unlink to travel
+- zeros boot Q-invariant — but a Q-responsive zero is in-format, stable, and
+  territory no reference ever used: available novelty, not a violation
+- pole radius shared across frames per Q endpoint (references vary it slightly;
+  expose per-frame radius in the inspector as the override)
+- quantize defaults to the measured-resonance table
+
+*Tier 3 — TASTE / ERGONOMICS (hypotheses until Tyson's hands vote; fully open to
+any first-principles design pass):*
+- drag directions, glyph choices, layout, panel hierarchy, what's hidden, color,
+  type, the verdict-strip arrangement
+- topology labels are INFORMATION about root geometry, never a quality judgment —
+  a "near-allpass" section that sounds right is right
 
 **Naming (heritage, 2026-06-10):** the two coefficient frames are the **low morph frame**
 and **high morph frame** — E-mu's own terms (Dillusion Peak/Shelf Morph tutorial). The
@@ -157,22 +175,23 @@ A preset = **body + behavior metadata**, both written by KEEP into the cartridge
 
 - **Secondary-axis semantics.** In the 240-byte format the secondary axis is just the
   second bilinear interpolation dimension (corners C2/C3) — "Q = pole radius" is the
-  reference convention, not a format rule. Per-preset selector:
+  reference convention, not a format rule. Per-preset selector writes
+  `secondary_target`:
   - `Q (radius)` — default; C2/C3 = C0/C1 with pole radius scaled (numerator held,
-    as measured in the references).
+    as measured in the references). Cartridge value: `packed`.
   - `free corners` — author C2/C3 directly (secondary shifts frequency, opens a
-    second notch, any coefficient gesture). In-format, audits identically.
+    second notch, any coefficient gesture). In-format, audits identically. Cartridge
+    value: `packed`.
   - `drive` — secondary routes to the saturation input gain. Body-external: needs a
-    cartridge field (`secondary_target`) read by the plugin. Precedent already
-    shipped as hardcoded special cases: `bodySecondaryDrivesSlam()` (v1_bass_sharpener)
-    and `bodyUsesLogMorph()` in TrenchBodyRoster.h — generalize name-checks to fields.
+    cartridge field read by the plugin. Cartridge value: `slam`.
   - `both` — coefficient gesture + drive ramp.
-- **Morph taper** (`linear` / `log`-style pow curve) — same generalization
-  (`bodyUsesLogMorph` → cartridge field).
+    Cartridge value: `packed+slam`.
+- **Morph taper** writes `morph_taper`: `linear` or `log_1p45`.
 - Name · category (roster grouping) · Tyson's words.
 
-JUCE side: replace the two base-name checks with cartridge-field reads (small,
-backward-compatible — absent fields = current defaults).
+JUCE side: read cartridge fields on load and cache the mapped behavior for audio/UI.
+Absent fields = `secondary_target: "packed"` and `morph_taper: "linear"`; legacy
+Bass Sharpener name checks remain only as fallback for old override files.
 
 ## Enhancements (resequenced 2026-06-10)
 
