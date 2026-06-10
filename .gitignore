@@ -28,3 +28,5 @@ bodies/generated/
 # loose diagnostic screenshots / demo clips dropped at repo root
 /*.png
 /*.mp4
+# desk judgment sheets: regenerable bulk (plots/wavs); the bank + ledgers ARE tracked
+desk/sheets/

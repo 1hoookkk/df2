@@ -5,19 +5,25 @@
 Read `AGENTS.md` first. It is the current short contract for this checkout.
 When this file and `AGENTS.md` disagree, `AGENTS.md` wins.
 
-Current Forge work is Law Author:
-
-```text
-small law source -> six root-domain stages -> packed .body240 -> trench_core audit
-```
-
-Do not turn active Forge work into a coefficient editor, a prompt-first body
-writer, or a production-training workflow unless the user explicitly asks.
+Current work: **production authoring calibrated to the iconic corridor.** The QD search
+(`train.py model=smoke|v1`) generates candidate bodies; the **reference-derived gates** keep the ones
+that behave like the real iconic P2K bodies; **Tyson's ear picks** the keepers. See *The audit is
+reference-derived* below — that rebuild (this session) was the fix for months of tail-chasing.
 
 df2 is a destructive morphing filter FX plugin (808s, bass, vocals, drums, bus). The goal is a
 product that sounds expensive, violent, distinctive — not academic emulation. **Tyson owns** taste,
 product feel, body keep/kill, sellability. **Claude drives everything else** — code, builds, git,
 files, DSP, plots, tests, cleanup — with safe defaults, surfacing only taste/product calls.
+
+## The desk (Tyson's only surface)
+`desk/` is the producer cockpit and the ONLY place Tyson goes; everything else is Claude's
+machine room. `desk/SHEETS.md` links the current plot-first judgment sheets; **`desk/bank/v1/`
+is the product and the repo's center of gravity** — a body enters the bank only with Tyson's
+verdict recorded in `BANK.md` (then export + 17×17 audit + JUCE roster wiring). `desk/KILLS.md`
+logs rejections in his words — calibration data, as valuable as the keeps. A session that ends
+with a new tool instead of a verdict on sound is a loop iteration, not progress. Machinery
+changes need a failed verdict as their license. Handoff history lives in `docs/archive/`;
+clean-room P2K analysis (rails, move families, zero grammar) in `docs/study/`.
 
 ## The body is a filter type
 A body = **240 bytes = 4 corners × 6 second-order sections × 5 packed words**. It IS one **12th-order
@@ -28,13 +34,20 @@ fill few sections (not broken — just low order). The 50 are **reference/study 
 
 A df2 preset = an **original 12th-order filter type** = **Frame A + Frame B + a Q-rule**:
 - **Morph** (the `Freq` knob) interpolates Frame A → Frame B in packed-word space.
-- **Secondary / Q** is the per-type character knob (resonance / body-size / notch-depth / EQ-gain,
-  depending on the type) — it scales both frames.
+- **Secondary / Q** scales pole radius toward the rim. **OBSERVED 2026-06-09 (CORRECTED — supersedes
+  the old "Q barely moves, 0.3–1 dB" claim, which was the bent ruler):** the real iconic ROM bodies
+  **bloom 6–34 dB under Q** — measured through the engine on the decoded ROM (Talking Hedz +17.7 dB
+  peak / 6.3 dB secondary-contrast-rms, Meaty Gizmo +32.8 / 33.9, Early Rizer +13, Ace +15). Q is a
+  **co-leader resonant bloom**, not subtle. Q sharpens (peak HEIGHT) hugely while barely moving the
+  formant FREQUENCY — the old claim likely conflated the two. The gesture = **Morph leader sweep AND
+  Q bloom**. (See memory `q-blooms-not-subtle`.)
 - Corners: `C0 = A·loQ, C1 = B·loQ, C2 = A·hiQ, C3 = B·hiQ`.
 - **Section index is the morph pairing** (section i ↔ section i across corners) — sacred. Cascade
   order *within* a corner is free (`H(z)=∏Hₖ(z)` commutes).
-- **Every section is a pole+zero pair — always both.** Zeros are first-class and mandatory; a
-  zeroless resonator is the "stages look wrong" bug.
+- **Every section is a pole+zero pair — always both.** The cascade is **serial** (`H(z)=∏Hₖ`,
+  sections multiply in dB), so any section that rolls off buries the rest — a zeroless section craters
+  the whole chain. Flat-ended sections compose; the foundation is a **flat-topped low-shelf** (holds the
+  lows, flat above so the formants ride hot), NOT a lowpass that drags everything down.
 
 ## Do not invent poles
 Every pole traces to a **real resonance**. Sources, in order of leverage:
@@ -46,7 +59,7 @@ Every pole traces to a **real resonance**. Sources, in order of leverage:
    shelf, Q behavior), author originals in that spirit. Copy no coefficients, names, or bytes.
 
 **Never** random / procedural / singularity-field / novelty-search generation, and never invented or
-unsnapped placement. This supersedes the procedural `CORNER_QUARRY_TRUTH.md` mining direction.
+unsnapped placement. This supersedes the procedural `docs/archive/CORNER_QUARRY_TRUTH.md` mining direction.
 
 ## Frames and mining
 The unit of value is the **frame** (six sections frozen into one filter posture — a vowel, a tube, a
@@ -73,6 +86,21 @@ plot and ear; AI never approves a finished body.
 does not lie — a body that looks wrong *is* wrong. The magnitude-response plot is the judgment
 surface; lead with plots, ear confirms last. Author and plot the same coeffs the engine runs.
 
+## The audit is reference-derived (the iconic corridor)
+**The standard is the real bodies, not invented numbers — a gate that rejects Talking Hedz is bent.**
+OBSERVED this session: the old gates were fantasy (Q≥12 dB, maxR≥0.998, median zero-travel) and rejected
+**0/50** real iconic bodies; the QD search optimized that wrong target for months — that was the
+tail-chasing. Rebuilt from the **iconic-15 corridor** (megasweepz, talking_hedz, lucifer_s_q, …):
+**15/15 pass**. Before trusting any audit, run the references through it first; calibrate gates +
+scoring to admit them. **Measured iconic recipe:** maxR **0.985–0.988** · span 40–120 dB · **Q bloom
+6–34 dB** (secondary-contrast-rms via `evaluate_body` on ROM decodes; CORRECTED — the old "0.3–1 dB, Q
+barely moves" was wrong) · **anchor+mover** (most lanes held; ONE leader pole + ONE leader canyon each
+travel **1–5.6 oct**) · held shelf body. **How the iconic presets were made (concluded):** a human at
+E-mu's section-level Filter Designer (the heritage XMLs ARE the artifacts — type + home/away freq + gain),
+by ear. No algorithm to recover — the corridor describes the **result**, not the process. The search
+proposes candidates in the corridor; **Tyson picks/shapes.** Files: `configs/model/smoke.yaml` gates,
+`src/utils/packed_runtime.py`, `src/architectures/trajectory_program.py`; memory `iconic-corridor-and-the-bent-audit`.
+
 ## The drive chain is the product
 **AGC → Mackie saturation → QSound** is on by default and IS the product sound. **AGC is always on**
 (no plain/driven split). Author and judge through the full chain, never the bare cascade.
@@ -87,8 +115,9 @@ tested.
 The target is the **aggressive, moving, resonant** end of the type taxonomy — REZ (violent high-Q),
 VOW (vowel glide), LPF (hard-Q sweep), EQ+ (bassline processor), PHA (notch field). DnB/bass lane:
 tearing bass, high-Q scream, distorted 808s, lo-fi dirt. E-mu's law, kept verbatim: **high resonance
-without losing bass power** — the low body section booms uncut (shelf, zero banished) while Q cranks
-the upper sections. Subtle/tasteful = generic; one named dramatic move = iconic.
+without losing bass power** — the low body holds as a **flat-topped shelf** (booms uncut) while the
+**upper sections sweep under Morph** (the leader, multi-octave). Subtle/tasteful = generic; one named
+dramatic move (the leader sweep) = iconic.
 
 ## Register
 Reason and communicate in **concrete DSP** — Hz, poles/zeros as `(r, θ)`, `Q≈1/(2(1−r))`, stability
@@ -113,8 +142,8 @@ wrong, state what was claimed / what disproved it / what's known now / what test
 
 Authority order: Tyson's current instruction > this file > live code/tests > fresh measurements
 through the shipped engine. **Superseded (study/background only, never veto the current direction):**
-`CORNER_QUARRY_TRUTH.md` (procedural mining), `AGENTS.md` Law-Author direction, the `gpt55-pro-*`
-reports, `docs/FORGE_LAW_AUTHOR.md`.
+`docs/archive/CORNER_QUARRY_TRUTH.md` (procedural mining), `AGENTS.md` Law-Author direction, the
+`gpt55-pro-*` reports (now in `docs/archive/`), `docs/FORGE_LAW_AUTHOR.md`.
 
 ## Clean-room
 Study curves, describe behavior, build original filter types in the same spirit. Do NOT ship copied

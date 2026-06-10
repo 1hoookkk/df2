@@ -1,0 +1,161 @@
+### Permanent Master Acoustic Dictionary: Legacy Z-Plane Filters
+
+**1. Human Vocals & Formants**
+*   **Filter Name:** F041 YahYahs.4
+    *   **Order / Type:** 14-pole / VOW
+    *   **Acoustic Target:** Emulates extreme human vocalizations by clustering tightly spaced formants to produce radical "eeya" and "aa" screaming sounds.
+    *   **Morph Axis Behavior:** Sweeps back and forth between the "eeya" and "aa" vocal syllables.
+    *   **Frequency Tracking Behavior:** Introduces frequencies two octaves higher for key tracking and brightness control.
+    *   **Transform 2 Behavior:** Not used for filter parameters; as a '.4' filter, it defaults to controlling internal distortion.
+
+*   **Filter Name:** F034 Be Ye.4
+    *   **Order / Type:** 14-pole / VOW
+    *   **Acoustic Target:** A highly specific vocal formant filter explicitly designed to articulate the spoken phrase "Be Ye".
+    *   **Morph Axis Behavior:** Sweeps through the necessary vocal formants to generate the speech effect.
+    *   **Frequency Tracking Behavior:** Tracks the filter with the keyboard range and controls brightness when assigned to a velocity source.
+    *   **Transform 2 Behavior:** Not used for filter parameters; as a '.4' filter, it defaults to controlling internal distortion.
+
+*   **Filter Name:** F029 Vocal Cube
+    *   **Order / Type:** 14-pole / VOW
+    *   **Acoustic Target:** Provides a full 3D formant space that produces and smoothly interpolates between various pure, organic human vocal sounds.
+    *   **Morph Axis Behavior:** Sweeps the frequencies to transition between the embedded vowel formants.
+    *   **Frequency Tracking Behavior:** Assignable to keyboard velocity to provide dynamic brightness control over the vocals.
+    *   **Transform 2 Behavior:** Tunes the filter to alter the fundamental formant characteristics.
+
+*   **Filter Name:** DeepBouche
+    *   **Order / Type:** 12-pole / VOW
+    *   **Acoustic Target:** Emulates French vowel phonemes, specifically targeting an "Ou-Est" vocal tract shape.
+    *   **Morph Axis Behavior:** Sweeps the cutoff frequency to smoothly transition through the complex vowel formants.
+    *   **Frequency Tracking Behavior:** Tracks the base cutoff frequency of the formant structures.
+    *   **Transform 2 Behavior:** Controls the filter 'Q' (resonance), with lower settings producing the distinct "Ou-Est" vowel character.
+
+*   **Filter Name:** AahAyEeh
+    *   **Order / Type:** 6-pole / VOW
+    *   **Acoustic Target:** A vocal formant filter designed to emulate human speech transitions between three specific vowels.
+    *   **Morph Axis Behavior:** Sweeps the formant frequencies from an "Ah" sound, through an "Ay" sound, to an "Ee" sound at the maximum frequency setting.
+    *   **Frequency Tracking Behavior:** Tracks the key pitch to shift the overall formant registers.
+    *   **Transform 2 Behavior:** Modulates the filter 'Q' to vary the apparent physical size of the simulated mouth cavity.
+
+***
+
+**2. Acoustic Instrument Models (Wood, Strings, Horns)**
+*   **Filter Name:** F105 AcGtrRs.4
+    *   **Order / Type:** 14-pole / Instrument Model
+    *   **Acoustic Target:** Emulates the physical resonant characteristics of an acoustic guitar body, acting as if a large guitar were close-miked near the sound hole.
+    *   **Morph Axis Behavior:** Controls the filter formant notch depth and position, which varies the simulated microphone placement.
+    *   **Frequency Tracking Behavior:** Adjusts frequency tracking to simulate different pick positions and overall string brightness.
+    *   **Transform 2 Behavior:** Not used for filter parameters; as a '.4' filter, it defaults to controlling internal distortion.
+
+*   **Filter Name:** F083 Clr>Oboe
+    *   **Order / Type:** 14-pole / Instrument Model
+    *   **Acoustic Target:** Simulates woodwind resonance, specifically morphing the body characteristics from a clarinet to an oboe.
+    *   **Morph Axis Behavior:** Sweeps the acoustic properties from the Clarinet to the Oboe.
+    *   **Frequency Tracking Behavior:** Provides key tracking to fix and maintain the harmonic partials.
+    *   **Transform 2 Behavior:** Provides volume and brightness control when tied to velocity and/or key position.
+
+*   **Filter Name:** F085 PZ Syn Horn
+    *   **Order / Type:** 14-pole / Instrument Model
+    *   **Acoustic Target:** Models the specific harmonic modifiers and frequency content of a synthesized horn, lending a brass sound to other input samples.
+    *   **Morph Axis Behavior:** Controls the overall brightness of the horn model.
+    *   **Frequency Tracking Behavior:** Moves the harmonic modifiers higher in frequency.
+    *   **Transform 2 Behavior:** Makes a modest change in brightness to act as a fine-tuning control.
+
+*   **Filter Name:** F092 ShakuFilter
+    *   **Order / Type:** 14-pole / Instrument Model
+    *   **Acoustic Target:** Emulates the resonant body and breath characteristics of a bamboo shakuhachi flute, featuring peaks at 400Hz, 1600Hz, 2700Hz, and 3150Hz.
+    *   **Morph Axis Behavior:** Sweeps between the primary resonant peaks and transitions to a mostly flat response with a slight bump at 1900Hz.
+    *   **Frequency Tracking Behavior:** Provides keyboard tracking to maintain the body resonances.
+    *   **Transform 2 Behavior:** Controls the tone and depth of the instrument body.
+
+***
+
+**3. Classic Analog & Lowpass Sweeps**
+*   **Filter Name:** BassBox-303
+    *   **Order / Type:** 12-pole / LPF
+    *   **Acoustic Target:** Models the classic Roland TB-303 bassline synthesizer, delivering pumped-up lows with an aggressive, acidic character.
+    *   **Morph Axis Behavior:** Sweeps the cutoff frequency of the analog-style lowpass filter.
+    *   **Frequency Tracking Behavior:** Tracks the base frequency of the lowpass cutoff.
+    *   **Transform 2 Behavior:** Controls the 'Q' (resonance), acting as the signature TB-like squelchy resonance factor.
+
+*   **Filter Name:** KlubKlassik
+    *   **Order / Type:** 12-pole / LPF
+    *   **Acoustic Target:** Provides a responsive analog-style lowpass filter sweep with a wide spectrum of resonance sounds tailored for dance/club music.
+    *   **Morph Axis Behavior:** Sweeps the cutoff frequency for traditional synthesizer lowpass sweep effects.
+    *   **Frequency Tracking Behavior:** Tunes the tracking of the filter cutoff across the spectrum.
+    *   **Transform 2 Behavior:** Modulates the 'Q' to sweep through a wide spectrum of resonant peaks.
+
+*   **Filter Name:** F048 MdQ 4PoleLP
+    *   **Order / Type:** 14-pole / LPF
+    *   **Acoustic Target:** Re-creates the classic 4-pole lowpass filter effect found in vintage analog synthesizers featuring a steep 24 dB/octave rolloff and medium resonance.
+    *   **Morph Axis Behavior:** Controls the filter cutoff frequency to execute smooth, analog-style sweeps.
+    *   **Frequency Tracking Behavior:** Controls the filter cutoff tracking across the keyboard.
+    *   **Transform 2 Behavior:** Controls the medium resonance ('Q') peak located at the cutoff point.
+
+*   **Filter Name:** F052 4PoleMidQ.4
+    *   **Order / Type:** 14-pole / LPF
+    *   **Acoustic Target:** A 4-filter variation of the classic 4-pole resonant lowpass filter found in most analog synthesizers.
+    *   **Morph Axis Behavior:** Controls the filter cutoff frequency.
+    *   **Frequency Tracking Behavior:** Controls the filter resonance ("Q").
+    *   **Transform 2 Behavior:** Not used for filter parameters; as a '.4' filter, it defaults to controlling internal distortion.
+
+***
+
+**4. Metallic, Flange & Comb Filters**
+*   **Filter Name:** F004 CubeFlanger
+    *   **Order / Type:** 14-pole / FLG
+    *   **Acoustic Target:** A dense flanging filter featuring deep notches tuned in octaves and a steep roll-off of high frequencies, capable of generating metallic overtones.
+    *   **Morph Axis Behavior:** Tunes the comb-filter notches across the spectrum.
+    *   **Frequency Tracking Behavior:** Controls the cutoff point of the integrated lowpass filter.
+    *   **Transform 2 Behavior:** Increases resonance and introduces sharp peaks, generating metallic-sounding overtones.
+
+*   **Filter Name:** F011 BriteFlnge.4
+    *   **Order / Type:** 14-pole / FLG
+    *   **Acoustic Target:** Produces a series of notches tuned in octaves that sweep upward and converge at 19.5kHz, retaining a bright high-end response.
+    *   **Morph Axis Behavior:** Increasing this value sweeps the filter notches upward and closely together.
+    *   **Frequency Tracking Behavior:** Increasing this value raises the lowpass filter cutoff point.
+    *   **Transform 2 Behavior:** Not used for filter parameters; as a '.4' filter, it defaults to controlling internal distortion.
+
+*   **Filter Name:** F159 OddCuts.4
+    *   **Order / Type:** 14-pole / Comb
+    *   **Acoustic Target:** Creates mathematical phase notches in the frequency spectrum based strictly on the odd harmonic series.
+    *   **Morph Axis Behavior:** Controls the depth of the notches and the height of the resulting small bumps.
+    *   **Frequency Tracking Behavior:** Tunes the specific frequencies of the notches and bumps.
+    *   **Transform 2 Behavior:** Not used for filter parameters; as a '.4' filter, it defaults to controlling internal distortion.
+
+*   **Filter Name:** F193 Separator
+    *   **Order / Type:** 14-pole / Metallic
+    *   **Acoustic Target:** Features three inharmonically related resonant peaks that produce a metallic set of overtones, simulating whistling wind on noise inputs or hollow ringing structures.
+    *   **Morph Axis Behavior:** Used to physically sweep the resonant peaks through the spectrum.
+    *   **Frequency Tracking Behavior:** Tunes the filter tracking.
+    *   **Transform 2 Behavior:** Controls overall filter resonance.
+
+***
+
+**5. Aggressive Resonance & Distortion**
+*   **Filter Name:** F197 TubeJam.4
+    *   **Order / Type:** 14-pole / DST
+    *   **Acoustic Target:** An intentional rule-breaker that pushes peak topologies into algorithmic clipping, simulating heavy tube overdrive and speaker cabinet destruction.
+    *   **Morph Axis Behavior:** Sweeps the parameters of the heavily distorted spectrum.
+    *   **Frequency Tracking Behavior:** Not used.
+    *   **Transform 2 Behavior:** Not used for filter parameters; as a '.4' filter, it defaults to controlling internal distortion.
+
+*   **Filter Name:** LucifersQ
+    *   **Order / Type:** 12-pole / REZ
+    *   **Acoustic Target:** Produces a violently resonant mid-band filter designed for aggressive, howling sweeps.
+    *   **Morph Axis Behavior:** Sweeps the center frequency of the violent resonant peak.
+    *   **Frequency Tracking Behavior:** Tracks the base cutoff frequency of the filter.
+    *   **Transform 2 Behavior:** Modulates the extreme 'Q' resonance, functioning as a violent peak modifier.
+
+*   **Filter Name:** FuzziFace
+    *   **Order / Type:** 12-pole / DST
+    *   **Acoustic Target:** Generates nasty, clipped fuzz distortion directly within the digital filter topology.
+    *   **Morph Axis Behavior:** Sweeps the cutoff frequency of the distortion profile.
+    *   **Frequency Tracking Behavior:** Tunes the filter's overall cutoff tracking.
+    *   **Transform 2 Behavior:** Controls the 'Q', functioning as a mid-frequency tone control to shape the clipped distortion.
+
+*   **Filter Name:** F106 Tube Sust.4
+    *   **Order / Type:** 14-pole / DST
+    *   **Acoustic Target:** Used with broad-band waves to produce saturated, overdriven body sounds characteristic of heavily distorted guitars.
+    *   **Morph Axis Behavior:** Increasing this parameter increases both the bass and midrange thickness.
+    *   **Frequency Tracking Behavior:** Controls the shape of the lower-midrange frequencies.
+    *   **Transform 2 Behavior:** Not used for filter parameters; as a '.4' filter, it defaults to controlling internal distortion.
