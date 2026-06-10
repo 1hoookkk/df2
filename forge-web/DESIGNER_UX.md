@@ -122,6 +122,29 @@ seeds · vowel formant pairs (Peterson-Barney F1/F2, Q from Klatt BW) · modal s
 (tube harmonics / inharmonic ratios × f0) · LPC formant fit. All set pole pairs;
 zeros default masked (on the pole) until dragged away — the unmask gesture.
 
+## The preset object (v2 authors the WHOLE preset, not just the body)
+
+A preset = **body + behavior metadata**, both written by KEEP into the cartridge:
+
+- **Secondary-axis semantics.** In the 240-byte format the secondary axis is just the
+  second bilinear interpolation dimension (corners C2/C3) — "Q = pole radius" is the
+  reference convention, not a format rule. Per-preset selector:
+  - `Q (radius)` — default; C2/C3 = C0/C1 with pole radius scaled (numerator held,
+    as measured in the references).
+  - `free corners` — author C2/C3 directly (secondary shifts frequency, opens a
+    second notch, any coefficient gesture). In-format, audits identically.
+  - `drive` — secondary routes to the saturation input gain. Body-external: needs a
+    cartridge field (`secondary_target`) read by the plugin. Precedent already
+    shipped as hardcoded special cases: `bodySecondaryDrivesSlam()` (v1_bass_sharpener)
+    and `bodyUsesLogMorph()` in TrenchBodyRoster.h — generalize name-checks to fields.
+  - `both` — coefficient gesture + drive ramp.
+- **Morph taper** (`linear` / `log`-style pow curve) — same generalization
+  (`bodyUsesLogMorph` → cartridge field).
+- Name · category (roster grouping) · Tyson's words.
+
+JUCE side: replace the two base-name checks with cartridge-field reads (small,
+backward-compatible — absent fields = current defaults).
+
 ## Enhancements (resequenced 2026-06-10)
 
 | # | item | status |
