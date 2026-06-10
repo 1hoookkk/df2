@@ -1,5 +1,5 @@
 [workspace]
-members = ["trench-core", "forge-clean"]
+members = ["trench-core", "forge-clean", "forge-gpu-painter"]
 resolver = "2"
 
 [profile.dev.package."*"]
