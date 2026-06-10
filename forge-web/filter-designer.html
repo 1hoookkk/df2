@@ -47,7 +47,7 @@ input[type=number]:focus,input[type=text]:focus,select:focus{outline:none;border
 .row:first-of-type{margin-top:0}
 .grp{display:inline-flex;gap:6px;align-items:center;padding:3px 8px;border:1px solid var(--line);border-radius:6px}
 #bodyname{width:140px}
-.mini{width:96px;height:30px;display:block;background:#0a0f0d;border:1px solid #121a17;border-radius:3px}
+.mini{width:52px;height:52px;display:block;background:#0a0f0d;border:1px solid #121a17;border-radius:3px}
 .lbl{color:var(--dim);font-size:11px}
 button{background:#13201b;color:var(--ink);border:1px solid var(--line);border-radius:5px;padding:6px 12px;font:inherit;cursor:pointer;white-space:nowrap}
 button:hover{border-color:var(--hot)} button.go{background:#16321f;color:var(--hot);border-color:#2a5e3a}
@@ -318,7 +318,7 @@ function buildTable(){
     fa.dataset.tint="rgba(46,196,255,.22)";fb.dataset.tint="rgba(255,122,62,.22)";
     g.dataset.tint="rgba(91,239,111,.16)";ql.dataset.tint="rgba(207,233,223,.10)";qh.dataset.tint="rgba(207,233,223,.10)";
     dragify(fa,"freq",gt);dragify(fb,"freq",gt);dragify(g,"gain");dragify(ql,"q");dragify(qh,"q");
-    const mini=document.createElement("canvas");mini.className="mini";mini.width=96;mini.height=30;minis[si]=mini;
+    const mini=document.createElement("canvas");mini.className="mini";mini.width=52;mini.height=52;minis[si]=mini;
     const cells=[on,sel,mini,fa,fb,g,ql,qh];
     cells.forEach((el,ci)=>{const td=document.createElement("td");if(ci===3)td.className="fa-cell";if(ci===4)td.className="fb-cell";td.appendChild(el);tr.appendChild(td);});
     tb.appendChild(tr);
