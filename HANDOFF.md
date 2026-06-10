@@ -36,6 +36,18 @@ are alive + tells why → Claude floods around those → Tyson KEEPs the worth-m
 Generator + discriminator, and the discriminator must hear. This is a functional
 requirement, not flattery.
 
+**Hand-make vs audition (resolved 2026-06-10):** auditioning Claude's floods ALONE is
+the weaker bet — you cannot curate in quality the generator can't produce, and the
+floods proved competent-not-iconic. The stronger path is **hand-shaping with Tyson's
+ear INSIDE the making loop** (make→hear→adjust→hear, aimed at an intention) — that's
+how E-mu made all 50. So the real move is the hybrid: **Claude seeds a strong starting
+body (right move, scaffold+voices, real rails); Tyson hand-shapes it alive by ear; KEEP.**
+The flood is a head start, not a lottery — quality gets MADE in the shaping, not FOUND
+in the pile. BUT: don't over-conclude this from the armchair — the only real test is
+Tyson's ear, which hasn't run yet. **Make ~3 by hand, audition a handful of floods,
+let the ear say which path is real, then follow it.** Don't perform false confidence in
+this no-ground-truth space (a recurring Claude failure here — see HOW TO WORK below).
+
 ## THE IMMEDIATE BUILD (the only thing to build — keep it lean)
 
 The project never closes the loop at the END: the gap between "I like this" and "it's
@@ -158,6 +170,33 @@ ear pick.
   corridor gates — the musical wave) / `model=overnight` (corridor) / `model=smoke`
   (fast). Distill a run: `python tools/distill_finalists.py <run_dir> 20 2`.
 
+## WHY THIS IS GENUINELY HARD (and what's already settled — don't reopen)
+
+This is one of the hardest shapes of problem to point an AI at, and naming it keeps a
+new chat from burning effort in the wrong place. **The target — "sounds worth paying
+for" — is perceptual, and Claude can't hear.** The fitness function lives in a sense
+Claude doesn't have; the inverted scorer is the symptom (the field has NO computable
+measure of "good"). So Claude is reliable on the COMPUTABLE/VERIFIABLE half (engine,
+nulls, structure, stability, floods) and must stay HONEST-uncertain on the PERCEPTUAL
+half (which body is iconic) — that's Tyson's ear, always.
+
+**Already settled — do NOT reopen these (they are verified, not perceptual):**
+- **The engine.** Fully RE'd from the binary (Ghidra: `FUN_1802c3d40` = linear u16
+  minifloat morph lerp) AND independently confirmed by Rossum's patent
+  (`C(x)=Ca+x(Cb−Ca)` on log-encoded coeffs). Ported to trench-core, `plot==engine`
+  0.0000 dB. **Do NOT open Ghidra again** — the player binary does not contain the
+  authoring/design method (that was a human at E-mu's Filter Designer, by ear). The
+  thing we still need is perceptual, not in the binary. Reopening Ghidra would be
+  another comfortable-tractable detour away from the hard (ear) work.
+- **The encoders nulled.** `compile_body` == WASM GUI byte-exact. **NEW: the typed
+  designer compiler is nulled too** — WASM `forge_pack_typed` == DLL `compile_body_typed`,
+  byte-identical (0 diff). The Filter Designer's browser bytes ARE what ships.
+
+**Remaining verification is future, not now:** the KEEP button's 17×17 audit path (build
+it, then verify it rejects unstable + passes good). The closed-loop compiler's old
+Early-Rizer 2.65 dB fit "ran on the rogue encoder — re-verify through compile_body" IF
+that surface-fit tool is ever used (it's NOT on the preset-loop critical path).
+
 ## CLEAN-ROOM + HOW TO WORK WITH TYSON
 
 - **Clean-room:** study the 50's behavior; ship ORIGINALS in their spirit. NEVER copy
@@ -168,6 +207,12 @@ ear pick.
   lean loop, then he makes. **Lead with PLOTS** (he judges by the curve; "plot tells
   everything"). No DSP vocab on the surface. Momentum, no ceremony. Surface only
   taste/product calls; drive everything else with safe defaults.
+- **Don't perform false confidence.** Tyson flagged Claude flip-flopping — confidently
+  concluding, then walking it back. Some was honest evidence-updating (good); some was
+  Claude overclaiming certainty it didn't have because Tyson asked it to "conclude."
+  In this no-ground-truth domain: give your lean + your uncertainty, hold tactical
+  positions provisionally, and be CONFIDENT only on the computable/verified half
+  (engine, nulls, structure). The whiplash erodes trust. (Refines `claude-over-extrapolates`.)
 
 ## VERIFICATION (show output; don't claim done without it)
 
@@ -178,6 +223,7 @@ python -c "from pyruntime import trench_ffi; from src.utils.packed_runtime impor
   print(evaluate_body(b,5)['stable'], len(b))"   # typed compiler works end-to-end
 python -m http.server 8141 --directory forge-web   # then open /filter-designer.html
 node --check forge-web/js/pack-core.js
+node dev/tmp/typed_null.cjs                         # WASM typed bytes; null vs DLL = 0 (PASSED 2026-06-10)
 ```
 
 ## FIRST MOVES (new chat)
