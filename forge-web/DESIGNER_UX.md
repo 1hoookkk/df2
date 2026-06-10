@@ -169,6 +169,30 @@ seeds · vowel formant pairs (Peterson-Barney F1/F2, Q from Klatt BW) · modal s
 (tube harmonics / inharmonic ratios × f0) · LPC formant fit. All set pole pairs;
 zeros default masked (on the pole) until dragged away — the unmask gesture.
 
+## Center authoring (m50/q50 — Tyson 2026-06-10)
+
+The bilinear center is the equal-weight mean of the four corner word sets, so
+center-authoring is an inverse problem solved by a coordinate change. Author per
+section, in root domain:
+- **M** — the home sound at m50/q50 (pole f/r, zero f/r, gain): where the knob parks
+- **Δmorph** — the move (center holds; endpoints become M ∓ Δ/2)
+- **ΔQ** — the bloom (radius departure along the secondary axis)
+Corners derived: `C(x,y) = M + (2x−1)·Δmorph + (2y−1)·ΔQ`, each compiled through the
+existing 168-param path. In-format; no engine change.
+
+**Generalization — author from anywhere:** an edit at surface point (x,y) distributes
+to the corners by the bilinear basis `(1−x)(1−y), x(1−y), (1−x)y, xy`. Dock editing
+(the Field brief's endpoint-only rule) is the corner-weight special case; center
+authoring is the equal-weight case. One rule, no modes.
+
+**Honesty requirement:** the engine interpolates log-encoded words, so the realized
+center ≠ the authored root-domain center (interior emergence, divergence up to ~20 dB
+from continuous models). Always render authored-M as a ghost vs the realized packed
+curve with the residual in dB. Optional closed-loop correction (iterate corners
+against the true packed runtime) — previously demonstrated at 2.65 dB on a full
+Morph×Q surface, but that run used the rogue encoder: re-verify through compile_body
+before relying on it.
+
 ## The preset object (v2 authors the WHOLE preset, not just the body)
 
 A preset = **body + behavior metadata**, both written by KEEP into the cartridge:
