@@ -32,7 +32,12 @@ td{padding:3px 4px;border-bottom:1px solid #121a17;vertical-align:middle;text-al
 td:nth-child(2){text-align:left}
 .fa-cell{background:rgba(46,196,255,.06)} .fb-cell{background:rgba(255,122,62,.06)}
 select,input[type=number],input[type=text]{background:#0a0f0d;color:var(--ink);border:1px solid var(--line);border-radius:4px;padding:4px 6px;font:inherit}
-input[type=number]{width:66px;text-align:right;cursor:ns-resize;touch-action:none}
+input[type=number]{width:78px;text-align:center;cursor:ns-resize;touch-action:none;
+  appearance:textfield;-moz-appearance:textfield;padding:6px 6px;font-weight:600;
+  background-color:#0a0f0d;background-repeat:no-repeat}
+input[type=number]::-webkit-outer-spin-button,input[type=number]::-webkit-inner-spin-button{-webkit-appearance:none;margin:0}
+input[type=number]:hover{border-color:#2a5e3a}
+tbody tr:hover td{background:rgba(91,239,111,.025)}
 input[type=text]{padding:6px 8px}
 input[type=number]:focus,input[type=text]:focus,select:focus{outline:none;border-color:#2a5e3a}
 .row{display:flex;gap:10px;align-items:center;flex-wrap:wrap;margin-top:8px}
@@ -83,6 +88,14 @@ button:hover{border-color:var(--hot)} button.go{background:#16321f;color:var(--h
     <span class=lbl>→</span>
     <select id=vowelB><option value="">Frame B vowel…</option></select>
     <span class=lbl id=vowelhint></span>
+  </div>
+  <div class=row id=bodyrow style="display:none">
+    <span class=lbl title="fills lanes 2–5 with the resonator's first 4 partials (tube = harmonic series, metal = inharmonic ratios × f0); Q from the material's ring">resonator:</span>
+    <select id=resA><option value="">Frame A body…</option></select>
+    <span class=lbl>→</span>
+    <select id=resB><option value="">Frame B body…</option></select>
+    <span class=lbl>f0</span><input id=resF0 type=number min=30 max=2000 step=1 value=220 title="fundamental for metal objects (ratios × f0) — drag it; snaps to your key in notes mode">
+    <span class=lbl id=reshint></span>
   </div>
   <div class=row>
     <span class=lbl>capture real resonances:</span>
@@ -198,28 +211,44 @@ async function repack(){
   if(anode) anode.port.postMessage({body:st.body.slice().buffer});
 }
 
-// drag-to-adjust — vertical drag like a DAW value box; plain click = type; wheel = step
+// drag-to-adjust — drag a value box like a DAW control (vertical or horizontal,
+// shift = fine); plain click = type; wheel = step. A fill bar shows where the
+// value sits in its range.
 const KINDS={freq:{lo:20,hi:18000,fmt:v=>Math.round(v)},
              gain:{lo:-36,hi:24,fmt:v=>Math.round(v*2)/2},
              q:{lo:0.3,hi:12,fmt:v=>+v.toFixed(1)}};
+function paintVal(inp){
+  const kind=inp.dataset.kind; if(!kind) return;
+  const v=+inp.value||0; let p;
+  if(kind==="freq") p=Math.log2(Math.max(20,Math.min(18000,v))/20)/Math.log2(18000/20)*100;
+  else if(kind==="gain") p=(Math.max(-36,Math.min(24,v))+36)/60*100;
+  else p=Math.log(Math.max(.3,Math.min(12,v))/.3)/Math.log(12/.3)*100;
+  const col=inp.dataset.tint||"rgba(91,239,111,.14)";
+  inp.style.backgroundImage=`linear-gradient(to right, ${col} ${p.toFixed(1)}%, transparent ${p.toFixed(1)}%)`;
+}
 function dragify(inp,kind,getType){
   const K=KINDS[kind];
   const clampf=v=>Math.max(K.lo,Math.min(K.hi,v));
-  let sy=null,sv=0,moved=false;
+  inp.dataset.kind=kind;
+  paintVal(inp);
+  inp.addEventListener("change",()=>paintVal(inp));
+  let sx=null,sy=null,sv=0,moved=false;
   inp.addEventListener("pointerdown",e=>{
     if(document.activeElement===inp) return;             // already typing — leave it alone
     e.preventDefault();
-    sy=e.clientY;sv=+inp.value;moved=false;
+    sx=e.clientX;sy=e.clientY;sv=+inp.value;moved=false;
     inp.setPointerCapture(e.pointerId);
   });
   inp.addEventListener("pointermove",e=>{
     if(sy===null) return;
-    const dy=sy-e.clientY;
-    if(!moved&&Math.abs(dy)<4) return;
+    let d=(sy-e.clientY)+(e.clientX-sx);                 // up or right = more
+    if(!moved&&Math.abs(d)<4) return;
     moved=true;
-    const v=kind==="gain"?sv+dy/6                        // ~1 dB / 6 px
-           :sv*Math.pow(2,dy/(kind==="freq"?96:140));    // freq: 1 oct / 96 px · q: log drag
+    if(e.shiftKey) d*=0.2;                               // shift = fine
+    const v=kind==="gain"?sv+d/6                         // ~1 dB / 6 px
+           :sv*Math.pow(2,d/(kind==="freq"?96:140));     // freq: 1 oct / 96 px · q: log drag
     inp.value=K.fmt(clampf(v));
+    paintVal(inp);
   });
   const finish=e=>{
     if(sy===null) return;
@@ -260,6 +289,8 @@ function buildTable(){
     const ql=document.createElement("input");ql.type="number";ql.min=0.3;ql.max=12;ql.step=0.1;ql.value=c.qLo;ql.onchange=()=>{c.qLo=+ql.value;repack();};
     const qh=document.createElement("input");qh.type="number";qh.min=0.3;qh.max=12;qh.step=0.1;qh.value=c.qHi;qh.onchange=()=>{c.qHi=+qh.value;repack();};
     const gt=()=>c.type;
+    fa.dataset.tint="rgba(46,196,255,.22)";fb.dataset.tint="rgba(255,122,62,.22)";
+    g.dataset.tint="rgba(91,239,111,.16)";ql.dataset.tint="rgba(207,233,223,.10)";qh.dataset.tint="rgba(207,233,223,.10)";
     dragify(fa,"freq",gt);dragify(fb,"freq",gt);dragify(g,"gain");dragify(ql,"q");dragify(qh,"q");
     const cells=[on,sel,fa,fb,g,ql,qh];
     cells.forEach((el,ci)=>{const td=document.createElement("td");if(ci===2)td.className="fa-cell";if(ci===3)td.className="fb-cell";td.appendChild(el);tr.appendChild(td);});
@@ -331,6 +362,39 @@ function applyVowel(frame,key){
 }
 vA.onchange=()=>applyVowel("A",vA.value);
 vB.onchange=()=>applyVowel("B",vB.value);
+
+// resonator pickers — tube partials (harmonic series) / metal modes (inharmonic ratios × f0)
+// fill lanes 2–5; Q from the material's ring (tube/wood BW 30 Hz, metal BW 12 Hz)
+const rA=document.getElementById("resA"),rB=document.getElementById("resB"),rF0=document.getElementById("resF0");
+let RESONATORS=[];
+Promise.all([fetch("/tables/tube_resonances.json").then(r=>r.json()),
+             fetch("/tables/metallic_modes.json").then(r=>r.json())]).then(([tu,me])=>{
+  tu.tubes.forEach(t=>RESONATORS.push({key:"tube:"+t.key,label:"tube — "+t.name.split("(")[0].trim(),partials:()=>t.partials_hz,bw:30}));
+  me.objects.forEach(o=>RESONATORS.push({key:"metal:"+o.key,label:"metal — "+o.name.split("(")[0].trim(),partials:f0=>o.ratios.map(r=>r*f0),bw:12}));
+  document.getElementById("bodyrow").style.display="";
+  for(const sel of [rA,rB]) RESONATORS.forEach(x=>{
+    const o=document.createElement("option");o.value=x.key;o.textContent=x.label;sel.appendChild(o);});
+}).catch(()=>{});
+function applyResonator(frame,key){
+  const x=RESONATORS.find(r=>r.key===key); if(!x) return;
+  const ps=x.partials(+rF0.value).filter(f=>f>=30&&f<=18000).slice(0,4);
+  if(!ps.length) return;
+  ps.forEach((f,i)=>{
+    const c=cards[i+1]; c.type=0; c.on=true;
+    if(frame==="A") c.fcA=f; else c.fcB=f;
+    const q=Math.max(.5,f/x.bw);
+    c.qLo=+Math.min(q,8).toFixed(1); c.qHi=+Math.min(12,q*1.6).toFixed(1);
+  });
+  buildTable();repack();
+  document.getElementById("reshint").textContent=`→ ${ps.map(f=>Math.round(f)).join(" · ")} Hz`;
+}
+rA.onchange=()=>applyResonator("A",rA.value);
+rB.onchange=()=>applyResonator("B",rB.value);
+rF0.onchange=()=>{
+  rF0.value=Math.round(snapHz(+rF0.value,0));   // f0 lands on a key note in notes mode
+  ["A","B"].forEach(fr=>{const v=(fr==="A"?rA:rB).value;if(v.startsWith("metal:"))applyResonator(fr,v);});
+};
+dragify(rF0,"freq",()=>0);
 
 // LPC/LSP fit — capture a real sound's resonances into a frame (do not invent poles)
 async function decodeFile(f){
