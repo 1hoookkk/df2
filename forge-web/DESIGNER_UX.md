@@ -185,6 +185,13 @@ to the corners by the bilinear basis `(1−x)(1−y), x(1−y), (1−x)y, xy`. D
 (the Field brief's endpoint-only rule) is the corner-weight special case; center
 authoring is the equal-weight case. One rule, no modes.
 
+**Determinism facts (per packed word, 4 DOF: M, Δm, Δq, Δmq):** the center alone pins
+M only — infinitely many surfaces share a bit-identical midpoint (a mean destroys the
+variance; the variance is the gesture). Any FOUR interior states in general position
+(e.g. the quarter-points) determine the corners EXACTLY by inverting the bilinear
+weights — relevant to the closed-loop fitter and to surface reconstruction from
+sampled states. Reconstructing reference bodies this way is study-only.
+
 **Anchoring (Tyson 2026-06-10 — naive symmetric deltas give meaningless corners):**
 free Δ vectors turn a centered "ah" into endpoints that are no posture at all. Two
 constraints make the corners fall naturally:
