@@ -370,6 +370,7 @@ enum Drag {
 struct CurveGrip {
     plot: Rect,
     residual_rms: f32,
+    last_step: Instant,
 }
 
 struct Tables {
@@ -776,13 +777,21 @@ impl App {
     fn recompute_response(&mut self) {
         let words = self.words();
         let live = live_biquads(&words, self.morph, self.q);
-        let lo = live_biquads(&words, 0.0, self.q);
-        let hi = live_biquads(&words, 1.0, self.q);
+        // skip the frame ghosts while moulding — they're reference lines, and
+        // halving the per-frame curve math keeps the gesture smooth
+        let moulding = matches!(self.drag, Some(Drag::Curve));
+        let ghosts = if moulding {
+            None
+        } else {
+            Some((live_biquads(&words, 0.0, self.q), live_biquads(&words, 1.0, self.q)))
+        };
         for i in 0..FREQ_BINS {
             let f = freq_at(i, FREQ_BINS);
             self.response[i] = cascade_db(&live, f);
-            self.ghost_low[i] = cascade_db(&lo, f);
-            self.ghost_high[i] = cascade_db(&hi, f);
+            if let Some((lo, hi)) = &ghosts {
+                self.ghost_low[i] = cascade_db(lo, f);
+                self.ghost_high[i] = cascade_db(hi, f);
+            }
             for s in 0..STAGES {
                 self.stage_db[s][i] = biquad_db(live[s], f);
             }
@@ -2334,6 +2343,7 @@ impl App {
             }
             self.drag = None;
             self.curve_grip = None;
+            self.recompute_response(); // refresh the frame ghosts skipped while moulding
         }
         self.hover = hover;
 
@@ -2457,14 +2467,18 @@ impl App {
         self.selected_corner = corner;
         self.push_undo();
         self.recompute_response();
-        self.curve_grip = Some(CurveGrip { plot, residual_rms: 0.0 });
+        self.curve_grip = Some(CurveGrip { plot, residual_rms: 0.0, last_step: Instant::now() });
         self.drag = Some(Drag::Curve);
         true
     }
 
-    /// Sections under the brush: unlocked, enabled, pole within ~1.5σ of the
-    /// brush center (always at least the nearest one). Capped at 4.
-    fn recruit(&self, f_center: f32, sigma: f32, corner: usize) -> Vec<usize> {
+    /// Sections under the brush with a smooth grip weight: 1.0 at the brush
+    /// center falling off as a Gaussian of the pole's distance in octaves.
+    /// Sections at the edge are recruited but STIFF, so nothing pops as the
+    /// brush sweeps across the band. Always at least the nearest one; cap 4.
+    fn recruit(&self, f_center: f32, sigma: f32, corner: usize) -> Vec<(usize, f32)> {
+        let reach = 1.5 * sigma + 0.15;
+        let soft = sigma * 0.9 + 0.1;
         let mut cand: Vec<(f32, usize)> = self
             .sections
             .iter()
@@ -2473,16 +2487,15 @@ impl App {
             .map(|(k, s)| ((s.corners[corner].pole_hz / f_center).log2().abs(), k))
             .collect();
         cand.sort_by(|a, b| a.0.partial_cmp(&b.0).unwrap());
-        let reach = 1.5 * sigma + 0.15;
-        let mut out: Vec<usize> = cand
+        let mut out: Vec<(usize, f32)> = cand
             .iter()
             .filter(|(d, _)| *d <= reach)
             .take(4)
-            .map(|(_, k)| *k)
+            .map(|(d, k)| (*k, (-d * d / (2.0 * soft * soft)).exp().max(0.02)))
             .collect();
         if out.is_empty() {
             if let Some((_, k)) = cand.first() {
-                out.push(*k);
+                out.push((*k, 1.0));
             }
         }
         out
@@ -2544,11 +2557,17 @@ impl App {
 
         let corner = self.selected_corner.idx();
         let scope_corners = self.selected_corner.scope_corners(self.scope);
-        let stages = self.recruit(f_center, sigma, corner);
-        if stages.is_empty() {
+        let recruited = self.recruit(f_center, sigma, corner);
+        if recruited.is_empty() {
             self.curve_grip = Some(grip);
             return;
         }
+        let stages: Vec<usize> = recruited.iter().map(|(k, _)| *k).collect();
+        let grip_w: Vec<f32> = recruited.iter().map(|(_, w)| *w).collect();
+        // framerate-independent viscosity
+        let dt = grip.last_step.elapsed().as_secs_f32().min(0.1);
+        grip.last_step = Instant::now();
+        let follow = 1.0 - (-dt * 10.0).exp(); // ~viscous time constant 100 ms
         // window over the brush footprint
         let lo = (f_center * 2f32.powf(-2.2 * sigma - 0.3)).max(F_MIN);
         let hi = (f_center * 2f32.powf(2.2 * sigma + 0.3)).min(F_MAX);
@@ -2567,7 +2586,7 @@ impl App {
             let t = (f_center / lo).log2() / (hi / lo).log2();
             cur0[(t.clamp(0.0, 1.0) * (m - 1) as f32).round() as usize]
         };
-        let step_db = ((finger_db - center_db) * 0.5 * fine).clamp(-4.0, 4.0);
+        let step_db = ((finger_db - center_db) * follow * fine).clamp(-4.0, 4.0);
         let target: Vec<f32> = cur0.iter().zip(&shape).map(|(c, s)| c + step_db * s).collect();
 
         let n = stages.len() * 3;
@@ -2609,7 +2628,8 @@ impl App {
                 for i in 0..m {
                     acc += jac[i * n + j] * r[i];
                 }
-                let lam = LAM[j % 3];
+                // stiffness grows toward the brush edge — smooth grip, no pop-in
+                let lam = LAM[j % 3] / grip_w[j / 3].max(0.05);
                 a[j * n + j] += lam * lam + 1e-3;
                 b[j] = -acc - lam * lam * (p[j] - p0[j]);
             }
