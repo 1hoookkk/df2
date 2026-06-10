@@ -48,6 +48,33 @@ the table is demoted to an inspector for the selected section.
 +--------------------------------------------------------------+
 ```
 
+**Zero-handle defaults (measured, 2026-06-10, all 50 reference bodies / 193 sections):**
+- Under Morph: median pole-pair travel 1.27 oct vs zero-pair 0.73 oct; 20% of zero
+  pairs fully parked (<0.15 oct) vs 6% of poles. Anchor-grid extremes: cruz_pusher
+  5/6 zeros parked + 3.0 oct leader, fuzzi_face 5/6, dj_alkaline 4/6.
+- Under the Q axis: median pole radius +0.0061 (→ rim, r≈0.999 hot), median zero
+  radius change **+0.0000 — the numerator is Q-invariant.** Q is a pole-radius-only
+  control in the reference set.
+- Therefore: **O handles boot PARKED** (frame A = frame B, linked, one handle shown;
+  explicit unlink to make a zero travel) and **never respond to the Q axis**.
+  X handles boot free (independent A/B). The dominant reference construction —
+  a pole trajectory crossing a stationary transmission zero — is the zero-effort
+  gesture; a traveling zero is a deliberate act.
+
+**Morph×Q surface map (steal from the atlas viewer / bench):**
+An N×N (5×5 default) heat grid of max |H| dB over the (morph, Q) surface, computed
+through the packed runtime. Click a cell → jump morph/Q there; the live trace and
+audio follow. Reading it:
+- **Dark cell amid bright** = interior pole-zero cancellation — a (morph,Q) point
+  where a pole trajectory sits ON a transmission zero (observed: radio_craze, one
+  black cell mid-surface; lucifer_s_q bottom-left).
+- **Dark column/row** = an endpoint frame that collapses (dj_alkaline: morph=100%
+  column black — frame B is the quiet end of the gesture).
+- **Gradient toward a corner** = where the bloom lives (millennium: brightens
+  toward high Q).
+This is the map of the emergent interior — events invisible from the two endpoint
+curves. Recompute lazily (rAF idle), 17×17 on demand for the KEEP audit (same grid).
+
 **Interaction grammar (Pro-Q lineage, two-frame extension):**
 - Drag X horizontally = pole frequency; vertically = pole radius
   (r mapped so handle height tracks the local |H| contribution).
