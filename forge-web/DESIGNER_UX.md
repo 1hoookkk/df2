@@ -204,6 +204,19 @@ against the true packed runtime) — previously demonstrated at 2.65 dB on a ful
 Morph×Q surface, but that run used the rogue encoder: re-verify through compile_body
 before relying on it.
 
+## Surface windowing (crop is exact — Tyson 2026-06-10)
+
+The morph knob is a window onto a trajectory; a preset is a particular window. Because
+the surface is bilinear in word space, restriction to any sub-rectangle of (morph, Q)
+is still bilinear: new corners = the interpolated word sets at the sub-rectangle's
+corners (`lerpU16`, same math as the engine). **Cropping a region of any body's surface
+into a standalone 240-byte body is therefore EXACT** — the crop's whole interior matches
+the original sub-region bit-for-bit. Authoring move: sweep, find the alive interval
+(e.g. a crossing event at m 0.40–0.60), crop it across the full knob. In the
+center-authoring language, Δ is the dial between place and journey; windowing changes
+Δ losslessly. Clean-room: windowing reference bodies is study-only — a crop of
+protected bytes is still their bytes. Tool: ~10 lines against packed words (vNext).
+
 ## The preset object (v2 authors the WHOLE preset, not just the body)
 
 A preset = **body + behavior metadata**, both written by KEEP into the cartridge:
