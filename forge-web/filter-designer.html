@@ -1,73 +1,112 @@
 <!doctype html><html><head><meta charset=utf-8>
 <meta name=viewport content="width=device-width,initial-scale=1">
 <title>Filter Designer — design two frames, morph between</title>
+<link rel=icon href="data:,">
 <style>
-:root{--bg:#070b0a;--panel:#0c1210;--line:#1c2722;--ink:#cfe9df;--dim:#7f9a8f;--hot:#5bef6f;--A:#2ec4ff;--B:#ff7a3e}
+:root{--bg:#070b0a;--panel:#0c1210;--line:#1d2a24;--ink:#cfe9df;--dim:#7f9a8f;--hot:#5bef6f;--A:#2ec4ff;--B:#ff7a3e}
 *{box-sizing:border-box}
-body{background:var(--bg);color:var(--ink);font:13px ui-monospace,Menlo,monospace;margin:0;padding:14px}
-h1{font-size:15px;margin:0 0 2px;color:var(--hot)}
-.sub{color:var(--dim);margin:0 0 12px;font-size:12px}
-.sub b{color:var(--A)} .sub i{color:var(--B);font-style:normal}
-#plotwrap{position:relative;border:1px solid var(--line);border-radius:8px;background:#0a0f0d;padding:6px}
-canvas{width:100%;height:260px;display:block}
-.morphrow{display:flex;gap:18px;align-items:center;margin:12px 0;flex-wrap:wrap}
-.morphrow label{color:var(--dim);min-width:54px}
-.morphrow input[type=range]{flex:1;min-width:160px;accent-color:var(--hot)}
-.val{color:var(--ink);min-width:44px;text-align:right}
-table{width:100%;border-collapse:collapse;margin-top:8px}
-th{color:var(--dim);font-weight:400;text-align:left;font-size:11px;padding:4px 6px;border-bottom:1px solid var(--line)}
+body{background:radial-gradient(1100px 480px at 50% -120px,#0e1814 0%,var(--bg) 65%) fixed var(--bg);
+  color:var(--ink);font:13px/1.45 ui-monospace,Menlo,Consolas,monospace;margin:0;padding:22px 14px}
+main{max-width:920px;margin:0 auto;display:flex;flex-direction:column;gap:12px}
+header h1{font-size:16px;letter-spacing:.14em;margin:0;color:var(--hot)}
+header .sub{color:var(--dim);margin:2px 0 0;font-size:12px}
+header .sub b{color:var(--A);font-weight:400} header .sub i{color:var(--B);font-style:normal}
+.panel{background:var(--panel);border:1px solid var(--line);border-radius:10px;padding:10px 12px}
+.cap{display:flex;justify-content:space-between;align-items:center;gap:10px;flex-wrap:wrap;
+  color:var(--dim);font-size:10px;letter-spacing:.22em;margin:0 0 8px}
+.legend{display:flex;gap:12px;align-items:center;letter-spacing:.04em;font-size:10px}
+.legend i{display:inline-block;width:16px;height:0;border-top:2px solid;margin-right:5px;vertical-align:middle}
+.legend .swA{border-color:var(--A);border-top-style:dashed} .legend .swB{border-color:var(--B);border-top-style:dashed}
+.legend .swL{border-color:var(--hot)}
+#plotwrap{border:1px solid var(--line);border-radius:8px;background:#0a0f0d;padding:6px}
+canvas{width:100%;height:230px;display:block}
+.morphrow{display:flex;gap:10px;align-items:center;margin:10px 0 2px;flex-wrap:wrap}
+.morphrow label{color:var(--dim);min-width:48px;letter-spacing:.1em;font-size:11px}
+.morphrow input[type=range]{flex:1;min-width:140px;accent-color:var(--hot)}
+.val{min-width:38px;text-align:right;color:var(--hot)}
+table{width:100%;border-collapse:collapse}
+th{color:var(--dim);font-weight:400;text-align:center;font-size:10px;letter-spacing:.08em;padding:3px 4px;border-bottom:1px solid var(--line)}
+th:first-child,th:nth-child(2){text-align:left}
 th.fa{color:var(--A)} th.fb{color:var(--B)}
-td{padding:3px 6px;border-bottom:1px solid #121a17;vertical-align:middle}
-.fa-cell{background:rgba(46,196,255,.05)} .fb-cell{background:rgba(255,122,62,.05)}
-select,input[type=number]{background:#0c1210;color:var(--ink);border:1px solid var(--line);border-radius:4px;padding:3px 5px;font:inherit}
-input[type=number]{width:74px}
-.transport{display:flex;gap:14px;align-items:center;margin:14px 0;flex-wrap:wrap}
-button{background:#13201b;color:var(--ink);border:1px solid var(--line);border-radius:5px;padding:7px 14px;font:inherit;cursor:pointer}
+td{padding:3px 4px;border-bottom:1px solid #121a17;vertical-align:middle;text-align:center}
+td:nth-child(2){text-align:left}
+.fa-cell{background:rgba(46,196,255,.06)} .fb-cell{background:rgba(255,122,62,.06)}
+select,input[type=number],input[type=text]{background:#0a0f0d;color:var(--ink);border:1px solid var(--line);border-radius:4px;padding:4px 6px;font:inherit}
+input[type=number]{width:66px;text-align:right;cursor:ns-resize;touch-action:none}
+input[type=text]{padding:6px 8px}
+input[type=number]:focus,input[type=text]:focus,select:focus{outline:none;border-color:#2a5e3a}
+.row{display:flex;gap:10px;align-items:center;flex-wrap:wrap;margin-top:8px}
+.row:first-of-type{margin-top:0}
+.lbl{color:var(--dim);font-size:11px}
+button{background:#13201b;color:var(--ink);border:1px solid var(--line);border-radius:5px;padding:6px 12px;font:inherit;cursor:pointer;white-space:nowrap}
 button:hover{border-color:var(--hot)} button.go{background:#16321f;color:var(--hot);border-color:#2a5e3a}
-#meter{height:10px;width:160px;border:1px solid var(--line);border-radius:5px;overflow:hidden;background:#0a0f0d}
+#kill{color:var(--B)}
+#meter{height:10px;flex:1;min-width:80px;max-width:170px;border:1px solid var(--line);border-radius:5px;overflow:hidden;background:#0a0f0d}
 #meterfill{height:100%;width:0;background:var(--hot);transition:width .08s}
 .flood #meterfill{background:#ff3a3a}
-small.note{color:var(--dim)}
+#fitfile{color:var(--dim);max-width:225px;font-size:11px}
+#bodyname{width:150px} #words{flex:1;min-width:180px}
+#status{color:var(--dim);font-size:12px;margin:0;padding:0 2px}
 </style></head><body>
-<h1>FILTER DESIGNER</h1>
-<p class=sub>Six sections. For each, pick a <b>type</b> and set where its frequency sits in
-<b>Frame A</b> and <i>Frame B</i>. The <b>Morph</b> knob glides the whole filter A→B; <b>Q</b> sharpens.
-Design two frames by ear, sweep between them — the way E-mu's Filter Designer worked. Curve = the shipped engine (0.0000 dB).</p>
+<main>
+<header>
+  <h1>FILTER DESIGNER</h1>
+  <p class=sub>Two frames, six sections. <b>Morph</b> glides <b>A</b>→<i>B</i>, Q sharpens — the curve is the shipped engine (0.0000 dB).</p>
+</header>
 
-<div id=plotwrap><canvas id=plot></canvas></div>
+<section class=panel>
+  <div class=cap><span>THE CURVE</span>
+    <span class=legend><span><i class=swA></i>Frame A</span><span><i class=swB></i>Frame B</span><span><i class=swL></i>now</span></span></div>
+  <div id=plotwrap><canvas id=plot></canvas></div>
+  <div class=morphrow>
+    <label>MORPH</label><input id=morph type=range min=0 max=1 step=0.001 value=0><span class=val id=morphv>A</span>
+    <button id=sweep title="hands-free: cycle Morph A↔B while you shape">↻ sweep</button>
+    <label style="margin-left:8px">Q</label><input id=q type=range min=0 max=1 step=0.001 value=0><span class=val id=qv>0</span>
+  </div>
+</section>
 
-<div class=morphrow>
-  <label>MORPH</label><input id=morph type=range min=0 max=1 step=0.001 value=0><span class=val id=morphv>A</span>
-  <label>Q</label><input id=q type=range min=0 max=1 step=0.001 value=0><span class=val id=qv>0</span>
-</div>
+<section class=panel>
+  <div class=cap><span>SECTIONS — WHERE THE FILTER LIVES</span>
+    <label class=lbl title="typed frequencies snap to the nearest real resonance rail"><input type=checkbox id=snap checked> snap to rails</label></div>
+  <table id=secs><thead><tr>
+    <th>on</th><th>type</th><th class=fa>Frame A · Hz</th><th class=fb>Frame B · Hz</th>
+    <th>Gain dB</th><th>Q broad</th><th>Q sharp</th>
+  </tr></thead><tbody></tbody></table>
+  <div class=row>
+    <span class=lbl>capture real resonances:</span>
+    <input type=file id=fitfile accept=audio/*>
+    <button id=fitA title="LPC/LSP-fit the file's resonances into Frame A (lanes 2–5 become Peaks)">→ Frame A</button>
+    <button id=fitB title="LPC/LSP-fit the file's resonances into Frame B">→ Frame B</button>
+  </div>
+</section>
 
-<table id=secs><thead><tr>
-  <th>on</th><th>type</th><th class=fa>Frame A · Freq</th><th class=fb>Frame B · Freq</th>
-  <th>Gain dB</th><th>Q broad</th><th>Q sharp</th>
-</tr></thead><tbody></tbody></table>
+<section class=panel>
+  <div class=cap><span>HEAR IT · JUDGE IT</span></div>
+  <div class=row>
+    <span class=lbl>source</span>
+    <select id=src><option value=0>saw bass</option><option value=1>noise</option><option value=2 selected>808</option><option value=3>voice</option></select>
+    <button id=play class=go>▶ play</button>
+    <span class=lbl>slam</span><input id=slam type=range min=0 max=1 step=0.01 value=0 style="width:90px;accent-color:var(--B)">
+    <div id=meter title="post-drive level"><div id=meterfill></div></div>
+    <button id=save>⤓ save .body240</button>
+  </div>
+  <div class=row>
+    <select id=seed style="min-width:160px"><option value="">load a seed…</option></select>
+    <input id=bodyname type=text placeholder="name it">
+    <input id=words type=text placeholder="why — your words (kept with the verdict)">
+    <button id=keep class=go>★ KEEP</button>
+    <button id=kill>✖ kill</button>
+  </div>
+</section>
 
-<div class=transport>
-  <label class=sub style="margin:0">source</label>
-  <select id=src><option value=0>saw bass</option><option value=1>noise</option><option value=2 selected>808</option><option value=3>voice</option></select>
-  <button id=play class=go>▶ play</button>
-  <span class=sub style="margin:0">slam</span><input id=slam type=range min=0 max=1 step=0.01 value=0 style="width:90px;accent-color:var(--B)">
-  <div id=meter title="post-drive level"><div id=meterfill></div></div>
-  <button id=save>⤓ save .body240</button>
-</div>
-<div class=transport>
-  <select id=seed style="min-width:170px"><option value="">load a seed…</option></select>
-  <input id=bodyname type=text placeholder="name it" style="width:150px;background:#0c1210;color:var(--ink);border:1px solid var(--line);border-radius:4px;padding:6px 8px;font:inherit">
-  <input id=words type=text placeholder="why — your words (kept with the verdict)" style="flex:1;min-width:200px;background:#0c1210;color:var(--ink);border:1px solid var(--line);border-radius:4px;padding:6px 8px;font:inherit">
-  <button id=keep class=go>★ KEEP</button>
-  <button id=kill style="color:#ff7a3e">✖ kill</button>
-</div>
-<p><small class=note id=status>booting engine…</small></p>
+<p id=status>booting engine…</p>
+</main>
 
 <script type=module>
 import { wordsFromBytes, packedDb } from "./js/packed.js";
 import { packTyped, bodyHex } from "./js/pack-core.js";
 
-const TYPES=["Peak","Low-shelf","Notch","Lowpass","Highpass","Bandpass","High-shelf"];
+const TYPES=["Peak (pole)","Low-shelf","Notch (zero kill)","Lowpass","Highpass","Bandpass","High-shelf"];
 const WASM_URL="wasm/forge_web_wasm.wasm";
 const FREQS=Array.from({length:240},(_,i)=>30*Math.pow(16000/30,i/239));
 
@@ -81,6 +120,18 @@ const cards=[
   {type:6,fcA:9000,fcB:9000,gain:-4, qLo:0.7,qHi:0.7,on:true},  // high-shelf air (held)
 ];
 const st={body:null,morph:0,q:0,src:2,slam:0,playing:false};
+const ENGINE_SR=39062.5;
+
+// the good Hz — real resonance rails (docs/study/frequency_rails.csv); typed freqs snap here
+const RAILS=[134,200,270,300,450,530,700,780,870,1090,1420,1840,2180,2220,2290,2840,3790,4130,4440,5450,7000,8250,16500];
+const snapBox=document.getElementById("snap");
+const snapHz=v=>snapBox.checked?RAILS.reduce((a,b)=>Math.abs(Math.log2(b/v))<Math.abs(Math.log2(a/v))?b:a):v;
+
+// autosave — never lose a design to a refresh
+const SAVEKEY="filter-designer.cards.v1";
+let restored=false;
+try{const s=JSON.parse(localStorage.getItem(SAVEKEY)||"null");
+  if(Array.isArray(s)&&s.length===6){s.forEach((sc,i)=>Object.assign(cards[i],sc));restored=true;}}catch(e){}
 
 const cv=document.getElementById("plot"),cx=cv.getContext("2d");
 function fit(){const r=cv.getBoundingClientRect(),d=devicePixelRatio||1;cv.width=r.width*d;cv.height=r.height*d;cx.setTransform(d,0,0,d,0,0);}
@@ -107,7 +158,53 @@ function draw(){
 async function repack(){
   st.body=await packTyped(cards);
   draw();
+  try{localStorage.setItem(SAVEKEY,JSON.stringify(cards));}catch(e){}
   if(anode) anode.port.postMessage({body:st.body.slice().buffer});
+}
+
+// drag-to-adjust — vertical drag like a DAW value box; plain click = type; wheel = step
+const KINDS={freq:{lo:20,hi:18000,fmt:v=>Math.round(v)},
+             gain:{lo:-36,hi:24,fmt:v=>Math.round(v*2)/2},
+             q:{lo:0.3,hi:12,fmt:v=>+v.toFixed(1)}};
+function dragify(inp,kind){
+  const K=KINDS[kind];
+  const clampf=v=>Math.max(K.lo,Math.min(K.hi,v));
+  let sy=null,sv=0,moved=false;
+  inp.addEventListener("pointerdown",e=>{
+    if(document.activeElement===inp) return;             // already typing — leave it alone
+    e.preventDefault();
+    sy=e.clientY;sv=+inp.value;moved=false;
+    inp.setPointerCapture(e.pointerId);
+  });
+  inp.addEventListener("pointermove",e=>{
+    if(sy===null) return;
+    const dy=sy-e.clientY;
+    if(!moved&&Math.abs(dy)<4) return;
+    moved=true;
+    const v=kind==="gain"?sv+dy/6                        // ~1 dB / 6 px
+           :sv*Math.pow(2,dy/(kind==="freq"?96:140));    // freq: 1 oct / 96 px · q: log drag
+    inp.value=K.fmt(clampf(v));
+  });
+  const finish=e=>{
+    if(sy===null) return;
+    sy=null;
+    if(moved) inp.dispatchEvent(new Event("change"));
+    else if(e.type==="pointerup"){inp.focus();inp.select();}   // clean click = type a number
+  };
+  inp.addEventListener("pointerup",finish);
+  inp.addEventListener("pointercancel",finish);
+  inp.addEventListener("wheel",e=>{
+    e.preventDefault();
+    const dir=e.deltaY<0?1:-1;let v=+inp.value;
+    if(kind==="freq"&&snapBox.checked){
+      const i=RAILS.reduce((bi,r,ri)=>Math.abs(Math.log2(r/v))<Math.abs(Math.log2(RAILS[bi]/v))?ri:bi,0);
+      v=RAILS[Math.max(0,Math.min(RAILS.length-1,i+dir))];
+    }else if(kind==="freq") v*=Math.pow(2,dir/12);       // a semitone per click
+    else if(kind==="gain") v+=dir;
+    else v=v*Math.pow(2,dir/12);
+    inp.value=K.fmt(clampf(v));
+    inp.dispatchEvent(new Event("change"));
+  },{passive:false});
 }
 
 // section table
@@ -119,11 +216,12 @@ function buildTable(){
     const tr=document.createElement("tr");
     const on=document.createElement("input");on.type="checkbox";on.checked=c.on;on.onchange=()=>{c.on=on.checked;repack();};
     const sel=document.createElement("select");TYPES.forEach((t,i)=>{const o=document.createElement("option");o.value=i;o.textContent=t;if(i===c.type)o.selected=true;sel.appendChild(o);});sel.onchange=()=>{c.type=+sel.value;repack();};
-    const fa=freqInput(c.fcA);fa.onchange=()=>{c.fcA=+fa.value;repack();};
-    const fb=freqInput(c.fcB);fb.onchange=()=>{c.fcB=+fb.value;repack();};
+    const fa=freqInput(c.fcA);fa.onchange=()=>{c.fcA=snapHz(+fa.value);fa.value=Math.round(c.fcA);repack();};
+    const fb=freqInput(c.fcB);fb.onchange=()=>{c.fcB=snapHz(+fb.value);fb.value=Math.round(c.fcB);repack();};
     const g=document.createElement("input");g.type="number";g.min=-36;g.max=24;g.step=1;g.value=c.gain;g.onchange=()=>{c.gain=+g.value;repack();};
     const ql=document.createElement("input");ql.type="number";ql.min=0.3;ql.max=12;ql.step=0.1;ql.value=c.qLo;ql.onchange=()=>{c.qLo=+ql.value;repack();};
     const qh=document.createElement("input");qh.type="number";qh.min=0.3;qh.max=12;qh.step=0.1;qh.value=c.qHi;qh.onchange=()=>{c.qHi=+qh.value;repack();};
+    dragify(fa,"freq");dragify(fb,"freq");dragify(g,"gain");dragify(ql,"q");dragify(qh,"q");
     const cells=[on,sel,fa,fb,g,ql,qh];
     cells.forEach((el,ci)=>{const td=document.createElement("td");if(ci===2)td.className="fa-cell";if(ci===3)td.className="fb-cell";td.appendChild(el);tr.appendChild(td);});
     tb.appendChild(tr);
@@ -170,9 +268,63 @@ document.getElementById("kill").onclick=async()=>{
   }catch(e){status.textContent="kill failed: "+e+" (is tools/forge_author_server.py running?)";}
 };
 
+// LPC/LSP fit — capture a real sound's resonances into a frame (do not invent poles)
+async function decodeFile(f){
+  const buf=await f.arrayBuffer();
+  const ac=new (window.AudioContext||window.webkitAudioContext)();
+  const ab=await ac.decodeAudioData(buf); ac.close();
+  const n=Math.min(ab.length,Math.round(ab.sampleRate*4));   // up to 4 s
+  const out=new Float32Array(n);
+  for(let ch=0;ch<ab.numberOfChannels;ch++){const d=ab.getChannelData(ch);for(let i=0;i<n;i++)out[i]+=d[i]/ab.numberOfChannels;}
+  return {samples:Array.from(out),sr:ab.sampleRate};
+}
+async function fitInto(frame){
+  const f=document.getElementById("fitfile").files[0];
+  if(!f){status.textContent="pick an audio file first — a sustained vowel, an 808, anything resonant";return;}
+  status.textContent=`fitting “${f.name}” (LPC/LSP)…`;
+  try{
+    const {samples,sr}=await decodeFile(f);
+    const res=await post("/fit",{samples,sr,found:0,qsource:"lsp",name:f.name});
+    if(!res.ok) throw res.error||"fit failed";
+    const cand=(res.source.sections||[]).filter(s=>s.role==="source actor");
+    const inBand=cand.filter(s=>s.pf>=80&&s.pf<=8250&&s.pr>=0.85);  // real formant land, real resonance
+    const secs=(inBand.length>=2?inBand:cand).sort((a,b)=>b.pr-a.pr).slice(0,4).sort((a,b)=>a.pf-b.pf);
+    if(!secs.length) throw "no resonances found — try a more sustained, tonal slice";
+    secs.forEach((s,i)=>{
+      const c=cards[i+1]; if(!c) return;                            // lanes 2–5; foundation+air stay yours
+      const r=Math.min(0.9999,s.pr);
+      const q=Math.max(0.5,Math.min(10,-Math.PI*s.pf/(ENGINE_SR*Math.log(r))));
+      c.type=0;c.on=true;
+      if(frame==="A") c.fcA=Math.round(s.pf); else c.fcB=Math.round(s.pf);
+      c.qLo=+q.toFixed(1);c.qHi=+Math.min(12,q*3).toFixed(1);
+    });
+    buildTable();repack();
+    status.textContent=`fitted ${secs.length} resonances from “${f.name}” → Frame ${frame} (lanes 2–5 → Peak, gains untouched)`;
+  }catch(e){status.textContent="fit failed: "+e+" (is tools/forge_author_server.py running?)";}
+}
+document.getElementById("fitA").onclick=()=>fitInto("A");
+document.getElementById("fitB").onclick=()=>fitInto("B");
+
 // morph / q
 const mS=document.getElementById("morph"),qS=document.getElementById("q");
-mS.oninput=()=>{st.morph=+mS.value;document.getElementById("morphv").textContent=st.morph<0.02?"A":st.morph>0.98?"B":st.morph.toFixed(2);draw();pushParams();};
+const setMorph=x=>{st.morph=x;mS.value=x;document.getElementById("morphv").textContent=x<0.02?"A":x>0.98?"B":x.toFixed(2);draw();pushParams();};
+mS.oninput=()=>{stopSweep();setMorph(+mS.value);};
+
+// auto-sweep — hands-free A↔B while you shape (the gesture is what you're judging)
+let sweeping=false,sweepT0=0;
+const sweepBtn=document.getElementById("sweep");
+function stopSweep(){if(sweeping){sweeping=false;sweepBtn.textContent="↻ sweep";}}
+function sweepFrame(ts){
+  if(!sweeping) return;
+  if(!sweepT0) sweepT0=ts-st.morph*2000;          // pick up from the current knob position
+  const ph=((ts-sweepT0)/4000)%1;
+  setMorph(ph<0.5?ph*2:2-ph*2);
+  requestAnimationFrame(sweepFrame);
+}
+sweepBtn.onclick=()=>{
+  if(sweeping){stopSweep();return;}
+  sweeping=true;sweepT0=0;sweepBtn.textContent="⏹ sweep";requestAnimationFrame(sweepFrame);
+};
 qS.oninput=()=>{st.q=+qS.value;document.getElementById("qv").textContent=st.q.toFixed(2);draw();pushParams();};
 document.getElementById("slam").oninput=e=>{st.slam=+e.target.value;pushParams();};
 document.getElementById("src").onchange=e=>{st.src=+e.target.value;if(anode)anode.port.postMessage({src:st.src});};
@@ -202,5 +354,5 @@ document.getElementById("save").onclick=()=>{
 };
 
 fit();
-repack().then(()=>{document.getElementById("status").textContent="ready — design two frames, turn Morph, press play. Curve is the shipped engine.";});
+repack().then(()=>{status.textContent=(restored?"restored your last design — ":"ready — ")+"design two frames, turn Morph, press play. Curve is the shipped engine.";});
 </script></body></html>

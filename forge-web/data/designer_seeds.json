@@ -51,6 +51,42 @@
       ]
     },
     {
+      "name": "vowel glide oo→eh",
+      "hint": "TALK · oo(300+870) glides to eh(530+1840) — second vowel pair, corridor levels",
+      "cards": [
+        { "type": 1, "fcA": 134, "fcB": 134, "qLo": 0.7, "qHi": 0.7, "gain": 7, "on": true },
+        { "type": 0, "fcA": 300, "fcB": 530, "qLo": 1.5, "qHi": 7, "gain": 6, "on": true },
+        { "type": 0, "fcA": 870, "fcB": 1840, "qLo": 1.5, "qHi": 7, "gain": 5, "on": true },
+        { "type": 0, "fcA": 2290, "fcB": 2840, "qLo": 2, "qHi": 6, "gain": 3, "on": true },
+        { "type": 2, "fcA": 5450, "fcB": 5450, "qLo": 2, "qHi": 5, "gain": -16, "on": true },
+        { "type": 6, "fcA": 8250, "fcB": 8250, "qLo": 0.7, "qHi": 0.7, "gain": -5, "on": true }
+      ]
+    },
+    {
+      "name": "808 sub press",
+      "hint": "BASS/IMPACT · +8 shelf holds the boom, knock peak at 200, LP closes onto the sub",
+      "cards": [
+        { "type": 1, "fcA": 134, "fcB": 134, "qLo": 0.7, "qHi": 0.7, "gain": 8, "on": true },
+        { "type": 0, "fcA": 200, "fcB": 200, "qLo": 2, "qHi": 6, "gain": 4, "on": true },
+        { "type": 0, "fcA": 1090, "fcB": 3790, "qLo": 1.5, "qHi": 6, "gain": 5, "on": true },
+        { "type": 2, "fcA": 4130, "fcB": 4130, "qLo": 2, "qHi": 5, "gain": -15, "on": true },
+        { "type": 3, "fcA": 2180, "fcB": 780, "qLo": 0.7, "qHi": 2.5, "gain": 0, "on": true },
+        { "type": 6, "fcA": 16500, "fcB": 16500, "qLo": 0.7, "qHi": 0.7, "gain": -8, "on": true }
+      ]
+    },
+    {
+      "name": "notch field (phaser)",
+      "hint": "PHA · two notches cross 780↔2180 mid-morph (the collision), body held under them",
+      "cards": [
+        { "type": 1, "fcA": 134, "fcB": 134, "qLo": 0.7, "qHi": 0.7, "gain": 6, "on": true },
+        { "type": 2, "fcA": 780, "fcB": 2180, "qLo": 2, "qHi": 5, "gain": -18, "on": true },
+        { "type": 2, "fcA": 2180, "fcB": 780, "qLo": 2, "qHi": 5, "gain": -18, "on": true },
+        { "type": 0, "fcA": 1420, "fcB": 1420, "qLo": 2, "qHi": 6, "gain": 4, "on": true },
+        { "type": 3, "fcA": 8250, "fcB": 8250, "qLo": 0.7, "qHi": 1.5, "gain": 0, "on": true },
+        { "type": 6, "fcA": 16500, "fcB": 16500, "qLo": 0.7, "qHi": 0.7, "gain": -4, "on": true }
+      ]
+    },
+    {
       "name": "anchor grid",
       "hint": "ANCHOR-GRID · notches parked 4130+8250, one peak and the LP sweep through them",
       "cards": [
