@@ -463,6 +463,16 @@ class Handler(SimpleHTTPRequestHandler):
                 self.send_error(404); return
             self.serve_file(target)
             return
+        if path.startswith("/tables/"):
+            name = path.removeprefix("/tables/")
+            allow = {"vowel_formants.json", "klatt_1980_formants.json",
+                     "klatt_1980_bandwidths.json", "q_radius_table.json",
+                     "family_intents.json", "tube_resonances.json", "metallic_modes.json"}
+            target = ROOT / "tables" / name
+            if name not in allow or not target.is_file():
+                self.send_error(404); return
+            self.serve_file(target)
+            return
         if path == "/seeds":
             try:
                 res, code = seeds_payload(), 200

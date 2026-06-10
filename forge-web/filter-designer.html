@@ -67,11 +67,23 @@ button:hover{border-color:var(--hot)} button.go{background:#16321f;color:var(--h
 
 <section class=panel>
   <div class=cap><span>SECTIONS — WHERE THE FILTER LIVES</span>
-    <label class=lbl title="typed frequencies snap to the nearest real resonance rail"><input type=checkbox id=snap checked> snap to rails</label></div>
+    <span class=lbl style="display:flex;gap:6px;align-items:center;letter-spacing:.04em">
+      snap <select id=snap title="rails: every freq lands on a real resonance · notes: Peaks/BPs land on pitches in your key (scaffold stays on rails) · off: free">
+        <option value=rails>rails</option><option value=notes>notes · in key</option><option value=off>off</option></select>
+      <select id=key title="key root" style="display:none"><option>C</option><option>C#</option><option>D</option><option>D#</option><option>E</option><option selected>F</option><option>F#</option><option>G</option><option>G#</option><option>A</option><option>A#</option><option>B</option></select>
+      <select id=scale title="scale" style="display:none"><option value=minor selected>minor</option><option value=major>major</option></select>
+    </span></div>
   <table id=secs><thead><tr>
     <th>on</th><th>type</th><th class=fa>Frame A · Hz</th><th class=fb>Frame B · Hz</th>
     <th>Gain dB</th><th>Q broad</th><th>Q sharp</th>
   </tr></thead><tbody></tbody></table>
+  <div class=row id=mouthrow style="display:none">
+    <span class=lbl title="sets lanes 2+3 to the vowel's F1/F2 (Peterson-Barney 1952) with Q from the real bandwidths">mouth:</span>
+    <select id=vowelA><option value="">Frame A vowel…</option></select>
+    <span class=lbl>→</span>
+    <select id=vowelB><option value="">Frame B vowel…</option></select>
+    <span class=lbl id=vowelhint></span>
+  </div>
   <div class=row>
     <span class=lbl>capture real resonances:</span>
     <input type=file id=fitfile accept=audio/*>
@@ -124,8 +136,32 @@ const ENGINE_SR=39062.5;
 
 // the good Hz — real resonance rails (docs/study/frequency_rails.csv); typed freqs snap here
 const RAILS=[134,200,270,300,450,530,700,780,870,1090,1420,1840,2180,2220,2290,2840,3790,4130,4440,5450,7000,8250,16500];
-const snapBox=document.getElementById("snap");
-const snapHz=v=>snapBox.checked?RAILS.reduce((a,b)=>Math.abs(Math.log2(b/v))<Math.abs(Math.log2(a/v))?b:a):v;
+
+// agreement grids: rails = agree with physics · notes = agree with the music (12-TET, in key)
+const snapSel=document.getElementById("snap"),keySel=document.getElementById("key"),scaleSel=document.getElementById("scale");
+const SCALES={minor:[0,2,3,5,7,8,10],major:[0,2,4,5,7,9,11]};
+const KEYPC={C:0,"C#":1,D:2,"D#":3,E:4,F:5,"F#":6,G:7,"G#":8,A:9,"A#":10,B:11};
+let NOTEGRID=[];
+function rebuildNotes(){
+  const pc=KEYPC[keySel.value],iv=SCALES[scaleSel.value];
+  NOTEGRID=[];
+  for(let m=16;m<=115;m++){
+    if(!iv.includes(((m-pc)%12+12)%12)) continue;
+    const f=440*Math.pow(2,(m-69)/12);
+    if(f>=30&&f<=18000) NOTEGRID.push(f);
+  }
+}
+rebuildNotes();
+function syncSnapUi(){const n=snapSel.value==="notes";keySel.style.display=scaleSel.style.display=n?"":"none";}
+snapSel.onchange=syncSnapUi;
+keySel.onchange=scaleSel.onchange=()=>rebuildNotes();
+const nearestIn=(g,v)=>g.reduce((a,b)=>Math.abs(Math.log2(b/v))<Math.abs(Math.log2(a/v))?b:a);
+function gridFor(type){
+  if(snapSel.value==="off") return null;
+  if(snapSel.value==="notes"&&(type===0||type===5)) return NOTEGRID;  // voices land on pitch
+  return RAILS;                                                       // scaffold stays on physics
+}
+const snapHz=(v,type)=>{const g=gridFor(type);return g?nearestIn(g,v):v;};
 
 // autosave — never lose a design to a refresh
 const SAVEKEY="filter-designer.cards.v1";
@@ -166,7 +202,7 @@ async function repack(){
 const KINDS={freq:{lo:20,hi:18000,fmt:v=>Math.round(v)},
              gain:{lo:-36,hi:24,fmt:v=>Math.round(v*2)/2},
              q:{lo:0.3,hi:12,fmt:v=>+v.toFixed(1)}};
-function dragify(inp,kind){
+function dragify(inp,kind,getType){
   const K=KINDS[kind];
   const clampf=v=>Math.max(K.lo,Math.min(K.hi,v));
   let sy=null,sv=0,moved=false;
@@ -196,11 +232,13 @@ function dragify(inp,kind){
   inp.addEventListener("wheel",e=>{
     e.preventDefault();
     const dir=e.deltaY<0?1:-1;let v=+inp.value;
-    if(kind==="freq"&&snapBox.checked){
-      const i=RAILS.reduce((bi,r,ri)=>Math.abs(Math.log2(r/v))<Math.abs(Math.log2(RAILS[bi]/v))?ri:bi,0);
-      v=RAILS[Math.max(0,Math.min(RAILS.length-1,i+dir))];
-    }else if(kind==="freq") v*=Math.pow(2,dir/12);       // a semitone per click
-    else if(kind==="gain") v+=dir;
+    if(kind==="freq"){
+      const g=gridFor(getType?getType():null);
+      if(g){
+        const i=g.reduce((bi,r,ri)=>Math.abs(Math.log2(r/v))<Math.abs(Math.log2(g[bi]/v))?ri:bi,0);
+        v=g[Math.max(0,Math.min(g.length-1,i+dir))];
+      }else v*=Math.pow(2,dir/12);                       // a semitone per click
+    }else if(kind==="gain") v+=dir;
     else v=v*Math.pow(2,dir/12);
     inp.value=K.fmt(clampf(v));
     inp.dispatchEvent(new Event("change"));
@@ -216,12 +254,13 @@ function buildTable(){
     const tr=document.createElement("tr");
     const on=document.createElement("input");on.type="checkbox";on.checked=c.on;on.onchange=()=>{c.on=on.checked;repack();};
     const sel=document.createElement("select");TYPES.forEach((t,i)=>{const o=document.createElement("option");o.value=i;o.textContent=t;if(i===c.type)o.selected=true;sel.appendChild(o);});sel.onchange=()=>{c.type=+sel.value;repack();};
-    const fa=freqInput(c.fcA);fa.onchange=()=>{c.fcA=snapHz(+fa.value);fa.value=Math.round(c.fcA);repack();};
-    const fb=freqInput(c.fcB);fb.onchange=()=>{c.fcB=snapHz(+fb.value);fb.value=Math.round(c.fcB);repack();};
+    const fa=freqInput(c.fcA);fa.onchange=()=>{c.fcA=snapHz(+fa.value,c.type);fa.value=Math.round(c.fcA);repack();};
+    const fb=freqInput(c.fcB);fb.onchange=()=>{c.fcB=snapHz(+fb.value,c.type);fb.value=Math.round(c.fcB);repack();};
     const g=document.createElement("input");g.type="number";g.min=-36;g.max=24;g.step=1;g.value=c.gain;g.onchange=()=>{c.gain=+g.value;repack();};
     const ql=document.createElement("input");ql.type="number";ql.min=0.3;ql.max=12;ql.step=0.1;ql.value=c.qLo;ql.onchange=()=>{c.qLo=+ql.value;repack();};
     const qh=document.createElement("input");qh.type="number";qh.min=0.3;qh.max=12;qh.step=0.1;qh.value=c.qHi;qh.onchange=()=>{c.qHi=+qh.value;repack();};
-    dragify(fa,"freq");dragify(fb,"freq");dragify(g,"gain");dragify(ql,"q");dragify(qh,"q");
+    const gt=()=>c.type;
+    dragify(fa,"freq",gt);dragify(fb,"freq",gt);dragify(g,"gain");dragify(ql,"q");dragify(qh,"q");
     const cells=[on,sel,fa,fb,g,ql,qh];
     cells.forEach((el,ci)=>{const td=document.createElement("td");if(ci===2)td.className="fa-cell";if(ci===3)td.className="fb-cell";td.appendChild(el);tr.appendChild(td);});
     tb.appendChild(tr);
@@ -267,6 +306,31 @@ document.getElementById("kill").onclick=async()=>{
     status.textContent=res.ok?`killed — logged to desk/KILLS.md (“${words}”)`:"kill failed: "+(res.error||"");
   }catch(e){status.textContent="kill failed: "+e+" (is tools/forge_author_server.py running?)";}
 };
+
+// mouth pickers — coupled vowel pair: lanes 2+3 get F1/F2 from Peterson-Barney 1952,
+// Q from the measured bandwidths. One pick = a legal mouth; F1<F2 always holds.
+const vA=document.getElementById("vowelA"),vB=document.getElementById("vowelB");
+let VOWELS=null;
+fetch("/tables/vowel_formants.json").then(r=>r.json()).then(d=>{
+  VOWELS=d.vowels;
+  document.getElementById("mouthrow").style.display="";
+  for(const sel of [vA,vB]) VOWELS.forEach(v=>{
+    const o=document.createElement("option");o.value=v.key;o.textContent=`${v.key} — ${v.example}`;sel.appendChild(o);});
+}).catch(()=>{});
+function applyVowel(frame,key){
+  const v=(VOWELS||[]).find(x=>x.key===key); if(!v) return;
+  [[1,v.f1,v.bw1],[2,v.f2,v.bw2]].forEach(([lane,f,bw])=>{
+    const c=cards[lane];c.type=0;c.on=true;
+    if(frame==="A") c.fcA=f; else c.fcB=f;
+    const q=Math.max(0.5,f/bw);
+    c.qLo=+Math.min(q,8).toFixed(1);c.qHi=+Math.min(12,q*1.6).toFixed(1);
+  });
+  buildTable();repack();
+  document.getElementById("vowelhint").textContent=
+    `${key} → F1 ${v.f1} · F2 ${v.f2} Hz, Q from real bandwidths (lanes 2+3)`;
+}
+vA.onchange=()=>applyVowel("A",vA.value);
+vB.onchange=()=>applyVowel("B",vB.value);
 
 // LPC/LSP fit — capture a real sound's resonances into a frame (do not invent poles)
 async function decodeFile(f){
