@@ -224,6 +224,23 @@ enum Drag {
     },
     SurfaceMap,
     SweepMap,
+    Curve,
+}
+
+/// State of a combined-curve grab. The solver chases the dragged target with
+/// the nearest unlocked sections, evaluated through the TRUE packed runtime
+/// (pack_body → word lerp → |H|), never a continuous surrogate.
+struct CurveGrip {
+    f_grab: f32,
+    start_pos: Pos2,
+    db_per_px: f32,
+    stages: Vec<usize>,
+    p0: Vec<f32>,       // initial params [log2 f, ln(1-r), gain dB] per stage
+    base: Vec<f32>,     // combined |H| dB over the window at grab time
+    wfreqs: Vec<f32>,   // window frequencies (±1.2 oct around f_grab)
+    shape: Vec<f32>,    // target bump shape (Gaussian in octaves)
+    weights: Vec<f32>,  // residual weights
+    residual_rms: f32,
 }
 
 struct Tables {
@@ -292,6 +309,8 @@ struct App {
     audit_dirty: bool,
     audit_texture: Option<TextureHandle>,
     drag: Option<Drag>,
+    curve_grip: Option<CurveGrip>,
+    hover: Option<Pos2>,
     open_menu: Option<Menu>,
     menu_opened_at: Option<Instant>,
     name_active: bool,
@@ -476,6 +495,8 @@ impl App {
             audit_dirty: true,
             audit_texture: None,
             drag: None,
+            curve_grip: None,
+            hover: None,
             open_menu: None,
             menu_opened_at: None,
             name_active: false,
@@ -1576,6 +1597,22 @@ impl App {
             .collect();
         p.add(egui::Shape::line(pts, Stroke::new(2.0, TRUTH)));
 
+        // curve-grip hover affordance: a ring on the combined curve where a
+        // grab would land (only when not already dragging and no handle near)
+        if self.drag.is_none() {
+            if let Some(h) = self.hover {
+                if rect.contains(h) {
+                    let i = (((h.x - rect.left()) / rect.width()) * (n - 1) as f32)
+                        .round()
+                        .clamp(0.0, (n - 1) as f32) as usize;
+                    let cy = y_for_db(rect, self.response[i]);
+                    if (h.y - cy).abs() < 12.0 {
+                        p.circle_stroke(Pos2::new(h.x, cy), 6.0, Stroke::new(1.2, with_alpha(ICE, 170)));
+                    }
+                }
+            }
+        }
+
         // handles
         let corner = self.selected_corner.idx();
         for (i, section) in self.sections.iter().enumerate() {
@@ -1994,6 +2031,9 @@ impl App {
                                     start: self.sections[stage].corners,
                                 });
                             }
+                        } else {
+                            // no handle near: grab the combined curve itself
+                            self.try_start_curve_grip(pos, lay.plot);
                         }
                     }
                 }
@@ -2034,12 +2074,25 @@ impl App {
                     Drag::Handle { stage, kind, gain, start_pos, start } => {
                         self.apply_handle_drag(stage, kind, gain, start_pos, pos, start, shift);
                     }
+                    Drag::Curve => {
+                        self.apply_curve_drag(pos, shift);
+                    }
                 }
             }
         }
         if resp.drag_stopped() {
+            if matches!(self.drag, Some(Drag::Curve)) {
+                if let Some(grip) = &self.curve_grip {
+                    self.status = format!(
+                        "curve grip released — residual {:.2} dB vs target (true packed runtime)",
+                        grip.residual_rms
+                    );
+                }
+            }
             self.drag = None;
+            self.curve_grip = None;
         }
+        self.hover = hover;
 
         // wheel over plot: selected section pole radius
         if let Some(pos) = hover {
@@ -2106,6 +2159,219 @@ impl App {
             }
         }
         self.rebuild_body();
+    }
+
+    // ── curve grip: edit the combined response, the stages follow ─────────────
+    //
+    // Damped Gauss-Newton over [log2 f_p, ln(1-r_p), gain dB] of the K nearest
+    // unlocked sections, minimum-motion (Tikhonov toward the grab state),
+    // forward model = the REAL packed runtime. Zeros are never touched; locked
+    // sections are never touched; what moved is visible as moved handles.
+
+    const GRIP_BINS: usize = 40;
+    const GRIP_K: usize = 2;
+
+    fn try_start_curve_grip(&mut self, pos: Pos2, plot: Rect) -> bool {
+        // grab only the combined curve, and only docked at a corner
+        let n = self.response.len();
+        let i = (((pos.x - plot.left()) / plot.width()) * (n - 1) as f32)
+            .round()
+            .clamp(0.0, (n - 1) as f32) as usize;
+        let curve_y = y_for_db(plot, self.response[i]);
+        if (pos.y - curve_y).abs() > 12.0 {
+            return false;
+        }
+        let docked = (self.morph < 0.02 || self.morph > 0.98) && (self.q < 0.02 || self.q > 0.98);
+        if !docked {
+            self.status = "dock MORPH and Q at 0 or 1 (keys 1-4) to grip the curve — interior grip comes later".into();
+            return true; // consumed: don't fall through to other drags
+        }
+        // snap exactly onto the corner and select it
+        self.morph = if self.morph > 0.5 { 1.0 } else { 0.0 };
+        self.q = if self.q > 0.5 { 1.0 } else { 0.0 };
+        let corner = match (self.morph > 0.5, self.q > 0.5) {
+            (false, false) => CornerKey::M0Q0,
+            (true, false) => CornerKey::M100Q0,
+            (false, true) => CornerKey::M0Q100,
+            (true, true) => CornerKey::M100Q100,
+        };
+        self.selected_corner = corner;
+        let f_grab = freq_at(i, n);
+        // nearest unlocked, enabled sections by pole proximity in octaves
+        let ci = corner.idx();
+        let mut cand: Vec<(f32, usize)> = self
+            .sections
+            .iter()
+            .enumerate()
+            .filter(|(_, s)| s.on && !s.locked)
+            .map(|(k, s)| ((s.corners[ci].pole_hz / f_grab).log2().abs(), k))
+            .collect();
+        cand.sort_by(|a, b| a.0.partial_cmp(&b.0).unwrap());
+        let stages: Vec<usize> = cand.iter().take(Self::GRIP_K).map(|(_, k)| *k).collect();
+        if stages.is_empty() {
+            self.status = "no unlocked sections to move — unlock one (L)".into();
+            return true;
+        }
+        self.push_undo();
+        self.recompute_response();
+        // window ±1.2 oct around the grab, clamped to the band
+        let lo = (f_grab * 2f32.powf(-1.2)).max(F_MIN);
+        let hi = (f_grab * 2f32.powf(1.2)).min(F_MAX);
+        let wfreqs: Vec<f32> = (0..Self::GRIP_BINS)
+            .map(|k| lo * (hi / lo).powf(k as f32 / (Self::GRIP_BINS - 1) as f32))
+            .collect();
+        let oct = |f: f32| (f / f_grab).log2();
+        let shape: Vec<f32> = wfreqs.iter().map(|&f| (-oct(f).powi(2) / (2.0 * 0.35f32.powi(2))).exp()).collect();
+        let weights: Vec<f32> = wfreqs.iter().map(|&f| (-oct(f).powi(2) / (2.0 * 0.6f32.powi(2))).exp()).collect();
+        let base = self.grip_eval(&wfreqs);
+        let p0 = self.grip_params(&stages, ci);
+        self.curve_grip = Some(CurveGrip {
+            f_grab,
+            start_pos: pos,
+            db_per_px: (DB_MAX - DB_MIN) / plot.height(),
+            stages,
+            p0,
+            base,
+            wfreqs,
+            shape,
+            weights,
+            residual_rms: 0.0,
+        });
+        self.drag = Some(Drag::Curve);
+        true
+    }
+
+    fn grip_params(&self, stages: &[usize], corner: usize) -> Vec<f32> {
+        let mut out = Vec::with_capacity(stages.len() * 3);
+        for &s in stages {
+            let c = self.sections[s].corners[corner];
+            out.push(c.pole_hz.log2());
+            out.push((1.0 - c.pole_r).ln());
+            out.push(c.gain_db);
+        }
+        out
+    }
+
+    fn grip_apply(&mut self, stages: &[usize], scope_corners: &[usize], p: &[f32]) {
+        for (k, &s) in stages.iter().enumerate() {
+            let f = 2f32.powf(p[k * 3]).clamp(F_MIN, F_MAX);
+            let r = (1.0 - p[k * 3 + 1].exp()).clamp(RP_MIN, RP_MAX);
+            let g = p[k * 3 + 2].clamp(GAIN_DB_MIN, GAIN_DB_MAX);
+            for &ci in scope_corners {
+                let c = &mut self.sections[s].corners[ci];
+                c.pole_hz = f;
+                c.pole_r = r;
+                c.gain_db = g;
+            }
+        }
+    }
+
+    /// Forward model: current sections → pack_body → packed word lerp → |H| dB
+    /// over the window. The true runtime, in-process — no surrogate.
+    fn grip_eval(&self, wfreqs: &[f32]) -> Vec<f32> {
+        let params = self.params168();
+        let body = trench_core::compiler::pack_body(&params);
+        let mut words = [[[0u16; 5]; STAGES]; CORNERS];
+        let mut i = 0;
+        for corner in &mut words {
+            for stage in corner {
+                for word in stage {
+                    *word = u16::from_le_bytes([body[i], body[i + 1]]);
+                    i += 2;
+                }
+            }
+        }
+        let stages = live_biquads(&words, self.morph, self.q);
+        wfreqs.iter().map(|&f| cascade_db(&stages, f)).collect()
+    }
+
+    fn apply_curve_drag(&mut self, pos: Pos2, shift: bool) {
+        let Some(mut grip) = self.curve_grip.take() else { return };
+        let fine = if shift { 0.25 } else { 1.0 };
+        let delta_db = (grip.start_pos.y - pos.y) * grip.db_per_px * fine;
+        let target: Vec<f32> = grip
+            .base
+            .iter()
+            .zip(&grip.shape)
+            .map(|(b, s)| b + delta_db * s)
+            .collect();
+        let scope_corners = self.selected_corner.scope_corners(self.scope);
+        let corner = self.selected_corner.idx();
+        let stages = grip.stages.clone();
+        let n = stages.len() * 3;
+        let m = grip.wfreqs.len();
+        const EPS: [f32; 3] = [0.02, 0.05, 0.25]; // per-type FD step
+        const LAM: [f32; 3] = [6.0, 2.0, 0.4]; // minimum-motion weight (freq pinned hardest)
+        let mut p = self.grip_params(&stages, corner);
+        for _ in 0..2 {
+            self.grip_apply(&stages, &scope_corners, &p);
+            let cur = self.grip_eval(&grip.wfreqs);
+            let mut r = vec![0.0f32; m];
+            for i in 0..m {
+                r[i] = grip.weights[i] * (cur[i] - target[i]);
+            }
+            // numerical Jacobian (forward differences)
+            let mut jac = vec![0.0f32; m * n];
+            for j in 0..n {
+                let eps = EPS[j % 3];
+                let mut pj = p.clone();
+                pj[j] += eps;
+                self.grip_apply(&stages, &scope_corners, &pj);
+                let cj = self.grip_eval(&grip.wfreqs);
+                for i in 0..m {
+                    jac[i * n + j] = grip.weights[i] * (cj[i] - cur[i]) / eps;
+                }
+            }
+            // normal equations with Tikhonov toward the grab state + LM damping
+            let mut a = vec![0.0f32; n * n];
+            let mut b = vec![0.0f32; n];
+            for j in 0..n {
+                for k in 0..n {
+                    let mut acc = 0.0;
+                    for i in 0..m {
+                        acc += jac[i * n + j] * jac[i * n + k];
+                    }
+                    a[j * n + k] = acc;
+                }
+                let mut acc = 0.0;
+                for i in 0..m {
+                    acc += jac[i * n + j] * r[i];
+                }
+                let lam = LAM[j % 3];
+                a[j * n + j] += lam * lam + 1e-3;
+                b[j] = -acc - lam * lam * (p[j] - grip.p0[j]);
+            }
+            if let Some(d) = solve_linear(&mut a, &mut b, n) {
+                for j in 0..n {
+                    p[j] += d[j].clamp(-0.5, 0.5); // trust region: no role-swapping leaps
+                }
+            }
+            // clamp into the lawful box
+            for k in 0..stages.len() {
+                p[k * 3] = p[k * 3].clamp(F_MIN.log2(), F_MAX.log2());
+                p[k * 3 + 1] = p[k * 3 + 1].clamp((1.0 - RP_MAX).ln(), (1.0 - RP_MIN).ln());
+                p[k * 3 + 2] = p[k * 3 + 2].clamp(GAIN_DB_MIN, GAIN_DB_MAX);
+            }
+        }
+        self.grip_apply(&stages, &scope_corners, &p);
+        let cur = self.grip_eval(&grip.wfreqs);
+        let mut rms = 0.0;
+        let mut wsum = 0.0;
+        for i in 0..m {
+            rms += grip.weights[i] * (cur[i] - target[i]).powi(2);
+            wsum += grip.weights[i];
+        }
+        grip.residual_rms = (rms / wsum.max(1e-9)).sqrt();
+        self.rebuild_body();
+        let names: Vec<String> = stages.iter().map(|s| format!("S{}", s + 1)).collect();
+        self.status = format!(
+            "curve grip: {} chasing {} {:+.1} dB · residual {:.2} dB (true packed runtime)",
+            names.join("+"),
+            format_freq(grip.f_grab),
+            delta_db,
+            grip.residual_rms,
+        );
+        self.curve_grip = Some(grip);
     }
 
     fn apply_value_drag(&mut self, field: ValueField, dy: f32, start: [CornerStage; CORNERS], shift: bool) {
@@ -2212,6 +2478,47 @@ fn draw_grid(p: &egui::Painter, rect: Rect) {
             Color32::from_rgb(110, 106, 116),
         );
     }
+}
+
+/// Gaussian elimination with partial pivoting for the n×n normal equations.
+fn solve_linear(a: &mut [f32], b: &mut [f32], n: usize) -> Option<Vec<f32>> {
+    for col in 0..n {
+        let mut piv = col;
+        for row in (col + 1)..n {
+            if a[row * n + col].abs() > a[piv * n + col].abs() {
+                piv = row;
+            }
+        }
+        if a[piv * n + col].abs() < 1e-12 {
+            return None;
+        }
+        if piv != col {
+            for k in 0..n {
+                a.swap(col * n + k, piv * n + k);
+            }
+            b.swap(col, piv);
+        }
+        let d = a[col * n + col];
+        for row in (col + 1)..n {
+            let f = a[row * n + col] / d;
+            if f == 0.0 {
+                continue;
+            }
+            for k in col..n {
+                a[row * n + k] -= f * a[col * n + k];
+            }
+            b[row] -= f * b[col];
+        }
+    }
+    let mut x = vec![0.0f32; n];
+    for col in (0..n).rev() {
+        let mut acc = b[col];
+        for k in (col + 1)..n {
+            acc -= a[col * n + k] * x[k];
+        }
+        x[col] = acc / a[col * n + col];
+    }
+    Some(x)
 }
 
 fn nearest_handle(pos: Pos2, hits: &[(Pos2, usize, HandleKind)]) -> Option<(usize, HandleKind)> {
