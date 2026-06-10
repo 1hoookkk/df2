@@ -38,6 +38,8 @@ WHOLE_BODY_GESTURES = (
     "Counterweighted Tear",
     "Sweep Field",
 )
+LOCAL_ZERO_OCTAVES = 0.35
+REMOTE_ZERO_OCTAVES = 1.25
 
 
 def summary(values: np.ndarray) -> dict[str, float]:
@@ -153,6 +155,8 @@ class ActorGeometry:
     zero: RootPair | None
     gain: float
     treatment: str
+    zero_placement: str
+    topology: str
 
 
 def _root_pair(coeffs: tuple[float, float, float], sr: float) -> RootPair | None:
@@ -173,18 +177,87 @@ def classify_zero_treatment(pole: RootPair, zero: RootPair | None) -> str:
     if zero is None or pole.radius < 1.0e-6 or zero.radius < 1.0e-6:
         return "NEUTRAL"
     ratio = zero.freq_hz / max(pole.freq_hz, 20.0)
-    if 2.0 ** -0.35 <= ratio <= 2.0 ** 0.35:
+    if 2.0 ** -LOCAL_ZERO_OCTAVES <= ratio <= 2.0 ** LOCAL_ZERO_OCTAVES:
         return "TYPE1_LOCAL_TEAR"
     if ratio > 1.0:
         return "TYPE2_ZERO_ABOVE"
     return "TYPE3_ZERO_BELOW"
 
 
+def zero_offset_octaves(pole: RootPair, zero: RootPair | None) -> float | None:
+    if zero is None or pole.freq_hz <= 20.0 or zero.freq_hz <= 0.0:
+        return None
+    return math.log2(zero.freq_hz / max(pole.freq_hz, 20.0))
+
+
+def classify_zero_placement(pole: RootPair, zero: RootPair | None) -> str:
+    offset = zero_offset_octaves(pole, zero)
+    if offset is None:
+        return "real_or_none"
+    if abs(offset) <= LOCAL_ZERO_OCTAVES:
+        return "local"
+    if offset > REMOTE_ZERO_OCTAVES:
+        return "remote_above"
+    if offset > LOCAL_ZERO_OCTAVES:
+        return "above"
+    if offset < -REMOTE_ZERO_OCTAVES:
+        return "remote_below"
+    return "below"
+
+
+def _pole_band(pole: RootPair) -> str:
+    if pole.radius >= 0.995:
+        return "rim_pole"
+    if pole.radius >= 0.930:
+        return "resonant_pole"
+    if pole.radius >= 0.750:
+        return "frame_pole"
+    return "damped_pole"
+
+
+def _zero_band(zero: RootPair | None) -> str:
+    if zero is None or zero.radius < 0.700:
+        return "weak_zero"
+    if zero.radius >= 0.985:
+        return "rim_notch"
+    if zero.radius >= 0.900:
+        return "antiresonant_zero"
+    return "counterweight_zero"
+
+
+def classify_topology(pole: RootPair, zero: RootPair | None) -> str:
+    pole_band = _pole_band(pole)
+    zero_band = _zero_band(zero)
+    placement = classify_zero_placement(pole, zero)
+    strong_pole = pole_band in {"resonant_pole", "rim_pole"}
+    strong_zero = zero_band in {"antiresonant_zero", "rim_notch"}
+    audible_zero = zero_band in {"counterweight_zero", "antiresonant_zero", "rim_notch"}
+
+    if pole_band == "damped_pole" and zero_band == "weak_zero":
+        return "neutral"
+    if strong_pole and strong_zero and placement == "local":
+        return "local_tear"
+    if strong_pole and audible_zero and placement in {"remote_above", "remote_below"}:
+        return "remote_counterweight"
+    if strong_zero and not strong_pole:
+        return "antiresonant_canyon"
+    if strong_pole:
+        return "resonant_ridge"
+    return "broad_frame"
+
+
 def describe_stage(row: np.ndarray, sr: float) -> ActorGeometry:
     b0, b1, b2, a1, a2 = kernel_to_biquad(tuple(float(v) for v in row))
     pole = _root_pair((1.0, a1, a2), sr) or RootPair(0.0, 0.0, "none")
     zero = _root_pair((b0, b1, b2), sr)
-    return ActorGeometry(pole, zero, float(b0), classify_zero_treatment(pole, zero))
+    return ActorGeometry(
+        pole,
+        zero,
+        float(b0),
+        classify_zero_treatment(pole, zero),
+        classify_zero_placement(pole, zero),
+        classify_topology(pole, zero),
+    )
 
 
 def actor_kernel(

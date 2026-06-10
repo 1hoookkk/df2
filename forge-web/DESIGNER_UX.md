@@ -193,6 +193,18 @@ JUCE side: read cartridge fields on load and cache the mapped behavior for audio
 Absent fields = `secondary_target: "packed"` and `morph_taper: "linear"`; legacy
 Bass Sharpener name checks remain only as fallback for old override files.
 
+**Status 2026-06-10: WIRED AND VERIFIED.** Fields canonical in `cartridge.schema.json`;
+JUCE parser (TrenchBodyRoster.h) reads them on load and accepts textbook aliases
+(`drive`/`both`/`log`); Bass Sharpener tagged via fields; Standalone rebuilt; 12/12
+tests pass (`tools/test_capture_compiler.py`, `tools/test_forge_author_server.py`);
+plot==engine harness re-run green. **Topology classifier thresholds LOCKED** in
+`docs/FORGE_LAW_AUTHOR.md` §Topology Classifier (pole bands rim ≥0.995 / resonant
+≥0.930 / frame ≥0.750 / damped; zero bands rim_notch ≥0.985 / antiresonant ≥0.900 /
+counterweight ≥0.700 / weak; placement local ≤0.35 oct, remote >1.25 oct) — emitted
+by `pyruntime/capture_compiler.py`, audit/readback labels only, never a quality
+judgment. That file's old Law-Author *direction* remains superseded; its classifier
+section is live.
+
 ## Enhancements (resequenced 2026-06-10)
 
 | # | item | status |

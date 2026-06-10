@@ -10,6 +10,17 @@
     "format": { "type": "string", "const": "compiled-v1" },
     "name":   { "type": "string", "minLength": 1 },
     "sampleRate": { "type": "number", "exclusiveMinimum": 0 },
+    "secondary_target": {
+      "type": "string",
+      "description": "How the player maps the user Q/Secondary control before packed interpolation.",
+      "enum": ["packed", "slam", "packed+slam"]
+    },
+    "morph_taper": {
+      "type": "string",
+      "description": "How the player maps user Morph before packed interpolation.",
+      "enum": ["linear", "log_1p45"]
+    },
+    "category": { "type": "string" },
     "authoringModel": {
       "type": "string",
       "description": "Optional authoring provenance. response-surface-v1 means the magnitude/motion/Q surface is the design truth and keyframe stages are packed realization/readback.",
