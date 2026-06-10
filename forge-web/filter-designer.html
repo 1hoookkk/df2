@@ -56,11 +56,12 @@ button:hover{border-color:var(--hot)} button.go{background:#16321f;color:var(--h
 <main>
 <header>
   <h1>FILTER DESIGNER</h1>
-  <p class=sub>Two frames, six sections. <b>Morph</b> glides <b>A</b>→<i>B</i>, Q sharpens — the curve is the shipped engine (0.0000 dB).</p>
+  <p class=sub>Six cascaded biquads: H(z)=∏Hₖ(z), 12th order. Morph linearly interpolates coefficient frame <b>A</b>→<i>B</i>;
+  the Q axis interpolates each section's Q geometrically Q₀→Q₁. Curve = |H(e^jω)| of the shipped engine (0.0000 dB match).</p>
 </header>
 
 <section class=panel>
-  <div class=cap><span>THE CURVE</span>
+  <div class=cap><span>MAGNITUDE RESPONSE — dB vs log f</span>
     <span class=legend><span><i class=swA></i>Frame A</span><span><i class=swB></i>Frame B</span><span><i class=swL></i>now</span></span></div>
   <div id=plotwrap><canvas id=plot></canvas></div>
   <div class=morphrow>
@@ -71,26 +72,26 @@ button:hover{border-color:var(--hot)} button.go{background:#16321f;color:var(--h
 </section>
 
 <section class=panel>
-  <div class=cap><span>SECTIONS — WHERE THE FILTER LIVES</span>
+  <div class=cap><span>BIQUAD SECTIONS — H(z) = ∏ Hₖ(z)</span>
     <span class=lbl style="display:flex;gap:6px;align-items:center;letter-spacing:.04em">
-      snap <select id=snap title="rails: every freq lands on a real resonance · notes: Peaks/BPs land on pitches in your key (scaffold stays on rails) · off: free">
-        <option value=rails>rails</option><option value=notes>notes · in key</option><option value=off>off</option></select>
+      quantize f_c to <select id=snap title="measured resonances: f_c quantized to the resonance-frequency table (docs/study/frequency_rails.csv) · 12-TET: peaking/bandpass f_c quantized to note frequencies of the selected key (other types stay on the measured table) · off: continuous">
+        <option value=rails>measured resonances</option><option value=notes>12-TET · in key</option><option value=off>off</option></select>
       <select id=key title="key root" style="display:none"><option>C</option><option>C#</option><option>D</option><option>D#</option><option>E</option><option selected>F</option><option>F#</option><option>G</option><option>G#</option><option>A</option><option>A#</option><option>B</option></select>
       <select id=scale title="scale" style="display:none"><option value=minor selected>minor</option><option value=major>major</option></select>
     </span></div>
   <table id=secs><thead><tr>
-    <th>on</th><th>type</th><th class=fa>Frame A · Hz</th><th class=fb>Frame B · Hz</th>
-    <th>Gain dB</th><th>Q broad</th><th>Q sharp</th>
+    <th>on</th><th>section type</th><th class=fa title="center/corner frequency in coefficient frame A">f_c A (Hz)</th><th class=fb title="center/corner frequency in coefficient frame B">f_c B (Hz)</th>
+    <th title="peaking/shelf gain; notch: cut depth (negative dB)">gain (dB)</th><th title="section Q at Q-axis = 0. Q = f_c / BW(−3 dB)">Q₀</th><th title="section Q at Q-axis = 1; the Q axis interpolates Q₀→Q₁ geometrically">Q₁</th>
   </tr></thead><tbody></tbody></table>
   <div class=row id=mouthrow style="display:none">
-    <span class=lbl title="sets lanes 2+3 to the vowel's F1/F2 (Peterson-Barney 1952) with Q from the real bandwidths">mouth:</span>
+    <span class=lbl title="sets sections 2+3 to peaking EQs at the vowel's formant frequencies F1/F2 (Peterson-Barney 1952), Q = F/BW from measured formant bandwidths">vowel formants F1·F2:</span>
     <select id=vowelA><option value="">Frame A vowel…</option></select>
     <span class=lbl>→</span>
     <select id=vowelB><option value="">Frame B vowel…</option></select>
     <span class=lbl id=vowelhint></span>
   </div>
   <div class=row id=bodyrow style="display:none">
-    <span class=lbl title="fills lanes 2–5 with the resonator's first 4 partials (tube = harmonic series, metal = inharmonic ratios × f0); Q from the material's ring">resonator:</span>
+    <span class=lbl title="fills sections 2–5 with the first 4 modal frequencies: tube fₙ = n·c/2L (open-open) or (2n−1)·c/4L (closed-open); bar/plate/bell = inharmonic modal ratios × f0. Q = f/BW from the material's bandwidth">modal series:</span>
     <select id=resA><option value="">Frame A body…</option></select>
     <span class=lbl>→</span>
     <select id=resB><option value="">Frame B body…</option></select>
@@ -98,20 +99,20 @@ button:hover{border-color:var(--hot)} button.go{background:#16321f;color:var(--h
     <span class=lbl id=reshint></span>
   </div>
   <div class=row>
-    <span class=lbl>capture real resonances:</span>
+    <span class=lbl title="LPC analysis (order 12, LSF-stabilized) of the file; the 4 strongest pole pairs in 80–8250 Hz become peaking sections 2–5, Q from pole radius: Q = −π·f/(fs·ln r)">LPC formant fit:</span>
     <input type=file id=fitfile accept=audio/*>
-    <button id=fitA title="LPC/LSP-fit the file's resonances into Frame A (lanes 2–5 become Peaks)">→ Frame A</button>
-    <button id=fitB title="LPC/LSP-fit the file's resonances into Frame B">→ Frame B</button>
+    <button id=fitA title="fitted pole-pair frequencies → frame A f_c">→ Frame A</button>
+    <button id=fitB title="fitted pole-pair frequencies → frame B f_c">→ Frame B</button>
   </div>
 </section>
 
 <section class=panel>
-  <div class=cap><span>HEAR IT · JUDGE IT</span></div>
+  <div class=cap><span>AUDITION (AGC → saturation → QSound) · BANK</span></div>
   <div class=row>
     <span class=lbl>source</span>
     <select id=src><option value=0>saw bass</option><option value=1>noise</option><option value=2 selected>808</option><option value=3>voice</option></select>
     <button id=play class=go>▶ play</button>
-    <span class=lbl>slam</span><input id=slam type=range min=0 max=1 step=0.01 value=0 style="width:90px;accent-color:var(--B)">
+    <span class=lbl title="input gain into the saturation stage">drive</span><input id=slam type=range min=0 max=1 step=0.01 value=0 style="width:90px;accent-color:var(--B)">
     <div id=meter title="post-drive level"><div id=meterfill></div></div>
     <button id=save>⤓ save .body240</button>
   </div>
@@ -131,7 +132,7 @@ button:hover{border-color:var(--hot)} button.go{background:#16321f;color:var(--h
 import { wordsFromBytes, packedDb } from "./js/packed.js";
 import { packTyped, bodyHex } from "./js/pack-core.js";
 
-const TYPES=["Peak (pole)","Low-shelf","Notch (zero kill)","Lowpass","Highpass","Bandpass","High-shelf"];
+const TYPES=["Peaking EQ","Low shelf","Notch","Lowpass","Highpass","Bandpass","High shelf"];
 const WASM_URL="wasm/forge_web_wasm.wasm";
 const FREQS=Array.from({length:240},(_,i)=>30*Math.pow(16000/30,i/239));
 

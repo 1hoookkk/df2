@@ -120,11 +120,13 @@ without losing bass power** — the low body holds as a **flat-topped shelf** (b
 dramatic move (the leader sweep) = iconic.
 
 ## Register
-Reason and communicate in **concrete DSP** — Hz, poles/zeros as `(r, θ)`, `Q≈1/(2(1−r))`, stability
-`|p|<1`, spectral tilt, formants F1–F4. Plain English, no jargon-for-its-own-sake — but **don't invent
-abstraction vocabularies or mythology** (no "actors / mountains / tear / canyon / foundation" as a
-naming system) and **don't dumb the DSP down**. Derive before pattern-matching. No HOME/AWAY/TIGHT —
-use Frame A/B, Morph, Secondary/Q, corners C0–C3.
+**Textbook DSP only — in speech AND on UI labels** (Tyson 2026-06-10: "straight DSP, textbook DSP
+— that's the only way I will understand it"). Hz, poles/zeros as `(r, θ)`, `Q≈1/(2(1−r))`, stability
+`|p|<1`, spectral tilt, formants F1–F4, modal frequencies, RBJ cookbook type names. **Don't invent
+abstraction vocabularies or mythology** (no "actors / mountains / tear / canyon / foundation / knee /
+bloom / rails / mouth" as a naming system) and **don't dumb the DSP down** — he learned the real
+vocabulary; metaphor now obscures rather than helps. Derive before pattern-matching. No
+HOME/AWAY/TIGHT — use Frame A/B, Morph, Secondary/Q, corners C0–C3.
 
 ## Working style
 Momentum, no ceremony. Loop: next move → inspect the actual code/files → smallest reversible change →
