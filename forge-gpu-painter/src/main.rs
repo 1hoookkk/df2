@@ -362,19 +362,13 @@ enum Drag {
     Curve,
 }
 
-/// State of a combined-curve grab. The solver chases the dragged target with
-/// the nearest unlocked sections, evaluated through the TRUE packed runtime
+/// State of a combined-curve grab — the pottery grip. Viscous: every frame the
+/// material under the brush takes a small step toward the finger from where it
+/// is NOW (no frozen grab-time target, no spring-back). Sections are recruited
+/// under the brush each frame. Evaluated through the TRUE packed runtime
 /// (pack_body → word lerp → |H|), never a continuous surrogate.
 struct CurveGrip {
-    f_grab: f32,
-    start_pos: Pos2,
-    db_per_px: f32,
-    stages: Vec<usize>,
-    p0: Vec<f32>,       // initial params [log2 f, ln(1-r), gain dB] per stage
-    base: Vec<f32>,     // combined |H| dB over the window at grab time
-    wfreqs: Vec<f32>,   // window frequencies (±1.2 oct around f_grab)
-    shape: Vec<f32>,    // target bump shape (Gaussian in octaves)
-    weights: Vec<f32>,  // residual weights
+    plot: Rect,
     residual_rms: f32,
 }
 
@@ -446,6 +440,7 @@ struct App {
     audio: Option<AudioHandle>,
     playing: bool,
     audio_src: AudioSrc,
+    brush_oct: f32, // curve-grip brush half-width (Gaussian σ, octaves)
     drag: Option<Drag>,
     curve_grip: Option<CurveGrip>,
     hover: Option<Pos2>,
@@ -661,6 +656,7 @@ impl App {
             audio: None,
             playing: false,
             audio_src: AudioSrc::Noise,
+            brush_oct: 0.35,
             drag: None,
             curve_grip: None,
             hover: None,
@@ -1820,17 +1816,30 @@ impl App {
             .collect();
         p.add(egui::Shape::line(pts, Stroke::new(2.0, TRUTH)));
 
-        // curve-grip hover affordance: a ring on the combined curve where a
-        // grab would land (only when not already dragging and no handle near)
-        if self.drag.is_none() {
+        // brush affordance: contact ring + width band on the combined curve
+        let gripping = matches!(self.drag, Some(Drag::Curve));
+        if gripping || self.drag.is_none() {
             if let Some(h) = self.hover {
                 if rect.contains(h) {
                     let i = (((h.x - rect.left()) / rect.width()) * (n - 1) as f32)
                         .round()
                         .clamp(0.0, (n - 1) as f32) as usize;
                     let cy = y_for_db(rect, self.response[i]);
-                    if (h.y - cy).abs() < 12.0 {
-                        p.circle_stroke(Pos2::new(h.x, cy), 6.0, Stroke::new(1.2, with_alpha(ICE, 170)));
+                    if gripping || (h.y - cy).abs() < 12.0 {
+                        // brush footprint: ±σ band in octaves around the center
+                        let f_center = F_MIN * (F_MAX / F_MIN).powf(((h.x - rect.left()) / rect.width()).clamp(0.0, 1.0));
+                        let x0 = x_for_freq(rect, (f_center * 2f32.powf(-self.brush_oct)).max(F_MIN));
+                        let x1 = x_for_freq(rect, (f_center * 2f32.powf(self.brush_oct)).min(F_MAX));
+                        p.rect_filled(
+                            Rect::from_min_max(Pos2::new(x0, rect.top()), Pos2::new(x1, rect.bottom())),
+                            0.0,
+                            with_alpha(ICE, if gripping { 16 } else { 9 }),
+                        );
+                        p.circle_stroke(
+                            Pos2::new(h.x, cy),
+                            if gripping { 7.0 } else { 6.0 },
+                            Stroke::new(1.2, with_alpha(ICE, if gripping { 230 } else { 170 })),
+                        );
                     }
                 }
             }
@@ -2328,7 +2337,8 @@ impl App {
         }
         self.hover = hover;
 
-        // wheel over plot: selected section pole radius
+        // wheel over plot: brush width while moulding / hovering the curve,
+        // otherwise selected section pole radius
         if let Some(pos) = hover {
             if lay.plot.contains(pos) && self.open_menu.is_none() {
                 let scroll = ctx.input(|i| {
@@ -2336,18 +2346,34 @@ impl App {
                     if raw.abs() > 0.0 { raw } else { i.smooth_scroll_delta.y }
                 });
                 if scroll.abs() >= 0.5 {
-                    let stage = self.selected_stage;
-                    if self.sections[stage].locked {
-                        self.status = format!("S{} is locked", stage + 1);
-                    } else {
-                        let steps = (scroll / 120.0).clamp(-6.0, 6.0);
-                        let step = if shift { 0.0008 } else { 0.0035 };
-                        self.push_undo();
-                        for ci in self.selected_corner.scope_corners(self.scope) {
-                            let c = &mut self.sections[stage].corners[ci];
-                            c.pole_r = (c.pole_r + steps * step).clamp(RP_MIN, RP_MAX);
+                    let steps = (scroll / 120.0).clamp(-6.0, 6.0);
+                    let gripping = matches!(self.drag, Some(Drag::Curve));
+                    let on_curve = gripping || {
+                        let n = self.response.len();
+                        let i = (((pos.x - lay.plot.left()) / lay.plot.width()) * (n - 1) as f32)
+                            .round()
+                            .clamp(0.0, (n - 1) as f32) as usize;
+                        (pos.y - y_for_db(lay.plot, self.response[i])).abs() < 12.0
+                            && nearest_handle(pos, &frame.handles).is_none()
+                    };
+                    if on_curve {
+                        self.brush_oct = (self.brush_oct * 2f32.powf(steps * 0.12)).clamp(0.12, 1.2);
+                        if !gripping {
+                            self.status = format!("brush σ {:.2} oct — fingertip 0.12 … palm 1.2", self.brush_oct);
                         }
-                        self.rebuild_body();
+                    } else {
+                        let stage = self.selected_stage;
+                        if self.sections[stage].locked {
+                            self.status = format!("S{} is locked", stage + 1);
+                        } else {
+                            let step = if shift { 0.0008 } else { 0.0035 };
+                            self.push_undo();
+                            for ci in self.selected_corner.scope_corners(self.scope) {
+                                let c = &mut self.sections[stage].corners[ci];
+                                c.pole_r = (c.pole_r + steps * step).clamp(RP_MIN, RP_MAX);
+                            }
+                            self.rebuild_body();
+                        }
                     }
                 }
             }
@@ -2403,7 +2429,6 @@ impl App {
     // sections are never touched; what moved is visible as moved handles.
 
     const GRIP_BINS: usize = 40;
-    const GRIP_K: usize = 2;
 
     fn try_start_curve_grip(&mut self, pos: Pos2, plot: Rect) -> bool {
         // grab only the combined curve, and only docked at a corner
@@ -2430,49 +2455,37 @@ impl App {
             (true, true) => CornerKey::M100Q100,
         };
         self.selected_corner = corner;
-        let f_grab = freq_at(i, n);
-        // nearest unlocked, enabled sections by pole proximity in octaves
-        let ci = corner.idx();
+        self.push_undo();
+        self.recompute_response();
+        self.curve_grip = Some(CurveGrip { plot, residual_rms: 0.0 });
+        self.drag = Some(Drag::Curve);
+        true
+    }
+
+    /// Sections under the brush: unlocked, enabled, pole within ~1.5σ of the
+    /// brush center (always at least the nearest one). Capped at 4.
+    fn recruit(&self, f_center: f32, sigma: f32, corner: usize) -> Vec<usize> {
         let mut cand: Vec<(f32, usize)> = self
             .sections
             .iter()
             .enumerate()
             .filter(|(_, s)| s.on && !s.locked)
-            .map(|(k, s)| ((s.corners[ci].pole_hz / f_grab).log2().abs(), k))
+            .map(|(k, s)| ((s.corners[corner].pole_hz / f_center).log2().abs(), k))
             .collect();
         cand.sort_by(|a, b| a.0.partial_cmp(&b.0).unwrap());
-        let stages: Vec<usize> = cand.iter().take(Self::GRIP_K).map(|(_, k)| *k).collect();
-        if stages.is_empty() {
-            self.status = "no unlocked sections to move — unlock one (L)".into();
-            return true;
-        }
-        self.push_undo();
-        self.recompute_response();
-        // window ±1.2 oct around the grab, clamped to the band
-        let lo = (f_grab * 2f32.powf(-1.2)).max(F_MIN);
-        let hi = (f_grab * 2f32.powf(1.2)).min(F_MAX);
-        let wfreqs: Vec<f32> = (0..Self::GRIP_BINS)
-            .map(|k| lo * (hi / lo).powf(k as f32 / (Self::GRIP_BINS - 1) as f32))
+        let reach = 1.5 * sigma + 0.15;
+        let mut out: Vec<usize> = cand
+            .iter()
+            .filter(|(d, _)| *d <= reach)
+            .take(4)
+            .map(|(_, k)| *k)
             .collect();
-        let oct = |f: f32| (f / f_grab).log2();
-        let shape: Vec<f32> = wfreqs.iter().map(|&f| (-oct(f).powi(2) / (2.0 * 0.35f32.powi(2))).exp()).collect();
-        let weights: Vec<f32> = wfreqs.iter().map(|&f| (-oct(f).powi(2) / (2.0 * 0.6f32.powi(2))).exp()).collect();
-        let base = self.grip_eval(&wfreqs);
-        let p0 = self.grip_params(&stages, ci);
-        self.curve_grip = Some(CurveGrip {
-            f_grab,
-            start_pos: pos,
-            db_per_px: (DB_MAX - DB_MIN) / plot.height(),
-            stages,
-            p0,
-            base,
-            wfreqs,
-            shape,
-            weights,
-            residual_rms: 0.0,
-        });
-        self.drag = Some(Drag::Curve);
-        true
+        if out.is_empty() {
+            if let Some((_, k)) = cand.first() {
+                out.push(*k);
+            }
+        }
+        out
     }
 
     fn grip_params(&self, stages: &[usize], corner: usize) -> Vec<f32> {
@@ -2521,28 +2534,53 @@ impl App {
 
     fn apply_curve_drag(&mut self, pos: Pos2, shift: bool) {
         let Some(mut grip) = self.curve_grip.take() else { return };
-        let fine = if shift { 0.25 } else { 1.0 };
-        let delta_db = (grip.start_pos.y - pos.y) * grip.db_per_px * fine;
-        let target: Vec<f32> = grip
-            .base
-            .iter()
-            .zip(&grip.shape)
-            .map(|(b, s)| b + delta_db * s)
-            .collect();
-        let scope_corners = self.selected_corner.scope_corners(self.scope);
+        let plot = grip.plot;
+        // the hand: brush center follows the pointer in BOTH axes
+        let tx = ((pos.x - plot.left()) / plot.width()).clamp(0.0, 1.0);
+        let f_center = F_MIN * (F_MAX / F_MIN).powf(tx);
+        let finger_db = DB_MIN + (1.0 - (pos.y - plot.top()) / plot.height()).clamp(0.0, 1.0) * (DB_MAX - DB_MIN);
+        let sigma = self.brush_oct;
+        let fine = if shift { 0.3 } else { 1.0 };
+
         let corner = self.selected_corner.idx();
-        let stages = grip.stages.clone();
+        let scope_corners = self.selected_corner.scope_corners(self.scope);
+        let stages = self.recruit(f_center, sigma, corner);
+        if stages.is_empty() {
+            self.curve_grip = Some(grip);
+            return;
+        }
+        // window over the brush footprint
+        let lo = (f_center * 2f32.powf(-2.2 * sigma - 0.3)).max(F_MIN);
+        let hi = (f_center * 2f32.powf(2.2 * sigma + 0.3)).min(F_MAX);
+        let m = Self::GRIP_BINS;
+        let wfreqs: Vec<f32> = (0..m)
+            .map(|k| lo * (hi / lo).powf(k as f32 / (m - 1) as f32))
+            .collect();
+        let oct = |f: f32| (f / f_center).log2();
+        let shape: Vec<f32> = wfreqs.iter().map(|&f| (-oct(f).powi(2) / (2.0 * sigma * sigma)).exp()).collect();
+        let weights = &shape; // weight where the hand presses
+
+        // viscosity: step toward the finger from where the material is NOW
+        let cur0 = self.grip_eval(&wfreqs);
+        let center_db = {
+            // value of the current curve at the brush center
+            let t = (f_center / lo).log2() / (hi / lo).log2();
+            cur0[(t.clamp(0.0, 1.0) * (m - 1) as f32).round() as usize]
+        };
+        let step_db = ((finger_db - center_db) * 0.5 * fine).clamp(-4.0, 4.0);
+        let target: Vec<f32> = cur0.iter().zip(&shape).map(|(c, s)| c + step_db * s).collect();
+
         let n = stages.len() * 3;
-        let m = grip.wfreqs.len();
         const EPS: [f32; 3] = [0.02, 0.05, 0.25]; // per-type FD step
-        const LAM: [f32; 3] = [6.0, 2.0, 0.4]; // minimum-motion weight (freq pinned hardest)
+        const LAM: [f32; 3] = [6.0, 2.0, 0.4]; // per-step minimum motion (freq stiffest)
         let mut p = self.grip_params(&stages, corner);
+        let p0 = p.clone(); // clay: regularize toward NOW, not toward grab time
         for _ in 0..2 {
             self.grip_apply(&stages, &scope_corners, &p);
-            let cur = self.grip_eval(&grip.wfreqs);
+            let cur = self.grip_eval(&wfreqs);
             let mut r = vec![0.0f32; m];
             for i in 0..m {
-                r[i] = grip.weights[i] * (cur[i] - target[i]);
+                r[i] = weights[i] * (cur[i] - target[i]);
             }
             // numerical Jacobian (forward differences)
             let mut jac = vec![0.0f32; m * n];
@@ -2551,12 +2589,12 @@ impl App {
                 let mut pj = p.clone();
                 pj[j] += eps;
                 self.grip_apply(&stages, &scope_corners, &pj);
-                let cj = self.grip_eval(&grip.wfreqs);
+                let cj = self.grip_eval(&wfreqs);
                 for i in 0..m {
-                    jac[i * n + j] = grip.weights[i] * (cj[i] - cur[i]) / eps;
+                    jac[i * n + j] = weights[i] * (cj[i] - cur[i]) / eps;
                 }
             }
-            // normal equations with Tikhonov toward the grab state + LM damping
+            // normal equations: Tikhonov toward the frame start + LM damping
             let mut a = vec![0.0f32; n * n];
             let mut b = vec![0.0f32; n];
             for j in 0..n {
@@ -2573,14 +2611,13 @@ impl App {
                 }
                 let lam = LAM[j % 3];
                 a[j * n + j] += lam * lam + 1e-3;
-                b[j] = -acc - lam * lam * (p[j] - grip.p0[j]);
+                b[j] = -acc - lam * lam * (p[j] - p0[j]);
             }
             if let Some(d) = solve_linear(&mut a, &mut b, n) {
                 for j in 0..n {
-                    p[j] += d[j].clamp(-0.5, 0.5); // trust region: no role-swapping leaps
+                    p[j] += d[j].clamp(-0.25, 0.25); // small steps: viscous, no role swaps
                 }
             }
-            // clamp into the lawful box
             for k in 0..stages.len() {
                 p[k * 3] = p[k * 3].clamp(F_MIN.log2(), F_MAX.log2());
                 p[k * 3 + 1] = p[k * 3 + 1].clamp((1.0 - RP_MAX).ln(), (1.0 - RP_MIN).ln());
@@ -2588,21 +2625,21 @@ impl App {
             }
         }
         self.grip_apply(&stages, &scope_corners, &p);
-        let cur = self.grip_eval(&grip.wfreqs);
+        let cur = self.grip_eval(&wfreqs);
         let mut rms = 0.0;
         let mut wsum = 0.0;
         for i in 0..m {
-            rms += grip.weights[i] * (cur[i] - target[i]).powi(2);
-            wsum += grip.weights[i];
+            rms += weights[i] * (cur[i] - target[i]).powi(2);
+            wsum += weights[i];
         }
         grip.residual_rms = (rms / wsum.max(1e-9)).sqrt();
         self.rebuild_body();
         let names: Vec<String> = stages.iter().map(|s| format!("S{}", s + 1)).collect();
         self.status = format!(
-            "curve grip: {} chasing {} {:+.1} dB · residual {:.2} dB (true packed runtime)",
+            "moulding {} at {} · brush σ {:.2} oct (wheel) · residual {:.2} dB (true packed runtime)",
             names.join("+"),
-            format_freq(grip.f_grab),
-            delta_db,
+            format_freq(f_center),
+            sigma,
             grip.residual_rms,
         );
         self.curve_grip = Some(grip);
