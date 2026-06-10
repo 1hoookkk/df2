@@ -185,6 +185,17 @@ to the corners by the bilinear basis `(1−x)(1−y), x(1−y), (1−x)y, xy`. D
 (the Field brief's endpoint-only rule) is the corner-weight special case; center
 authoring is the equal-weight case. One rule, no modes.
 
+**Anchoring (Tyson 2026-06-10 — naive symmetric deltas give meaningless corners):**
+free Δ vectors turn a centered "ah" into endpoints that are no posture at all. Two
+constraints make the corners fall naturally:
+1. **Per-section delta masks** — scaffold sections (foundation shelf, parked zeros)
+   get Δ = 0: they are the anchors. Only voices carry deltas (the measured
+   anchor+mover structure, expressed as gesture exemption).
+2. **Deltas follow lawful paths, not free vectors** — formant pairs step along the
+   vowel chart (M = ah, Δ along oo↔ee → endpoints land on real neighboring vowels);
+   pitched movers step along the in-key note grid; everything else along the
+   measured-resonance table. The quantize grids applied to MOTION, not just position.
+
 **Honesty requirement:** the engine interpolates log-encoded words, so the realized
 center ≠ the authored root-domain center (interior emergence, divergence up to ~20 dB
 from continuous models). Always render authored-M as a ghost vs the realized packed
