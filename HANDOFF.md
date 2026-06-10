@@ -62,12 +62,20 @@ Build the **lean end-to-end surface** — and ONLY this (do NOT build the full
    through AGC→Mackie→QSound, engine-true curve. It compiles via the WASM binding
    `forge_pack_typed` → trench-core `pack_typed_body` (one owner; Python mirror is
    `trench_ffi.compile_body_typed`).
-2. Add **Load a candidate** — seed the designer from any wave finalist or a reference
-   shape, so Tyson shapes strong material instead of a blank page.
-3. Add a **KEEP** button that does everything invisibly in one click:
-   compile → 17×17 Morph×Q audit through trench_core → name → write to
-   `desk/bank/v1/` (body240 + cart + png + a `BANK.md` row) → into the player roster.
-   A KILL button logs a one-word reason to `desk/KILLS.md` (calibration data).
+2. **DONE (2026-06-10): Load a seed** — dropdown on the designer, fed by `/seeds`
+   (`forge-web/data/designer_seeds.json`: the 5 recipe moves on real rails, plus every
+   banked body's typed source). Claude floods aimed candidates by appending to that JSON.
+3. **DONE (2026-06-10): KEEP / KILL** — `/keep` on `tools/forge_author_server.py`
+   recompiles the cards through DLL `compile_body_typed`, **nulls vs the browser WASM
+   bytes** (free encoder-drift check on every keep), runs the 17×17 packed audit
+   (FAIL = not banked), writes `desk/bank/v1/<slug>.{body240,cart.json,png}` + a
+   `BANK.md` table row, drops the cart in `Documents/TRENCH/bodies/` and publishes the
+   live **Forge Audition** slot (hear it in the plugin immediately). Verified end-to-end
+   by a real browser click (artifacts byte-equal a fresh DLL recompile; smoke rows
+   removed). `/kill` appends label + words to `desk/KILLS.md`. The named roster row
+   still needs the per-keeper rebuild (BANK.md says so) — that's Claude's job after a
+   verdict, not a button. **Serve: `python tools/forge_author_server.py 8141` → open
+   `/filter-designer.html`** (plain http.server has no /keep backend).
 
 Then **STOP building.** The 4–7 presets do not come from a better tool — they come
 from Tyson doing reps on this surface. The surface only removes every non-taste
@@ -157,7 +165,8 @@ ear pick.
 
 - **Filter Designer:** `forge-web/filter-designer.html` (+ `js/pack-core.js` `packTyped`,
   WASM `forge_pack_typed` in `forge-web-wasm/src/lib.rs`, rebuilt
-  `forge-web/wasm/forge_web_wasm.wasm`). Serve: `python -m http.server 8141 --directory forge-web`.
+  `forge-web/wasm/forge_web_wasm.wasm`). Serve: `python tools/forge_author_server.py 8141`
+  (backend for seeds + KEEP/KILL; plain http.server serves the page but no banking).
   (To put on phone: cloudflared tunnel to that port — tunnels are ephemeral, re-create.)
 - **The desk** (Tyson's only surface): `desk/` — `bank/v1/BANK.md` (the product ledger,
   currently EMPTY — that's the whole problem), `KILLS.md`, `sheets/` (judgment sheets).
@@ -192,8 +201,8 @@ half (which body is iconic) — that's Tyson's ear, always.
   designer compiler is nulled too** — WASM `forge_pack_typed` == DLL `compile_body_typed`,
   byte-identical (0 diff). The Filter Designer's browser bytes ARE what ships.
 
-**Remaining verification is future, not now:** the KEEP button's 17×17 audit path (build
-it, then verify it rejects unstable + passes good). The closed-loop compiler's old
+**Remaining verification is future, not now:** ~~the KEEP button's 17×17 audit path~~
+(DONE 2026-06-10 — built + verified by a real browser-click keep; FAIL verdicts do not bank). The closed-loop compiler's old
 Early-Rizer 2.65 dB fit "ran on the rogue encoder — re-verify through compile_body" IF
 that surface-fit tool is ever used (it's NOT on the preset-loop critical path).
 
@@ -229,8 +238,11 @@ node dev/tmp/typed_null.cjs                         # WASM typed bytes; null vs 
 ## FIRST MOVES (new chat)
 
 1. Read CLAUDE.md + AGENTS.md. Confirm the Filter Designer serves and compiles (above).
-2. Wire **load-candidate** + the **KEEP** button (compile→17×17 audit→bank→roster) onto
-   `forge-web/filter-designer.html`. That's the lean loop. Keep it minimal.
-3. Then STOP building. Serve it (tunnel for phone), and run the loop with Tyson: Claude
-   floods aimed candidates / Tyson shapes + sweeps + KEEPs. Fill `desk/bank/v1/` with
-   4–7 worth-money presets. The first kept body is the project turning over.
+2. ~~Wire load-candidate + KEEP~~ **DONE 2026-06-10** (see THE IMMEDIATE BUILD). The lean
+   loop is built and click-verified. Beware a stale `python -m http.server 8141` stealing
+   the port from the real backend (it 404s /keep — kill it).
+3. STOP building. Serve it (`python tools/forge_author_server.py 8141`, tunnel for
+   phone), and run the loop with Tyson: Claude floods aimed candidates into
+   `forge-web/data/designer_seeds.json` / Tyson shapes + sweeps + KEEPs. Fill
+   `desk/bank/v1/` with 4–7 worth-money presets. The first kept body is the project
+   turning over.

@@ -1,0 +1,206 @@
+<!doctype html><html><head><meta charset=utf-8>
+<meta name=viewport content="width=device-width,initial-scale=1">
+<title>Filter Designer — design two frames, morph between</title>
+<style>
+:root{--bg:#070b0a;--panel:#0c1210;--line:#1c2722;--ink:#cfe9df;--dim:#7f9a8f;--hot:#5bef6f;--A:#2ec4ff;--B:#ff7a3e}
+*{box-sizing:border-box}
+body{background:var(--bg);color:var(--ink);font:13px ui-monospace,Menlo,monospace;margin:0;padding:14px}
+h1{font-size:15px;margin:0 0 2px;color:var(--hot)}
+.sub{color:var(--dim);margin:0 0 12px;font-size:12px}
+.sub b{color:var(--A)} .sub i{color:var(--B);font-style:normal}
+#plotwrap{position:relative;border:1px solid var(--line);border-radius:8px;background:#0a0f0d;padding:6px}
+canvas{width:100%;height:260px;display:block}
+.morphrow{display:flex;gap:18px;align-items:center;margin:12px 0;flex-wrap:wrap}
+.morphrow label{color:var(--dim);min-width:54px}
+.morphrow input[type=range]{flex:1;min-width:160px;accent-color:var(--hot)}
+.val{color:var(--ink);min-width:44px;text-align:right}
+table{width:100%;border-collapse:collapse;margin-top:8px}
+th{color:var(--dim);font-weight:400;text-align:left;font-size:11px;padding:4px 6px;border-bottom:1px solid var(--line)}
+th.fa{color:var(--A)} th.fb{color:var(--B)}
+td{padding:3px 6px;border-bottom:1px solid #121a17;vertical-align:middle}
+.fa-cell{background:rgba(46,196,255,.05)} .fb-cell{background:rgba(255,122,62,.05)}
+select,input[type=number]{background:#0c1210;color:var(--ink);border:1px solid var(--line);border-radius:4px;padding:3px 5px;font:inherit}
+input[type=number]{width:74px}
+.transport{display:flex;gap:14px;align-items:center;margin:14px 0;flex-wrap:wrap}
+button{background:#13201b;color:var(--ink);border:1px solid var(--line);border-radius:5px;padding:7px 14px;font:inherit;cursor:pointer}
+button:hover{border-color:var(--hot)} button.go{background:#16321f;color:var(--hot);border-color:#2a5e3a}
+#meter{height:10px;width:160px;border:1px solid var(--line);border-radius:5px;overflow:hidden;background:#0a0f0d}
+#meterfill{height:100%;width:0;background:var(--hot);transition:width .08s}
+.flood #meterfill{background:#ff3a3a}
+small.note{color:var(--dim)}
+</style></head><body>
+<h1>FILTER DESIGNER</h1>
+<p class=sub>Six sections. For each, pick a <b>type</b> and set where its frequency sits in
+<b>Frame A</b> and <i>Frame B</i>. The <b>Morph</b> knob glides the whole filter A→B; <b>Q</b> sharpens.
+Design two frames by ear, sweep between them — the way E-mu's Filter Designer worked. Curve = the shipped engine (0.0000 dB).</p>
+
+<div id=plotwrap><canvas id=plot></canvas></div>
+
+<div class=morphrow>
+  <label>MORPH</label><input id=morph type=range min=0 max=1 step=0.001 value=0><span class=val id=morphv>A</span>
+  <label>Q</label><input id=q type=range min=0 max=1 step=0.001 value=0><span class=val id=qv>0</span>
+</div>
+
+<table id=secs><thead><tr>
+  <th>on</th><th>type</th><th class=fa>Frame A · Freq</th><th class=fb>Frame B · Freq</th>
+  <th>Gain dB</th><th>Q broad</th><th>Q sharp</th>
+</tr></thead><tbody></tbody></table>
+
+<div class=transport>
+  <label class=sub style="margin:0">source</label>
+  <select id=src><option value=0>saw bass</option><option value=1>noise</option><option value=2 selected>808</option><option value=3>voice</option></select>
+  <button id=play class=go>▶ play</button>
+  <span class=sub style="margin:0">slam</span><input id=slam type=range min=0 max=1 step=0.01 value=0 style="width:90px;accent-color:var(--B)">
+  <div id=meter title="post-drive level"><div id=meterfill></div></div>
+  <button id=save>⤓ save .body240</button>
+</div>
+<div class=transport>
+  <select id=seed style="min-width:170px"><option value="">load a seed…</option></select>
+  <input id=bodyname type=text placeholder="name it" style="width:150px;background:#0c1210;color:var(--ink);border:1px solid var(--line);border-radius:4px;padding:6px 8px;font:inherit">
+  <input id=words type=text placeholder="why — your words (kept with the verdict)" style="flex:1;min-width:200px;background:#0c1210;color:var(--ink);border:1px solid var(--line);border-radius:4px;padding:6px 8px;font:inherit">
+  <button id=keep class=go>★ KEEP</button>
+  <button id=kill style="color:#ff7a3e">✖ kill</button>
+</div>
+<p><small class=note id=status>booting engine…</small></p>
+
+<script type=module>
+import { wordsFromBytes, packedDb } from "./js/packed.js";
+import { packTyped, bodyHex } from "./js/pack-core.js";
+
+const TYPES=["Peak","Low-shelf","Notch","Lowpass","Highpass","Bandpass","High-shelf"];
+const WASM_URL="wasm/forge_web_wasm.wasm";
+const FREQS=Array.from({length:240},(_,i)=>30*Math.pow(16000/30,i/239));
+
+// opens alive: a vocal-ish filter that morphs dark→bright, foundation held, one LP leader sweep
+const cards=[
+  {type:1,fcA:120, fcB:120, gain:6,  qLo:0.7,qHi:0.7,on:true},  // low-shelf foundation (held)
+  {type:0,fcA:780, fcB:2200,gain:5,  qLo:1.2,qHi:5,  on:true},  // mover: mouth → bite
+  {type:0,fcA:1100,fcB:3000,gain:4,  qLo:1.2,qHi:5,  on:true},  // mover
+  {type:3,fcA:7000,fcB:1500,gain:0,  qLo:0.7,qHi:2,  on:true},  // lowpass leader sweep (bright→dark)
+  {type:2,fcA:4000,fcB:900, gain:0,  qLo:1.5,qHi:4,  on:true},  // moving notch / cut
+  {type:6,fcA:9000,fcB:9000,gain:-4, qLo:0.7,qHi:0.7,on:true},  // high-shelf air (held)
+];
+const st={body:null,morph:0,q:0,src:2,slam:0,playing:false};
+
+const cv=document.getElementById("plot"),cx=cv.getContext("2d");
+function fit(){const r=cv.getBoundingClientRect(),d=devicePixelRatio||1;cv.width=r.width*d;cv.height=r.height*d;cx.setTransform(d,0,0,d,0,0);}
+addEventListener("resize",()=>{fit();draw();});
+
+function curve(words,m,q){return FREQS.map(f=>packedDb(words,m,q,f));}
+function draw(){
+  if(!st.body) return;
+  const W=cv.clientWidth,H=cv.clientHeight;cx.clearRect(0,0,W,H);
+  const words=wordsFromBytes(st.body);
+  const live=curve(words,st.morph,st.q), gA=curve(words,0,0), gB=curve(words,1,0);
+  const all=live.concat(gA,gB),top=Math.max(...all);
+  const lo=-70,hi=6;
+  const X=i=>i/(FREQS.length-1)*W, Y=db=>{const v=Math.max(lo,Math.min(hi,db-top));return H-(v-lo)/(hi-lo)*H;};
+  // grid
+  cx.strokeStyle="#16241d";cx.lineWidth=1;cx.fillStyle="#3a564c";cx.font="10px monospace";
+  [50,100,200,500,1000,2000,5000,10000].forEach(f=>{const i=FREQS.findIndex(x=>x>=f),x=X(i);cx.beginPath();cx.moveTo(x,0);cx.lineTo(x,H);cx.stroke();cx.fillText(f>=1000?f/1000+"k":f,x+2,H-3);});
+  const line=(arr,col,w,dash)=>{cx.strokeStyle=col;cx.lineWidth=w;cx.setLineDash(dash||[]);cx.beginPath();arr.forEach((db,i)=>{const x=X(i),y=Y(db);i?cx.lineTo(x,y):cx.moveTo(x,y);});cx.stroke();cx.setLineDash([]);};
+  line(gA,"rgba(46,196,255,.55)",1.2,[4,3]);   // Frame A ghost
+  line(gB,"rgba(255,122,62,.55)",1.2,[4,3]);   // Frame B ghost
+  line(live,"#5bef6f",2.2);                     // live morph/Q
+}
+
+async function repack(){
+  st.body=await packTyped(cards);
+  draw();
+  if(anode) anode.port.postMessage({body:st.body.slice().buffer});
+}
+
+// section table
+const tb=document.querySelector("#secs tbody");
+function freqInput(v,on){const i=document.createElement("input");i.type="number";i.min=20;i.max=18000;i.step=10;i.value=Math.round(v);return i;}
+function buildTable(){
+  tb.replaceChildren();
+  cards.forEach((c,si)=>{
+    const tr=document.createElement("tr");
+    const on=document.createElement("input");on.type="checkbox";on.checked=c.on;on.onchange=()=>{c.on=on.checked;repack();};
+    const sel=document.createElement("select");TYPES.forEach((t,i)=>{const o=document.createElement("option");o.value=i;o.textContent=t;if(i===c.type)o.selected=true;sel.appendChild(o);});sel.onchange=()=>{c.type=+sel.value;repack();};
+    const fa=freqInput(c.fcA);fa.onchange=()=>{c.fcA=+fa.value;repack();};
+    const fb=freqInput(c.fcB);fb.onchange=()=>{c.fcB=+fb.value;repack();};
+    const g=document.createElement("input");g.type="number";g.min=-36;g.max=24;g.step=1;g.value=c.gain;g.onchange=()=>{c.gain=+g.value;repack();};
+    const ql=document.createElement("input");ql.type="number";ql.min=0.3;ql.max=12;ql.step=0.1;ql.value=c.qLo;ql.onchange=()=>{c.qLo=+ql.value;repack();};
+    const qh=document.createElement("input");qh.type="number";qh.min=0.3;qh.max=12;qh.step=0.1;qh.value=c.qHi;qh.onchange=()=>{c.qHi=+qh.value;repack();};
+    const cells=[on,sel,fa,fb,g,ql,qh];
+    cells.forEach((el,ci)=>{const td=document.createElement("td");if(ci===2)td.className="fa-cell";if(ci===3)td.className="fb-cell";td.appendChild(el);tr.appendChild(td);});
+    tb.appendChild(tr);
+  });
+}
+buildTable();
+
+// seeds + keep/kill (backend: python tools/forge_author_server.py 8141)
+const status=document.getElementById("status");
+const seedSel=document.getElementById("seed");
+let seedList=[];
+fetch("/seeds").then(r=>r.json()).then(d=>{
+  seedList=d.seeds||[];
+  seedList.forEach((s,i)=>{const o=document.createElement("option");o.value=i;o.textContent=s.name;o.title=s.hint||"";seedSel.appendChild(o);});
+}).catch(()=>{seedSel.disabled=true;seedSel.title="no backend — serve with tools/forge_author_server.py for seeds + KEEP";});
+seedSel.onchange=()=>{
+  const s=seedList[+seedSel.value]; if(!s) return;
+  s.cards.forEach((sc,i)=>Object.assign(cards[i],sc));
+  buildTable(); repack();
+  status.textContent=`seed loaded: ${s.name} — ${s.hint||""}`;
+};
+async function post(url,payload){
+  const r=await fetch(url,{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify(payload)});
+  return r.json();
+}
+document.getElementById("keep").onclick=async()=>{
+  const name=document.getElementById("bodyname").value.trim();
+  if(!name){status.textContent="name it first — the bank has no anonymous rows";return;}
+  status.textContent="KEEP: compiling + 17×17 audit…";
+  try{
+    const res=await post("/keep",{cards,hex:bodyHex(st.body),name,
+      words:document.getElementById("words").value.trim(),source:"designer"});
+    status.textContent=res.ok
+      ? `KEPT ★ ${res.slug} — PASS (max r ${res.maxr.toFixed(4)}) → bank/v1 + plugin Forge Audition slot`
+      : `NOT banked: ${res.error||res.verdict}`;
+  }catch(e){status.textContent="keep failed: "+e+" (is tools/forge_author_server.py running?)";}
+};
+document.getElementById("kill").onclick=async()=>{
+  const words=document.getElementById("words").value.trim();
+  if(!words){status.textContent="a kill needs the why — one word is enough";return;}
+  try{
+    const res=await post("/kill",{label:document.getElementById("bodyname").value.trim()||(seedSel.selectedIndex>0?seedSel.options[seedSel.selectedIndex].text:"unnamed design"),words});
+    status.textContent=res.ok?`killed — logged to desk/KILLS.md (“${words}”)`:"kill failed: "+(res.error||"");
+  }catch(e){status.textContent="kill failed: "+e+" (is tools/forge_author_server.py running?)";}
+};
+
+// morph / q
+const mS=document.getElementById("morph"),qS=document.getElementById("q");
+mS.oninput=()=>{st.morph=+mS.value;document.getElementById("morphv").textContent=st.morph<0.02?"A":st.morph>0.98?"B":st.morph.toFixed(2);draw();pushParams();};
+qS.oninput=()=>{st.q=+qS.value;document.getElementById("qv").textContent=st.q.toFixed(2);draw();pushParams();};
+document.getElementById("slam").oninput=e=>{st.slam=+e.target.value;pushParams();};
+document.getElementById("src").onchange=e=>{st.src=+e.target.value;if(anode)anode.port.postMessage({src:st.src});};
+
+// audio
+let actx,anode;
+function pushParams(){if(anode)anode.port.postMessage({params:{morph:st.morph,q:st.q,agc:3,slam:st.slam,wide:0.35}});}
+async function startAudio(){
+  actx=new (window.AudioContext||window.webkitAudioContext)();
+  const wasm=await (await fetch(WASM_URL)).arrayBuffer();
+  await actx.audioWorklet.addModule("js/forge-worklet.js");
+  anode=new AudioWorkletNode(actx,"forge-processor",{numberOfInputs:0,numberOfOutputs:1,outputChannelCount:[2],processorOptions:{wasm,body:st.body.slice().buffer,src:st.src}});
+  anode.port.onmessage=e=>{const d=e.data;if(d.level!=null){const f=document.getElementById("meterfill");f.style.width=Math.min(100,d.peak*100)+"%";document.getElementById("meter").classList.toggle("flood",d.peak>0.98);}};
+  anode.connect(actx.destination);
+  pushParams();
+}
+document.getElementById("play").onclick=async()=>{
+  if(!anode)await startAudio();
+  if(actx.state==="suspended")await actx.resume();
+  st.playing=!st.playing;anode.port.postMessage({playing:st.playing});
+  document.getElementById("play").textContent=st.playing?"⏸ stop":"▶ play";
+};
+
+document.getElementById("save").onclick=()=>{
+  const blob=new Blob([st.body],{type:"application/octet-stream"});
+  const a=document.createElement("a");a.href=URL.createObjectURL(blob);a.download="design.body240";a.click();
+};
+
+fit();
+repack().then(()=>{document.getElementById("status").textContent="ready — design two frames, turn Morph, press play. Curve is the shipped engine.";});
+</script></body></html>
