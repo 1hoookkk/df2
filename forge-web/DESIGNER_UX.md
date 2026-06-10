@@ -75,16 +75,45 @@ audio follow. Reading it:
 This is the map of the emergent interior — events invisible from the two endpoint
 curves. Recompute lazily (rAF idle), 17×17 on demand for the KEEP audit (same grid).
 
-**Interaction grammar (Pro-Q lineage, two-frame extension):**
-- Drag X horizontally = pole frequency; vertically = pole radius
-  (r mapped so handle height tracks the local |H| contribution).
-- Drag O horizontally = zero frequency; vertically = zero radius r_z
-  (deeper notch as r_z → 1).
-- Each section owns 2 X and 2 O handles (frame A pair, frame B pair).
-  Section index is the morph pairing — A↔B handles of one section are linked visually.
-- Wheel on a handle = the orthogonal fine axis (X: radius, O: r_z).
-- Click selects → inspector shows numbers; double-click a number to type.
-- Quantize modes apply to handle drags: measured-resonance table / 12-TET in key / off.
+**The control surface is root-domain pole/zero pairs — with guardrails.**
+NOT a type-dropdown-first surface (RBJ names misdescribe the references — Talking Hedz
+and Millennium are six pole-zero SOS actors, not "Peaking EQs"), and NOT a raw
+`b0 b1 b2 a1 a2` coefficient editor. The user's hands stay on the actual
+sound-shaping objects:
+
+```text
+X = pole pair / resonance
+O = zero pair / antiresonance / canyon
+```
+
+Row schema: `on | topology | pole pair (f_p, r_p) | zero pair (f_z, r_z) | gain | mini |H_k|`
+
+**`topology` is DERIVED, never chosen.** Classify each section from its root geometry
+and realized |H_k|: `resonant SOS` · `notch / antiresonance` · `pole-zero resonator
+(resonant + antiresonant)` · `shelving / tilt SOS` · `near-allpass (zero masks pole)` ·
+`resonator (near all-pole)` · `bypass / degenerate`. The clean DSP description of every
+row is: **second-order IIR section with conjugate pole pair and conjugate zero pair.**
+Reference readings in this vocabulary: Talking Hedz S1 = high-frequency complex-pole
+resonator + low-frequency zero pair; S6 = low-frequency high-Q resonator with remote
+unit-circle zero pair. Millennium S6 = high-Q resonator with remote unit-circle
+antiresonance.
+
+**Controls:**
+- drag X left/right = pole frequency · drag X up/down = pole radius (resonance)
+- drag O left/right = zero frequency · drag O up/down = zero radius (notch depth)
+- wheel / shift = fine adjust
+- click selects → inspector shows `(f_p, r_p) (f_z, r_z) gain_low gain_high on topology`;
+  double-click a number to type
+- quantize modes apply to handle drags: measured-resonance table / 12-TET in key / off
+
+**Hard rules:**
+- poles locked inside the unit circle (compiler clamps: r_p ∈ [0.5, MAX_RADIUS),
+  UI ceiling 0.9992)
+- zeros allowed but visibly bounded (r_z ∈ [0, 1), UI ceiling 0.9995)
+- conjugate pairs only (the format packs nothing else)
+- gain normalized/readable: displayed per-frame in dB, packed linear ∈ [0.05, 4.0]
+- packed-runtime plot always shown (plot==engine, harness-verified)
+- 17×17 packed audit before KEEP — FAIL never enters the bank
 
 **Naming (heritage, 2026-06-10):** the two coefficient frames are the **low morph frame**
 and **high morph frame** — E-mu's own terms (Dillusion Peak/Shelf Morph tutorial). The
