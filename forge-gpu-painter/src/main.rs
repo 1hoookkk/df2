@@ -21,7 +21,142 @@ use serde::Serialize;
 use std::f32::consts::TAU as TAU32;
 use std::fs;
 use std::path::{Path, PathBuf};
+use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant};
+
+// ── audio (cpal output: source → FilterEngine (AGC + saturation) → device) ───
+
+#[derive(Clone, Copy, PartialEq, Eq)]
+enum AudioSrc {
+    Noise,
+    Saw,
+    Pad,
+}
+
+impl AudioSrc {
+    fn label(self) -> &'static str {
+        match self {
+            Self::Noise => "NOISE",
+            Self::Saw => "SAW",
+            Self::Pad => "PAD",
+        }
+    }
+}
+
+struct AudioCtl {
+    playing: bool,
+    morph: f64,
+    q: f64,
+    src: AudioSrc,
+    pending_body: Option<[u8; 240]>,
+}
+
+struct AudioHandle {
+    _stream: cpal::Stream, // kept alive; drops = silence
+    ctl: Arc<Mutex<AudioCtl>>,
+}
+
+struct SourceState {
+    rng: u32,
+    phase: [f32; 4],
+}
+
+impl SourceState {
+    fn fill(&mut self, src: AudioSrc, sr: f32, out: &mut [f32]) {
+        match src {
+            AudioSrc::Noise => {
+                for v in out.iter_mut() {
+                    // xorshift32 white noise
+                    self.rng ^= self.rng << 13;
+                    self.rng ^= self.rng >> 17;
+                    self.rng ^= self.rng << 5;
+                    *v = (self.rng as f32 / u32::MAX as f32 - 0.5) * 0.5;
+                }
+            }
+            AudioSrc::Saw => {
+                let f = 55.0 / sr; // A1 bass saw
+                for v in out.iter_mut() {
+                    self.phase[0] = (self.phase[0] + f).fract();
+                    *v = (self.phase[0] * 2.0 - 1.0) * 0.35;
+                }
+            }
+            AudioSrc::Pad => {
+                // sustained A chord: detuned saws at 110 / 164.81 / 220 Hz
+                let fs = [110.0 / sr, 164.81 / sr, 220.0 / sr, 110.6 / sr];
+                for v in out.iter_mut() {
+                    let mut acc = 0.0;
+                    for (k, f) in fs.iter().enumerate() {
+                        self.phase[k] = (self.phase[k] + f).fract();
+                        acc += self.phase[k] * 2.0 - 1.0;
+                    }
+                    *v = acc * 0.09;
+                }
+            }
+        }
+    }
+}
+
+fn start_audio(body: [u8; 240], morph: f64, q: f64, src: AudioSrc) -> Result<AudioHandle, String> {
+    use cpal::traits::{DeviceTrait, HostTrait, StreamTrait};
+    let host = cpal::default_host();
+    let device = host.default_output_device().ok_or("no audio output device")?;
+    let config = device.default_output_config().map_err(|e| e.to_string())?;
+    let sr = config.sample_rate().0 as f64;
+    let channels = config.channels() as usize;
+
+    let ctl = Arc::new(Mutex::new(AudioCtl { playing: true, morph, q, src, pending_body: Some(body) }));
+    let ctl_cb = ctl.clone();
+
+    let mut engine = trench_core::engine::FilterEngine::new();
+    engine.prepare(sr);
+    let mut source = SourceState { rng: 0x1234_5678, phase: [0.0; 4] };
+    let mut left = vec![0.0f32; 256];
+    let mut right = vec![0.0f32; 256];
+
+    let stream = device
+        .build_output_stream(
+            &config.into(),
+            move |data: &mut [f32], _| {
+                let (playing, morph, q, src, body) = {
+                    let mut c = ctl_cb.lock().unwrap();
+                    (c.playing, c.morph, c.q, c.src, c.pending_body.take())
+                };
+                if let Some(bytes) = body {
+                    if let Ok(cart) = trench_core::cartridge::Cartridge::from_body_bytes("forge", &bytes, 1.0) {
+                        engine.load_cartridge(cart);
+                    }
+                }
+                if !playing {
+                    data.fill(0.0);
+                    return;
+                }
+                let frames = data.len() / channels;
+                let mut done = 0;
+                while done < frames {
+                    let n = (frames - done).min(256);
+                    source.fill(src, sr as f32, &mut left[..n]);
+                    right[..n].copy_from_slice(&left[..n]);
+                    engine.process_block(&mut left[..n], &mut right[..n], morph, q);
+                    for i in 0..n {
+                        let base = (done + i) * channels;
+                        data[base] = left[i];
+                        if channels > 1 {
+                            data[base + 1] = right[i];
+                        }
+                        for ch in 2..channels {
+                            data[base + ch] = 0.0;
+                        }
+                    }
+                    done += n;
+                }
+            },
+            |err| eprintln!("audio stream error: {err}"),
+            None,
+        )
+        .map_err(|e| e.to_string())?;
+    stream.play().map_err(|e| e.to_string())?;
+    Ok(AudioHandle { _stream: stream, ctl })
+}
 
 const F_MIN: f32 = 30.0;
 const F_MAX: f32 = 16_000.0;
@@ -308,6 +443,9 @@ struct App {
     audit_unstable: usize,
     audit_dirty: bool,
     audit_texture: Option<TextureHandle>,
+    audio: Option<AudioHandle>,
+    playing: bool,
+    audio_src: AudioSrc,
     drag: Option<Drag>,
     curve_grip: Option<CurveGrip>,
     hover: Option<Pos2>,
@@ -327,6 +465,32 @@ fn main() -> eframe::Result {
         let mut app = App::default_state();
         app.bake();
         println!("{}", app.status);
+        return Ok(());
+    }
+    if std::env::args().any(|arg| arg == "--audio-test") {
+        // headless proof: open the device stream, render 1 s through the
+        // engine, report. Also run one block offline to check for output.
+        let app = App::default_state();
+        let mut engine = trench_core::engine::FilterEngine::new();
+        engine.prepare(48000.0);
+        let cart = trench_core::cartridge::Cartridge::from_body_bytes("t", &app.body, 1.0)
+            .expect("cartridge from body");
+        engine.load_cartridge(cart);
+        let mut src = SourceState { rng: 0x1234_5678, phase: [0.0; 4] };
+        let mut l = vec![0.0f32; 4096];
+        let mut r = vec![0.0f32; 4096];
+        src.fill(AudioSrc::Noise, 48000.0, &mut l);
+        r.copy_from_slice(&l);
+        engine.process_block(&mut l, &mut r, 0.5, 0.5);
+        let rms = (l.iter().map(|v| v * v).sum::<f32>() / l.len() as f32).sqrt();
+        println!("offline block rms: {rms:.4} ({})", if rms > 1e-5 && rms.is_finite() { "OK" } else { "SILENT/BAD" });
+        match start_audio(app.body, 0.5, 0.5, AudioSrc::Noise) {
+            Ok(_h) => {
+                std::thread::sleep(Duration::from_millis(1200));
+                println!("device stream ran 1.2 s: OK");
+            }
+            Err(e) => println!("device stream FAILED: {e}"),
+        }
         return Ok(());
     }
     let options = eframe::NativeOptions {
@@ -494,6 +658,9 @@ impl App {
             audit_unstable: 0,
             audit_dirty: true,
             audit_texture: None,
+            audio: None,
+            playing: false,
+            audio_src: AudioSrc::Noise,
             drag: None,
             curve_grip: None,
             hover: None,
@@ -561,6 +728,39 @@ impl App {
         self.heat_dirty = true;
         self.audit_dirty = true;
         self.last_edit = Instant::now();
+        if let Some(audio) = &self.audio {
+            if let Ok(mut c) = audio.ctl.lock() {
+                c.pending_body = Some(self.body);
+            }
+        }
+    }
+
+    fn toggle_play(&mut self) {
+        self.playing = !self.playing;
+        if self.playing && self.audio.is_none() {
+            match start_audio(self.body, self.morph as f64, self.q as f64, self.audio_src) {
+                Ok(handle) => {
+                    self.audio = Some(handle);
+                    self.status = "audio: source → AGC + saturation chain (the product chain) → output".into();
+                }
+                Err(e) => {
+                    self.playing = false;
+                    self.status = format!("audio failed: {e}");
+                }
+            }
+        }
+        self.sync_audio();
+    }
+
+    fn sync_audio(&self) {
+        if let Some(audio) = &self.audio {
+            if let Ok(mut c) = audio.ctl.lock() {
+                c.playing = self.playing;
+                c.morph = self.morph as f64;
+                c.q = self.q as f64;
+                c.src = self.audio_src;
+            }
+        }
     }
 
     fn words(&self) -> [[[u16; 5]; STAGES]; CORNERS] {
@@ -1117,6 +1317,9 @@ impl App {
                 self.sweep = !self.sweep;
                 self.sweep_t0 = Instant::now();
             }
+            if i.key_pressed(Key::P) {
+                self.toggle_play();
+            }
             if i.key_pressed(Key::L) {
                 let s = self.selected_stage;
                 self.sections[s].locked = !self.sections[s].locked;
@@ -1218,6 +1421,8 @@ struct Frame {
     value_fields: Vec<Hit<ValueField>>,
     on_rect: Rect,
     lock_rect: Rect,
+    play_rect: Rect,
+    src_chips: Vec<Hit<AudioSrc>>,
     surface_rect: Option<Rect>,
     sweepmap_rect: Option<Rect>,
 }
@@ -1242,6 +1447,8 @@ impl Default for Frame {
             value_fields: Vec::new(),
             on_rect: z,
             lock_rect: z,
+            play_rect: z,
+            src_chips: Vec::new(),
             surface_rect: None,
             sweepmap_rect: None,
         }
@@ -1272,6 +1479,7 @@ impl eframe::App for App {
         if self.heat_dirty || self.audit_dirty {
             ctx.request_repaint_after(Duration::from_millis(90));
         }
+        self.sync_audio(); // morph/Q follow live, including during sweep
 
         egui::CentralPanel::default()
             .frame(egui::Frame::none().fill(BG))
@@ -1399,7 +1607,22 @@ impl App {
         }
         if self.quantize == Quantize::Tet {
             let label = format!("KEY: {} minor", NOTES[self.key_root]);
+            let lw = label.len() as f32 * 6.6 + 16.0;
             p.text(Pos2::new(x + 4.0, cy), Align2::LEFT_CENTER, label, FontId::monospace(10.5), TEXT_DIM);
+            x += lw;
+        }
+        // transport: play/pause + source
+        x += 10.0;
+        let play_r = Rect::from_min_size(Pos2::new(x, cy - 10.0), Vec2::new(64.0, 20.0));
+        chip(p, play_r, if self.playing { "❚❚ PAUSE" } else { "► PLAY" }, self.playing, Color32::from_rgb(127, 225, 180));
+        frame.play_rect = play_r;
+        x += 72.0;
+        for src in [AudioSrc::Noise, AudioSrc::Saw, AudioSrc::Pad] {
+            let w = src.label().len() as f32 * 6.6 + 16.0;
+            let r = Rect::from_min_size(Pos2::new(x, cy - 10.0), Vec2::new(w, 20.0));
+            chip(p, r, src.label(), self.audio_src == src, GHOST_HI);
+            frame.src_chips.push(Hit { rect: r, value: src });
+            x += w + 6.0;
         }
         // right: morph/q numerics
         p.text(
@@ -1921,6 +2144,17 @@ impl App {
                     self.sweep = !self.sweep;
                     self.sweep_t0 = Instant::now();
                     return;
+                }
+                if frame.play_rect.contains(pos) {
+                    self.toggle_play();
+                    return;
+                }
+                for h in &frame.src_chips {
+                    if h.rect.contains(pos) {
+                        self.audio_src = h.value;
+                        self.sync_audio();
+                        return;
+                    }
                 }
                 if frame.bake_rect.contains(pos) {
                     self.bake();
