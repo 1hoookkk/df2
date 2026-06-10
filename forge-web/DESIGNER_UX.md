@@ -174,6 +174,40 @@ seeds · vowel formant pairs (Peterson-Barney F1/F2, Q from Klatt BW) · modal s
 (tube harmonics / inharmonic ratios × f0) · LPC formant fit. All set pole pairs;
 zeros default masked (on the pole) until dragged away — the unmask gesture.
 
+## Corners-first + middle repair (Tyson 2026-06-10 — LOCKED workflow)
+
+The shipped body is literally four corners + packed bilinear interpolation: the
+corners are the artifact; the interior is a consequence you MEASURE, then repair.
+
+```text
+1. Author A/B/C/D corners as the intended body states.   (A=low·Q0 B=high·Q0 C=low·Q1 D=high·Q1)
+2. Probe the packed midpoint M50_Q50 through trench_core.
+3. Compare against the desired interior.
+4. Adjust corners with the orthogonal repair grammar until the midpoint lands.
+5. Re-audit corners, edges, center.
+6. Verify midpoint + the 25/75 off-axis states (4 general-position samples pin the whole surface).
+```
+
+**Orthogonal repair grammar (the 2×2 Walsh basis — each move edits ONE coordinate):**
+```text
+center = common offset            -> push all four corners together (gesture untouched)
+morph  = (B+D) − (A+C)            -> B/D against A/C
+q      = (C+D) − (A+B)            -> C/D against A/B
+twist  = (A+D) − (B+C)            -> A/D against B/C
+```
+Edge identities: morph gesture along the Q0 edge = morph − twist; along Q1 = morph +
+twist — so "morph right at low Q, wrong at high Q" is a TWIST repair. Tuning order:
+corner identities → center → morph → q → twist.
+
+Caveat the workflow absorbs: these identities are exact in WORD space; root→words is
+nonlinear (trig + minifloat), so symmetric root-domain nudges are approximate center
+moves — step 2's engine probe + iteration closes the gap. Measure, then repair.
+
+This supersedes center-out as the primary entry (center-out corners can satisfy the
+midpoint yet be arbitrary at the endpoints). Center authoring below survives as the
+REPAIR BASIS and the m50/q50 inspection view, not the authoring origin. The brief's
+bilinear-weighted editing already implements all four moves as corner-weight patterns.
+
 ## Center authoring (m50/q50 — Tyson 2026-06-10)
 
 The bilinear center is the equal-weight mean of the four corner word sets, so
