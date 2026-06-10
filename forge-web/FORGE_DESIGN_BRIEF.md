@@ -1,4 +1,10 @@
 # FORGE — Design Brief v2
+
+> **SUPERSEDED 2026-06-10:** the authoring surface pivoted to the native Rust GPU
+> painter. The authoritative spec is now `forge-gpu-painter/SPEC.md` (v3), which
+> absorbs this document's Tier-1 invariants and Tier-2 measured defaults. This file
+> remains as design history for the web surfaces.
+
 ### The authoring surface for packed Z-plane bodies. Single source for the visual mockup.
 
 Supersedes brief v1 and the Tier-3 sections of `DESIGNER_UX.md` (layout, color, hierarchy, glyphs). Tier-1 invariants and Tier-2 measured defaults from that spec are absorbed here unchanged and are cited as constraints, not restated as design opinions. Everything below binds to verified code paths: `packed.js` (plot==engine, 0.000000 dB null vs `trench_core`), the 168-param `compile_body` path, the 17×17 packed audit, and `/keep`.

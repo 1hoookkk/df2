@@ -1,5 +1,10 @@
 # Filter Designer — UX spec (v2: the plot IS the editor)
 
+> **SUPERSEDED 2026-06-10:** the authoring surface pivoted to the native Rust GPU
+> painter — see `forge-gpu-painter/SPEC.md` (v3). Tier-1 invariants, Tier-2 measured
+> defaults, and the LOCKED corners-first workflow are absorbed there. This file
+> remains as measurement record and design history.
+
 > **2026-06-10:** the Tier-3 layer of this spec (layout, color, hierarchy, glyphs) is
 > superseded by `forge-web/FORGE_DESIGN_BRIEF.md` (design brief v2, invariants-verified).
 > Tier-1 invariants and Tier-2 measured defaults in this file remain the source of truth
