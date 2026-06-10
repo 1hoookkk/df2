@@ -126,7 +126,8 @@ dramatic move (the leader sweep) = iconic.
 abstraction vocabularies or mythology** (no "actors / mountains / tear / canyon / foundation / knee /
 bloom / rails / mouth" as a naming system) and **don't dumb the DSP down** — he learned the real
 vocabulary; metaphor now obscures rather than helps. Derive before pattern-matching. No
-HOME/AWAY/TIGHT — use Frame A/B, Morph, Secondary/Q, corners C0–C3.
+HOME/AWAY/TIGHT — use the **low / high morph frames** (E-mu's own terms, per the Dillusion
+Peak/Shelf tutorial; supersedes "Frame A/B"), Morph, Secondary/Q, corners C0–C3.
 
 ## Working style
 Momentum, no ceremony. Loop: next move → inspect the actual code/files → smallest reversible change →

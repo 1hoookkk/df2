@@ -62,18 +62,19 @@ button:hover{border-color:var(--hot)} button.go{background:#16321f;color:var(--h
 <main>
 <header>
   <h1>FILTER DESIGNER</h1>
-  <p class=sub>Six cascaded biquads: H(z)=∏Hₖ(z), 12th order. Morph linearly interpolates coefficient frame <b>A</b>→<i>B</i>;
-  the Q axis interpolates each section's Q geometrically Q₀→Q₁. Curve = |H(e^jω)| of the shipped engine (0.0000 dB match).</p>
+  <p class=sub>Six cascaded biquads: H(z)=∏Hₖ(z), 12th order. Morph linearly interpolates the <b>low</b>→<i>high</i> morph frames
+  (E-mu's terms); the Q axis interpolates each section's Q geometrically Q₀→Q₁. Curve = |H(e^jω)| of the shipped engine
+  (0.000000 dB, verified by tools/plot_engine_null.py).</p>
 </header>
 
 <section class=panel>
   <div class=cap><span>MAGNITUDE RESPONSE — dB vs log f</span>
-    <span class=legend><span><i class=swA></i>Frame A</span><span><i class=swB></i>Frame B</span><span><i class=swL></i>now</span></span></div>
+    <span class=legend><span><i class=swA></i>low morph frame</span><span><i class=swB></i>high morph frame</span><span><i class=swL></i>now</span></span></div>
   <div class=curveflex>
     <div id=plotwrap><canvas id=plot></canvas></div>
     <div class=curvectl>
       <div class=morphrow>
-        <label>MORPH</label><input id=morph type=range min=0 max=1 step=0.001 value=0><span class=val id=morphv>A</span>
+        <label>MORPH</label><input id=morph type=range min=0 max=1 step=0.001 value=0><span class=val id=morphv>low</span>
       </div>
       <div class=morphrow>
         <label>Q</label><input id=q type=range min=0 max=1 step=0.001 value=0><span class=val id=qv>0</span>
@@ -107,7 +108,7 @@ button:hover{border-color:var(--hot)} button.go{background:#16321f;color:var(--h
       <select id=scale title="scale" style="display:none"><option value=minor selected>minor</option><option value=major>major</option></select>
     </span></div>
   <table id=secs><thead><tr>
-    <th>on</th><th>section type</th><th title="this section's own |Hₖ(f)| at the current Morph/Q — the cascade is the sum of these in dB">|Hₖ|</th><th class=fa title="center/corner frequency in coefficient frame A">f_c A (Hz)</th><th class=fb title="center/corner frequency in coefficient frame B">f_c B (Hz)</th>
+    <th>on</th><th>section type</th><th title="this section's own |Hₖ(f)| at the current Morph/Q — the cascade is the sum of these in dB">|Hₖ|</th><th class=fa title="center/corner frequency in the LOW morph frame (E-mu's term — the morph knob turned down)">f_c low (Hz)</th><th class=fb title="center/corner frequency in the HIGH morph frame (the morph knob turned up)">f_c high (Hz)</th>
     <th title="peaking/shelf gain; notch: cut depth (negative dB)">gain (dB)</th><th title="section Q at Q-axis = 0. Q = f_c / BW(−3 dB)">Q₀</th><th title="section Q at Q-axis = 1; the Q axis interpolates Q₀→Q₁ geometrically">Q₁</th>
   </tr></thead><tbody></tbody></table>
   <div class=row id=startrow>
@@ -116,20 +117,20 @@ button:hover{border-color:var(--hot)} button.go{background:#16321f;color:var(--h
     <select id=seed style="max-width:160px"><option value="">seed…</option></select>
     <span class=grp id=mouthgrp style="display:none" title="sections 2+3 → peaking EQs at the vowel's formant frequencies F1/F2 (Peterson-Barney 1952), Q = F/BW from measured bandwidths">
       <span class=lbl>vowel</span>
-      <select id=vowelA><option value="">A…</option></select><span class=lbl>→</span>
-      <select id=vowelB><option value="">B…</option></select>
+      <select id=vowelA><option value="">low…</option></select><span class=lbl>→</span>
+      <select id=vowelB><option value="">high…</option></select>
     </span>
     <span class=grp id=modalgrp style="display:none" title="sections 2–5 → first 4 modal frequencies: tube fₙ=n·c/2L or (2n−1)·c/4L; bar/plate/bell = inharmonic ratios × f0. Q = f/BW of the material">
       <span class=lbl>modal</span>
-      <select id=resA style="max-width:150px"><option value="">A…</option></select><span class=lbl>→</span>
-      <select id=resB style="max-width:150px"><option value="">B…</option></select>
+      <select id=resA style="max-width:150px"><option value="">low…</option></select><span class=lbl>→</span>
+      <select id=resB style="max-width:150px"><option value="">high…</option></select>
       <span class=lbl>f0</span><input id=resF0 type=number min=30 max=2000 step=1 value=220 title="fundamental for inharmonic ratios — drag; quantizes to the key in 12-TET mode">
     </span>
     <span class=grp title="LPC analysis (order 12, LSF-stabilized); 4 strongest pole pairs in 80–8250 Hz → peaking sections 2–5, Q = −π·f/(fs·ln r)">
       <span class=lbl>LPC fit</span>
       <input type=file id=fitfile accept=audio/* style="max-width:170px">
-      <button id=fitA title="fitted pole pairs → frame A f_c">→A</button>
-      <button id=fitB title="fitted pole pairs → frame B f_c">→B</button>
+      <button id=fitA title="fitted pole pairs → low-frame f_c">→low</button>
+      <button id=fitB title="fitted pole pairs → high-frame f_c">→high</button>
     </span>
   </div>
 </section>
@@ -471,7 +472,7 @@ document.getElementById("fitB").onclick=()=>fitInto("B");
 
 // morph / q
 const mS=document.getElementById("morph"),qS=document.getElementById("q");
-const setMorph=x=>{st.morph=x;mS.value=x;document.getElementById("morphv").textContent=x<0.02?"A":x>0.98?"B":x.toFixed(2);draw();pushParams();};
+const setMorph=x=>{st.morph=x;mS.value=x;document.getElementById("morphv").textContent=x<0.02?"low":x>0.98?"high":x.toFixed(2);draw();pushParams();};
 mS.oninput=()=>{stopSweep();setMorph(+mS.value);};
 
 // auto-sweep — hands-free A↔B while you shape (the gesture is what you're judging)

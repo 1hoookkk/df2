@@ -86,9 +86,24 @@ curves. Recompute lazily (rAF idle), 17×17 on demand for the KEEP audit (same g
 - Click selects → inspector shows numbers; double-click a number to type.
 - Quantize modes apply to handle drags: measured-resonance table / 12-TET in key / off.
 
+**Naming (heritage, 2026-06-10):** the two coefficient frames are the **low morph frame**
+and **high morph frame** — E-mu's own terms (Dillusion Peak/Shelf Morph tutorial). The
+morph knob is the filter's cutoff-like control sweeping low→high. Supersedes "Frame A/B".
+
 **Section model (general SOS — first-class zeros, foundation of v2):**
 Every section = pole pair + zero pair, independently placed:
 `H_k(z) = g·(1 − 2 r_z cosω_z z⁻¹ + r_z² z⁻²) / (1 − 2 r_p cosω_p z⁻¹ + r_p² z⁻²)`
+- **Per-frame gain (g_low ≠ g_high) is REQUIRED**, not optional: the documented
+  Peak/Shelf reece patch rides −24 dB (low frame) → +1.5 dB (high frame) — a 25.5 dB
+  level gesture inside the sweep. The 168-param path already carries gain per corner;
+  the v2 inspector exposes it per frame. (The v1 typed card's single shared gain is a
+  known limitation.)
+- **Section vocabulary is sufficient (OBSERVED):** stage-level comparison of iconic
+  presets vs the simple templates (dev/tmp/p2k_template_foundation_stages) shows ZERO
+  exact packed-row reuse but 6–11 response-equivalent stages (<1 dB RMS) per iconic
+  body — same standard second-order shapes, freshly compiled per preset. Iconic-ness
+  lives in placement, pairing, per-frame gain, and pole-through-zero interactions,
+  not in exotic section types.
 - Maps to the EXISTING `compile_body` 168-param path: per corner per section
   `[on, pole_hz, pole_r, gain, zero_on, zero_hz, zero_depth]`.
 - **`zero_depth` is the zero-pair RADIUS r_z, a 0..MAX_RADIUS scalar — NOT dB**
