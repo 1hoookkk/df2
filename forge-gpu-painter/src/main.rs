@@ -2272,6 +2272,33 @@ fn biquad_use(section: &Section, corner: usize) -> BiquadUse {
 impl App {
     fn new(cc: &eframe::CreationContext<'_>) -> Self {
         cc.egui_ctx.set_pixels_per_point(1.0);
+        // typography: DIN-style geometric sans (Bahnschrift, system font)
+        // across the surface, Consolas fallback — modern workstation type,
+        // not terminal mono. Read from disk, never bundled.
+        {
+            let mut fonts = egui::FontDefinitions::default();
+            let mut stack: Vec<String> = Vec::new();
+            for (name, path) in [
+                ("bahnschrift", "C:/Windows/Fonts/bahnschrift.ttf"),
+                ("consolas", "C:/Windows/Fonts/consola.ttf"),
+            ] {
+                if let Ok(bytes) = fs::read(path) {
+                    fonts
+                        .font_data
+                        .insert(name.to_string(), egui::FontData::from_owned(bytes));
+                    stack.push(name.to_string());
+                }
+            }
+            if !stack.is_empty() {
+                for family in [egui::FontFamily::Monospace, egui::FontFamily::Proportional] {
+                    let list = fonts.families.entry(family).or_default();
+                    for (i, name) in stack.iter().enumerate() {
+                        list.insert(i, name.clone());
+                    }
+                }
+                cc.egui_ctx.set_fonts(fonts);
+            }
+        }
         let mut app = Self::default_state();
         // --no-gpu-plot: jank-probe experiment — egui-painted plot, same app
         if !std::env::args().any(|a| a == "--no-gpu-plot") {
@@ -4638,14 +4665,18 @@ impl App {
             Pos2::new(band.right() - pad - master_w, band.center().y - row_h * 0.5),
             Vec2::new(master_w, row_h),
         );
-        front_slider(
-            p,
-            master_r,
-            "MASTER",
-            &format!("{:+.1} dB", self.patch.master_peak_db),
-            master_t,
-            TEXT,
-        );
+        if self.patch_linked {
+            front_slider(
+                p,
+                master_r,
+                "MASTER",
+                &format!("{:+.1} dB", self.patch.master_peak_db),
+                master_t,
+                TEXT,
+            );
+        } else {
+            front_slider_idle(p, master_r, "MASTER", with_alpha(TEXT_DIM, 120));
+        }
         frame.front_sliders.push(Hit {
             rect: master_r,
             value: FrontSlider::Master,
@@ -4702,7 +4733,13 @@ impl App {
             ];
             for (j, (label, value, t)) in cells.into_iter().enumerate() {
                 let r = Rect::from_min_size(Pos2::new(x, y), Vec2::new(w, row_h));
-                front_slider(p, r, label, &value, t.clamp(0.0, 1.0), color);
+                if self.patch_linked {
+                    front_slider(p, r, label, &value, t.clamp(0.0, 1.0), color);
+                } else {
+                    // these controls are NOT driving the body — never show
+                    // numbers the plot doesn't back. Dim track, no value.
+                    front_slider_idle(p, r, label, with_alpha(color, 90));
+                }
                 frame.front_sliders.push(Hit {
                     rect: r,
                     value: sliders[j],
@@ -4715,14 +4752,14 @@ impl App {
         let note = if self.patch_linked {
             "frame controls drive the body"
         } else {
-            "detached — touch a frame control to take over"
+            "frame controls are NOT driving the body — touch one to take over"
         };
         p.text(
             Pos2::new(band.right() - pad, band.top() + 3.0),
             Align2::RIGHT_TOP,
             note,
             FontId::monospace(8.5),
-            TEXT_DIM,
+            if self.patch_linked { TEXT_DIM } else { EMBER },
         );
     }
 
@@ -5155,21 +5192,16 @@ impl App {
                 if is_hover {
                     hovered = Some((li, ri));
                 }
-                p.rect_filled(tile, 2.0, Color32::from_rgb(11, 16, 14));
-                p.rect_stroke(
-                    tile,
-                    2.0,
-                    Stroke::new(
-                        1.0,
-                        if selected {
-                            TRUTH
-                        } else if is_hover {
-                            color
-                        } else {
-                            with_alpha(color, 110)
-                        },
-                    ),
-                );
+                // minimal: the curve IS the tile — chrome only when the hand
+                // is on it or it's chosen
+                p.rect_filled(tile, 2.0, Color32::from_rgba_unmultiplied(13, 19, 16, 200));
+                if selected || is_hover {
+                    p.rect_stroke(
+                        tile.expand(1.0),
+                        2.0,
+                        Stroke::new(1.0, if selected { TRUTH } else { color }),
+                    );
+                }
                 let row = &manifest.lanes[li].rows[ri];
                 if let Some(values) = self.picker_tile_values(row) {
                     let n = values.len().max(2);
@@ -7589,6 +7621,27 @@ fn front_slider(p: &egui::Painter, rect: Rect, label: &str, value: &str, t: f32,
         value,
         FontId::monospace(9.5),
         color,
+    );
+}
+
+/// a frame control that is NOT driving the body: dim track, no thumb, no
+/// value — the surface never shows numbers the packed plot doesn't back
+fn front_slider_idle(p: &egui::Painter, rect: Rect, label: &str, color: Color32) {
+    let cy = rect.center().y;
+    let label_w = label.len() as f32 * 6.2 + 10.0;
+    p.text(
+        Pos2::new(rect.left(), cy),
+        Align2::LEFT_CENTER,
+        label,
+        FontId::monospace(9.5),
+        with_alpha(TEXT_DIM, 140),
+    );
+    p.line_segment(
+        [
+            Pos2::new(rect.left() + label_w, cy),
+            Pos2::new(rect.right() - 8.0, cy),
+        ],
+        Stroke::new(1.0, with_alpha(color, 70)),
     );
 }
 
