@@ -1685,6 +1685,42 @@ fn main() -> eframe::Result {
         println!("inventory-test: OK");
         return Ok(());
     }
+    if std::env::args().any(|arg| arg == "--author-once") {
+        // end-to-end authoring proof through the surface's own actions:
+        // Peak/Shelf patch → compile → pack → bake → audition slot → KEEP
+        let mut app = App::default_state();
+        app.body_name = "first sweep 180 to 2k6".into();
+        app.patch = model::peak_shelf::PeakShelfPatch {
+            name: app.body_name.clone(),
+            low: model::peak_shelf::FrameControls {
+                freq_hz: 180.0,
+                shelf: -40.0,
+                peak_db: 6.0,
+            },
+            high: model::peak_shelf::FrameControls {
+                freq_hz: 2600.0,
+                shelf: 20.0,
+                peak_db: 9.0,
+            },
+            morph: 0.0,
+            pressure: 1.0,
+            master_peak_db: 0.0,
+        };
+        app.apply_patch();
+        app.bake();
+        println!("author-once bake: {}", app.status);
+        app.publish_audition_slot();
+        println!("author-once audition: {}", app.status);
+        app.keep_to_staging();
+        println!("author-once keep: {}", app.status);
+        let (_, maxr, unstable, _) = compute_audit(&app.words());
+        println!("author-once audit: max pole r {maxr:.6} · unstable cells {unstable}");
+        println!(
+            "author-once patch linked: {} (source.json carries the frame controls)",
+            app.patch_linked
+        );
+        return Ok(());
+    }
     if std::env::args().any(|arg| arg == "--bake-once") {
         let mut app = App::default_state();
         app.bake();
@@ -2269,6 +2305,30 @@ impl App {
         }
         if std::env::args().any(|a| a == "--boot-start") {
             app.picker_open = true;
+        }
+        if std::env::args().any(|a| a == "--boot-author") {
+            app.body_name = "first sweep 180 to 2k6".into();
+            app.patch = model::peak_shelf::PeakShelfPatch {
+                name: app.body_name.clone(),
+                low: model::peak_shelf::FrameControls {
+                    freq_hz: 180.0,
+                    shelf: -40.0,
+                    peak_db: 6.0,
+                },
+                high: model::peak_shelf::FrameControls {
+                    freq_hz: 2600.0,
+                    shelf: 20.0,
+                    peak_db: 9.0,
+                },
+                morph: 0.0,
+                pressure: 1.0,
+                master_peak_db: 0.0,
+            };
+            app.apply_patch();
+            app.show_ghosts = true;
+            app.morph = 0.45;
+            app.q = 0.5;
+            app.recompute_response();
         }
         app
     }
