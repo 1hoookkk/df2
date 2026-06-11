@@ -1182,6 +1182,18 @@ enum ValueField {
     GainDb,
 }
 
+/// source-picker actions: a source is material (overlay/snap/load), never a
+/// preset card
+#[derive(Clone, Copy, PartialEq, Eq)]
+enum PickerAct {
+    Overlay,
+    Snap,
+    Load,
+    Template,
+    Scratch,
+    Restore,
+}
+
 /// front-surface frame controls (Peak/Shelf Morph): horizontal sliders, value
 /// set from the pointer's position inside the slider rect
 #[derive(Clone, Copy, PartialEq, Eq)]
@@ -1424,8 +1436,6 @@ struct SkeletonSection {
 #[derive(Clone, Copy, PartialEq, Eq)]
 enum MenuAction {
     SeedPeakShelf,
-    /// a START manifest row: (lane index, row index)
-    StartRow(usize, usize),
     SeedDefault,
     SeedLowpass,
     SeedHighpass,
@@ -1449,34 +1459,6 @@ enum MenuAction {
     ToggleBark,
 }
 
-#[derive(Clone, PartialEq)]
-#[allow(dead_code)] // shape previews remain for non-manifest rows
-enum StartPreview {
-    None,
-    Flat,
-    Lowpass,
-    Highpass,
-    Bandpass,
-    Notch,
-    Peak,
-    Peaks,
-    Vowel,
-    Modal,
-    Body(String),
-    Curves(String),
-    Exact(usize),
-}
-
-struct StartEntry {
-    label: String,
-    note: String,
-    action: Option<MenuAction>,
-    preview: StartPreview,
-    /// provenance badge: COMPILE EXACT · IMPORT EXACT · OVERLAY · APPROX
-    badge: Option<&'static str>,
-    /// quarantine rows: visible with their reason, never actionable
-    quarantined: bool,
-}
 
 const VOWEL_PAIRS: [(&str, &str, &str); 4] = [
     ("aa", "iy", "vowel  ah > ee"),
@@ -1578,6 +1560,9 @@ struct App {
     centroids: HashMap<String, f32>,
     /// active reference overlay (curves path) drawn on the hero plot
     overlay_ref: Option<String>,
+    /// the source picker panel (frequency-scale layout, color by kind)
+    picker_open: bool,
+    picker_sel: Option<(usize, usize)>,
     /// a packed body seeded verbatim for listening/plotting — sections do not
     /// describe it; any edit recompiles from sections and drops the preview
     packed_preview: Option<String>,
@@ -2283,7 +2268,7 @@ impl App {
             app.rebuild_body();
         }
         if std::env::args().any(|a| a == "--boot-start") {
-            app.open_menu = Some(Menu::Seed);
+            app.picker_open = true;
         }
         app
     }
@@ -2364,6 +2349,8 @@ impl App {
             overlay_curves: HashMap::new(),
             centroids: HashMap::new(),
             overlay_ref: None,
+            picker_open: false,
+            picker_sel: None,
             packed_preview: None,
             status: "ready — six biquads pack to one 240-byte body".into(),
             last_edit: Instant::now(),
@@ -3067,6 +3054,167 @@ impl App {
         }
     }
 
+    fn run_picker_act(&mut self, act: PickerAct) {
+        match act {
+            PickerAct::Template => {
+                self.run_action(MenuAction::SeedPeakShelf);
+                self.picker_open = false;
+            }
+            PickerAct::Scratch => {
+                self.seed_scratch();
+                self.picker_open = false;
+            }
+            PickerAct::Restore => {
+                self.restore_autosave();
+                self.picker_open = false;
+            }
+            PickerAct::Overlay => {
+                if let Some((li, ri)) = self.picker_sel {
+                    self.toggle_source_overlay(li, ri);
+                }
+            }
+            PickerAct::Snap => {
+                if let Some((li, ri)) = self.picker_sel {
+                    self.snap_selected_to_source(li, ri);
+                }
+            }
+            PickerAct::Load => {
+                if let Some((li, ri)) = self.picker_sel {
+                    self.start_manifest_row(li, ri);
+                    self.picker_open = false;
+                }
+            }
+        }
+    }
+
+    /// Packed bytes (or a skeleton key) → a body to use as snap/overlay
+    /// material; None when the row only carries reference curves.
+    fn picker_row_body(&self, row: &sources::manifest::Row) -> Option<[u8; 240]> {
+        if let Some(body) = row.body.as_ref().and_then(|p| self.source_bodies.get(p)) {
+            return Some(*body);
+        }
+        if row.kind == "exact_skeleton" {
+            let idx = self
+                .tables
+                .skeletons
+                .iter()
+                .position(|sk| Some(&sk.key) == row.exact_key.as_ref())?;
+            return self.skeleton_preview_body(idx);
+        }
+        None
+    }
+
+    /// OVERLAY: draw the source's exact corner curves on the hero plot.
+    /// Reference rows ship measured curves; packed rows synthesize their
+    /// four corner responses through the engine word-lerp on demand.
+    fn toggle_source_overlay(&mut self, lane: usize, row: usize) {
+        let Some(manifest) = &self.start_manifest else {
+            return;
+        };
+        let Some(r) = manifest.lanes.get(lane).and_then(|l| l.rows.get(row)).cloned() else {
+            return;
+        };
+        let key = if let Some(curves) = &r.curves {
+            curves.clone()
+        } else if let Some(body) = self.picker_row_body(&r) {
+            let key = format!("body:{}", r.body.as_deref().unwrap_or(&r.label));
+            if !self.overlay_curves.contains_key(&key) {
+                let freqs: Vec<f32> = (0..AUDIT_BINS)
+                    .map(|i| {
+                        let t = i as f32 / (AUDIT_BINS - 1) as f32;
+                        F_MIN * (F_MAX / F_MIN).powf(t)
+                    })
+                    .collect();
+                let trig: Vec<(f64, f64)> = freqs.iter().map(|&f| trig_of(f)).collect();
+                let words = words_of(&body);
+                let curves = [
+                    ("M0_Q0", (0.0, 0.0)),
+                    ("M100_Q0", (1.0, 0.0)),
+                    ("M0_Q100", (0.0, 1.0)),
+                    ("M100_Q100", (1.0, 1.0)),
+                ]
+                .into_iter()
+                .map(|(label, (m, q))| {
+                    let live = live_biquads(&words, m, q);
+                    sources::manifest::OverlayCurve {
+                        label: label.into(),
+                        db: trig.iter().map(|&(c1, c2)| cascade_db_c(&live, c1, c2)).collect(),
+                    }
+                })
+                .collect();
+                self.overlay_curves.insert(
+                    key.clone(),
+                    sources::manifest::OverlayCurves {
+                        label: r.label.clone(),
+                        note: "packed corner responses (engine word-lerp)".into(),
+                        freqs,
+                        curves,
+                    },
+                );
+            }
+            key
+        } else {
+            self.status = format!("{}: nothing to overlay", r.label);
+            return;
+        };
+        if self.overlay_ref.as_ref() == Some(&key) {
+            self.overlay_ref = None;
+            self.status = format!("overlay off: {}", r.label);
+        } else {
+            self.overlay_ref = Some(key);
+            self.status = format!("overlay: {} — corner curves in corner colors", r.label);
+        }
+    }
+
+    /// SNAP: move the selected section's pole to the source's nearest pole
+    /// (log-frequency distance). Real resonances only — never invented.
+    fn snap_selected_to_source(&mut self, lane: usize, row: usize) {
+        let Some(manifest) = &self.start_manifest else {
+            return;
+        };
+        let Some(r) = manifest.lanes.get(lane).and_then(|l| l.rows.get(row)).cloned() else {
+            return;
+        };
+        let Some(body) = self.picker_row_body(&r) else {
+            self.status = format!("{}: reference curves only — nothing to snap to", r.label);
+            return;
+        };
+        let poles = source_poles(&body);
+        if poles.is_empty() {
+            self.status = format!("{}: no resonant poles at M0 Q0", r.label);
+            return;
+        }
+        let s = self.selected_stage;
+        if self.sections[s].locked {
+            self.status = format!("S{} is locked — unlock to snap (L)", s + 1);
+            return;
+        }
+        let ci = self.selected_corner;
+        let cur = self.sections[s].corners[ci.idx()].pole_hz.max(F_MIN);
+        let (hz, pr) = poles
+            .iter()
+            .copied()
+            .min_by(|a, b| {
+                let da = (a.0 / cur).ln().abs();
+                let db_ = (b.0 / cur).ln().abs();
+                da.partial_cmp(&db_).unwrap_or(std::cmp::Ordering::Equal)
+            })
+            .unwrap();
+        self.ensure_q_free(ci);
+        self.push_undo();
+        let c = &mut self.sections[s].corners[ci.idx()];
+        c.pole_hz = hz.clamp(F_MIN, F_MAX);
+        c.pole_r = pr.clamp(RP_MIN, RP_MAX);
+        self.rebuild_body();
+        self.status = format!(
+            "snap: S{} pole → {} · r {:.4} (nearest pole of {})",
+            s + 1,
+            fmt_hz(hz),
+            pr,
+            r.label
+        );
+    }
+
     /// A packed body loaded verbatim: the plot, MORPH/PRESSURE and audio run
     /// from the real bytes; the six editable sections do NOT describe it.
     /// Any edit recompiles from sections and drops the preview — and BAKE /
@@ -3705,7 +3853,6 @@ impl App {
                     "Peak/Shelf Morph — set the LOW and HIGH frames, sweep MORPH, raise PRESSURE"
                         .into();
             }
-            MenuAction::StartRow(lane, row) => self.start_manifest_row(lane, row),
             MenuAction::SeedDefault => self.seed_default(),
             MenuAction::SeedLowpass => self.seed_lowpass(),
             MenuAction::SeedHighpass => self.seed_highpass(),
@@ -3820,7 +3967,11 @@ impl App {
                     }
                 }
             }
-            if i.key_pressed(Key::Escape) && self.open_menu.is_none() && !self.pins.is_empty() {
+            if i.key_pressed(Key::Escape) && self.picker_open {
+                self.picker_open = false;
+                self.picker_sel = None;
+            } else if i.key_pressed(Key::Escape) && self.open_menu.is_none() && !self.pins.is_empty()
+            {
                 self.pins.clear();
                 self.selected_pin = None;
                 self.status = "all targets cleared".into();
@@ -3964,6 +4115,10 @@ struct Frame {
     keep_rect: Rect,
     src_chips: Vec<Hit<AudioSrc>>,
     front_sliders: Vec<Hit<FrontSlider>>,
+    start_rect: Rect,
+    picker_rect: Option<Rect>,
+    picker_tiles: Vec<Hit<(usize, usize)>>,
+    picker_acts: Vec<Hit<PickerAct>>,
     surface_rect: Option<Rect>,
     sweepmap_rect: Option<Rect>,
     pin_handles: Vec<(Pos2, usize)>,
@@ -3996,6 +4151,10 @@ impl Default for Frame {
             keep_rect: z,
             src_chips: Vec::new(),
             front_sliders: Vec::new(),
+            start_rect: z,
+            picker_rect: None,
+            picker_tiles: Vec::new(),
+            picker_acts: Vec::new(),
             surface_rect: None,
             sweepmap_rect: None,
             pin_handles: Vec::new(),
@@ -4170,6 +4329,9 @@ impl eframe::App for App {
                 } else {
                     self.draw_front(&p, lay.front, &mut frame);
                 }
+                if self.picker_open {
+                    self.draw_picker(&p, lay.plot, &mut frame);
+                }
                 self.draw_hint(&p, lay.plot);
                 self.draw_help(&p, lay.plot);
                 // menu popup last (over everything)
@@ -4295,15 +4457,20 @@ impl App {
             Quantize::Tet => "12-TET",
             Quantize::Off => "off",
         };
+        // SOURCES toggles the picker panel — material on the frequency scale
+        let start_r = Rect::from_min_size(Pos2::new(x, cy - 10.0), Vec2::new(76.0, 20.0));
+        chip(p, start_r, "SOURCES", self.picker_open, ICE);
+        frame.start_rect = start_r;
+        x += 84.0;
         let menus: Vec<(Menu, String)> = if self.show_rail {
             vec![
-                (Menu::Seed, "START ▾".into()),
+                (Menu::Seed, "SEED ▾".into()),
                 (Menu::Corners, "CORNERS ▾".into()),
                 (Menu::Quantize, format!("SNAP: {quant_short} ▾")),
                 (Menu::Scope, format!("EDIT: {} ▾", self.scope.label())),
             ]
         } else {
-            vec![(Menu::Seed, "START ▾".into())]
+            vec![]
         };
         for (menu, label) in menus {
             let w = label.chars().count() as f32 * 6.6 + 18.0;
@@ -4534,147 +4701,72 @@ impl App {
 
     // ── menu popup ────────────────────────────────────────────────────────────
 
-    fn start_header(label: &str) -> StartEntry {
-        StartEntry {
-            label: label.to_string(),
-            note: String::new(),
-            action: None,
-            preview: StartPreview::None,
-            badge: None,
-            quarantined: false,
-        }
-    }
-
-    fn start_row(
-        label: impl Into<String>,
-        note: impl Into<String>,
-        action: Option<MenuAction>,
-        preview: StartPreview,
-    ) -> StartEntry {
-        StartEntry {
-            label: label.into(),
-            note: note.into(),
-            action,
-            preview,
-            badge: None,
-            quarantined: false,
-        }
-    }
-
-    /// The four provenance lanes from the START manifest (built by
-    /// tools/build_forge_start_manifest.py). Every row carries one badge:
-    /// COMPILE EXACT · IMPORT EXACT · OVERLAY · APPROX. Quarantined rows
-    /// stay visible with their reason — never silently hidden.
-    fn start_menu_columns(&self) -> Vec<Vec<StartEntry>> {
-        let Some(manifest) = &self.start_manifest else {
-            return vec![vec![
-                Self::start_header("no start manifest"),
-                Self::start_row(
-                    "Two-frame Peak/Shelf",
-                    "FREQ · SHELF · PEAK per frame",
-                    Some(MenuAction::SeedPeakShelf),
-                    StartPreview::Peak,
-                ),
-                Self::start_row(
-                    "Scratch",
-                    "flat six-biquad body",
-                    Some(MenuAction::SeedScratch),
-                    StartPreview::Flat,
-                ),
-                Self::start_row(
-                    "run tools/build_forge_start_manifest.py",
-                    "builds the four provenance lanes",
-                    None,
-                    StartPreview::Flat,
-                ),
-            ]];
-        };
-        let mut columns: Vec<Vec<StartEntry>> = Vec::new();
-        for (li, lane) in manifest.lanes.iter().enumerate() {
-            let badge: &'static str = match lane.badge.as_str() {
-                "COMPILE EXACT" => "COMPILE EXACT",
-                "IMPORT EXACT" => "IMPORT EXACT",
-                "OVERLAY" => "OVERLAY",
-                _ => "APPROX",
-            };
-            let compact_lane = lane.id == "approx_starters";
-            let mut col = vec![Self::start_header(&lane.title)];
-            let mut sorted: Vec<(f32, StartEntry)> = Vec::new();
-            for (ri, row) in lane.rows.iter().enumerate() {
-                let preview = if compact_lane {
-                    StartPreview::Flat // compact rows draw no mini plot
+    /// kind classification for the picker: row index, color, plain label.
+    /// "color coded by what it is" — law / physical / vocal / analog /
+    /// designer import / exact reference / approx fit.
+    fn picker_kind(lane_id: &str, row: &sources::manifest::Row) -> (usize, Color32, &'static str) {
+        use painter::theme::{CORNER, GOOD, POLE_MARK};
+        let body = row.body.as_deref().unwrap_or("");
+        match lane_id {
+            "exact_builders" => {
+                if row.kind == "law" || row.kind == "peak_shelf" {
+                    (0, ICE, "law")
+                } else if row.kind == "exact_skeleton" {
+                    (3, TRUTH, "analog")
+                } else if body.contains("klatt") {
+                    (2, GOOD, "vocal")
                 } else {
-                    match row.kind.as_str() {
-                        "peak_shelf" => StartPreview::Peak,
-                        "exact_skeleton" => self
-                            .tables
-                            .skeletons
-                            .iter()
-                            .position(|sk| Some(&sk.key) == row.exact_key.as_ref())
-                            .map(StartPreview::Exact)
-                            .unwrap_or(StartPreview::Flat),
-                        "overlay" => row
-                            .curves
-                            .clone()
-                            .map(StartPreview::Curves)
-                            .unwrap_or(StartPreview::Flat),
-                        _ => row
-                            .body
-                            .clone()
-                            .map(StartPreview::Body)
-                            .unwrap_or(StartPreview::Flat),
-                    }
-                };
-                let mut entry = Self::start_row(
-                    row.label.clone(),
-                    row.note.clone(),
-                    Some(MenuAction::StartRow(li, ri)),
-                    preview,
-                );
-                entry.badge = Some(badge);
-                // sort key: spectral centroid (low → high); sourceless rows
-                // (templates) lead their lane
-                let key = row
-                    .body
-                    .as_ref()
-                    .or(row.curves.as_ref())
-                    .and_then(|p| self.centroids.get(p))
-                    .copied()
-                    .unwrap_or(-1.0);
-                sorted.push((key, entry));
-            }
-            sorted.sort_by(|a, b| a.0.partial_cmp(&b.0).unwrap_or(std::cmp::Ordering::Equal));
-            col.extend(sorted.into_iter().map(|(_, e)| e));
-            // quarantine is listed under the imports lane — visible, reasoned
-            if lane.id == "exact_imports" {
-                col.push(Self::start_header("quarantine"));
-                for q in &manifest.quarantine {
-                    let mut e = Self::start_row(
-                        q.label.clone(),
-                        q.reason.clone(),
-                        None,
-                        StartPreview::Flat,
-                    );
-                    e.quarantined = true;
-                    col.push(e);
+                    (1, CORNER[2], "physical")
                 }
-                col.push(Self::start_header("blank"));
-                col.push(Self::start_row(
-                    "Scratch",
-                    "flat six-biquad body",
-                    Some(MenuAction::SeedScratch),
-                    StartPreview::Flat,
-                ));
-                col.push(Self::start_row(
-                    "Restore autosave",
-                    "last editable source",
-                    Some(MenuAction::RestoreAutosave),
-                    StartPreview::None,
-                ));
             }
-            columns.push(col);
+            "exact_imports" => (4, POLE_MARK, "designer import"),
+            "reference_overlays" => (5, EMBER, "exact reference"),
+            _ => (6, TEXT_DIM, "approx fit"),
         }
-        columns
+    }
+
+    /// tile response for a manifest row (96-bin dB, M0 Q0 truth)
+    fn picker_tile_values(&self, row: &sources::manifest::Row) -> Option<Vec<f32>> {
+        if let Some(path) = &row.curves {
+            return self
+                .overlay_curves
+                .get(path)
+                .and_then(|ov| ov.curves.first())
+                .map(|c| c.db.clone());
+        }
+        if let Some(path) = &row.body {
+            return self.source_bodies.get(path).map(|b| {
+                let live = live_biquads(&words_of(b), 0.0, 0.0);
+                let trig = grid_trig(AUDIT_BINS);
+                (0..AUDIT_BINS)
+                    .map(|i| cascade_db_c(&live, trig[i].0, trig[i].1))
+                    .collect()
+            });
+        }
+        if row.kind == "exact_skeleton" {
+            let idx = self
+                .tables
+                .skeletons
+                .iter()
+                .position(|sk| Some(&sk.key) == row.exact_key.as_ref())?;
+            let body = self.skeleton_preview_body(idx)?;
+            let live = live_biquads(&words_of(&body), 0.0, 0.0);
+            let trig = grid_trig(AUDIT_BINS);
+            return Some(
+                (0..AUDIT_BINS)
+                    .map(|i| cascade_db_c(&live, trig[i].0, trig[i].1))
+                    .collect(),
+            );
+        }
+        None
+    }
+
+    fn picker_row_centroid(&self, row: &sources::manifest::Row) -> Option<f32> {
+        row.body
+            .as_ref()
+            .or(row.curves.as_ref())
+            .and_then(|p| self.centroids.get(p))
+            .copied()
     }
 
     fn menu_entries(&self, menu: Menu) -> Vec<(String, Option<MenuAction>)> {
@@ -4877,231 +4969,242 @@ impl App {
         Some(trench_core::compiler::pack_body(&params))
     }
 
-    fn body_preview_response(&self, body: &[u8; 240]) -> Vec<f32> {
-        let words = words_of(body);
-        let live = live_biquads(&words, self.morph, self.q);
-        let trig = grid_trig(AUDIT_BINS);
-        (0..AUDIT_BINS)
-            .map(|i| cascade_db_c(&live, trig[i].0, trig[i].1))
-            .collect()
-    }
 
-    fn start_preview_values(&self, preview: &StartPreview) -> Option<Vec<f32>> {
-        match preview {
-            StartPreview::None => None,
-            StartPreview::Body(path) => self
-                .source_bodies
-                .get(path)
-                .map(|body| self.body_preview_response(body)),
-            StartPreview::Curves(path) => self
-                .overlay_curves
-                .get(path)
-                .and_then(|ov| ov.curves.first())
-                .map(|c| c.db.clone()),
-            StartPreview::Exact(which) => self
-                .skeleton_preview_body(*which)
-                .map(|body| self.body_preview_response(&body)),
-            shape => Some(shape_preview_values(shape, AUDIT_BINS)),
-        }
-    }
-
-    /// START is a quiet index, not a card wall: two monospace text columns
-    /// grouped by provenance lane, every lane sorted low → high (spectral
-    /// centroid), ONE preview curve at a time (the hovered row).
-    fn draw_start_menu(&self, p: &egui::Painter, chip: Rect, frame: &mut Frame) {
-        let entries: Vec<StartEntry> =
-            self.start_menu_columns().into_iter().flatten().collect();
-        let row_h = 18.0;
-        let header_h = 26.0;
-        let pad = 14.0;
-        let col_w = 300.0;
-        let preview_w = 250.0;
-        let is_header = |e: &StartEntry| {
-            e.preview == StartPreview::None && e.action.is_none() && !e.quarantined
+    /// The source picker: every real source laid out on the frequency scale
+    /// (x = spectral centroid), one row per kind, color coded, each tile a
+    /// mini plot. A source is material — OVERLAY its exact curves, SNAP the
+    /// selected section's pole to its nearest pole, or LOAD it (editable
+    /// laws load stages; packed bodies load as honest previews).
+    fn draw_picker(&self, p: &egui::Painter, plot: Rect, frame: &mut Frame) {
+        let Some(manifest) = &self.start_manifest else {
+            return;
         };
-        let eh = |e: &StartEntry| if is_header(e) { header_h } else { row_h };
-        let total: f32 = entries.iter().map(eh).sum();
-        // split into two columns at a lane boundary near the midpoint
-        let mut split = entries.len();
-        let mut acc = 0.0;
-        for (i, e) in entries.iter().enumerate() {
-            if acc >= total * 0.5 && is_header(e) {
-                split = i;
-                break;
-            }
-            acc += eh(e);
-        }
-        let cols = [&entries[..split], &entries[split..]];
-        let col_h = cols
-            .iter()
-            .map(|c| c.iter().map(eh).sum::<f32>())
-            .fold(0.0, f32::max);
-        let w = pad * 4.0 + col_w * 2.0 + preview_w;
-        let h = col_h + pad * 2.0;
-        let clip = p.clip_rect();
-        let mut origin = Pos2::new(chip.left(), chip.bottom() + 4.0);
-        if origin.x + w > clip.right() - 8.0 {
-            origin.x = (clip.right() - w - 8.0).max(clip.left() + 8.0);
-        }
-        if origin.y + h > clip.bottom() - 8.0 {
-            origin.y = (clip.bottom() - h - 8.0).max(clip.top() + 8.0);
-        }
-        let rect = Rect::from_min_size(origin, Vec2::new(w, h));
-        p.rect_filled(
-            rect.expand(2.0),
-            7.0,
-            Color32::from_rgba_unmultiplied(0, 0, 0, 150),
-        );
-        p.rect_filled(rect, 7.0, BG);
-        p.rect_stroke(rect, 7.0, Stroke::new(1.0, EDGE));
+        use painter::theme::GOOD;
+        let h = 260.0_f32.min(plot.height() * 0.6);
+        let rect = Rect::from_min_max(Pos2::new(plot.left(), plot.bottom() - h), plot.max);
+        p.rect_filled(rect, 6.0, Color32::from_rgba_unmultiplied(7, 10, 9, 247));
+        p.line_segment([rect.left_top(), rect.right_top()], Stroke::new(1.0, EDGE));
+        frame.picker_rect = Some(rect);
 
-        let hover = self.hover;
-        let mut hovered: Option<&StartEntry> = None;
-        for (ci, col) in cols.iter().enumerate() {
-            let x = rect.left() + pad + ci as f32 * (col_w + pad);
-            let mut y = rect.top() + pad;
-            for entry in *col {
-                if is_header(entry) {
-                    let cy = y + header_h - 9.0;
-                    p.text(
-                        Pos2::new(x, cy),
-                        Align2::LEFT_BOTTOM,
-                        entry.label.to_ascii_uppercase(),
-                        FontId::monospace(8.5),
-                        if entry.label == "quarantine" {
-                            with_alpha(FAULT, 170)
-                        } else {
-                            TEXT_DIM
-                        },
-                    );
-                    p.line_segment(
-                        [Pos2::new(x, cy + 3.0), Pos2::new(x + col_w, cy + 3.0)],
-                        Stroke::new(1.0, with_alpha(EDGE, 140)),
-                    );
-                    y += header_h;
-                    continue;
-                }
-                let row = Rect::from_min_size(Pos2::new(x, y), Vec2::new(col_w, row_h));
-                let clickable = entry.action.is_some();
-                if let Some(action) = entry.action {
-                    frame.menu_items.push(Hit {
-                        rect: row,
-                        value: action,
-                    });
-                }
-                let is_hover = hover.map_or(false, |hp| row.contains(hp));
-                if is_hover {
-                    p.rect_filled(row, 3.0, with_alpha(ICE, 16));
-                    hovered = Some(entry);
-                }
-                // an active overlay keeps a small lit dot
-                let overlay_active = matches!(
-                    (&entry.preview, &self.overlay_ref),
-                    (StartPreview::Curves(path), Some(active)) if path == active
-                );
-                if overlay_active {
-                    p.circle_filled(Pos2::new(x + 4.0, row.center().y), 2.0, ICE);
-                }
-                p.text(
-                    Pos2::new(x + 12.0, row.center().y),
-                    Align2::LEFT_CENTER,
-                    &entry.label,
-                    FontId::monospace(10.0),
-                    if entry.quarantined {
-                        with_alpha(FAULT, 140)
-                    } else if clickable {
-                        TEXT
-                    } else {
-                        TEXT_DIM
-                    },
-                );
-                // right: the sort key, terse (centroid Hz) — quarantine rows
-                // show nothing inline; their reason lives in the preview pane
-                if let Some(hz) = self.entry_centroid(entry) {
-                    p.text(
-                        Pos2::new(x + col_w - 4.0, row.center().y),
-                        Align2::RIGHT_CENTER,
-                        fmt_hz(hz),
-                        FontId::monospace(8.5),
-                        with_alpha(TEXT_DIM, 180),
-                    );
-                }
-                y += row_h;
-            }
-        }
+        let pad = 14.0;
+        let label_w = 110.0;
+        let tx0 = rect.left() + label_w;
+        let tx1 = rect.right() - pad - 8.0;
+        let tile_w = 44.0;
+        let tile_h = 18.0;
 
-        // one preview at a time — the hovered row
-        let pv = Rect::from_min_size(
-            Pos2::new(rect.right() - pad - preview_w, rect.top() + pad),
-            Vec2::new(preview_w, rect.height() - pad * 2.0),
-        );
-        p.line_segment(
-            [pv.left_top(), pv.left_bottom()],
-            Stroke::new(1.0, with_alpha(EDGE, 140)),
-        );
-        if let Some(entry) = hovered {
-            let plot_r = Rect::from_min_size(
-                Pos2::new(pv.left() + pad, pv.top() + 4.0),
-                Vec2::new(preview_w - pad * 2.0, 120.0),
+        // frequency ruler across the panel — the layout axis
+        let ruler_y = rect.top() + 22.0;
+        for f in [50.0, 100.0, 200.0, 500.0, 1000.0, 2000.0, 5000.0, 10_000.0] {
+            let x = tx0 + axis_t(f) * (tx1 - tx0);
+            p.line_segment(
+                [
+                    Pos2::new(x, ruler_y + 2.0),
+                    Pos2::new(x, rect.bottom() - 26.0),
+                ],
+                Stroke::new(1.0, with_alpha(EDGE, 55)),
             );
-            if let Some(values) = self.start_preview_values(&entry.preview) {
-                draw_mini_plot(p, plot_r, &values, TRUTH);
-            }
-            let mut ty = plot_r.bottom() + 14.0;
             p.text(
-                Pos2::new(plot_r.left(), ty),
-                Align2::LEFT_TOP,
-                &entry.label,
-                FontId::monospace(10.5),
-                TEXT,
-            );
-            ty += 18.0;
-            p.text(
-                Pos2::new(plot_r.left(), ty),
-                Align2::LEFT_TOP,
-                &entry.note,
-                FontId::monospace(9.0),
-                if entry.quarantined {
-                    with_alpha(FAULT, 180)
+                Pos2::new(x, ruler_y),
+                Align2::CENTER_BOTTOM,
+                if f >= 1000.0 {
+                    format!("{:.0}k", f / 1000.0)
                 } else {
-                    TEXT_DIM
+                    format!("{f:.0}")
                 },
-            );
-            ty += 18.0;
-            if let Some(badge) = entry.badge {
-                let badge_color = match badge {
-                    _ if entry.quarantined => FAULT,
-                    "COMPILE EXACT" => painter::theme::GOOD,
-                    "IMPORT EXACT" => ICE,
-                    "OVERLAY" => EMBER,
-                    _ => TEXT_DIM,
-                };
-                p.text(
-                    Pos2::new(plot_r.left(), ty),
-                    Align2::LEFT_TOP,
-                    if entry.quarantined { "QUARANTINE" } else { badge },
-                    FontId::monospace(8.5),
-                    badge_color,
-                );
-            }
-        } else {
-            p.text(
-                pv.center(),
-                Align2::CENTER_CENTER,
-                "hover to preview · click to start",
-                FontId::monospace(9.5),
+                FontId::monospace(8.0),
                 TEXT_DIM,
             );
         }
-        frame.menu_rect = Some(rect);
-    }
 
-    fn entry_centroid(&self, entry: &StartEntry) -> Option<f32> {
-        match &entry.preview {
-            StartPreview::Body(path) | StartPreview::Curves(path) => {
-                self.centroids.get(path).copied()
+        // kind rows: law · physical · vocal · analog · designer import ·
+        // exact reference · approx fit (low → high by centroid within each)
+        let kind_rows: [(&str, Color32); 7] = [
+            ("law", ICE),
+            ("physical", painter::theme::CORNER[2]),
+            ("vocal", GOOD),
+            ("analog", TRUTH),
+            ("designer import", painter::theme::POLE_MARK),
+            ("exact reference", EMBER),
+            ("approx fit", TEXT_DIM),
+        ];
+        let rows_top = ruler_y + 8.0;
+        let row_h = (rect.bottom() - 26.0 - rows_top) / kind_rows.len() as f32;
+        for (k, (label, color)) in kind_rows.iter().enumerate() {
+            let y = rows_top + k as f32 * row_h;
+            p.text(
+                Pos2::new(rect.left() + pad, y + row_h * 0.5),
+                Align2::LEFT_CENTER,
+                *label,
+                FontId::monospace(8.5),
+                with_alpha(*color, 200),
+            );
+        }
+
+        let mut hovered: Option<(usize, usize)> = None;
+        let mut zig = [false; 7];
+        for (li, lane) in manifest.lanes.iter().enumerate() {
+            // tiles sorted low → high so the zigzag de-collision is stable
+            let mut order: Vec<usize> = (0..lane.rows.len()).collect();
+            order.sort_by(|&a, &b| {
+                let ka = self.picker_row_centroid(&lane.rows[a]).unwrap_or(f32::MAX);
+                let kb = self.picker_row_centroid(&lane.rows[b]).unwrap_or(f32::MAX);
+                ka.partial_cmp(&kb).unwrap_or(std::cmp::Ordering::Equal)
+            });
+            for ri in order {
+                let row = &lane.rows[ri];
+                if row.kind == "peak_shelf" {
+                    continue; // the template lives in the action row below
+                }
+                let Some(centroid) = self.picker_row_centroid(row).or_else(|| {
+                    (row.kind == "exact_skeleton").then_some(1000.0)
+                }) else {
+                    continue;
+                };
+                let (k, color, _) = Self::picker_kind(&lane.id, row);
+                let y = rows_top + k as f32 * row_h + row_h * 0.5 - tile_h * 0.5
+                    + if zig[k] { 4.0 } else { -4.0 };
+                zig[k] = !zig[k];
+                let x = (tx0 + axis_t(centroid) * (tx1 - tx0) - tile_w * 0.5)
+                    .clamp(tx0, tx1 - tile_w);
+                let tile = Rect::from_min_size(Pos2::new(x, y), Vec2::new(tile_w, tile_h));
+                frame.picker_tiles.push(Hit {
+                    rect: tile,
+                    value: (li, ri),
+                });
+                let selected = self.picker_sel == Some((li, ri));
+                let is_hover = self.hover.map_or(false, |hp| tile.contains(hp));
+                if is_hover {
+                    hovered = Some((li, ri));
+                }
+                p.rect_filled(tile, 3.0, Color32::from_rgb(11, 16, 14));
+                p.rect_stroke(
+                    tile,
+                    3.0,
+                    Stroke::new(
+                        1.0,
+                        if selected {
+                            TRUTH
+                        } else if is_hover {
+                            color
+                        } else {
+                            with_alpha(color, 110)
+                        },
+                    ),
+                );
+                if let Some(values) = self.picker_tile_values(row) {
+                    let n = values.len().max(2);
+                    let (mut lo, mut hi) = (f32::MAX, f32::MIN);
+                    for &v in &values {
+                        if v.is_finite() {
+                            lo = lo.min(v);
+                            hi = hi.max(v);
+                        }
+                    }
+                    let span = (hi - lo).max(6.0);
+                    let pts: Vec<Pos2> = values
+                        .iter()
+                        .enumerate()
+                        .map(|(i, &v)| {
+                            let t = i as f32 / (n - 1) as f32;
+                            let vy = ((hi - v) / span).clamp(0.0, 1.0);
+                            Pos2::new(
+                                tile.left() + 2.0 + t * (tile.width() - 4.0),
+                                tile.top() + 2.0 + vy * (tile.height() - 4.0),
+                            )
+                        })
+                        .collect();
+                    p.add(egui::Shape::line(pts, Stroke::new(1.0, with_alpha(color, 230))));
+                }
             }
-            _ => None,
+        }
+
+        // readout: the hovered/selected source, terse
+        let focus = hovered.or(self.picker_sel);
+        if let Some((li, ri)) = focus {
+            if let Some(row) = manifest.lanes.get(li).and_then(|l| l.rows.get(ri)) {
+                let badge = manifest.lanes[li].badge.as_str();
+                let centroid = self
+                    .picker_row_centroid(row)
+                    .map(|hz| format!(" · {}", fmt_hz(hz)))
+                    .unwrap_or_default();
+                p.text(
+                    Pos2::new(rect.right() - pad, rect.top() + 8.0),
+                    Align2::RIGHT_TOP,
+                    format!("{} — {} · {badge}{centroid}", row.label, row.note),
+                    FontId::monospace(9.0),
+                    TEXT,
+                );
+            }
+        }
+
+        // action row: source actions left, template/blank right
+        let ay = rect.bottom() - 22.0;
+        let mut ax = rect.left() + pad;
+        if let Some((li, ri)) = self.picker_sel {
+            if let Some(row) = manifest.lanes.get(li).and_then(|l| l.rows.get(ri)) {
+                let acts: Vec<(PickerAct, &str)> = match row.kind.as_str() {
+                    "overlay" => vec![(PickerAct::Overlay, "OVERLAY")],
+                    "law" | "exact_skeleton" => vec![
+                        (PickerAct::Overlay, "OVERLAY"),
+                        (PickerAct::Snap, "SNAP POLE"),
+                        (PickerAct::Load, "LOAD"),
+                    ],
+                    _ => vec![
+                        (PickerAct::Overlay, "OVERLAY"),
+                        (PickerAct::Snap, "SNAP POLE"),
+                        (PickerAct::Load, "LOAD PREVIEW"),
+                    ],
+                };
+                for (act, label) in acts {
+                    let w = label.len() as f32 * 6.6 + 16.0;
+                    let r = Rect::from_min_size(Pos2::new(ax, ay), Vec2::new(w, 18.0));
+                    chip(p, r, label, false, ICE);
+                    frame.picker_acts.push(Hit {
+                        rect: r,
+                        value: act,
+                    });
+                    ax += w + 8.0;
+                }
+            }
+        } else {
+            p.text(
+                Pos2::new(ax, ay + 9.0),
+                Align2::LEFT_CENTER,
+                "click a source · overlay / snap / load",
+                FontId::monospace(8.5),
+                TEXT_DIM,
+            );
+        }
+        let mut rx = rect.right() - pad;
+        for (act, label) in [
+            (PickerAct::Restore, "RESTORE"),
+            (PickerAct::Scratch, "SCRATCH"),
+            (PickerAct::Template, "TWO-FRAME TEMPLATE"),
+        ] {
+            let w = label.len() as f32 * 6.6 + 16.0;
+            let r = Rect::from_min_size(Pos2::new(rx - w, ay), Vec2::new(w, 18.0));
+            chip(p, r, label, false, TEXT_DIM);
+            frame.picker_acts.push(Hit {
+                rect: r,
+                value: act,
+            });
+            rx -= w + 8.0;
+        }
+        // quarantine stays visible — terse, red, reasons live in the manifest
+        let q: Vec<&str> = manifest
+            .quarantine
+            .iter()
+            .map(|q| q.label.as_str())
+            .collect();
+        if !q.is_empty() {
+            p.text(
+                Pos2::new(rx - 12.0, ay + 9.0),
+                Align2::RIGHT_CENTER,
+                format!("quarantine: {}", q.join(" · ")),
+                FontId::monospace(8.0),
+                with_alpha(FAULT, 150),
+            );
         }
     }
 
@@ -5110,10 +5213,6 @@ impl App {
         let Some(chip) = frame.menu_chips.iter().find(|h| h.value == menu) else {
             return;
         };
-        if menu == Menu::Seed {
-            self.draw_start_menu(p, chip.rect, frame);
-            return;
-        }
         let entries = self.menu_entries(menu);
         let row_h = 20.0;
         let w = entries.iter().map(|(s, _)| s.len()).max().unwrap_or(10) as f32 * 6.6 + 26.0;
@@ -5175,11 +5274,23 @@ impl App {
             FontId::monospace(12.0),
             ICE,
         );
+        // the clear budget: six biquads, poles/zeros spent, at the editing corner
+        let ci = self.selected_corner.idx();
+        let poles_used = self
+            .sections
+            .iter()
+            .filter(|s| biquad_use(s, ci).pole_used)
+            .count();
+        let zeros_used = self
+            .sections
+            .iter()
+            .filter(|s| biquad_use(s, ci).zero_used)
+            .count();
         p.text(
             rect.left_top() + Vec2::new(12.0, 27.0),
             Align2::LEFT_TOP,
             format!(
-                "{} filters on · peak {:+.1} dB",
+                "{}/6 biquads · poles {poles_used}/6 · zeros {zeros_used}/6 · peak {:+.1} dB",
                 self.active_sections(),
                 if peak.is_finite() { peak } else { 0.0 },
             ),
@@ -6568,6 +6679,29 @@ impl App {
                     };
                     return;
                 }
+                if frame.start_rect.contains(pos) {
+                    self.picker_open = !self.picker_open;
+                    if !self.picker_open {
+                        self.picker_sel = None;
+                    }
+                    return;
+                }
+                if self.picker_open {
+                    if let Some(h) = frame.picker_acts.iter().find(|h| h.rect.contains(pos)) {
+                        self.run_picker_act(h.value);
+                        return;
+                    }
+                    if let Some(h) = frame.picker_tiles.iter().find(|h| h.rect.contains(pos)) {
+                        self.picker_sel = Some(h.value);
+                        return;
+                    }
+                    if frame.picker_rect.map_or(false, |r| r.contains(pos)) {
+                        return; // the panel eats its own clicks
+                    }
+                    // click-away closes, then the click lands as normal
+                    self.picker_open = false;
+                    self.picker_sel = None;
+                }
                 self.name_active = frame.name_rect.contains(pos);
                 for h in &frame.corner_chips {
                     if h.rect.contains(pos) {
@@ -6698,8 +6832,11 @@ impl App {
         // drags
         if resp.drag_started() {
             if let Some(pos) = pointer {
-                if frame.menu_rect.map_or(false, |r| r.contains(pos)) {
-                    // no drags inside menus
+                if frame.menu_rect.map_or(false, |r| r.contains(pos))
+                    || (self.picker_open
+                        && frame.picker_rect.map_or(false, |r| r.contains(pos)))
+                {
+                    // no drags inside menus or the source picker
                 } else if frame.morph_rect.contains(pos) {
                     self.sweep = false;
                     self.drag = Some(Drag::Morph);
@@ -7192,73 +7329,22 @@ fn slugify(s: &str) -> String {
     }
 }
 
-fn shape_preview_values(preview: &StartPreview, n: usize) -> Vec<f32> {
-    (0..n)
-        .map(|i| {
-            let t = i as f32 / (n - 1) as f32;
-            let bump = |c: f32, w: f32, g: f32| g * (-((t - c) / w).powi(2)).exp();
-            match preview {
-                StartPreview::Flat | StartPreview::None => 0.0,
-                StartPreview::Lowpass => 7.0 - 34.0 * t.powf(1.6),
-                StartPreview::Highpass => 7.0 - 34.0 * (1.0 - t).powf(1.6),
-                StartPreview::Bandpass => -20.0 + bump(0.48, 0.18, 31.0),
-                StartPreview::Notch => -2.0 - bump(0.56, 0.055, 27.0),
-                StartPreview::Peak => bump(0.52, 0.13, 16.0) - 2.0,
-                StartPreview::Peaks => {
-                    bump(0.20, 0.045, 12.0)
-                        + bump(0.38, 0.04, 15.0)
-                        + bump(0.62, 0.05, 12.0)
-                        - 8.0
-                }
-                StartPreview::Vowel => {
-                    bump(0.24, 0.055, 18.0)
-                        + bump(0.48, 0.045, 14.0)
-                        + bump(0.70, 0.055, 9.0)
-                        - 10.0
-                }
-                StartPreview::Modal => {
-                    bump(0.18, 0.025, 17.0)
-                        + bump(0.33, 0.025, 15.0)
-                        + bump(0.50, 0.026, 13.0)
-                        + bump(0.68, 0.028, 10.0)
-                        - 14.0
-                }
-                StartPreview::Body(_) | StartPreview::Curves(_) | StartPreview::Exact(_) => 0.0,
+/// Pole positions (Hz, radius) of a packed body at M0 Q0 — snap landmarks.
+fn source_poles(body: &[u8; 240]) -> Vec<(f32, f32)> {
+    let live = live_biquads(&words_of(body), 0.0, 0.0);
+    live.iter()
+        .filter_map(|b| {
+            let (a1, a2) = (b[3] as f64, b[4] as f64);
+            if !(a1.is_finite() && a2.is_finite()) || a2 <= 0.0004 {
+                return None;
             }
+            let r = a2.sqrt();
+            let hz = ((-a1 / (2.0 * r)).clamp(-1.0, 1.0).acos()
+                / std::f64::consts::TAU
+                * SR as f64) as f32;
+            ((F_MIN..=F_MAX).contains(&hz) && r > 0.3).then_some((hz, r as f32))
         })
         .collect()
-}
-
-fn draw_mini_plot(p: &egui::Painter, rect: Rect, values: &[f32], color: Color32) {
-    if values.len() < 2 {
-        return;
-    }
-    p.rect_filled(rect, 4.0, Color32::from_rgb(12, 13, 17));
-    p.rect_stroke(rect, 4.0, Stroke::new(1.0, with_alpha(EDGE, 180)));
-    let y0 = mini_y_for_db(rect, 0.0);
-    p.line_segment(
-        [Pos2::new(rect.left(), y0), Pos2::new(rect.right(), y0)],
-        Stroke::new(1.0, with_alpha(TEXT_DIM, 55)),
-    );
-    let pts: Vec<Pos2> = values
-        .iter()
-        .enumerate()
-        .map(|(i, db)| {
-            let t = i as f32 / (values.len() - 1) as f32;
-            Pos2::new(
-                rect.left() + t * rect.width(),
-                mini_y_for_db(rect, *db),
-            )
-        })
-        .collect();
-    p.add(egui::Shape::line(pts, Stroke::new(1.25, color)));
-}
-
-fn mini_y_for_db(rect: Rect, db: f32) -> f32 {
-    let min = -36.0;
-    let max = 24.0;
-    let t = ((db.clamp(min, max) - min) / (max - min)).clamp(0.0, 1.0);
-    rect.bottom() - t * rect.height()
 }
 
 fn chip(p: &egui::Painter, rect: Rect, text: &str, active: bool, color: Color32) {

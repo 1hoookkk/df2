@@ -22,6 +22,7 @@ pub struct StartManifest {
 #[derive(Deserialize)]
 pub struct Lane {
     pub id: String,
+    #[allow(dead_code)] // human-facing lane name; the picker shows kinds
     pub title: String,
     pub badge: String,
     pub rows: Vec<Row>,
@@ -49,6 +50,7 @@ pub struct Row {
 #[derive(Deserialize)]
 pub struct QuarantineRow {
     pub label: String,
+    #[allow(dead_code)] // honest record; surfaced via --inventory-test
     pub reason: String,
 }
 
