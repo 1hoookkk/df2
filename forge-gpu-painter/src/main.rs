@@ -14,6 +14,7 @@
 // EQ / notch comb / resonant peaks / vowel formants / tube / metal).
 
 mod gpu_plot;
+mod model;
 
 use eframe::egui::{
     self, Align2, Color32, Event, FontId, Key, Pos2, Rect, Sense, Stroke, TextureHandle,
@@ -1611,6 +1612,78 @@ struct App {
 }
 
 fn main() -> eframe::Result {
+    if std::env::args().any(|arg| arg == "--patch-test") {
+        use model::peak_shelf::{compile_peak_shelf, shelf_weights, PeakShelfPatch};
+        // 1 · SHELF crossfade partitions to exactly 1 across the domain
+        let mut worst = 0.0f32;
+        for i in -64..=63 {
+            let (a, b, c) = shelf_weights(i as f32);
+            worst = worst.max((a + b + c - 1.0).abs());
+        }
+        println!("patch-test weights: partition error {worst:.6} (must be 0)");
+        assert!(worst < 1e-5, "shelf weights must partition to 1");
+
+        // 2 · raising FREQ never moves any lane's pole down (monotone map)
+        let mut prev: Option<Vec<f32>> = None;
+        let mut monotone = true;
+        for f in [60.0f32, 120.0, 320.0, 800.0, 2400.0, 6000.0, 12000.0] {
+            let mut p = PeakShelfPatch::default();
+            p.low.freq_hz = f;
+            let poles: Vec<f32> = compile_peak_shelf(&p)
+                .iter()
+                .map(|s| s.corners[0].pole_hz)
+                .collect();
+            if let Some(prev) = &prev {
+                monotone &= poles.iter().zip(prev).all(|(now, was)| now >= was);
+            }
+            prev = Some(poles);
+        }
+        println!("patch-test monotone: pole Hz nondecreasing in FREQ = {monotone}");
+        assert!(monotone, "freq map must be monotone");
+
+        // 3 · format limits hold pre-pack at the extremes
+        let mut extreme = PeakShelfPatch::default();
+        extreme.low.peak_db = 12.0;
+        extreme.high.peak_db = 12.0;
+        extreme.pressure = 1.0;
+        let sections = compile_peak_shelf(&extreme);
+        let mut r_ok = true;
+        for s in &sections {
+            for c in &s.corners {
+                r_ok &= c.pole_r <= RP_MAX && c.zero_r <= RZ_MAX;
+                r_ok &= (F_MIN..=F_MAX).contains(&c.pole_hz);
+            }
+        }
+        println!("patch-test limits: pole r ≤ {RP_MAX}, zero r ≤ {RZ_MAX}, Hz in range = {r_ok}");
+        assert!(r_ok, "format limits must hold pre-pack");
+
+        // 4 · golden patch packs to a byte-stable body (regression pin)
+        let golden = PeakShelfPatch::default();
+        let body = trench_core::compiler::pack_body(&params168_of(&compile_peak_shelf(&golden)));
+        let sha = {
+            use sha2::{Digest, Sha256};
+            let mut h = Sha256::new();
+            h.update(body);
+            format!("{:x}", h.finalize())
+        };
+        println!("patch-test golden body240 sha256 = {sha}");
+        // regression pin: the default patch must keep packing to these bytes;
+        // re-pin deliberately when the lane constants are re-tuned by ear
+        const GOLDEN_SHA: &str = "abc1c1c861c471bd9502eb13df961414c85eed10e93d336a45a510e3f20ac3ff";
+        assert_eq!(sha, GOLDEN_SHA, "golden patch body240 drifted");
+
+        // 5 · the extreme patch is AUDITED, never silently rescued — report
+        // the 17×17 packed verdict for pressure 1, peak +12
+        let (_, maxr, unstable, _) = compute_audit(&words_of(&body));
+        let (_, maxr_x, unstable_x, _) = compute_audit(&words_of(
+            &trench_core::compiler::pack_body(&params168_of(&sections)),
+        ));
+        println!(
+            "patch-test audit: golden max pole r {maxr:.6}, unstable cells {unstable} · extreme max pole r {maxr_x:.6}, unstable cells {unstable_x}"
+        );
+        println!("patch-test: OK");
+        return Ok(());
+    }
     if std::env::args().any(|arg| arg == "--bake-once") {
         let mut app = App::default_state();
         app.bake();
@@ -2340,20 +2413,7 @@ impl App {
     }
 
     fn params168(&self) -> Vec<f64> {
-        let mut out = Vec::with_capacity(168);
-        for key in CornerKey::ALL {
-            for section in &self.sections {
-                let c = section.corners[key.idx()];
-                out.push(if section.on { 1.0 } else { 0.0 });
-                out.push(c.pole_hz as f64);
-                out.push(c.pole_r as f64);
-                out.push(db_to_lin(c.gain_db) as f64);
-                out.push(if c.zero_r > 0.0001 { 1.0 } else { 0.0 });
-                out.push(c.zero_hz as f64);
-                out.push(c.zero_r as f64);
-            }
-        }
-        out
+        params168_of(&self.sections)
     }
 
     fn active_sections(&self) -> usize {
@@ -2479,17 +2539,7 @@ impl App {
     }
 
     fn words(&self) -> [[[u16; 5]; STAGES]; CORNERS] {
-        let mut words = [[[0u16; 5]; STAGES]; CORNERS];
-        let mut i = 0;
-        for corner in &mut words {
-            for stage in corner {
-                for word in stage {
-                    *word = u16::from_le_bytes([self.body[i], self.body[i + 1]]);
-                    i += 2;
-                }
-            }
-        }
-        words
+        words_of(&self.body)
     }
 
     fn recompute_response(&mut self) {

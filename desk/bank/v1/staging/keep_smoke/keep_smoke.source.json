@@ -1,0 +1,215 @@
+{
+  "note": "TRENCH FORGE keeper source. Bytes packed through trench_core::compiler::pack_body.",
+  "sections": [
+    {
+      "on": true,
+      "locked": true,
+      "role": "chest",
+      "corners": [
+        {
+          "pole_hz": 134.0,
+          "pole_r": 0.985,
+          "zero_hz": 4130.0,
+          "zero_r": 0.85,
+          "gain_db": 0.0
+        },
+        {
+          "pole_hz": 134.0,
+          "pole_r": 0.985,
+          "zero_hz": 4130.0,
+          "zero_r": 0.85,
+          "gain_db": 0.0
+        },
+        {
+          "pole_hz": 134.0,
+          "pole_r": 0.99475,
+          "zero_hz": 4130.0,
+          "zero_r": 0.85,
+          "gain_db": 0.0
+        },
+        {
+          "pole_hz": 134.0,
+          "pole_r": 0.99475,
+          "zero_hz": 4130.0,
+          "zero_r": 0.85,
+          "gain_db": 0.0
+        }
+      ]
+    },
+    {
+      "on": true,
+      "locked": false,
+      "role": "F1",
+      "corners": [
+        {
+          "pole_hz": 730.0,
+          "pole_r": 0.99358666,
+          "zero_hz": 2920.0,
+          "zero_r": 0.9,
+          "gain_db": 0.0
+        },
+        {
+          "pole_hz": 270.0,
+          "pole_r": 0.99358666,
+          "zero_hz": 1080.0,
+          "zero_r": 0.9,
+          "gain_db": 0.0
+        },
+        {
+          "pole_hz": 730.0,
+          "pole_r": 0.99775535,
+          "zero_hz": 2920.0,
+          "zero_r": 0.9,
+          "gain_db": 0.0
+        },
+        {
+          "pole_hz": 270.0,
+          "pole_r": 0.99775535,
+          "zero_hz": 1080.0,
+          "zero_r": 0.9,
+          "gain_db": 0.0
+        }
+      ]
+    },
+    {
+      "on": true,
+      "locked": false,
+      "role": "F2",
+      "corners": [
+        {
+          "pole_hz": 1090.0,
+          "pole_r": 0.9927879,
+          "zero_hz": 4360.0,
+          "zero_r": 0.9,
+          "gain_db": 0.0
+        },
+        {
+          "pole_hz": 2290.0,
+          "pole_r": 0.9927879,
+          "zero_hz": 9160.0,
+          "zero_r": 0.9,
+          "gain_db": 0.0
+        },
+        {
+          "pole_hz": 1090.0,
+          "pole_r": 0.99747574,
+          "zero_hz": 4360.0,
+          "zero_r": 0.9,
+          "gain_db": 0.0
+        },
+        {
+          "pole_hz": 2290.0,
+          "pole_r": 0.99747574,
+          "zero_hz": 9160.0,
+          "zero_r": 0.9,
+          "gain_db": 0.0
+        }
+      ]
+    },
+    {
+      "on": true,
+      "locked": false,
+      "role": "F3",
+      "corners": [
+        {
+          "pole_hz": 2440.0,
+          "pole_r": 0.98721445,
+          "zero_hz": 9760.0,
+          "zero_r": 0.9,
+          "gain_db": 0.0
+        },
+        {
+          "pole_hz": 3010.0,
+          "pole_r": 0.98721445,
+          "zero_hz": 12040.0,
+          "zero_r": 0.9,
+          "gain_db": 0.0
+        },
+        {
+          "pole_hz": 2440.0,
+          "pole_r": 0.99552506,
+          "zero_hz": 9760.0,
+          "zero_r": 0.9,
+          "gain_db": 0.0
+        },
+        {
+          "pole_hz": 3010.0,
+          "pole_r": 0.99552506,
+          "zero_hz": 12040.0,
+          "zero_r": 0.9,
+          "gain_db": 0.0
+        }
+      ]
+    },
+    {
+      "on": false,
+      "locked": false,
+      "role": "",
+      "corners": [
+        {
+          "pole_hz": 880.0,
+          "pole_r": 0.8,
+          "zero_hz": 14000.0,
+          "zero_r": 0.9,
+          "gain_db": 0.0
+        },
+        {
+          "pole_hz": 880.0,
+          "pole_r": 0.8,
+          "zero_hz": 14000.0,
+          "zero_r": 0.9,
+          "gain_db": 0.0
+        },
+        {
+          "pole_hz": 880.0,
+          "pole_r": 0.93,
+          "zero_hz": 14000.0,
+          "zero_r": 0.9,
+          "gain_db": 0.0
+        },
+        {
+          "pole_hz": 880.0,
+          "pole_r": 0.93,
+          "zero_hz": 14000.0,
+          "zero_r": 0.9,
+          "gain_db": 0.0
+        }
+      ]
+    },
+    {
+      "on": false,
+      "locked": false,
+      "role": "",
+      "corners": [
+        {
+          "pole_hz": 880.0,
+          "pole_r": 0.8,
+          "zero_hz": 14000.0,
+          "zero_r": 0.9,
+          "gain_db": 0.0
+        },
+        {
+          "pole_hz": 880.0,
+          "pole_r": 0.8,
+          "zero_hz": 14000.0,
+          "zero_r": 0.9,
+          "gain_db": 0.0
+        },
+        {
+          "pole_hz": 880.0,
+          "pole_r": 0.93,
+          "zero_hz": 14000.0,
+          "zero_r": 0.9,
+          "gain_db": 0.0
+        },
+        {
+          "pole_hz": 880.0,
+          "pole_r": 0.93,
+          "zero_hz": 14000.0,
+          "zero_r": 0.9,
+          "gain_db": 0.0
+        }
+      ]
+    }
+  ]
+}
