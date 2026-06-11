@@ -16,6 +16,7 @@
 mod gpu_plot;
 mod model;
 mod painter;
+mod sources;
 
 use painter::theme::{
     with_alpha, BG, EDGE, EMBER, FAULT, GHOST_HI, GHOST_LO, ICE, PANEL, PANEL_HI, TEXT, TEXT_DIM,
@@ -1423,7 +1424,8 @@ struct SkeletonSection {
 #[derive(Clone, Copy, PartialEq, Eq)]
 enum MenuAction {
     SeedPeakShelf,
-    SeedSource(usize),
+    /// a START manifest row: (lane index, row index)
+    StartRow(usize, usize),
     SeedDefault,
     SeedLowpass,
     SeedHighpass,
@@ -1447,72 +1449,8 @@ enum MenuAction {
     ToggleBark,
 }
 
-#[derive(Clone, Copy)]
-struct SourceStart {
-    label: &'static str,
-    note: &'static str,
-    body_path: &'static str,
-    stages_path: Option<&'static str>,
-}
-
-const SOURCE_STARTS: [SourceStart; 9] = [
-    SourceStart {
-        label: "Hedz-like anchor canyons",
-        note: "Law Author · editable",
-        body_path: "dev/tmp/law_author/golden_hedz_like/hedz_like_anchor_canyons.body240",
-        stages_path: Some("dev/tmp/law_author/golden_hedz_like/stages.json"),
-    },
-    SourceStart {
-        label: "Bass sharpener",
-        note: "Law Author · editable",
-        body_path: "dev/tmp/law_author/bass_sharpener/bass_sharpener.body240",
-        stages_path: Some("dev/tmp/law_author/bass_sharpener/stages.json"),
-    },
-    SourceStart {
-        label: "Vocal formant family",
-        note: "Law Author · editable",
-        body_path: "dev/tmp/law_author/families/family_vocal_formant/family_vocal_formant.body240",
-        stages_path: Some("dev/tmp/law_author/families/family_vocal_formant/stages.json"),
-    },
-    SourceStart {
-        label: "Phaser comb family",
-        note: "Law Author · editable",
-        body_path: "dev/tmp/law_author/families/family_phaser_comb/family_phaser_comb.body240",
-        stages_path: Some("dev/tmp/law_author/families/family_phaser_comb/stages.json"),
-    },
-    SourceStart {
-        label: "Physical vocal open -> front",
-        note: "physical · preview",
-        body_path: "dev/tmp/physical_mountains/vocal_open_to_front.body240",
-        stages_path: None,
-    },
-    SourceStart {
-        label: "Bottle / jug / jar",
-        note: "physical · preview",
-        body_path: "dev/tmp/physical_mountains/bottle_jug_to_jar.body240",
-        stages_path: None,
-    },
-    SourceStart {
-        label: "Plate large -> small",
-        note: "physical · preview",
-        body_path: "dev/tmp/physical_mountains/plate_large_to_small.body240",
-        stages_path: None,
-    },
-    SourceStart {
-        label: "Bell muted -> bright",
-        note: "physical · preview",
-        body_path: "dev/tmp/physical_mountains/bell_muted_to_bright.body240",
-        stages_path: None,
-    },
-    SourceStart {
-        label: "Klatt OUIII -> EH",
-        note: "all-pole voice · preview",
-        body_path: "dev/tmp/klatt_ouiii_to_eh/klatt_ouiii_to_eh_allpole.body240",
-        stages_path: None,
-    },
-];
-
-#[derive(Clone, Copy, PartialEq, Eq)]
+#[derive(Clone, PartialEq)]
+#[allow(dead_code)] // shape previews remain for non-manifest rows
 enum StartPreview {
     None,
     Flat,
@@ -1524,7 +1462,8 @@ enum StartPreview {
     Peaks,
     Vowel,
     Modal,
-    Body(&'static str),
+    Body(String),
+    Curves(String),
     Exact(usize),
 }
 
@@ -1533,6 +1472,10 @@ struct StartEntry {
     note: String,
     action: Option<MenuAction>,
     preview: StartPreview,
+    /// provenance badge: COMPILE EXACT · IMPORT EXACT · OVERLAY · APPROX
+    badge: Option<&'static str>,
+    /// quarantine rows: visible with their reason, never actionable
+    quarantined: bool,
 }
 
 const VOWEL_PAIRS: [(&str, &str, &str); 4] = [
@@ -1624,7 +1567,17 @@ struct App {
     undo: Vec<Vec<Section>>,
     redo: Vec<Vec<Section>>,
     tables: Tables,
-    source_bodies: HashMap<&'static str, [u8; 240]>,
+    /// the START manifest: four provenance lanes (COMPILE EXACT · IMPORT
+    /// EXACT · OVERLAY · APPROX) + quarantine, built by
+    /// tools/build_forge_start_manifest.py
+    start_manifest: Option<sources::manifest::StartManifest>,
+    source_bodies: HashMap<String, [u8; 240]>,
+    overlay_curves: HashMap<String, sources::manifest::OverlayCurves>,
+    /// active reference overlay (curves path) drawn on the hero plot
+    overlay_ref: Option<String>,
+    /// a packed body seeded verbatim for listening/plotting — sections do not
+    /// describe it; any edit recompiles from sections and drops the preview
+    packed_preview: Option<String>,
     status: String,
     last_edit: Instant,
 }
@@ -1702,6 +1655,46 @@ fn main() -> eframe::Result {
             "patch-test audit: golden max pole r {maxr:.6}, unstable cells {unstable} · extreme max pole r {maxr_x:.6}, unstable cells {unstable_x}"
         );
         println!("patch-test: OK");
+        return Ok(());
+    }
+    if std::env::args().any(|arg| arg == "--inventory-test") {
+        let root = repo_root();
+        let Some(manifest) = sources::manifest::load(&root) else {
+            println!(
+                "inventory-test: FAILED — no manifest at {} (run tools/build_forge_start_manifest.py)",
+                sources::manifest::MANIFEST_PATH
+            );
+            std::process::exit(1);
+        };
+        let bodies = sources::manifest::load_bodies(&root, &manifest);
+        let overlays = sources::manifest::load_overlays(&root, &manifest);
+        let mut missing = 0;
+        for lane in &manifest.lanes {
+            let body_refs = lane.rows.iter().filter(|r| r.body.is_some()).count();
+            let loaded = lane
+                .rows
+                .iter()
+                .filter(|r| r.body.as_ref().map_or(false, |p| bodies.contains_key(p)))
+                .count();
+            missing += body_refs - loaded;
+            println!(
+                "inventory-test: {} [{}] rows {} · bodies {}/{}",
+                lane.id,
+                lane.badge,
+                lane.rows.len(),
+                loaded,
+                body_refs,
+            );
+        }
+        println!(
+            "inventory-test: overlays loaded {} · quarantine {} rows",
+            overlays.len(),
+            manifest.quarantine.len()
+        );
+        assert_eq!(manifest.lanes.len(), 4, "expected four provenance lanes");
+        assert_eq!(missing, 0, "every referenced .body240 must load");
+        assert!(!manifest.quarantine.is_empty(), "quarantine must be visible");
+        println!("inventory-test: OK");
         return Ok(());
     }
     if std::env::args().any(|arg| arg == "--bake-once") {
@@ -2136,19 +2129,6 @@ fn load_tables() -> Tables {
     t
 }
 
-fn load_source_bodies() -> HashMap<&'static str, [u8; 240]> {
-    let root = repo_root();
-    let mut out = HashMap::new();
-    for source in SOURCE_STARTS {
-        if let Ok(bytes) = fs::read(root.join(source.body_path)) {
-            if let Ok(body) = <[u8; 240]>::try_from(bytes) {
-                out.insert(source.body_path, body);
-            }
-        }
-    }
-    out
-}
-
 // ── default template ─────────────────────────────────────────────────────────
 
 fn default_sections() -> Vec<Section> {
@@ -2299,6 +2279,9 @@ impl App {
             app.morph = 0.0;
             app.rebuild_body();
         }
+        if std::env::args().any(|a| a == "--boot-start") {
+            app.open_menu = Some(Menu::Seed);
+        }
         app
     }
 
@@ -2373,10 +2356,19 @@ impl App {
             undo: Vec::new(),
             redo: Vec::new(),
             tables: load_tables(),
-            source_bodies: load_source_bodies(),
+            start_manifest: sources::manifest::load(&repo_root()),
+            source_bodies: HashMap::new(),
+            overlay_curves: HashMap::new(),
+            overlay_ref: None,
+            packed_preview: None,
             status: "ready — six biquads pack to one 240-byte body".into(),
             last_edit: Instant::now(),
         };
+        if let Some(manifest) = &app.start_manifest {
+            let root = repo_root();
+            app.source_bodies = sources::manifest::load_bodies(&root, manifest);
+            app.overlay_curves = sources::manifest::load_overlays(&root, manifest);
+        }
         app.rebuild_body();
         app
     }
@@ -2507,6 +2499,8 @@ impl App {
     }
 
     fn rebuild_body(&mut self) {
+        // any recompile from sections supersedes a verbatim packed preview
+        self.packed_preview = None;
         // frames-as-working-unit: Q100 rows are derived state while linked
         if self.q_link {
             for s in &mut self.sections {
@@ -2973,37 +2967,123 @@ impl App {
         }
     }
 
-    fn seed_source_start(&mut self, which: usize) {
-        let Some(source) = SOURCE_STARTS.get(which) else {
-            self.status = "source start unavailable".into();
+    /// Dispatch a START manifest row by its provenance kind.
+    fn start_manifest_row(&mut self, lane: usize, row: usize) {
+        let Some(manifest) = &self.start_manifest else {
             return;
         };
-        let Some(stages_path) = source.stages_path else {
-            self.status = format!(
-                "{} is a verified packed preview; editable import still needs an inverse",
-                source.label
-            );
+        let Some(row) = manifest
+            .lanes
+            .get(lane)
+            .and_then(|l| l.rows.get(row))
+            .cloned()
+        else {
+            self.status = "start row unavailable".into();
             return;
         };
-        match load_law_stage_sections(stages_path) {
-            Ok(sections) => {
-                self.push_undo();
-                self.sections = sections;
-                self.pins.clear();
-                self.selected_pin = None;
-                self.q_link = false;
-                self.body_name = slugify(source.label);
-                self.morph = 0.0;
-                self.q = 0.0;
-                self.selected_stage = 0;
-                self.selected_corner = CornerKey::M0Q0;
-                self.rebuild_body();
-                self.status = format!("START: {} — verified source, editable", source.label);
+        match row.kind.as_str() {
+            "peak_shelf" => self.run_action(MenuAction::SeedPeakShelf),
+            "law" => {
+                let Some(stages) = &row.stages else {
+                    self.status = format!("{}: no stages sidecar", row.label);
+                    return;
+                };
+                match load_law_stage_sections(stages) {
+                    Ok(sections) => {
+                        self.push_undo();
+                        self.sections = sections;
+                        self.pins.clear();
+                        self.selected_pin = None;
+                        self.q_link = false;
+                        self.body_name = slugify(&row.label);
+                        self.morph = 0.0;
+                        self.q = 0.0;
+                        self.selected_stage = 0;
+                        self.selected_corner = CornerKey::M0Q0;
+                        self.rebuild_body();
+                        self.status =
+                            format!("START: {} — compiled law, editable", row.label);
+                    }
+                    Err(err) => {
+                        self.status = format!("could not start from {}: {err}", row.label)
+                    }
+                }
             }
-            Err(err) => {
-                self.status = format!("could not start from {}: {err}", source.label);
+            "exact_skeleton" => {
+                let idx = self
+                    .tables
+                    .skeletons
+                    .iter()
+                    .position(|sk| Some(&sk.key) == row.exact_key.as_ref());
+                match idx {
+                    Some(i) => self.seed_exact(i),
+                    None => {
+                        self.status = format!(
+                            "{}: not in the verified skeleton tables — run tools/verify_exact_skeletons.py",
+                            row.label
+                        )
+                    }
+                }
+            }
+            "overlay" => {
+                let Some(path) = &row.curves else {
+                    self.status = format!("{}: no curves file", row.label);
+                    return;
+                };
+                if self.overlay_ref.as_ref() == Some(path) {
+                    self.overlay_ref = None;
+                    self.status = format!("overlay off: {}", row.label);
+                } else if self.overlay_curves.contains_key(path) {
+                    self.overlay_ref = Some(path.clone());
+                    self.status = format!(
+                        "overlay: {} — exact reference curves (study, not shipping source)",
+                        row.label
+                    );
+                } else {
+                    self.status = format!("{}: curves file missing on disk", row.label);
+                }
+            }
+            _ => {
+                // packed: verbatim bytes for listening/plotting only
+                let Some(body) = row.body.as_ref().and_then(|p| self.source_bodies.get(p)).copied()
+                else {
+                    self.status = format!("{}: body bytes missing on disk", row.label);
+                    return;
+                };
+                self.seed_packed_preview(&row.label, body);
             }
         }
+    }
+
+    /// A packed body loaded verbatim: the plot, MORPH/PRESSURE and audio run
+    /// from the real bytes; the six editable sections do NOT describe it.
+    /// Any edit recompiles from sections and drops the preview — and BAKE /
+    /// KEEP refuse while previewing (clean-room: reference bytes never ship).
+    fn seed_packed_preview(&mut self, label: &str, body: [u8; 240]) {
+        self.finish_anim();
+        self.body = body;
+        self.packed_preview = Some(label.to_string());
+        self.patch_linked = false;
+        self.pins.clear();
+        self.selected_pin = None;
+        self.morph = 0.0;
+        self.q = 0.0;
+        self.recompute_response();
+        self.heat_dirty = true;
+        self.audit_dirty = true;
+        self.last_edit = Instant::now();
+        if let Some(audio) = &self.audio {
+            if let Ok(cart) =
+                trench_core::cartridge::Cartridge::from_body_bytes("forge", &self.body, 1.0)
+            {
+                if let Ok(mut c) = audio.ctl.lock() {
+                    c.pending_cart = Some(cart);
+                }
+            }
+        }
+        self.status = format!(
+            "packed preview: {label} — sweep/listen; editing returns to your sections"
+        );
     }
 
     fn seed_scratch(&mut self) {
@@ -3434,6 +3514,12 @@ impl App {
     }
 
     fn bake(&mut self) {
+        if let Some(label) = &self.packed_preview {
+            self.status = format!(
+                "BAKE refused — {label} is a packed preview (reference bytes never ship); edit or START an editable source"
+            );
+            return;
+        }
         let slug = if self.body_name.trim().is_empty() {
             "forge_design".to_string()
         } else {
@@ -3464,6 +3550,12 @@ impl App {
     /// audit refuses outright.
     fn keep_to_staging(&mut self) {
         use sha2::Digest;
+        if let Some(label) = &self.packed_preview {
+            self.status = format!(
+                "KEEP refused — {label} is a packed preview (reference bytes never ship); edit or START an editable source"
+            );
+            return;
+        }
         let words = self.words();
         let (levels, maxr, unstable, _) = compute_audit(&words);
         if unstable > 0 {
@@ -3601,7 +3693,7 @@ impl App {
                     "Peak/Shelf Morph — set the LOW and HIGH frames, sweep MORPH, raise PRESSURE"
                         .into();
             }
-            MenuAction::SeedSource(i) => self.seed_source_start(i),
+            MenuAction::StartRow(lane, row) => self.start_manifest_row(lane, row),
             MenuAction::SeedDefault => self.seed_default(),
             MenuAction::SeedLowpass => self.seed_lowpass(),
             MenuAction::SeedHighpass => self.seed_highpass(),
@@ -4436,6 +4528,8 @@ impl App {
             note: String::new(),
             action: None,
             preview: StartPreview::None,
+            badge: None,
+            quarantined: false,
         }
     }
 
@@ -4450,183 +4544,113 @@ impl App {
             note: note.into(),
             action,
             preview,
+            badge: None,
+            quarantined: false,
         }
     }
 
+    /// The four provenance lanes from the START manifest (built by
+    /// tools/build_forge_start_manifest.py). Every row carries one badge:
+    /// COMPILE EXACT · IMPORT EXACT · OVERLAY · APPROX. Quarantined rows
+    /// stay visible with their reason — never silently hidden.
     fn start_menu_columns(&self) -> Vec<Vec<StartEntry>> {
-        let mut left = vec![
-            Self::start_header("peak/shelf morph"),
-            Self::start_row(
-                "Two-frame Peak/Shelf",
-                "FREQ · SHELF · PEAK per frame",
-                Some(MenuAction::SeedPeakShelf),
-                StartPreview::Peak,
-            ),
-        ];
-        left.push(Self::start_header("verified editable"));
-        for (i, source) in SOURCE_STARTS.iter().enumerate().take(4) {
-            left.push(Self::start_row(
-                source.label,
-                source.note,
-                Some(MenuAction::SeedSource(i)),
-                StartPreview::Body(source.body_path),
-            ));
-        }
-        if !self.tables.skeletons.is_empty() {
-            left.push(Self::start_header("verified exact"));
-            for (i, sk) in self.tables.skeletons.iter().enumerate() {
-                left.push(Self::start_row(
-                    sk.label.clone(),
-                    "independent verifier · START",
-                    Some(MenuAction::SeedExact(i)),
-                    StartPreview::Exact(i),
+        let Some(manifest) = &self.start_manifest else {
+            return vec![vec![
+                Self::start_header("no start manifest"),
+                Self::start_row(
+                    "Two-frame Peak/Shelf",
+                    "FREQ · SHELF · PEAK per frame",
+                    Some(MenuAction::SeedPeakShelf),
+                    StartPreview::Peak,
+                ),
+                Self::start_row(
+                    "Scratch",
+                    "flat six-biquad body",
+                    Some(MenuAction::SeedScratch),
+                    StartPreview::Flat,
+                ),
+                Self::start_row(
+                    "run tools/build_forge_start_manifest.py",
+                    "builds the four provenance lanes",
+                    None,
+                    StartPreview::Flat,
+                ),
+            ]];
+        };
+        let mut columns: Vec<Vec<StartEntry>> = Vec::new();
+        for (li, lane) in manifest.lanes.iter().enumerate() {
+            let badge: &'static str = match lane.badge.as_str() {
+                "COMPILE EXACT" => "COMPILE EXACT",
+                "IMPORT EXACT" => "IMPORT EXACT",
+                "OVERLAY" => "OVERLAY",
+                _ => "APPROX",
+            };
+            let compact_lane = lane.id == "approx_starters";
+            let mut col = vec![Self::start_header(&lane.title)];
+            for (ri, row) in lane.rows.iter().enumerate() {
+                let preview = if compact_lane {
+                    StartPreview::Flat // compact rows draw no mini plot
+                } else {
+                    match row.kind.as_str() {
+                        "peak_shelf" => StartPreview::Peak,
+                        "exact_skeleton" => self
+                            .tables
+                            .skeletons
+                            .iter()
+                            .position(|sk| Some(&sk.key) == row.exact_key.as_ref())
+                            .map(StartPreview::Exact)
+                            .unwrap_or(StartPreview::Flat),
+                        "overlay" => row
+                            .curves
+                            .clone()
+                            .map(StartPreview::Curves)
+                            .unwrap_or(StartPreview::Flat),
+                        _ => row
+                            .body
+                            .clone()
+                            .map(StartPreview::Body)
+                            .unwrap_or(StartPreview::Flat),
+                    }
+                };
+                let mut entry = Self::start_row(
+                    row.label.clone(),
+                    row.note.clone(),
+                    Some(MenuAction::StartRow(li, ri)),
+                    preview,
+                );
+                entry.badge = Some(badge);
+                col.push(entry);
+            }
+            // quarantine is listed under the imports lane — visible, reasoned
+            if lane.id == "exact_imports" {
+                col.push(Self::start_header("quarantine"));
+                for q in &manifest.quarantine {
+                    let mut e = Self::start_row(
+                        q.label.clone(),
+                        q.reason.clone(),
+                        None,
+                        StartPreview::Flat,
+                    );
+                    e.quarantined = true;
+                    col.push(e);
+                }
+                col.push(Self::start_header("blank"));
+                col.push(Self::start_row(
+                    "Scratch",
+                    "flat six-biquad body",
+                    Some(MenuAction::SeedScratch),
+                    StartPreview::Flat,
+                ));
+                col.push(Self::start_row(
+                    "Restore autosave",
+                    "last editable source",
+                    Some(MenuAction::RestoreAutosave),
+                    StartPreview::None,
                 ));
             }
+            columns.push(col);
         }
-        left.push(Self::start_header("blank"));
-        left.push(Self::start_row(
-            "Scratch",
-            "flat six-biquad body",
-            Some(MenuAction::SeedScratch),
-            StartPreview::Flat,
-        ));
-        left.push(Self::start_row(
-            "Restore autosave",
-            "last editable source",
-            Some(MenuAction::RestoreAutosave),
-            StartPreview::None,
-        ));
-
-        let mut right = vec![Self::start_header("verified previews")];
-        for (i, source) in SOURCE_STARTS.iter().enumerate().skip(4) {
-            right.push(Self::start_row(
-                source.label,
-                source.note,
-                source.stages_path.map(|_| MenuAction::SeedSource(i)),
-                StartPreview::Body(source.body_path),
-            ));
-        }
-        right.push(Self::start_header("clean templates"));
-        right.push(Self::start_row(
-            "Default template",
-            "balanced starter",
-            Some(MenuAction::SeedDefault),
-            StartPreview::Flat,
-        ));
-        right.push(Self::start_row(
-            "Low-pass sweep",
-            "resonant cutoff travel",
-            Some(MenuAction::SeedLowpass),
-            StartPreview::Lowpass,
-        ));
-        right.push(Self::start_row(
-            "High-pass",
-            "zeros pinned low",
-            Some(MenuAction::SeedHighpass),
-            StartPreview::Highpass,
-        ));
-        right.push(Self::start_row(
-            "Band-pass",
-            "guarded resonator",
-            Some(MenuAction::SeedBandpass),
-            StartPreview::Bandpass,
-        ));
-        right.push(Self::start_row(
-            "Notch comb",
-            "phase-shifter cut",
-            Some(MenuAction::SeedNotchComb),
-            StartPreview::Notch,
-        ));
-        right.push(Self::start_row(
-            "Parametric peak",
-            "single surgical boost",
-            Some(MenuAction::SeedParametric),
-            StartPreview::Peak,
-        ));
-        right.push(Self::start_row(
-            "Six resonant peaks",
-            "stacked landmarks",
-            Some(MenuAction::SeedPeaks),
-            StartPreview::Peaks,
-        ));
-        right.push(Self::start_row(
-            "Vowel ah > ee",
-            "measured formants",
-            Some(MenuAction::SeedVowel(0)),
-            StartPreview::Vowel,
-        ));
-        right.push(Self::start_row(
-            "Tube partials",
-            "harmonic body",
-            Some(MenuAction::SeedTube(1)),
-            StartPreview::Modal,
-        ));
-
-        let third = vec![
-            Self::start_header("experimental verified"),
-            Self::start_row(
-                "Forge auto recipes",
-                "55 packed bodies · details",
-                None,
-                StartPreview::Peaks,
-            ),
-            Self::start_row(
-                "Iconic method studies",
-                "9 packed bodies · details",
-                None,
-                StartPreview::Peak,
-            ),
-            Self::start_row(
-                "LPC corner bodies",
-                "6 pass probe · keep verdicts",
-                None,
-                StartPreview::Vowel,
-            ),
-            Self::start_row(
-                "Null grammar",
-                "8 packed bodies · details",
-                None,
-                StartPreview::Notch,
-            ),
-            Self::start_row(
-                "Vowel studies",
-                "12 packed bodies · details",
-                None,
-                StartPreview::Vowel,
-            ),
-            Self::start_header("study overlays"),
-            Self::start_row(
-                "Corner library",
-                "112 single-corner landmarks",
-                None,
-                StartPreview::Modal,
-            ),
-            Self::start_row(
-                "Synthetic voice captures",
-                "capture pack · fit prior",
-                None,
-                StartPreview::Vowel,
-            ),
-            Self::start_row(
-                "ARMA source pack",
-                "audio/probe material",
-                None,
-                StartPreview::Bandpass,
-            ),
-            Self::start_row(
-                "Capture fit bench",
-                "fit evidence only",
-                None,
-                StartPreview::Flat,
-            ),
-            Self::start_row(
-                "Screamer study",
-                "reference plots only",
-                None,
-                StartPreview::Highpass,
-            ),
-        ];
-        vec![left, right, third]
+        columns
     }
 
     fn menu_entries(&self, menu: Menu) -> Vec<(String, Option<MenuAction>)> {
@@ -4838,15 +4862,20 @@ impl App {
             .collect()
     }
 
-    fn start_preview_values(&self, preview: StartPreview) -> Option<Vec<f32>> {
+    fn start_preview_values(&self, preview: &StartPreview) -> Option<Vec<f32>> {
         match preview {
             StartPreview::None => None,
             StartPreview::Body(path) => self
                 .source_bodies
                 .get(path)
                 .map(|body| self.body_preview_response(body)),
+            StartPreview::Curves(path) => self
+                .overlay_curves
+                .get(path)
+                .and_then(|ov| ov.curves.first())
+                .map(|c| c.db.clone()),
             StartPreview::Exact(which) => self
-                .skeleton_preview_body(which)
+                .skeleton_preview_body(*which)
                 .map(|body| self.body_preview_response(&body)),
             shape => Some(shape_preview_values(shape, AUDIT_BINS)),
         }
@@ -4854,26 +4883,24 @@ impl App {
 
     fn draw_start_menu(&self, p: &egui::Painter, chip: Rect, frame: &mut Frame) {
         let columns = self.start_menu_columns();
-        let col_w = 356.0;
+        let col_w = 330.0;
         let gap = 12.0;
         let pad = 12.0;
         let row_h = 46.0;
+        let compact_h = 26.0;
         let header_h = 22.0;
+        let entry_h = |e: &StartEntry| {
+            if e.preview == StartPreview::None && e.action.is_none() && !e.quarantined {
+                header_h
+            } else if e.quarantined || e.badge == Some("APPROX") {
+                compact_h
+            } else {
+                row_h
+            }
+        };
         let col_heights: Vec<f32> = columns
             .iter()
-            .map(|col| {
-                pad * 2.0
-                    + col
-                        .iter()
-                        .map(|e| {
-                            if e.preview == StartPreview::None && e.action.is_none() {
-                                header_h
-                            } else {
-                                row_h
-                            }
-                        })
-                        .sum::<f32>()
-            })
+            .map(|col| pad * 2.0 + col.iter().map(entry_h).sum::<f32>())
             .collect();
         let w = pad * 2.0 + col_w * columns.len() as f32 + gap * (columns.len() - 1) as f32;
         let h = col_heights.into_iter().fold(0.0, f32::max);
@@ -4895,7 +4922,8 @@ impl App {
             let x = rect.left() + pad + col_idx as f32 * (col_w + gap);
             let mut y = rect.top() + pad;
             for entry in col {
-                let is_header = entry.preview == StartPreview::None && entry.action.is_none();
+                let is_header =
+                    entry.preview == StartPreview::None && entry.action.is_none() && !entry.quarantined;
                 if is_header {
                     let hr = Rect::from_min_size(Pos2::new(x, y), Vec2::new(col_w, header_h));
                     p.text(
@@ -4903,7 +4931,7 @@ impl App {
                         Align2::LEFT_CENTER,
                         entry.label.to_ascii_uppercase(),
                         FontId::monospace(9.5),
-                        ICE,
+                        if entry.label == "quarantine" { FAULT } else { ICE },
                     );
                     p.line_segment(
                         [
@@ -4916,7 +4944,9 @@ impl App {
                     continue;
                 }
 
-                let row = Rect::from_min_size(Pos2::new(x, y), Vec2::new(col_w, row_h));
+                let this_h = entry_h(entry);
+                let compact = this_h < row_h;
+                let row = Rect::from_min_size(Pos2::new(x, y), Vec2::new(col_w, this_h));
                 let clickable = entry.action.is_some();
                 if let Some(action) = entry.action {
                     frame.menu_items.push(Hit {
@@ -4924,25 +4954,71 @@ impl App {
                         value: action,
                     });
                 }
+                // active overlay rows hold their border lit
+                let overlay_active = matches!(
+                    (&entry.preview, &self.overlay_ref),
+                    (StartPreview::Curves(path), Some(active)) if path == active
+                );
                 p.rect_filled(
                     row.shrink(1.0),
                     5.0,
                     if clickable {
-                        Color32::from_rgb(24, 25, 31)
+                        Color32::from_rgb(20, 26, 23)
                     } else {
-                        Color32::from_rgb(19, 20, 25)
+                        Color32::from_rgb(16, 21, 19)
                     },
                 );
                 p.rect_stroke(
                     row.shrink(1.0),
                     5.0,
-                    Stroke::new(1.0, if clickable { with_alpha(ICE, 70) } else { EDGE }),
+                    Stroke::new(
+                        1.0,
+                        if entry.quarantined {
+                            with_alpha(FAULT, 80)
+                        } else if overlay_active {
+                            ICE
+                        } else if clickable {
+                            with_alpha(ICE, 70)
+                        } else {
+                            EDGE
+                        },
+                    ),
                 );
+                let badge_color = match entry.badge {
+                    _ if entry.quarantined => FAULT,
+                    Some("COMPILE EXACT") => painter::theme::GOOD,
+                    Some("IMPORT EXACT") => ICE,
+                    Some("OVERLAY") => EMBER,
+                    Some(_) => TEXT_DIM,
+                    None => ICE,
+                };
+                if compact {
+                    p.text(
+                        Pos2::new(row.left() + 10.0, row.center().y),
+                        Align2::LEFT_CENTER,
+                        &entry.label,
+                        FontId::monospace(10.0),
+                        if entry.quarantined { TEXT_DIM } else { TEXT },
+                    );
+                    p.text(
+                        Pos2::new(row.right() - 10.0, row.center().y),
+                        Align2::RIGHT_CENTER,
+                        if entry.quarantined {
+                            &entry.note
+                        } else {
+                            entry.badge.unwrap_or("")
+                        },
+                        FontId::monospace(8.0),
+                        badge_color,
+                    );
+                    y += this_h;
+                    continue;
+                }
                 let preview_r = Rect::from_min_size(
                     Pos2::new(row.right() - 112.0, row.top() + 8.0),
                     Vec2::new(96.0, 30.0),
                 );
-                if let Some(values) = self.start_preview_values(entry.preview) {
+                if let Some(values) = self.start_preview_values(&entry.preview) {
                     draw_mini_plot(p, preview_r, &values, if clickable { TRUTH } else { TEXT_DIM });
                 }
                 p.text(
@@ -4966,11 +5042,13 @@ impl App {
                 p.text(
                     Pos2::new(row.right() - 121.0, row.top() + 27.0),
                     Align2::RIGHT_TOP,
-                    if clickable { "START" } else { "PREVIEW" },
+                    entry
+                        .badge
+                        .unwrap_or(if clickable { "START" } else { "PREVIEW" }),
                     FontId::monospace(8.4),
-                    if clickable { ICE } else { TEXT_DIM },
+                    badge_color,
                 );
-                y += row_h;
+                y += this_h;
             }
         }
         frame.menu_rect = Some(rect);
@@ -5089,6 +5167,52 @@ impl App {
                     with_alpha(ICE, 150),
                 );
             }
+        }
+
+        // reference overlay: exact measured curves (X3 blocks / P2K refs) —
+        // four corner curves in the corner identity colors, thin, dim
+        if let Some(path) = &self.overlay_ref {
+            if let Some(ov) = self.overlay_curves.get(path) {
+                for (ci, curve) in ov.curves.iter().enumerate().take(4) {
+                    let color = painter::theme::CORNER[ci];
+                    let points: Vec<Pos2> = ov
+                        .freqs
+                        .iter()
+                        .zip(&curve.db)
+                        .filter(|(f, db)| f.is_finite() && db.is_finite())
+                        .map(|(&f, &db)| {
+                            Pos2::new(
+                                x_for_freq(rect, f.clamp(F_MIN, F_MAX)),
+                                y_for_db(rect, db.clamp(DB_MIN, DB_MAX)),
+                            )
+                        })
+                        .collect();
+                    if points.len() > 1 {
+                        p.add(egui::Shape::line(
+                            points,
+                            Stroke::new(1.0, with_alpha(color, 130)),
+                        ));
+                    }
+                }
+                p.text(
+                    Pos2::new(rect.right() - 12.0, rect.top() + 24.0),
+                    Align2::RIGHT_TOP,
+                    format!("overlay: {} — exact reference", ov.label),
+                    FontId::monospace(9.5),
+                    with_alpha(EMBER, 170),
+                );
+            }
+        }
+
+        // verbatim packed preview: announce it — sections do not describe it
+        if let Some(label) = &self.packed_preview {
+            p.text(
+                rect.left_top() + Vec2::new(12.0, 44.0),
+                Align2::LEFT_TOP,
+                format!("packed preview: {label} — editing returns to your sections"),
+                FontId::monospace(10.0),
+                EMBER,
+            );
         }
 
         // THE plot: the combined packed-runtime response — the one hero object.
@@ -7017,7 +7141,7 @@ fn slugify(s: &str) -> String {
     }
 }
 
-fn shape_preview_values(preview: StartPreview, n: usize) -> Vec<f32> {
+fn shape_preview_values(preview: &StartPreview, n: usize) -> Vec<f32> {
     (0..n)
         .map(|i| {
             let t = i as f32 / (n - 1) as f32;
@@ -7048,7 +7172,7 @@ fn shape_preview_values(preview: StartPreview, n: usize) -> Vec<f32> {
                         + bump(0.68, 0.028, 10.0)
                         - 14.0
                 }
-                StartPreview::Body(_) | StartPreview::Exact(_) => 0.0,
+                StartPreview::Body(_) | StartPreview::Curves(_) | StartPreview::Exact(_) => 0.0,
             }
         })
         .collect()
