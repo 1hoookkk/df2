@@ -1,5 +1,6 @@
 #include "PluginEditor.h"
 #include "BinaryData.h"
+#include "TrenchBodyRoster.h"
 
 namespace
 {
@@ -45,6 +46,27 @@ juce::Rectangle<float> qWheelWell()
 {
     return sourceRectToEditor ({ 127.0f, 871.0f, 423.0f, 101.0f });
 }
+
+juce::Rectangle<float> typeSelectorWell()
+{
+    return sourceRectToEditor ({ 230.0f, 142.0f, 672.0f, 73.0f });
+}
+
+juce::Rectangle<float> morphReadoutWell()
+{
+    return sourceRectToEditor ({ 603.0f, 712.0f, 168.0f, 77.0f });
+}
+
+juce::Rectangle<float> qReadoutWell()
+{
+    return sourceRectToEditor ({ 602.0f, 889.0f, 169.0f, 79.0f });
+}
+
+juce::Font displayFont (float height, bool bold = false)
+{
+    return juce::Font (juce::FontOptions (juce::Font::getDefaultSansSerifFontName(), height,
+                                          bold ? juce::Font::bold : juce::Font::plain));
+}
 }
 
 PluginEditor::PluginEditor (PluginProcessor& p)
@@ -71,6 +93,33 @@ PluginEditor::PluginEditor (PluginProcessor& p)
     setupSlider (morphSlider);
     setupSlider (qSlider);
 
+    bodySelector.setWantsKeyboardFocus (true);
+    bodySelector.setColour (juce::ComboBox::backgroundColourId, juce::Colours::transparentBlack);
+    bodySelector.setColour (juce::ComboBox::outlineColourId, juce::Colours::transparentBlack);
+    bodySelector.setColour (juce::ComboBox::buttonColourId, juce::Colours::transparentBlack);
+    bodySelector.setColour (juce::ComboBox::arrowColourId, juce::Colours::transparentBlack);
+    bodySelector.setColour (juce::ComboBox::textColourId, juce::Colours::transparentBlack);
+    bodySelector.setTextWhenNothingSelected ({});
+    populateBodySelector();
+    bodySelector.onChange = [this]
+    {
+        if (syncingBodySelector)
+            return;
+
+        const auto selectedIndex = bodySelector.getSelectedId() - 1;
+        if (selectedIndex < 0)
+            return;
+
+        if (auto* parameter = processor.apvts.getParameter (ParamID::body))
+        {
+            parameter->beginChangeGesture();
+            parameter->setValueNotifyingHost (parameter->convertTo0to1 ((float) selectedIndex));
+            parameter->endChangeGesture();
+        }
+    };
+    addAndMakeVisible (bodySelector);
+    syncBodySelectorToParameter();
+
     morphHitTarget.setInterceptsMouseClicks (true, false);
     qHitTarget.setInterceptsMouseClicks (true, false);
     morphHitTarget.setAlwaysOnTop (true);
@@ -86,6 +135,7 @@ PluginEditor::PluginEditor (PluginProcessor& p)
     setOpaque (true);
     setResizable (false, false);
     setSize (kEditorWidth, kEditorHeight);
+    startTimerHz (24);
 }
 
 PluginEditor::~PluginEditor()
@@ -101,11 +151,17 @@ void PluginEditor::paint (juce::Graphics& g)
     if (panelImage.isValid())
         g.drawImage (panelImage, getLocalBounds().toFloat());
 
+    drawSelectorAndReadouts (g);
     drawThumbwheels (g);
 }
 
 void PluginEditor::resized()
 {
+    auto selectorBounds = typeSelectorWell();
+    const float labelWidth = 32.0f;
+    selectorBounds.removeFromLeft (labelWidth);
+
+    bodySelector.setBounds (selectorBounds.toNearestInt().reduced (1));
     morphSlider.setBounds (thumbwheelSliderBounds (morphWheelWell()));
     qSlider.setBounds (thumbwheelSliderBounds (qWheelWell()));
     morphHitTarget.setBounds (thumbwheelSliderBounds (morphWheelWell()).expanded (2, 3));
@@ -201,4 +257,157 @@ void PluginEditor::drawThumbwheelFrame (juce::Graphics& g, juce::Rectangle<float
     g.drawImage (thumbwheelStrip,
                  dst.getX(), dst.getY(), dst.getWidth(), dst.getHeight(),
                  srcX, 0, frameWidth, frameHeight);
+}
+
+void PluginEditor::drawSelectorAndReadouts (juce::Graphics& g)
+{
+    const auto selectorBounds = typeSelectorWell();
+    
+    if (panelImage.isValid())
+    {
+        const float scaleX = panelImage.getWidth() / 360.0f;
+        const float scaleY = panelImage.getHeight() / 560.0f;
+        const float srcX = selectorBounds.getX() * scaleX;
+        const float srcY = selectorBounds.getY() * scaleY;
+        const float srcW = selectorBounds.getWidth() * scaleX;
+        const float srcH = selectorBounds.getHeight() * scaleY;
+        const float cleanSrcY = juce::jmax (0.0f, srcY - srcH - 15.0f);
+        
+        g.drawImage (panelImage,
+                     juce::roundToInt (selectorBounds.getX()), juce::roundToInt (selectorBounds.getY()), 
+                     juce::roundToInt (selectorBounds.getWidth()), juce::roundToInt (selectorBounds.getHeight()),
+                     juce::roundToInt (srcX), juce::roundToInt (cleanSrcY), 
+                     juce::roundToInt (srcW), juce::roundToInt (srcH));
+    }
+
+    auto buttonBounds = selectorBounds;
+    const float labelWidth = 32.0f;
+    auto labelArea = buttonBounds.removeFromLeft (labelWidth);
+
+    g.setFont (displayFont (9.0f, true));
+    g.setColour (juce::Colour (0xff333333));
+    g.drawFittedText ("TYPE", labelArea.toNearestInt(), juce::Justification::centredLeft, 1);
+
+    drawDisplayWell (g, buttonBounds);
+
+    const auto selectedIndex = bodySelector.getSelectedId() - 1;
+    const auto typeText = selectedIndex >= 0 ? trench::bodyDisplayName (selectedIndex)
+                                             : juce::String ("TYPE");
+
+    auto selectorText = buttonBounds.reduced (8.0f, 2.0f);
+    const float arrowBoxWidth = buttonBounds.getHeight();
+    auto arrowBox = selectorText.removeFromRight (arrowBoxWidth);
+
+    // Regular weight (non-bold) for clean typography
+    g.setFont (displayFont (12.0f, false));
+    g.setColour (juce::Colours::black);
+    g.drawFittedText (typeText, selectorText.toNearestInt(), juce::Justification::centredLeft, 1);
+
+    g.setColour (juce::Colour (0xff909090));
+    g.drawVerticalLine (juce::roundToInt (buttonBounds.getX() + buttonBounds.getWidth() - arrowBoxWidth),
+                        buttonBounds.getY() + 1.0f, buttonBounds.getBottom() - 1.0f);
+
+    const auto arrow = arrowBox.withSizeKeepingCentre (6.0f, 4.0f);
+    juce::Path arrowPath;
+    arrowPath.startNewSubPath (arrow.getX(), arrow.getY());
+    arrowPath.lineTo (arrow.getCentreX(), arrow.getBottom());
+    arrowPath.lineTo (arrow.getRight(), arrow.getY());
+    arrowPath.closeSubPath();
+    g.setColour (juce::Colours::black);
+    g.fillPath (arrowPath);
+
+    const auto readParameter = [this] (const char* parameterID)
+    {
+        if (auto* value = processor.apvts.getRawParameterValue (parameterID))
+            return juce::jlimit (0.0f, 1.0f, value->load());
+
+        return 0.0f;
+    };
+
+    drawReadout (g, morphReadoutWell(), "MORPH", readParameter (ParamID::morph));
+    drawReadout (g, qReadoutWell(), "Q", readParameter (ParamID::q));
+}
+
+void PluginEditor::drawDisplayWell (juce::Graphics& g, juce::Rectangle<float> bounds)
+{
+    if (panelImage.isValid())
+    {
+        const float scaleX = panelImage.getWidth() / 360.0f;
+        const float scaleY = panelImage.getHeight() / 560.0f;
+        const float srcX = bounds.getX() * scaleX;
+        const float srcY = bounds.getY() * scaleY;
+        const float srcW = bounds.getWidth() * scaleX;
+        const float srcH = bounds.getHeight() * scaleY;
+        const float cleanSrcY = juce::jmax (0.0f, srcY - srcH - 15.0f);
+        
+        g.drawImage (panelImage,
+                     juce::roundToInt (bounds.getX()), juce::roundToInt (bounds.getY()), 
+                     juce::roundToInt (bounds.getWidth()), juce::roundToInt (bounds.getHeight()),
+                     juce::roundToInt (srcX), juce::roundToInt (cleanSrcY), 
+                     juce::roundToInt (srcW), juce::roundToInt (srcH));
+    }
+
+    const auto r = bounds.reduced (1.0f);
+    const auto radius = 3.0f;
+
+    // Outer drop shadow (thick but small)
+    g.setColour (juce::Colours::black.withAlpha (0.22f));
+    g.fillRoundedRectangle (r.translated (0.0f, 1.5f), radius);
+    g.setColour (juce::Colours::black.withAlpha (0.12f));
+    g.fillRoundedRectangle (r.translated (0.0f, 0.8f), radius);
+
+    // Button gradient background
+    juce::ColourGradient grad (juce::Colour (0xfffafafa), r.getX(), r.getY(),
+                               juce::Colour (0xffcfcfcf), r.getX(), r.getBottom(), false);
+    g.setGradientFill (grad);
+    g.fillRoundedRectangle (r, radius);
+
+    // Outer border
+    g.setColour (juce::Colour (0xff707070));
+    g.drawRoundedRectangle (r, radius, 1.0f);
+
+    // Diagonal gradient bevel inner border
+    juce::ColourGradient bevelGrad (juce::Colours::white.withAlpha (0.9f), r.getX() + 1.0f, r.getY() + 1.0f,
+                                    juce::Colours::black.withAlpha (0.24f), r.getRight() - 1.0f, r.getBottom() - 1.0f, false);
+    g.setGradientFill (bevelGrad);
+    g.drawRoundedRectangle (r.reduced (1.0f), radius - 0.5f, 1.0f);
+}
+
+void PluginEditor::drawReadout (juce::Graphics& g, juce::Rectangle<float> bounds, const juce::String&, float value)
+{
+    drawDisplayWell (g, bounds);
+
+    const auto pct = juce::jlimit (0.0f, 1.0f, value) * 100.0f;
+    const auto numeric = juce::String (pct, 1);
+
+    // Regular weight (non-bold) for clean typography
+    g.setFont (displayFont (13.0f, false));
+    g.setColour (juce::Colours::black);
+    g.drawFittedText (numeric, bounds.toNearestInt(), juce::Justification::centred, 1);
+}
+
+void PluginEditor::populateBodySelector()
+{
+    bodySelector.clear (juce::dontSendNotification);
+
+    int count = 0;
+    const auto* entries = trench::bodyRoster (count);
+    for (int i = 0; i < count; ++i)
+        bodySelector.addItem (entries[i].displayName, i + 1);
+}
+
+void PluginEditor::syncBodySelectorToParameter()
+{
+    if (auto* value = processor.apvts.getRawParameterValue (ParamID::body))
+    {
+        syncingBodySelector = true;
+        bodySelector.setSelectedId (juce::roundToInt (value->load()) + 1, juce::dontSendNotification);
+        syncingBodySelector = false;
+    }
+}
+
+void PluginEditor::timerCallback()
+{
+    syncBodySelectorToParameter();
+    repaint();
 }
