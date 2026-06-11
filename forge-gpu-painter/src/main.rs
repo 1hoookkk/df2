@@ -1573,6 +1573,9 @@ struct App {
     start_manifest: Option<sources::manifest::StartManifest>,
     source_bodies: HashMap<String, [u8; 240]>,
     overlay_curves: HashMap<String, sources::manifest::OverlayCurves>,
+    /// spectral centroid (Hz, at M0 Q0) per body/curves path — the START
+    /// list sorts every lane low → high by this
+    centroids: HashMap<String, f32>,
     /// active reference overlay (curves path) drawn on the hero plot
     overlay_ref: Option<String>,
     /// a packed body seeded verbatim for listening/plotting — sections do not
@@ -2359,6 +2362,7 @@ impl App {
             start_manifest: sources::manifest::load(&repo_root()),
             source_bodies: HashMap::new(),
             overlay_curves: HashMap::new(),
+            centroids: HashMap::new(),
             overlay_ref: None,
             packed_preview: None,
             status: "ready — six biquads pack to one 240-byte body".into(),
@@ -2368,6 +2372,14 @@ impl App {
             let root = repo_root();
             app.source_bodies = sources::manifest::load_bodies(&root, manifest);
             app.overlay_curves = sources::manifest::load_overlays(&root, manifest);
+            for (path, body) in &app.source_bodies {
+                app.centroids.insert(path.clone(), body_centroid_hz(body));
+            }
+            for (path, ov) in &app.overlay_curves {
+                if let Some(c) = ov.curves.first() {
+                    app.centroids.insert(path.clone(), spectral_centroid_hz(&c.db));
+                }
+            }
         }
         app.rebuild_body();
         app
@@ -4587,6 +4599,7 @@ impl App {
             };
             let compact_lane = lane.id == "approx_starters";
             let mut col = vec![Self::start_header(&lane.title)];
+            let mut sorted: Vec<(f32, StartEntry)> = Vec::new();
             for (ri, row) in lane.rows.iter().enumerate() {
                 let preview = if compact_lane {
                     StartPreview::Flat // compact rows draw no mini plot
@@ -4619,8 +4632,19 @@ impl App {
                     preview,
                 );
                 entry.badge = Some(badge);
-                col.push(entry);
+                // sort key: spectral centroid (low → high); sourceless rows
+                // (templates) lead their lane
+                let key = row
+                    .body
+                    .as_ref()
+                    .or(row.curves.as_ref())
+                    .and_then(|p| self.centroids.get(p))
+                    .copied()
+                    .unwrap_or(-1.0);
+                sorted.push((key, entry));
             }
+            sorted.sort_by(|a, b| a.0.partial_cmp(&b.0).unwrap_or(std::cmp::Ordering::Equal));
+            col.extend(sorted.into_iter().map(|(_, e)| e));
             // quarantine is listed under the imports lane — visible, reasoned
             if lane.id == "exact_imports" {
                 col.push(Self::start_header("quarantine"));
@@ -4881,72 +4905,83 @@ impl App {
         }
     }
 
+    /// START is a quiet index, not a card wall: two monospace text columns
+    /// grouped by provenance lane, every lane sorted low → high (spectral
+    /// centroid), ONE preview curve at a time (the hovered row).
     fn draw_start_menu(&self, p: &egui::Painter, chip: Rect, frame: &mut Frame) {
-        let columns = self.start_menu_columns();
-        let col_w = 330.0;
-        let gap = 12.0;
-        let pad = 12.0;
-        let row_h = 46.0;
-        let compact_h = 26.0;
-        let header_h = 22.0;
-        let entry_h = |e: &StartEntry| {
-            if e.preview == StartPreview::None && e.action.is_none() && !e.quarantined {
-                header_h
-            } else if e.quarantined || e.badge == Some("APPROX") {
-                compact_h
-            } else {
-                row_h
-            }
+        let entries: Vec<StartEntry> =
+            self.start_menu_columns().into_iter().flatten().collect();
+        let row_h = 18.0;
+        let header_h = 26.0;
+        let pad = 14.0;
+        let col_w = 300.0;
+        let preview_w = 250.0;
+        let is_header = |e: &StartEntry| {
+            e.preview == StartPreview::None && e.action.is_none() && !e.quarantined
         };
-        let col_heights: Vec<f32> = columns
+        let eh = |e: &StartEntry| if is_header(e) { header_h } else { row_h };
+        let total: f32 = entries.iter().map(eh).sum();
+        // split into two columns at a lane boundary near the midpoint
+        let mut split = entries.len();
+        let mut acc = 0.0;
+        for (i, e) in entries.iter().enumerate() {
+            if acc >= total * 0.5 && is_header(e) {
+                split = i;
+                break;
+            }
+            acc += eh(e);
+        }
+        let cols = [&entries[..split], &entries[split..]];
+        let col_h = cols
             .iter()
-            .map(|col| pad * 2.0 + col.iter().map(entry_h).sum::<f32>())
-            .collect();
-        let w = pad * 2.0 + col_w * columns.len() as f32 + gap * (columns.len() - 1) as f32;
-        let h = col_heights.into_iter().fold(0.0, f32::max);
+            .map(|c| c.iter().map(eh).sum::<f32>())
+            .fold(0.0, f32::max);
+        let w = pad * 4.0 + col_w * 2.0 + preview_w;
+        let h = col_h + pad * 2.0;
         let clip = p.clip_rect();
         let mut origin = Pos2::new(chip.left(), chip.bottom() + 4.0);
         if origin.x + w > clip.right() - 8.0 {
             origin.x = (clip.right() - w - 8.0).max(clip.left() + 8.0);
         }
+        if origin.y + h > clip.bottom() - 8.0 {
+            origin.y = (clip.bottom() - h - 8.0).max(clip.top() + 8.0);
+        }
         let rect = Rect::from_min_size(origin, Vec2::new(w, h));
         p.rect_filled(
             rect.expand(2.0),
             7.0,
-            Color32::from_rgba_unmultiplied(0, 0, 0, 120),
+            Color32::from_rgba_unmultiplied(0, 0, 0, 150),
         );
-        p.rect_filled(rect, 7.0, PANEL_HI);
+        p.rect_filled(rect, 7.0, BG);
         p.rect_stroke(rect, 7.0, Stroke::new(1.0, EDGE));
 
-        for (col_idx, col) in columns.iter().enumerate() {
-            let x = rect.left() + pad + col_idx as f32 * (col_w + gap);
+        let hover = self.hover;
+        let mut hovered: Option<&StartEntry> = None;
+        for (ci, col) in cols.iter().enumerate() {
+            let x = rect.left() + pad + ci as f32 * (col_w + pad);
             let mut y = rect.top() + pad;
-            for entry in col {
-                let is_header =
-                    entry.preview == StartPreview::None && entry.action.is_none() && !entry.quarantined;
-                if is_header {
-                    let hr = Rect::from_min_size(Pos2::new(x, y), Vec2::new(col_w, header_h));
+            for entry in *col {
+                if is_header(entry) {
+                    let cy = y + header_h - 9.0;
                     p.text(
-                        hr.left_center(),
-                        Align2::LEFT_CENTER,
+                        Pos2::new(x, cy),
+                        Align2::LEFT_BOTTOM,
                         entry.label.to_ascii_uppercase(),
-                        FontId::monospace(9.5),
-                        if entry.label == "quarantine" { FAULT } else { ICE },
+                        FontId::monospace(8.5),
+                        if entry.label == "quarantine" {
+                            with_alpha(FAULT, 170)
+                        } else {
+                            TEXT_DIM
+                        },
                     );
                     p.line_segment(
-                        [
-                            Pos2::new(hr.left() + 118.0, hr.center().y),
-                            Pos2::new(hr.right(), hr.center().y),
-                        ],
-                        Stroke::new(1.0, with_alpha(EDGE, 180)),
+                        [Pos2::new(x, cy + 3.0), Pos2::new(x + col_w, cy + 3.0)],
+                        Stroke::new(1.0, with_alpha(EDGE, 140)),
                     );
                     y += header_h;
                     continue;
                 }
-
-                let this_h = entry_h(entry);
-                let compact = this_h < row_h;
-                let row = Rect::from_min_size(Pos2::new(x, y), Vec2::new(col_w, this_h));
+                let row = Rect::from_min_size(Pos2::new(x, y), Vec2::new(col_w, row_h));
                 let clickable = entry.action.is_some();
                 if let Some(action) = entry.action {
                     frame.menu_items.push(Hit {
@@ -4954,104 +4989,120 @@ impl App {
                         value: action,
                     });
                 }
-                // active overlay rows hold their border lit
+                let is_hover = hover.map_or(false, |hp| row.contains(hp));
+                if is_hover {
+                    p.rect_filled(row, 3.0, with_alpha(ICE, 16));
+                    hovered = Some(entry);
+                }
+                // an active overlay keeps a small lit dot
                 let overlay_active = matches!(
                     (&entry.preview, &self.overlay_ref),
                     (StartPreview::Curves(path), Some(active)) if path == active
                 );
-                p.rect_filled(
-                    row.shrink(1.0),
-                    5.0,
-                    if clickable {
-                        Color32::from_rgb(20, 26, 23)
-                    } else {
-                        Color32::from_rgb(16, 21, 19)
-                    },
-                );
-                p.rect_stroke(
-                    row.shrink(1.0),
-                    5.0,
-                    Stroke::new(
-                        1.0,
-                        if entry.quarantined {
-                            with_alpha(FAULT, 80)
-                        } else if overlay_active {
-                            ICE
-                        } else if clickable {
-                            with_alpha(ICE, 70)
-                        } else {
-                            EDGE
-                        },
-                    ),
-                );
-                let badge_color = match entry.badge {
-                    _ if entry.quarantined => FAULT,
-                    Some("COMPILE EXACT") => painter::theme::GOOD,
-                    Some("IMPORT EXACT") => ICE,
-                    Some("OVERLAY") => EMBER,
-                    Some(_) => TEXT_DIM,
-                    None => ICE,
-                };
-                if compact {
-                    p.text(
-                        Pos2::new(row.left() + 10.0, row.center().y),
-                        Align2::LEFT_CENTER,
-                        &entry.label,
-                        FontId::monospace(10.0),
-                        if entry.quarantined { TEXT_DIM } else { TEXT },
-                    );
-                    p.text(
-                        Pos2::new(row.right() - 10.0, row.center().y),
-                        Align2::RIGHT_CENTER,
-                        if entry.quarantined {
-                            &entry.note
-                        } else {
-                            entry.badge.unwrap_or("")
-                        },
-                        FontId::monospace(8.0),
-                        badge_color,
-                    );
-                    y += this_h;
-                    continue;
-                }
-                let preview_r = Rect::from_min_size(
-                    Pos2::new(row.right() - 112.0, row.top() + 8.0),
-                    Vec2::new(96.0, 30.0),
-                );
-                if let Some(values) = self.start_preview_values(&entry.preview) {
-                    draw_mini_plot(p, preview_r, &values, if clickable { TRUTH } else { TEXT_DIM });
+                if overlay_active {
+                    p.circle_filled(Pos2::new(x + 4.0, row.center().y), 2.0, ICE);
                 }
                 p.text(
-                    Pos2::new(row.left() + 10.0, row.top() + 10.0),
-                    Align2::LEFT_TOP,
+                    Pos2::new(x + 12.0, row.center().y),
+                    Align2::LEFT_CENTER,
                     &entry.label,
-                    FontId::monospace(10.7),
-                    if clickable { TEXT } else { TEXT_DIM },
-                );
-                p.text(
-                    Pos2::new(row.left() + 10.0, row.top() + 27.0),
-                    Align2::LEFT_TOP,
-                    &entry.note,
-                    FontId::monospace(9.2),
-                    if clickable {
-                        with_alpha(ICE, 155)
+                    FontId::monospace(10.0),
+                    if entry.quarantined {
+                        with_alpha(FAULT, 140)
+                    } else if clickable {
+                        TEXT
                     } else {
-                        Color32::from_rgb(106, 103, 98)
+                        TEXT_DIM
                     },
                 );
-                p.text(
-                    Pos2::new(row.right() - 121.0, row.top() + 27.0),
-                    Align2::RIGHT_TOP,
-                    entry
-                        .badge
-                        .unwrap_or(if clickable { "START" } else { "PREVIEW" }),
-                    FontId::monospace(8.4),
-                    badge_color,
-                );
-                y += this_h;
+                // right: the sort key, terse (centroid Hz) — quarantine rows
+                // show nothing inline; their reason lives in the preview pane
+                if let Some(hz) = self.entry_centroid(entry) {
+                    p.text(
+                        Pos2::new(x + col_w - 4.0, row.center().y),
+                        Align2::RIGHT_CENTER,
+                        fmt_hz(hz),
+                        FontId::monospace(8.5),
+                        with_alpha(TEXT_DIM, 180),
+                    );
+                }
+                y += row_h;
             }
         }
+
+        // one preview at a time — the hovered row
+        let pv = Rect::from_min_size(
+            Pos2::new(rect.right() - pad - preview_w, rect.top() + pad),
+            Vec2::new(preview_w, rect.height() - pad * 2.0),
+        );
+        p.line_segment(
+            [pv.left_top(), pv.left_bottom()],
+            Stroke::new(1.0, with_alpha(EDGE, 140)),
+        );
+        if let Some(entry) = hovered {
+            let plot_r = Rect::from_min_size(
+                Pos2::new(pv.left() + pad, pv.top() + 4.0),
+                Vec2::new(preview_w - pad * 2.0, 120.0),
+            );
+            if let Some(values) = self.start_preview_values(&entry.preview) {
+                draw_mini_plot(p, plot_r, &values, TRUTH);
+            }
+            let mut ty = plot_r.bottom() + 14.0;
+            p.text(
+                Pos2::new(plot_r.left(), ty),
+                Align2::LEFT_TOP,
+                &entry.label,
+                FontId::monospace(10.5),
+                TEXT,
+            );
+            ty += 18.0;
+            p.text(
+                Pos2::new(plot_r.left(), ty),
+                Align2::LEFT_TOP,
+                &entry.note,
+                FontId::monospace(9.0),
+                if entry.quarantined {
+                    with_alpha(FAULT, 180)
+                } else {
+                    TEXT_DIM
+                },
+            );
+            ty += 18.0;
+            if let Some(badge) = entry.badge {
+                let badge_color = match badge {
+                    _ if entry.quarantined => FAULT,
+                    "COMPILE EXACT" => painter::theme::GOOD,
+                    "IMPORT EXACT" => ICE,
+                    "OVERLAY" => EMBER,
+                    _ => TEXT_DIM,
+                };
+                p.text(
+                    Pos2::new(plot_r.left(), ty),
+                    Align2::LEFT_TOP,
+                    if entry.quarantined { "QUARANTINE" } else { badge },
+                    FontId::monospace(8.5),
+                    badge_color,
+                );
+            }
+        } else {
+            p.text(
+                pv.center(),
+                Align2::CENTER_CENTER,
+                "hover to preview · click to start",
+                FontId::monospace(9.5),
+                TEXT_DIM,
+            );
+        }
         frame.menu_rect = Some(rect);
+    }
+
+    fn entry_centroid(&self, entry: &StartEntry) -> Option<f32> {
+        match &entry.preview {
+            StartPreview::Body(path) | StartPreview::Curves(path) => {
+                self.centroids.get(path).copied()
+            }
+            _ => None,
+        }
     }
 
     fn draw_menu(&self, p: &egui::Painter, frame: &mut Frame) {
@@ -7257,6 +7308,40 @@ fn readout_chip(p: &egui::Painter, rect: Rect, text: &str, color: Color32) {
     );
 }
 
+/// Spectral centroid on the log-frequency axis (Hz) from a dB row over the
+/// geometric F_MIN..F_MAX grid — power-weighted mean of log f.
+fn spectral_centroid_hz(db: &[f32]) -> f32 {
+    if db.len() < 2 {
+        return 1000.0;
+    }
+    let (mut num, mut den) = (0.0f64, 0.0f64);
+    let n = db.len();
+    for (i, &d) in db.iter().enumerate() {
+        if !d.is_finite() {
+            continue;
+        }
+        let t = i as f64 / (n - 1) as f64;
+        let logf = (F_MIN as f64).ln() + t * ((F_MAX / F_MIN) as f64).ln();
+        let w = 10f64.powf(d as f64 / 10.0); // power weight
+        num += w * logf;
+        den += w;
+    }
+    if den <= 0.0 {
+        return 1000.0;
+    }
+    ((num / den).exp() as f32).clamp(F_MIN, F_MAX)
+}
+
+/// Centroid of a packed body at M0 Q0 — the START list sort key.
+fn body_centroid_hz(body: &[u8; 240]) -> f32 {
+    let live = live_biquads(&words_of(body), 0.0, 0.0);
+    let trig = grid_trig(AUDIT_BINS);
+    let db: Vec<f32> = (0..AUDIT_BINS)
+        .map(|i| cascade_db_c(&live, trig[i].0, trig[i].1))
+        .collect();
+    spectral_centroid_hz(&db)
+}
+
 fn fmt_hz(f: f32) -> String {
     if f >= 1000.0 {
         format!("{:.2} kHz", f / 1000.0)
@@ -7265,62 +7350,69 @@ fn fmt_hz(f: f32) -> String {
     }
 }
 
-/// front-band slider: label left, live value right, hairline fill + thumb —
-/// same family as slider_chip but with a real value readout instead of 0..1
+/// front-band slider, mini-plot quiet: label · hairline track · thumb ·
+/// value. No box, no fill mass — the track is one line.
 fn front_slider(p: &egui::Painter, rect: Rect, label: &str, value: &str, t: f32, color: Color32) {
-    p.rect_filled(rect, 5.0, PANEL_HI);
-    p.rect_stroke(rect, 5.0, Stroke::new(1.0, EDGE));
-    let fill = Rect::from_min_max(
-        rect.left_top(),
-        Pos2::new(rect.left() + rect.width() * t, rect.bottom()),
-    );
-    p.rect_filled(fill.shrink(2.0), 4.0, with_alpha(color, 36));
-    p.circle_filled(
-        Pos2::new(rect.left() + rect.width() * t, rect.center().y),
-        4.0,
-        color,
-    );
+    let cy = rect.center().y;
+    let label_w = label.len() as f32 * 6.2 + 10.0;
+    let value_w = 64.0;
+    let track_l = rect.left() + label_w;
+    let track_r = rect.right() - value_w;
     p.text(
-        rect.left_center() + Vec2::new(7.0, 0.0),
+        Pos2::new(rect.left(), cy),
         Align2::LEFT_CENTER,
         label,
-        FontId::monospace(10.0),
+        FontId::monospace(9.5),
         TEXT_DIM,
     );
+    p.line_segment(
+        [Pos2::new(track_l, cy), Pos2::new(track_r, cy)],
+        Stroke::new(1.0, with_alpha(EDGE, 200)),
+    );
+    let tx = track_l + (track_r - track_l) * t.clamp(0.0, 1.0);
+    p.line_segment(
+        [Pos2::new(track_l, cy), Pos2::new(tx, cy)],
+        Stroke::new(1.0, with_alpha(color, 170)),
+    );
+    p.circle_filled(Pos2::new(tx, cy), 3.0, color);
     p.text(
-        rect.right_center() + Vec2::new(-7.0, 0.0),
+        Pos2::new(rect.right(), cy),
         Align2::RIGHT_CENTER,
         value,
-        FontId::monospace(10.0),
+        FontId::monospace(9.5),
         color,
     );
 }
 
 fn slider_chip(p: &egui::Painter, rect: Rect, label: &str, value: f32, color: Color32) {
-    p.rect_filled(rect, 5.0, Color32::from_rgb(24, 24, 30));
-    p.rect_stroke(rect, 5.0, Stroke::new(1.0, EDGE));
-    let fill = Rect::from_min_max(
-        rect.left_top(),
-        Pos2::new(rect.left() + rect.width() * value, rect.bottom()),
-    );
-    p.rect_filled(fill.shrink(2.0), 4.0, with_alpha(color, 42));
-    p.circle_filled(
-        Pos2::new(rect.left() + rect.width() * value, rect.center().y),
-        4.5,
-        color,
-    );
+    // quiet: label · hairline track · thumb · value — no box mass
+    let cy = rect.center().y;
+    let label_w = label.len() as f32 * 6.2 + 10.0;
+    let value_w = 38.0;
+    let track_l = rect.left() + label_w;
+    let track_r = rect.right() - value_w;
     p.text(
-        rect.left_center() + Vec2::new(7.0, 0.0),
+        Pos2::new(rect.left(), cy),
         Align2::LEFT_CENTER,
         label,
-        FontId::monospace(10.0),
-        Color32::from_rgb(168, 162, 154),
+        FontId::monospace(9.5),
+        TEXT_DIM,
     );
+    p.line_segment(
+        [Pos2::new(track_l, cy), Pos2::new(track_r, cy)],
+        Stroke::new(1.0, with_alpha(EDGE, 200)),
+    );
+    let tx = track_l + (track_r - track_l) * value.clamp(0.0, 1.0);
+    p.line_segment(
+        [Pos2::new(track_l, cy), Pos2::new(tx, cy)],
+        Stroke::new(1.0, with_alpha(color, 170)),
+    );
+    p.circle_filled(Pos2::new(tx, cy), 3.0, color);
     p.text(
-        rect.right_center() + Vec2::new(-7.0, 0.0),
+        Pos2::new(rect.right(), cy),
         Align2::RIGHT_CENTER,
         format!("{value:.2}"),
-        FontId::monospace(10.0),
+        FontId::monospace(9.5),
         color,
     );
 }
