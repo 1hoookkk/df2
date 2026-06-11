@@ -58,7 +58,10 @@ impl Default for PeakShelfPatch {
                 peak_db: 6.0,
             },
             morph: 0.0,
-            pressure: 0.35,
+            // full baked Q contrast: the runtime PRESSURE axis (Q0 → Q100)
+            // sweeps from the tame rows into these — pressure here is how far
+            // the Q100 corners go, not where the knob sits
+            pressure: 1.0,
             master_peak_db: 0.0,
         }
     }

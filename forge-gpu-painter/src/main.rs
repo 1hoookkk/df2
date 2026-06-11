@@ -1181,6 +1181,19 @@ enum ValueField {
     GainDb,
 }
 
+/// front-surface frame controls (Peak/Shelf Morph): horizontal sliders, value
+/// set from the pointer's position inside the slider rect
+#[derive(Clone, Copy, PartialEq, Eq)]
+enum FrontSlider {
+    LowFreq,
+    LowShelf,
+    LowPeak,
+    HighFreq,
+    HighShelf,
+    HighPeak,
+    Master,
+}
+
 // ── model ─────────────────────────────────────────────────────────────────────
 
 #[derive(Clone, Copy, Serialize, Deserialize)]
@@ -1207,12 +1220,18 @@ struct Section {
 struct SaveSidecar<'a> {
     note: &'a str,
     sections: &'a [Section],
+    /// present iff the body was authored by the Peak/Shelf frame controls and
+    /// is still linked to them — the editable source state
+    #[serde(skip_serializing_if = "Option::is_none")]
+    peak_shelf_patch: Option<&'a model::peak_shelf::PeakShelfPatch>,
 }
 
 /// owned mirror of SaveSidecar for loading autosaves / baked source.json
 #[derive(Deserialize)]
 struct SidecarOwned {
     sections: Vec<Section>,
+    #[serde(default)]
+    peak_shelf_patch: Option<model::peak_shelf::PeakShelfPatch>,
 }
 
 #[derive(Deserialize)]
@@ -1287,6 +1306,7 @@ enum Drag {
     },
     Morph,
     Q,
+    Front(FrontSlider),
     Value {
         field: ValueField,
         start_y: f32,
@@ -1402,6 +1422,7 @@ struct SkeletonSection {
 /// One executed menu action (id strings keep the hit-test table flat).
 #[derive(Clone, Copy, PartialEq, Eq)]
 enum MenuAction {
+    SeedPeakShelf,
     SeedSource(usize),
     SeedDefault,
     SeedLowpass,
@@ -1580,6 +1601,11 @@ struct App {
     /// Q0 rows (pole radius toward the rim, zeros held — the measured Tier-2
     /// rule). Editing a Q100 corner directly breaks the link (deliberate act).
     q_link: bool,
+    /// the Peak/Shelf Morph front surface: LOW/HIGH frame × FREQ/SHELF/PEAK
+    /// + MASTER. While linked, the patch compiler owns all four corners; any
+    /// direct section edit detaches (push_undo is the chokepoint).
+    patch: model::peak_shelf::PeakShelfPatch,
+    patch_linked: bool,
     job_tx: std::sync::mpsc::Sender<Job>,
     resp_rx: std::sync::mpsc::Receiver<Resp>,
     solve_inflight: bool,
@@ -1661,7 +1687,9 @@ fn main() -> eframe::Result {
         println!("patch-test golden body240 sha256 = {sha}");
         // regression pin: the default patch must keep packing to these bytes;
         // re-pin deliberately when the lane constants are re-tuned by ear
-        const GOLDEN_SHA: &str = "abc1c1c861c471bd9502eb13df961414c85eed10e93d336a45a510e3f20ac3ff";
+        // re-pinned 2026-06-11: default patch pressure 0.35 → 1.0 (full baked
+        // Q contrast; the runtime PRESSURE axis sweeps into it)
+        const GOLDEN_SHA: &str = "f7da8138776eb1c959ffc1d5a0233bce56050940808ced394550095c31cca4ca";
         assert_eq!(sha, GOLDEN_SHA, "golden patch body240 drifted");
 
         // 5 · the extreme patch is AUDITED, never silently rescued — report
@@ -2333,6 +2361,8 @@ impl App {
             boot_help: false,
             autosaved_at: Instant::now(),
             q_link: true,
+            patch: model::peak_shelf::PeakShelfPatch::default(),
+            patch_linked: false,
             drag: None,
             curve_grip: None,
             hover: None,
@@ -2384,12 +2414,16 @@ impl App {
             self.undo.remove(0);
         }
         self.redo.clear();
+        // any edit gesture detaches the Peak/Shelf patch; apply_patch (the
+        // front sliders) immediately re-links after this chokepoint
+        self.patch_linked = false;
     }
 
     fn do_undo(&mut self) {
         if let Some(prev) = self.undo.pop() {
             self.redo.push(self.sections.clone());
             self.sections = prev;
+            self.patch_linked = false;
             self.rebuild_body();
             self.status = "undo".into();
         }
@@ -2399,6 +2433,7 @@ impl App {
         if let Some(next) = self.redo.pop() {
             self.undo.push(self.sections.clone());
             self.sections = next;
+            self.patch_linked = false;
             self.rebuild_body();
             self.status = "redo".into();
         }
@@ -2926,6 +2961,11 @@ impl App {
                 self.push_undo();
                 self.sections = side.sections;
                 self.q_link = false; // restored Q rows are as saved, not derived
+                if let Some(patch) = side.peak_shelf_patch {
+                    // the autosave was patch-authored — re-link the frame controls
+                    self.patch = patch;
+                    self.patch_linked = true;
+                }
                 self.rebuild_body();
                 self.status = "restored last autosave (Q rows separate — rows as saved)".into();
             }
@@ -3411,6 +3451,7 @@ impl App {
             note:
                 "TRENCH FORGE source. Body bytes packed through trench_core::compiler::pack_body.",
             sections: &self.sections,
+            peak_shelf_patch: self.patch_linked.then_some(&self.patch),
         };
         let _ = serde_json::to_vec_pretty(&sidecar).map(|json| fs::write(&json_path, json));
         self.status = format!("baked {} (240 bytes)", body_path.display());
@@ -3468,6 +3509,7 @@ impl App {
             note:
                 "TRENCH FORGE keeper source. Bytes packed through trench_core::compiler::pack_body.",
             sections: &self.sections,
+            peak_shelf_patch: self.patch_linked.then_some(&self.patch),
         };
         let _ = serde_json::to_vec_pretty(&sidecar)
             .map(|j| fs::write(dir.join(format!("{slug}.source.json")), j));
@@ -3551,6 +3593,14 @@ impl App {
 
     fn run_action(&mut self, action: MenuAction) {
         match action {
+            MenuAction::SeedPeakShelf => {
+                self.push_undo();
+                self.patch = model::peak_shelf::PeakShelfPatch::default();
+                self.apply_patch();
+                self.status =
+                    "Peak/Shelf Morph — set the LOW and HIGH frames, sweep MORPH, raise PRESSURE"
+                        .into();
+            }
             MenuAction::SeedSource(i) => self.seed_source_start(i),
             MenuAction::SeedDefault => self.seed_default(),
             MenuAction::SeedLowpass => self.seed_lowpass(),
@@ -3712,6 +3762,7 @@ struct Layout {
     rail: Option<Rect>,
     strip: Rect,
     values: Rect,
+    front: Rect,
     statusbar: Rect,
 }
 
@@ -3719,7 +3770,9 @@ fn layout(rect: Rect, show_rail: bool) -> Layout {
     let bar1_h = 34.0;
     let bar2_h = 26.0;
     let strip_h = if show_rail { 70.0 } else { 0.0 };
-    let values_h = 30.0;
+    // front mode: the values row becomes the Peak/Shelf band (global row +
+    // LOW frame row + HIGH frame row)
+    let values_h = if show_rail { 30.0 } else { 104.0 };
     let status_h = if show_rail { 22.0 } else { 0.0 };
     let rail_w = 220.0;
     let bar1 = Rect::from_min_max(rect.min, Pos2::new(rect.right(), rect.top() + bar1_h));
@@ -3770,6 +3823,7 @@ fn layout(rect: Rect, show_rail: bool) -> Layout {
         plot,
         rail,
         strip,
+        front: values, // same band; front mode paints frames, details mode values
         values,
         statusbar,
     }
@@ -3805,6 +3859,7 @@ struct Frame {
     panels_rect: Rect,
     keep_rect: Rect,
     src_chips: Vec<Hit<AudioSrc>>,
+    front_sliders: Vec<Hit<FrontSlider>>,
     surface_rect: Option<Rect>,
     sweepmap_rect: Option<Rect>,
     pin_handles: Vec<(Pos2, usize)>,
@@ -3836,6 +3891,7 @@ impl Default for Frame {
             panels_rect: z,
             keep_rect: z,
             src_chips: Vec::new(),
+            front_sliders: Vec::new(),
             surface_rect: None,
             sweepmap_rect: None,
             pin_handles: Vec::new(),
@@ -3980,6 +4036,7 @@ impl eframe::App for App {
             let sidecar = SaveSidecar {
                 note: "autosave",
                 sections: &self.sections,
+                peak_shelf_patch: self.patch_linked.then_some(&self.patch),
             };
             if let Ok(json) = serde_json::to_vec_pretty(&sidecar) {
                 let _ = fs::write(dir.join("autosave.source.json"), json);
@@ -4005,8 +4062,10 @@ impl eframe::App for App {
                     }
                     self.draw_strip(&p, lay.strip, &mut frame);
                     self.draw_status(&p, lay.statusbar);
+                    self.draw_values(&p, lay.values, &mut frame);
+                } else {
+                    self.draw_front(&p, lay.front, &mut frame);
                 }
-                self.draw_values(&p, lay.values, &mut frame);
                 self.draw_hint(&p, lay.plot);
                 self.draw_help(&p, lay.plot);
                 // menu popup last (over everything)
@@ -4053,7 +4112,7 @@ impl App {
         } else if self.audit_unstable > 0 {
             (FAULT, "unstable".to_string())
         } else {
-            (TRUTH, "stable".to_string())
+            (painter::theme::GOOD, "stable".to_string())
         };
         let galley_w = ltext.len() as f32 * 6.4;
         p.text(
@@ -4178,18 +4237,195 @@ impl App {
         frame.panels_rect = panels_r;
         rx -= 82.0;
 
-        let q_r = Rect::from_min_size(Pos2::new(rx - 112.0, cy - 10.0), Vec2::new(112.0, 20.0));
-        slider_chip(p, q_r, "Q", self.q, ICE);
-        frame.q_rect = q_r;
-        rx -= 120.0;
+        // front mode owns MORPH/PRESSURE in the frame band below — bar2 only
+        // carries them in the details workbench
+        if self.show_rail {
+            let q_r =
+                Rect::from_min_size(Pos2::new(rx - 112.0, cy - 10.0), Vec2::new(112.0, 20.0));
+            slider_chip(p, q_r, "Q", self.q, ICE);
+            frame.q_rect = q_r;
+            rx -= 120.0;
 
-        let morph_r =
-            Rect::from_min_size(Pos2::new(rx - 142.0, cy - 10.0), Vec2::new(142.0, 20.0));
-        slider_chip(p, morph_r, "MORPH", self.morph, section_color(0));
-        frame.morph_rect = morph_r;
+            let morph_r =
+                Rect::from_min_size(Pos2::new(rx - 142.0, cy - 10.0), Vec2::new(142.0, 20.0));
+            slider_chip(p, morph_r, "MORPH", self.morph, section_color(0));
+            frame.morph_rect = morph_r;
+        }
 
         // no right-side readout chips: the live point is announced once (canvas
         // top-left), the selected section once (the value row below the strip).
+    }
+
+    // ── front band: the Peak/Shelf Morph surface ──────────────────────────────
+    // global row: SWEEP · PLAY · source · MORPH · PRESSURE · MASTER
+    // LOW FRAME:  FREQ | SHELF | PEAK        HIGH FRAME: FREQ | SHELF | PEAK
+
+    fn draw_front(&self, p: &egui::Painter, band: Rect, frame: &mut Frame) {
+        use painter::theme::{CORNER, GOOD};
+        p.rect_filled(band, 0.0, PANEL);
+        p.line_segment(
+            [band.left_top(), band.right_top()],
+            Stroke::new(1.0, EDGE),
+        );
+        let row_h = 22.0;
+        let pad = 14.0;
+        let gap = (band.height() - 3.0 * row_h) / 4.0;
+        let row_y = |i: f32| band.top() + gap * (i + 1.0) + row_h * i;
+
+        // ── global row
+        let y = row_y(0.0);
+        let mut x = band.left() + pad;
+        let sweep_r = Rect::from_min_size(Pos2::new(x, y), Vec2::new(62.0, row_h));
+        chip(p, sweep_r, "SWEEP", self.sweep, ICE);
+        frame.sweep_rect = sweep_r;
+        x += 70.0;
+        let play_r = Rect::from_min_size(Pos2::new(x, y), Vec2::new(56.0, row_h));
+        chip(p, play_r, if self.playing { "PAUSE" } else { "PLAY" }, self.playing, GOOD);
+        frame.play_rect = play_r;
+        x += 64.0;
+        for (src, label) in [
+            (AudioSrc::Noise, "NOISE"),
+            (AudioSrc::Saw, "SAW"),
+            (AudioSrc::Pad, "PAD"),
+        ] {
+            let w = label.len() as f32 * 6.6 + 14.0;
+            let r = Rect::from_min_size(Pos2::new(x, y), Vec2::new(w, row_h));
+            chip(p, r, label, self.audio_src == src, TEXT_DIM);
+            frame.src_chips.push(Hit { rect: r, value: src });
+            x += w + 6.0;
+        }
+        x += 10.0;
+        // MORPH · PRESSURE · MASTER fill the rest of the row
+        let right = band.right() - pad;
+        let remaining = right - x;
+        let s_gap = 12.0;
+        let morph_w = (remaining - 2.0 * s_gap) * 0.42;
+        let press_w = (remaining - 2.0 * s_gap) * 0.42;
+        let master_w = (remaining - 2.0 * s_gap) * 0.16;
+        let morph_r = Rect::from_min_size(Pos2::new(x, y), Vec2::new(morph_w, row_h));
+        slider_chip(p, morph_r, "MORPH", self.morph, CORNER[0]);
+        frame.morph_rect = morph_r;
+        x += morph_w + s_gap;
+        let press_r = Rect::from_min_size(Pos2::new(x, y), Vec2::new(press_w, row_h));
+        slider_chip(p, press_r, "PRESSURE", self.q, CORNER[3]);
+        frame.q_rect = press_r;
+        x += press_w + s_gap;
+        let master_t = ((self.patch.master_peak_db + 12.0) / 24.0).clamp(0.0, 1.0);
+        let master_r = Rect::from_min_size(Pos2::new(x, y), Vec2::new(master_w, row_h));
+        front_slider(
+            p,
+            master_r,
+            "MASTER",
+            &format!("{:+.1} dB", self.patch.master_peak_db),
+            master_t,
+            TEXT,
+        );
+        frame.front_sliders.push(Hit {
+            rect: master_r,
+            value: FrontSlider::Master,
+        });
+
+        // ── frame rows
+        for (i, (tag, fc, color, sliders)) in [
+            (
+                "LOW",
+                &self.patch.low,
+                CORNER[0],
+                [FrontSlider::LowFreq, FrontSlider::LowShelf, FrontSlider::LowPeak],
+            ),
+            (
+                "HIGH",
+                &self.patch.high,
+                CORNER[1],
+                [
+                    FrontSlider::HighFreq,
+                    FrontSlider::HighShelf,
+                    FrontSlider::HighPeak,
+                ],
+            ),
+        ]
+        .into_iter()
+        .enumerate()
+        {
+            let y = row_y(i as f32 + 1.0);
+            let mut x = band.left() + pad;
+            p.text(
+                Pos2::new(x, y + row_h * 0.5),
+                Align2::LEFT_CENTER,
+                format!("{tag} FRAME"),
+                FontId::monospace(10.5),
+                color,
+            );
+            x += 92.0;
+            let right = band.right() - pad;
+            let w = (right - x - 2.0 * 12.0) / 3.0;
+            let freq_t = (fc.freq_hz / F_MIN).ln() / (F_MAX / F_MIN).ln();
+            let shelf_t = (fc.shelf + 64.0) / 127.0;
+            let peak_t = (fc.peak_db + 12.0) / 24.0;
+            let shelf_word = if fc.shelf < -21.0 {
+                "low-pass"
+            } else if fc.shelf > 21.0 {
+                "high-pass"
+            } else {
+                "mid shelf"
+            };
+            let cells = [
+                ("FREQ", fmt_hz(fc.freq_hz), freq_t),
+                ("SHELF", format!("{:+.0} {shelf_word}", fc.shelf), shelf_t),
+                ("PEAK", format!("{:+.1} dB", fc.peak_db), peak_t),
+            ];
+            for (j, (label, value, t)) in cells.into_iter().enumerate() {
+                let r = Rect::from_min_size(Pos2::new(x, y), Vec2::new(w, row_h));
+                front_slider(p, r, label, &value, t.clamp(0.0, 1.0), color);
+                frame.front_sliders.push(Hit {
+                    rect: r,
+                    value: sliders[j],
+                });
+                x += w + 12.0;
+            }
+        }
+
+        // link state, terse, bottom-right above the band
+        let note = if self.patch_linked {
+            "frame controls drive the body"
+        } else {
+            "detached — touch a frame control to take over"
+        };
+        p.text(
+            Pos2::new(band.right() - pad, band.top() + 3.0),
+            Align2::RIGHT_TOP,
+            note,
+            FontId::monospace(8.5),
+            TEXT_DIM,
+        );
+    }
+
+    /// A FREQ/SHELF/PEAK/MASTER move recompiles the whole patch through
+    /// compile_peak_shelf → params168 → pack_body. The compiler owns all four
+    /// corners while linked (q_link stays off so the derived-Q rule never
+    /// clobbers the pressurized C2/C3 postures).
+    fn apply_front_slider(&mut self, s: FrontSlider, t: f32) {
+        let t = t.clamp(0.0, 1.0);
+        let freq = F_MIN * (F_MAX / F_MIN).powf(t);
+        let shelf = -64.0 + t * 127.0;
+        let peak = -12.0 + t * 24.0;
+        match s {
+            FrontSlider::LowFreq => self.patch.low.freq_hz = freq,
+            FrontSlider::LowShelf => self.patch.low.shelf = shelf,
+            FrontSlider::LowPeak => self.patch.low.peak_db = peak,
+            FrontSlider::HighFreq => self.patch.high.freq_hz = freq,
+            FrontSlider::HighShelf => self.patch.high.shelf = shelf,
+            FrontSlider::HighPeak => self.patch.high.peak_db = peak,
+            FrontSlider::Master => self.patch.master_peak_db = peak,
+        }
+        self.apply_patch();
+    }
+
+    fn apply_patch(&mut self) {
+        self.q_link = false;
+        self.sections = model::peak_shelf::compile_peak_shelf(&self.patch);
+        self.patch_linked = true;
+        self.rebuild_body();
     }
 
     // ── menu popup ────────────────────────────────────────────────────────────
@@ -4218,7 +4454,16 @@ impl App {
     }
 
     fn start_menu_columns(&self) -> Vec<Vec<StartEntry>> {
-        let mut left = vec![Self::start_header("verified editable")];
+        let mut left = vec![
+            Self::start_header("peak/shelf morph"),
+            Self::start_row(
+                "Two-frame Peak/Shelf",
+                "FREQ · SHELF · PEAK per frame",
+                Some(MenuAction::SeedPeakShelf),
+                StartPreview::Peak,
+            ),
+        ];
+        left.push(Self::start_header("verified editable"));
         for (i, source) in SOURCE_STARTS.iter().enumerate().take(4) {
             left.push(Self::start_row(
                 source.label,
@@ -5474,6 +5719,32 @@ impl App {
                     (self.q * 100.0).round() as i32
                 ),
             ),
+            Drag::Front(s) => {
+                let (frame_word, fc) = match s {
+                    FrontSlider::LowFreq | FrontSlider::LowShelf | FrontSlider::LowPeak => {
+                        ("LOW", &self.patch.low)
+                    }
+                    FrontSlider::HighFreq | FrontSlider::HighShelf | FrontSlider::HighPeak => {
+                        ("HIGH", &self.patch.high)
+                    }
+                    FrontSlider::Master => ("MASTER", &self.patch.low),
+                };
+                let label = match s {
+                    FrontSlider::Master => {
+                        format!("MASTER  {:+.1} dB", self.patch.master_peak_db)
+                    }
+                    FrontSlider::LowFreq | FrontSlider::HighFreq => {
+                        format!("{frame_word} FREQ  {}", fmt_hz(fc.freq_hz))
+                    }
+                    FrontSlider::LowShelf | FrontSlider::HighShelf => {
+                        format!("{frame_word} SHELF  {:+.0}", fc.shelf)
+                    }
+                    FrontSlider::LowPeak | FrontSlider::HighPeak => {
+                        format!("{frame_word} PEAK  {:+.1} dB", fc.peak_db)
+                    }
+                };
+                (cursor, label)
+            }
         };
 
         let w = (label.len() as f32 * 6.45 + 18.0).clamp(220.0, rect.width() - 24.0);
@@ -6134,6 +6405,12 @@ impl App {
                     self.sweep_t0 = Instant::now();
                     return;
                 }
+                if let Some(h) = frame.front_sliders.iter().find(|h| h.rect.contains(pos)) {
+                    self.push_undo();
+                    let t = (pos.x - h.rect.left()) / h.rect.width();
+                    self.apply_front_slider(h.value, t);
+                    return;
+                }
                 if frame.qlink_rect.contains(pos) {
                     self.q_link = !self.q_link;
                     if self.q_link {
@@ -6253,6 +6530,11 @@ impl App {
                     self.drag = Some(Drag::Morph);
                 } else if frame.q_rect.contains(pos) {
                     self.drag = Some(Drag::Q);
+                } else if let Some(h) = frame.front_sliders.iter().find(|h| h.rect.contains(pos)) {
+                    self.push_undo();
+                    self.drag = Some(Drag::Front(h.value));
+                    let t = (pos.x - h.rect.left()) / h.rect.width();
+                    self.apply_front_slider(h.value, t);
                 } else if frame.surface_rect.map_or(false, |r| r.contains(pos)) {
                     self.sweep = false;
                     self.drag = Some(Drag::SurfaceMap);
@@ -6374,6 +6656,14 @@ impl App {
                             ((pos.x - frame.q_rect.left()) / frame.q_rect.width()).clamp(0.0, 1.0);
                         self.recompute_response();
                         self.heat_dirty = true;
+                    }
+                    Drag::Front(slider) => {
+                        if let Some(h) =
+                            frame.front_sliders.iter().find(|h| h.value == slider)
+                        {
+                            let t = (pos.x - h.rect.left()) / h.rect.width();
+                            self.apply_front_slider(slider, t);
+                        }
                     }
                     Drag::SurfaceMap => {
                         if let Some(map) = frame.surface_rect {
@@ -6839,6 +7129,45 @@ fn readout_chip(p: &egui::Painter, rect: Rect, text: &str, color: Color32) {
         Align2::LEFT_CENTER,
         text,
         FontId::monospace(10.5),
+        color,
+    );
+}
+
+fn fmt_hz(f: f32) -> String {
+    if f >= 1000.0 {
+        format!("{:.2} kHz", f / 1000.0)
+    } else {
+        format!("{f:.0} Hz")
+    }
+}
+
+/// front-band slider: label left, live value right, hairline fill + thumb —
+/// same family as slider_chip but with a real value readout instead of 0..1
+fn front_slider(p: &egui::Painter, rect: Rect, label: &str, value: &str, t: f32, color: Color32) {
+    p.rect_filled(rect, 5.0, PANEL_HI);
+    p.rect_stroke(rect, 5.0, Stroke::new(1.0, EDGE));
+    let fill = Rect::from_min_max(
+        rect.left_top(),
+        Pos2::new(rect.left() + rect.width() * t, rect.bottom()),
+    );
+    p.rect_filled(fill.shrink(2.0), 4.0, with_alpha(color, 36));
+    p.circle_filled(
+        Pos2::new(rect.left() + rect.width() * t, rect.center().y),
+        4.0,
+        color,
+    );
+    p.text(
+        rect.left_center() + Vec2::new(7.0, 0.0),
+        Align2::LEFT_CENTER,
+        label,
+        FontId::monospace(10.0),
+        TEXT_DIM,
+    );
+    p.text(
+        rect.right_center() + Vec2::new(-7.0, 0.0),
+        Align2::RIGHT_CENTER,
+        value,
+        FontId::monospace(10.0),
         color,
     );
 }
