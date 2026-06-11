@@ -34,6 +34,10 @@ pub struct Row {
     pub note: String,
     /// peak_shelf | law | exact_skeleton | packed | overlay
     pub kind: String,
+    /// what it IS (the picker's color code): law | physical | vocal |
+    /// analog | import | reference | iconic | auto | study | approx
+    #[serde(default)]
+    pub kind_hint: Option<String>,
     #[serde(default)]
     pub body: Option<String>,
     #[serde(default)]

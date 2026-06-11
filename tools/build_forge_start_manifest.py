@@ -107,6 +107,7 @@ def compile_designer_imports() -> list[dict]:
             "label": name,
             "note": "Designer XML import · Q collapsed",
             "kind": "packed",
+            "kind_hint": "import",
             "body": f"dev/tmp/forge_real_source_map/imports/{slug}.body240",
             "evidence": f"17x17 probe max_r {probe['max_pole_radius']:.4f} · unstable {probe['unstable_cells']}",
         })
@@ -187,6 +188,7 @@ def build_overlays() -> list[dict]:
             "label": doc["label"],
             "note": doc["note"].split("·")[0].strip(),
             "kind": "overlay",
+            "kind_hint": "reference",
             "curves": f"dev/tmp/forge_real_source_map/overlays/{slug}.curves.json",
             "evidence": "exact reference curves",
         })
@@ -197,21 +199,12 @@ def build_overlays() -> list[dict]:
 # ── COMPILE EXACT: laws, physical, vocal, butterworth ────────────────────────
 
 def law_rows() -> list[dict]:
+    """EVERY law_author body with an editable stages sidecar — no curation."""
     rows = []
-    candidates = [
-        ROOT / "dev/tmp/law_author/golden_hedz_like",
-        ROOT / "dev/tmp/law_author/bass_sharpener",
-        ROOT / "dev/tmp/law_author/families/family_vocal_formant",
-        ROOT / "dev/tmp/law_author/families/family_phaser_comb",
-        ROOT / "dev/tmp/law_author/families/family_slope_ladder",
-        ROOT / "dev/tmp/law_author/families/family_bandpass_swept_eq",
-        ROOT / "dev/tmp/law_author/families/family_morph_special",
-    ]
-    for d in candidates:
-        stages = d / "stages.json"
+    for stages in sorted((ROOT / "dev/tmp/law_author").rglob("stages.json")):
+        d = stages.parent
         bodies = sorted(d.glob("*.body240"))
-        if not (stages.exists() and bodies):
-            print(f"law row MISSING: {d}")
+        if not bodies:
             continue
         verdict = ""
         audit = d / "audit.json"
@@ -224,9 +217,97 @@ def law_rows() -> list[dict]:
             "label": bodies[0].stem.replace("_", " "),
             "note": "law author · editable six stages",
             "kind": "law",
+            "kind_hint": "law",
             "body": str(bodies[0].relative_to(ROOT)).replace("\\", "/"),
             "stages": str(stages.relative_to(ROOT)).replace("\\", "/"),
             "evidence": f"law audit {verdict}" if verdict else "compiled + audited",
+        })
+    return rows
+
+
+def _packed_row(body: Path, hint: str, note: str, evidence: str | None = None) -> dict:
+    ev = evidence
+    if ev is None:
+        d = trench_ffi.packed_probe(body.read_bytes(), 0.5, 0.5)
+        ev = f"center max_r {d['max_pole_radius']:.4f}"
+    return {
+        "label": body.stem.replace("_", " "),
+        "note": note,
+        "kind": "packed",
+        "kind_hint": hint,
+        "body": str(body.relative_to(ROOT)).replace("\\", "/"),
+        "evidence": ev,
+    }
+
+
+def experimental_rows() -> list[dict]:
+    """All runtime-stable packed families from the inventory report."""
+    rows = []
+    for body in sorted((ROOT / "forge/recipes/auto").glob("*.body240")):
+        rows.append(_packed_row(body, "auto", "auto recipe · provenance thin", "17x17 pass (report)"))
+    mouth = ROOT / "forge/recipes/mouth_ah.body240"
+    if mouth.exists():
+        rows.append(_packed_row(mouth, "auto", "forge recipe", "17x17 pass (report)"))
+    for body in sorted((ROOT / "dev/tmp/prove_iconic_method").rglob("*.body240")):
+        rows.append(_packed_row(body, "iconic", "iconic-method proof body", "17x17 pass (report)"))
+    lpc_verdicts = {}
+    lpc_index = ROOT / "dev/tmp/lpc_corners/index.json"
+    if lpc_index.exists():
+        for entry in json.loads(lpc_index.read_text()):
+            lpc_verdicts[entry["name"]] = entry.get("verdict", "")
+    for body in sorted((ROOT / "dev/tmp/lpc_corners").glob("*.body240")):
+        verdict = lpc_verdicts.get(body.stem, "?")
+        rows.append(_packed_row(
+            body, "vocal", f"LPC capture pair · source verdict {verdict}",
+            f"17x17 pass · ear verdict {verdict}",
+        ))
+    for body in sorted((ROOT / "dev/tmp/null_grammar").rglob("*.body240")):
+        rows.append(_packed_row(body, "study", "null-grammar study body", "17x17 pass (report)"))
+    for body in sorted((ROOT / "dev/tmp/vowel_table").glob("*.body240")):
+        rows.append(_packed_row(body, "vocal", "vowel table study", "17x17 pass (report)"))
+    return rows
+
+
+CORNER_FAMILY_HINT = {
+    "physics": ("physical", "physical model landmark"),
+    "voice-local": ("vocal", "voice capture landmark"),
+    "heritage-study": ("reference", "P2K study landmark · overlay/snap only"),
+    "synth-local": ("study", "synth capture landmark"),
+    "authored": ("study", "authored landmark"),
+    "design": ("study", "design landmark"),
+}
+
+
+def corner_landmark_rows() -> list[dict]:
+    """corner_library single-corner JSONs → derived 240-byte bodies (the
+    corner repeated at all four corners) so they plot/snap like everything
+    else. Landmarks, not finished four-corner designs."""
+    out_dir = OUT / "derived_corners"
+    out_dir.mkdir(parents=True, exist_ok=True)
+    rows = []
+    for j in sorted((ROOT / "dev/tmp/corner_library/corners").rglob("*.corner.json")):
+        family = j.parent.name
+        hint, note = CORNER_FAMILY_HINT.get(family, ("study", "landmark"))
+        try:
+            doc = json.loads(j.read_text())
+            packed = doc["keyframes"][0]["packedWords"][:6]
+            row_words = [tuple(int(v) for v in r) for r in packed]
+            words = {label: row_words for label in CORNER_ORDER}
+            raw = raw_from_words(words)
+        except Exception as err:
+            print(f"corner SKIP {j.name}: {err}")
+            continue
+        slug = slugify(j.stem.replace(".corner", ""))
+        body = out_dir / f"{slug}.body240"
+        body.write_bytes(raw)
+        d = trench_ffi.packed_probe(raw, 0.5, 0.5)
+        rows.append({
+            "label": doc.get("name", slug).replace("_", " "),
+            "note": note,
+            "kind": "packed",
+            "kind_hint": hint,
+            "body": str(body.relative_to(ROOT)).replace("\\", "/"),
+            "evidence": f"single corner · center max_r {d['max_pole_radius']:.4f}",
         })
     return rows
 
@@ -241,6 +322,7 @@ def physical_rows() -> list[dict]:
                 "label": entry.get("title", entry["slug"]),
                 "note": "physical poles exact · valleys are authored",
                 "kind": "packed",
+                "kind_hint": "physical",
                 "body": f"dev/tmp/physical_mountains/{entry['slug']}.body240",
                 "evidence": f"probe max_r {audit.get('max_pole_radius', 0):.4f} · unstable {audit.get('unstable_mask', 0)}",
             })
@@ -250,6 +332,7 @@ def physical_rows() -> list[dict]:
             "label": "Klatt vocal Ouiii -> Eh",
             "note": "measured formants · all-pole (no invented zeros)",
             "kind": "packed",
+            "kind_hint": "vocal",
             "body": str(klatt.relative_to(ROOT)).replace("\\", "/"),
             "evidence": "17x17 probe PASS · max_r 0.9978",
         })
@@ -268,6 +351,7 @@ def exact_skeleton_rows() -> tuple[list[dict], list[dict]]:
                 "label": sk["key"].capitalize() + "-12",
                 "note": "independently verified analog skeleton",
                 "kind": "exact_skeleton",
+                "kind_hint": "analog",
                 "exact_key": sk["key"],
                 "evidence": f"passband max {sk.get('passband_max_db', 0):.3f} dB · body max {sk.get('body_max_db', 0):.3f} dB",
             })
@@ -296,6 +380,7 @@ def approx_rows() -> list[dict]:
             "label": slug.replace("x3_shape_", "x3 ").replace("_", " "),
             "note": APPROX_NOTES.get(slug, "clean-room response fit of X3 reference"),
             "kind": "packed",
+            "kind_hint": "approx",
             "body": str(body.relative_to(ROOT)).replace("\\", "/"),
             "evidence": f"approximate fit · center max_r {d['max_pole_radius']:.4f}",
         })
@@ -305,6 +390,7 @@ def approx_rows() -> list[dict]:
             "label": "iconic " + body.stem.replace("_", " "),
             "note": "clean-room iconic-method proof body",
             "kind": "packed",
+            "kind_hint": "iconic",
             "body": str(body.relative_to(ROOT)).replace("\\", "/"),
             "evidence": f"proof body · center max_r {d['max_pole_radius']:.4f}",
         })
@@ -317,6 +403,7 @@ def main() -> int:
         "label": "Two-frame Peak/Shelf",
         "note": "FREQ · SHELF · PEAK per frame",
         "kind": "peak_shelf",
+        "kind_hint": "law",
         "evidence": "authoring grammar — compiles via pack_body",
     }]
     builders += law_rows()
@@ -327,20 +414,23 @@ def main() -> int:
     imports = compile_designer_imports()
     overlays = build_overlays()
     approx = approx_rows()
+    experimental = experimental_rows()
+    landmarks = corner_landmark_rows()
 
     quarantine += [
         {"label": "X3 Phaser 1/2 as exact .body240", "reason": "no verified conversion bridge — fits stay APPROX"},
-        {"label": "forge/recipes/auto (55)", "reason": "provenance not promoted to source law + audit"},
         {"label": "dev/tmp/forge_method prototypes", "reason": "prototype gallery — not labeled"},
     ]
 
     manifest = {
         "format": "forge-start-manifest-v1",
-        "rule": "every row carries one badge: COMPILE EXACT, IMPORT EXACT, OVERLAY, or APPROX",
+        "rule": "every row carries one badge; every family from the source inventory is present",
         "lanes": [
             {"id": "exact_builders", "title": "exact builders", "badge": "COMPILE EXACT", "rows": builders},
             {"id": "exact_imports", "title": "exact imports", "badge": "IMPORT EXACT", "rows": imports},
             {"id": "reference_overlays", "title": "reference overlays", "badge": "OVERLAY", "rows": overlays},
+            {"id": "experimental_verified", "title": "experimental verified", "badge": "EXPERIMENTAL", "rows": experimental},
+            {"id": "study_landmarks", "title": "study landmarks", "badge": "STUDY", "rows": landmarks},
             {"id": "approx_starters", "title": "approx starters", "badge": "APPROX", "rows": approx},
         ],
         "quarantine": quarantine,

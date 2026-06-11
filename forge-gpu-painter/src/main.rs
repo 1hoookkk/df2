@@ -1182,16 +1182,16 @@ enum ValueField {
     GainDb,
 }
 
-/// source-picker actions: a source is material (overlay/snap/load), never a
-/// preset card
+/// source-picker actions: a source is frame material — pair any two
+/// postures and the morph is the body. Never a preset card.
 #[derive(Clone, Copy, PartialEq, Eq)]
 enum PickerAct {
     Overlay,
     Snap,
+    LowFrame,
+    HighFrame,
+    BothFrames,
     Load,
-    Template,
-    Scratch,
-    Restore,
 }
 
 /// front-surface frame controls (Peak/Shelf Morph): horizontal sliders, value
@@ -1555,9 +1555,12 @@ struct App {
     start_manifest: Option<sources::manifest::StartManifest>,
     source_bodies: HashMap<String, [u8; 240]>,
     overlay_curves: HashMap<String, sources::manifest::OverlayCurves>,
-    /// spectral centroid (Hz, at M0 Q0) per body/curves path — the START
-    /// list sorts every lane low → high by this
+    /// spectral centroid (Hz, at M0 Q0) per body/curves path — the picker
+    /// places every source on the frequency scale by this
     centroids: HashMap<String, f32>,
+    /// per-body 96-bin response at M0 Q0, computed once at startup — the
+    /// picker tiles draw from here, never recomputing in the paint path
+    tile_cache: HashMap<String, Vec<f32>>,
     /// active reference overlay (curves path) drawn on the hero plot
     overlay_ref: Option<String>,
     /// the source picker panel (frequency-scale layout, color by kind)
@@ -1679,7 +1682,7 @@ fn main() -> eframe::Result {
             overlays.len(),
             manifest.quarantine.len()
         );
-        assert_eq!(manifest.lanes.len(), 4, "expected four provenance lanes");
+        assert!(manifest.lanes.len() >= 4, "expected at least four provenance lanes");
         assert_eq!(missing, 0, "every referenced .body240 must load");
         assert!(!manifest.quarantine.is_empty(), "quarantine must be visible");
         println!("inventory-test: OK");
@@ -2364,7 +2367,7 @@ impl App {
             show_ghosts: false,
             bark: false,
             overlay_vowel: None,
-            show_rail: false,
+            show_rail: true,
             audit_levels: [f32::NAN; AUDIT_N * AUDIT_N],
             audit_maxr: 0.0,
             audit_unstable: 0,
@@ -2408,6 +2411,7 @@ impl App {
             source_bodies: HashMap::new(),
             overlay_curves: HashMap::new(),
             centroids: HashMap::new(),
+            tile_cache: HashMap::new(),
             overlay_ref: None,
             picker_open: false,
             picker_sel: None,
@@ -2420,7 +2424,9 @@ impl App {
             app.source_bodies = sources::manifest::load_bodies(&root, manifest);
             app.overlay_curves = sources::manifest::load_overlays(&root, manifest);
             for (path, body) in &app.source_bodies {
-                app.centroids.insert(path.clone(), body_centroid_hz(body));
+                let db = body_db_row(body);
+                app.centroids.insert(path.clone(), spectral_centroid_hz(&db));
+                app.tile_cache.insert(path.clone(), db);
             }
             for (path, ov) in &app.overlay_curves {
                 if let Some(c) = ov.curves.first() {
@@ -3115,36 +3121,72 @@ impl App {
     }
 
     fn run_picker_act(&mut self, act: PickerAct) {
+        let Some((li, ri)) = self.picker_sel else { return };
         match act {
-            PickerAct::Template => {
-                self.run_action(MenuAction::SeedPeakShelf);
-                self.picker_open = false;
-            }
-            PickerAct::Scratch => {
-                self.seed_scratch();
-                self.picker_open = false;
-            }
-            PickerAct::Restore => {
-                self.restore_autosave();
-                self.picker_open = false;
-            }
-            PickerAct::Overlay => {
-                if let Some((li, ri)) = self.picker_sel {
-                    self.toggle_source_overlay(li, ri);
-                }
-            }
-            PickerAct::Snap => {
-                if let Some((li, ri)) = self.picker_sel {
-                    self.snap_selected_to_source(li, ri);
-                }
-            }
+            PickerAct::Overlay => self.toggle_source_overlay(li, ri),
+            PickerAct::Snap => self.snap_selected_to_source(li, ri),
+            PickerAct::LowFrame => self.load_frame_from_source(li, ri, true, false),
+            PickerAct::HighFrame => self.load_frame_from_source(li, ri, false, true),
+            PickerAct::BothFrames => self.load_frame_from_source(li, ri, true, true),
             PickerAct::Load => {
-                if let Some((li, ri)) = self.picker_sel {
-                    self.start_manifest_row(li, ri);
-                    self.picker_open = false;
-                }
+                self.start_manifest_row(li, ri);
+                self.picker_open = false;
             }
         }
+    }
+
+    /// Frames are the product: copy a source's posture into the LOW frame
+    /// (C0), the HIGH frame (C1), or both — pole/zero read of the packed
+    /// words at that frame (inferred where the numerator has real roots).
+    /// Q rows derive via the measured link rule; the pairing morphs.
+    fn load_frame_from_source(&mut self, lane: usize, row: usize, low: bool, high: bool) {
+        let Some(manifest) = &self.start_manifest else { return };
+        let Some(r) = manifest.lanes.get(lane).and_then(|l| l.rows.get(row)).cloned() else {
+            return;
+        };
+        if matches!(r.kind_hint.as_deref(), Some("reference")) {
+            self.status = format!(
+                "{}: protected reference — overlay and snap only, never frame material",
+                r.label
+            );
+            return;
+        }
+        let Some(body) = self.picker_row_body(&r) else {
+            self.status = format!("{}: no packed body to read frames from", r.label);
+            return;
+        };
+        let words = words_of(&body);
+        self.push_undo();
+        if low {
+            let rows = decode_corner_rows(&words, 0.0);
+            for (i, sec) in self.sections.iter_mut().enumerate() {
+                sec.on = true;
+                sec.locked = false;
+                sec.corners[0] = rows[i];
+            }
+        }
+        if high {
+            // the source's own high frame feeds the HIGH slot
+            let rows = decode_corner_rows(&words, 1.0);
+            for (i, sec) in self.sections.iter_mut().enumerate() {
+                sec.on = true;
+                sec.locked = false;
+                sec.corners[1] = rows[i];
+            }
+        }
+        self.q_link = true; // Q rows derive from the loaded frames
+        self.pins.clear();
+        self.selected_pin = None;
+        self.rebuild_body();
+        let which = match (low, high) {
+            (true, true) => "LOW + HIGH frames",
+            (true, false) => "LOW frame",
+            _ => "HIGH frame",
+        };
+        self.status = format!(
+            "{} → {which} (pole/zero read of the packed words; Q rows derived)",
+            r.label
+        );
     }
 
     /// Packed bytes (or a skeleton key) → a body to use as snap/overlay
@@ -4081,14 +4123,16 @@ struct Layout {
     statusbar: Rect,
 }
 
+// The machinery is never hidden: rail + section cards + values row are the
+// editor and stay on screen. DETAILS only collapses them for a camera-clean
+// view; the frame band and status bar are always present.
 fn layout(rect: Rect, show_rail: bool) -> Layout {
     let bar1_h = 34.0;
     let bar2_h = 26.0;
     let strip_h = if show_rail { 70.0 } else { 0.0 };
-    // front mode: the values row becomes the Peak/Shelf band (global row +
-    // LOW frame row + HIGH frame row)
-    let values_h = if show_rail { 30.0 } else { 104.0 };
-    let status_h = if show_rail { 22.0 } else { 0.0 };
+    let values_h = if show_rail { 30.0 } else { 0.0 };
+    let front_h = 64.0;
+    let status_h = 22.0;
     let rail_w = 220.0;
     let bar1 = Rect::from_min_max(rect.min, Pos2::new(rect.right(), rect.top() + bar1_h));
     let bar2 = Rect::from_min_max(
@@ -4096,14 +4140,15 @@ fn layout(rect: Rect, show_rail: bool) -> Layout {
         Pos2::new(rect.right(), bar1.bottom() + bar2_h),
     );
     let work_top = bar2.bottom();
-    let statusbar = if show_rail {
-        Rect::from_min_max(Pos2::new(rect.left(), rect.bottom() - status_h), rect.max)
-    } else {
-        Rect::NOTHING
-    };
+    let statusbar =
+        Rect::from_min_max(Pos2::new(rect.left(), rect.bottom() - status_h), rect.max);
+    let front = Rect::from_min_max(
+        Pos2::new(rect.left(), statusbar.top() - front_h),
+        Pos2::new(rect.right(), statusbar.top()),
+    );
     let values = Rect::from_min_max(
-        Pos2::new(rect.left(), rect.bottom() - status_h - values_h),
-        Pos2::new(rect.right(), rect.bottom() - status_h),
+        Pos2::new(rect.left(), front.top() - values_h),
+        Pos2::new(rect.right(), front.top()),
     );
     let strip = if show_rail {
         Rect::from_min_max(
@@ -4113,7 +4158,7 @@ fn layout(rect: Rect, show_rail: bool) -> Layout {
     } else {
         Rect::NOTHING
     };
-    let work_bottom = if show_rail { strip.top() } else { values.top() };
+    let work_bottom = if show_rail { strip.top() } else { front.top() };
     let work = Rect::from_min_max(
         Pos2::new(rect.left() + 8.0, work_top + 6.0),
         Pos2::new(rect.right() - 8.0, work_bottom - 6.0),
@@ -4138,7 +4183,7 @@ fn layout(rect: Rect, show_rail: bool) -> Layout {
         plot,
         rail,
         strip,
-        front: values, // same band; front mode paints frames, details mode values
+        front,
         values,
         statusbar,
     }
@@ -4384,11 +4429,10 @@ impl eframe::App for App {
                         self.draw_rail(&p, rail, &mut frame);
                     }
                     self.draw_strip(&p, lay.strip, &mut frame);
-                    self.draw_status(&p, lay.statusbar);
                     self.draw_values(&p, lay.values, &mut frame);
-                } else {
-                    self.draw_front(&p, lay.front, &mut frame);
                 }
+                self.draw_front(&p, lay.front, &mut frame);
+                self.draw_status(&p, lay.statusbar);
                 if self.picker_open {
                     self.draw_picker(&p, lay.plot, &mut frame);
                 }
@@ -4553,38 +4597,22 @@ impl App {
             );
             x += label.chars().count() as f32 * 6.6 + 10.0;
         }
-        if self.show_rail {
-            // Q LINK: while lit, Q100 corners derive from the Q0 rows (the measured
-            // radius rule); editing a Q100 corner breaks it out automatically
-            let ql_r = Rect::from_min_size(Pos2::new(x, cy - 10.0), Vec2::new(62.0, 20.0));
-            chip(p, ql_r, "LINK Q", self.q_link, ICE);
-            frame.qlink_rect = ql_r;
-        }
+        // Q LINK: while lit, Q100 corners derive from the Q0 rows (the measured
+        // radius rule); editing a Q100 corner breaks it out automatically
+        let ql_r = Rect::from_min_size(Pos2::new(x, cy - 10.0), Vec2::new(62.0, 20.0));
+        chip(p, ql_r, "LINK Q", self.q_link, ICE);
+        frame.qlink_rect = ql_r;
 
-        let mut rx = bar.right() - 14.0;
+        let rx = bar.right() - 14.0;
+        // DETAILS only collapses the editor for a camera-clean take —
+        // the machinery is visible by default
         let panels_r =
             Rect::from_min_size(Pos2::new(rx - 74.0, cy - 10.0), Vec2::new(74.0, 20.0));
-        chip(p, panels_r, "DETAILS", self.show_rail, TEXT);
+        chip(p, panels_r, "EDITOR", self.show_rail, TEXT);
         frame.panels_rect = panels_r;
-        rx -= 82.0;
 
-        // front mode owns MORPH/PRESSURE in the frame band below — bar2 only
-        // carries them in the details workbench
-        if self.show_rail {
-            let q_r =
-                Rect::from_min_size(Pos2::new(rx - 112.0, cy - 10.0), Vec2::new(112.0, 20.0));
-            slider_chip(p, q_r, "Q", self.q, ICE);
-            frame.q_rect = q_r;
-            rx -= 120.0;
-
-            let morph_r =
-                Rect::from_min_size(Pos2::new(rx - 142.0, cy - 10.0), Vec2::new(142.0, 20.0));
-            slider_chip(p, morph_r, "MORPH", self.morph, section_color(0));
-            frame.morph_rect = morph_r;
-        }
-
-        // no right-side readout chips: the live point is announced once (canvas
-        // top-left), the selected section once (the value row below the strip).
+        // MORPH/Q live in the rail (the navigation hub); the frame band
+        // below carries the Peak/Shelf controls. No duplicate sliders.
     }
 
     // ── front band: the Peak/Shelf Morph surface ──────────────────────────────
@@ -4592,57 +4620,24 @@ impl App {
     // LOW FRAME:  FREQ | SHELF | PEAK        HIGH FRAME: FREQ | SHELF | PEAK
 
     fn draw_front(&self, p: &egui::Painter, band: Rect, frame: &mut Frame) {
-        use painter::theme::{CORNER, GOOD};
+        use painter::theme::CORNER;
         p.rect_filled(band, 0.0, PANEL);
         p.line_segment(
             [band.left_top(), band.right_top()],
             Stroke::new(1.0, EDGE),
         );
-        let row_h = 22.0;
+        let row_h = 20.0;
         let pad = 14.0;
-        let gap = (band.height() - 3.0 * row_h) / 4.0;
+        let gap = (band.height() - 2.0 * row_h) / 3.0;
         let row_y = |i: f32| band.top() + gap * (i + 1.0) + row_h * i;
 
-        // ── global row
-        let y = row_y(0.0);
-        let mut x = band.left() + pad;
-        let sweep_r = Rect::from_min_size(Pos2::new(x, y), Vec2::new(62.0, row_h));
-        chip(p, sweep_r, "SWEEP", self.sweep, ICE);
-        frame.sweep_rect = sweep_r;
-        x += 70.0;
-        let play_r = Rect::from_min_size(Pos2::new(x, y), Vec2::new(56.0, row_h));
-        chip(p, play_r, if self.playing { "PAUSE" } else { "PLAY" }, self.playing, GOOD);
-        frame.play_rect = play_r;
-        x += 64.0;
-        for (src, label) in [
-            (AudioSrc::Noise, "NOISE"),
-            (AudioSrc::Saw, "SAW"),
-            (AudioSrc::Pad, "PAD"),
-        ] {
-            let w = label.len() as f32 * 6.6 + 14.0;
-            let r = Rect::from_min_size(Pos2::new(x, y), Vec2::new(w, row_h));
-            chip(p, r, label, self.audio_src == src, TEXT_DIM);
-            frame.src_chips.push(Hit { rect: r, value: src });
-            x += w + 6.0;
-        }
-        x += 10.0;
-        // MORPH · PRESSURE · MASTER fill the rest of the row
-        let right = band.right() - pad;
-        let remaining = right - x;
-        let s_gap = 12.0;
-        let morph_w = (remaining - 2.0 * s_gap) * 0.42;
-        let press_w = (remaining - 2.0 * s_gap) * 0.42;
-        let master_w = (remaining - 2.0 * s_gap) * 0.16;
-        let morph_r = Rect::from_min_size(Pos2::new(x, y), Vec2::new(morph_w, row_h));
-        slider_chip(p, morph_r, "MORPH", self.morph, CORNER[0]);
-        frame.morph_rect = morph_r;
-        x += morph_w + s_gap;
-        let press_r = Rect::from_min_size(Pos2::new(x, y), Vec2::new(press_w, row_h));
-        slider_chip(p, press_r, "PRESSURE", self.q, CORNER[3]);
-        frame.q_rect = press_r;
-        x += press_w + s_gap;
+        // MASTER holds the right column; the frame rows stop before it
+        let master_w = 170.0;
         let master_t = ((self.patch.master_peak_db + 12.0) / 24.0).clamp(0.0, 1.0);
-        let master_r = Rect::from_min_size(Pos2::new(x, y), Vec2::new(master_w, row_h));
+        let master_r = Rect::from_min_size(
+            Pos2::new(band.right() - pad - master_w, band.center().y - row_h * 0.5),
+            Vec2::new(master_w, row_h),
+        );
         front_slider(
             p,
             master_r,
@@ -4678,7 +4673,7 @@ impl App {
         .into_iter()
         .enumerate()
         {
-            let y = row_y(i as f32 + 1.0);
+            let y = row_y(i as f32);
             let mut x = band.left() + pad;
             p.text(
                 Pos2::new(x, y + row_h * 0.5),
@@ -4688,7 +4683,7 @@ impl App {
                 color,
             );
             x += 92.0;
-            let right = band.right() - pad;
+            let right = band.right() - pad - master_w - 16.0;
             let w = (right - x - 2.0 * 12.0) / 3.0;
             let freq_t = (fc.freq_hz / F_MIN).ln() / (F_MAX / F_MIN).ln();
             let shelf_t = (fc.shelf + 64.0) / 127.0;
@@ -4761,27 +4756,33 @@ impl App {
 
     // ── menu popup ────────────────────────────────────────────────────────────
 
-    /// kind classification for the picker: row index, color, plain label.
-    /// "color coded by what it is" — law / physical / vocal / analog /
-    /// designer import / exact reference / approx fit.
-    fn picker_kind(lane_id: &str, row: &sources::manifest::Row) -> (usize, Color32, &'static str) {
-        use painter::theme::{CORNER, GOOD, POLE_MARK};
-        let body = row.body.as_deref().unwrap_or("");
-        match lane_id {
-            "exact_builders" => {
-                if row.kind == "law" || row.kind == "peak_shelf" {
-                    (0, ICE, "law")
-                } else if row.kind == "exact_skeleton" {
-                    (3, TRUTH, "analog")
-                } else if body.contains("klatt") {
-                    (2, GOOD, "vocal")
-                } else {
-                    (1, CORNER[2], "physical")
-                }
-            }
-            "exact_imports" => (4, POLE_MARK, "designer import"),
-            "reference_overlays" => (5, EMBER, "exact reference"),
-            _ => (6, TEXT_DIM, "approx fit"),
+    /// "color coded by what it is": the picker's kind rows. Index, color,
+    /// plain label — driven by the manifest's kind_hint, never by path.
+    const PICKER_KINDS: [(&'static str, Color32); 10] = [
+        ("law", ICE),
+        ("physical", painter::theme::CORNER[2]),
+        ("vocal", painter::theme::GOOD),
+        ("analog", TRUTH),
+        ("designer import", painter::theme::POLE_MARK),
+        ("exact reference", EMBER),
+        ("iconic study", Color32::from_rgb(188, 153, 255)),
+        ("auto recipe", Color32::from_rgb(122, 138, 152)),
+        ("study", TEXT_DIM),
+        ("approx fit", Color32::from_rgb(168, 134, 96)),
+    ];
+
+    fn picker_kind(row: &sources::manifest::Row) -> usize {
+        match row.kind_hint.as_deref().unwrap_or("") {
+            "law" => 0,
+            "physical" => 1,
+            "vocal" => 2,
+            "analog" => 3,
+            "import" => 4,
+            "reference" => 5,
+            "iconic" => 6,
+            "auto" => 7,
+            "study" => 8,
+            _ => 9,
         }
     }
 
@@ -4795,13 +4796,7 @@ impl App {
                 .map(|c| c.db.clone());
         }
         if let Some(path) = &row.body {
-            return self.source_bodies.get(path).map(|b| {
-                let live = live_biquads(&words_of(b), 0.0, 0.0);
-                let trig = grid_trig(AUDIT_BINS);
-                (0..AUDIT_BINS)
-                    .map(|i| cascade_db_c(&live, trig[i].0, trig[i].1))
-                    .collect()
-            });
+            return self.tile_cache.get(path).cloned();
         }
         if row.kind == "exact_skeleton" {
             let idx = self
@@ -4809,14 +4804,7 @@ impl App {
                 .skeletons
                 .iter()
                 .position(|sk| Some(&sk.key) == row.exact_key.as_ref())?;
-            let body = self.skeleton_preview_body(idx)?;
-            let live = live_biquads(&words_of(&body), 0.0, 0.0);
-            let trig = grid_trig(AUDIT_BINS);
-            return Some(
-                (0..AUDIT_BINS)
-                    .map(|i| cascade_db_c(&live, trig[i].0, trig[i].1))
-                    .collect(),
-            );
+            return self.skeleton_preview_body(idx).map(|b| body_db_row(&b));
         }
         None
     }
@@ -4842,6 +4830,10 @@ impl App {
                         Some(MenuAction::RestoreAutosave),
                     ),
                     ("— template —".into(), None),
+                    (
+                        "two-frame peak/shelf".into(),
+                        Some(MenuAction::SeedPeakShelf),
+                    ),
                     ("default template".into(), Some(MenuAction::SeedDefault)),
                     ("— type families —".into(), None),
                     (
@@ -5039,8 +5031,7 @@ impl App {
         let Some(manifest) = &self.start_manifest else {
             return;
         };
-        use painter::theme::GOOD;
-        let h = 260.0_f32.min(plot.height() * 0.6);
+        let h = 340.0_f32.min(plot.height() * 0.72);
         let rect = Rect::from_min_max(Pos2::new(plot.left(), plot.bottom() - h), plot.max);
         p.rect_filled(rect, 6.0, Color32::from_rgba_unmultiplied(7, 10, 9, 247));
         p.line_segment([rect.left_top(), rect.right_top()], Stroke::new(1.0, EDGE));
@@ -5050,8 +5041,7 @@ impl App {
         let label_w = 110.0;
         let tx0 = rect.left() + label_w;
         let tx1 = rect.right() - pad - 8.0;
-        let tile_w = 44.0;
-        let tile_h = 18.0;
+        let tile_w = 40.0;
 
         // frequency ruler across the panel — the layout axis
         let ruler_y = rect.top() + 22.0;
@@ -5077,42 +5067,11 @@ impl App {
             );
         }
 
-        // kind rows: law · physical · vocal · analog · designer import ·
-        // exact reference · approx fit (low → high by centroid within each)
-        let kind_rows: [(&str, Color32); 7] = [
-            ("law", ICE),
-            ("physical", painter::theme::CORNER[2]),
-            ("vocal", GOOD),
-            ("analog", TRUTH),
-            ("designer import", painter::theme::POLE_MARK),
-            ("exact reference", EMBER),
-            ("approx fit", TEXT_DIM),
-        ];
-        let rows_top = ruler_y + 8.0;
-        let row_h = (rect.bottom() - 26.0 - rows_top) / kind_rows.len() as f32;
-        for (k, (label, color)) in kind_rows.iter().enumerate() {
-            let y = rows_top + k as f32 * row_h;
-            p.text(
-                Pos2::new(rect.left() + pad, y + row_h * 0.5),
-                Align2::LEFT_CENTER,
-                *label,
-                FontId::monospace(8.5),
-                with_alpha(*color, 200),
-            );
-        }
-
-        let mut hovered: Option<(usize, usize)> = None;
-        let mut zig = [false; 7];
+        // gather EVERY source tile, grouped by kind, sorted low → high
+        let mut by_kind: Vec<Vec<(usize, usize, f32)>> =
+            vec![Vec::new(); Self::PICKER_KINDS.len()];
         for (li, lane) in manifest.lanes.iter().enumerate() {
-            // tiles sorted low → high so the zigzag de-collision is stable
-            let mut order: Vec<usize> = (0..lane.rows.len()).collect();
-            order.sort_by(|&a, &b| {
-                let ka = self.picker_row_centroid(&lane.rows[a]).unwrap_or(f32::MAX);
-                let kb = self.picker_row_centroid(&lane.rows[b]).unwrap_or(f32::MAX);
-                ka.partial_cmp(&kb).unwrap_or(std::cmp::Ordering::Equal)
-            });
-            for ri in order {
-                let row = &lane.rows[ri];
+            for (ri, row) in lane.rows.iter().enumerate() {
                 if row.kind == "peak_shelf" {
                     continue; // the template lives in the action row below
                 }
@@ -5121,12 +5080,71 @@ impl App {
                 }) else {
                     continue;
                 };
-                let (k, color, _) = Self::picker_kind(&lane.id, row);
-                let y = rows_top + k as f32 * row_h + row_h * 0.5 - tile_h * 0.5
-                    + if zig[k] { 4.0 } else { -4.0 };
-                zig[k] = !zig[k];
+                by_kind[Self::picker_kind(row)].push((li, ri, centroid));
+            }
+        }
+        for tiles in &mut by_kind {
+            tiles.sort_by(|a, b| a.2.partial_cmp(&b.2).unwrap_or(std::cmp::Ordering::Equal));
+        }
+
+        // variable row heights: each kind gets the shelf levels it needs
+        // (1–3), scaled to fit — every source stays on screen
+        let span = tx1 - tx0;
+        let levels: Vec<usize> = by_kind
+            .iter()
+            .map(|t| {
+                (((t.len() as f32 * (tile_w + 2.0)) / span).ceil() as usize).clamp(1, 3)
+            })
+            .collect();
+        let rows_top = ruler_y + 10.0;
+        let avail = rect.bottom() - 28.0 - rows_top;
+        let nominal: f32 = levels.iter().map(|&l| l as f32 * 16.0 + 5.0).sum();
+        let scale = (avail / nominal).min(1.0);
+        let lvl_h = 16.0 * scale;
+        let tile_h = (lvl_h - 2.0).max(8.0);
+        let mut row_tops = Vec::with_capacity(levels.len());
+        let mut yacc = rows_top;
+        for &l in &levels {
+            row_tops.push(yacc);
+            yacc += (l as f32 * 16.0 + 5.0) * scale;
+        }
+        for (k, (label, color)) in Self::PICKER_KINDS.iter().enumerate() {
+            if by_kind[k].is_empty() {
+                continue;
+            }
+            p.text(
+                Pos2::new(
+                    rect.left() + pad,
+                    row_tops[k] + levels[k] as f32 * lvl_h * 0.5,
+                ),
+                Align2::LEFT_CENTER,
+                format!("{label} {}", by_kind[k].len()),
+                FontId::monospace(8.0),
+                with_alpha(*color, 200),
+            );
+        }
+
+        let mut hovered: Option<(usize, usize)> = None;
+        for (k, tiles) in by_kind.iter().enumerate() {
+            let color = Self::PICKER_KINDS[k].1;
+            let nlv = levels[k];
+            let mut last_end = vec![f32::MIN; nlv];
+            for &(li, ri, centroid) in tiles {
                 let x = (tx0 + axis_t(centroid) * (tx1 - tx0) - tile_w * 0.5)
                     .clamp(tx0, tx1 - tile_w);
+                // lowest free shelf; saturated → least-recently-ended
+                // (slight overlap beats hiding a source)
+                let lvl = (0..nlv).find(|&l| last_end[l] <= x - 1.0).unwrap_or_else(|| {
+                    (0..nlv)
+                        .min_by(|&a, &b| {
+                            last_end[a]
+                                .partial_cmp(&last_end[b])
+                                .unwrap_or(std::cmp::Ordering::Equal)
+                        })
+                        .unwrap_or(0)
+                });
+                last_end[lvl] = x + tile_w;
+                let y = row_tops[k] + lvl as f32 * lvl_h;
                 let tile = Rect::from_min_size(Pos2::new(x, y), Vec2::new(tile_w, tile_h));
                 frame.picker_tiles.push(Hit {
                     rect: tile,
@@ -5137,10 +5155,10 @@ impl App {
                 if is_hover {
                     hovered = Some((li, ri));
                 }
-                p.rect_filled(tile, 3.0, Color32::from_rgb(11, 16, 14));
+                p.rect_filled(tile, 2.0, Color32::from_rgb(11, 16, 14));
                 p.rect_stroke(
                     tile,
-                    3.0,
+                    2.0,
                     Stroke::new(
                         1.0,
                         if selected {
@@ -5152,6 +5170,7 @@ impl App {
                         },
                     ),
                 );
+                let row = &manifest.lanes[li].rows[ri];
                 if let Some(values) = self.picker_tile_values(row) {
                     let n = values.len().max(2);
                     let (mut lo, mut hi) = (f32::MAX, f32::MIN);
@@ -5161,13 +5180,13 @@ impl App {
                             hi = hi.max(v);
                         }
                     }
-                    let span = (hi - lo).max(6.0);
+                    let vspan = (hi - lo).max(6.0);
                     let pts: Vec<Pos2> = values
                         .iter()
                         .enumerate()
                         .map(|(i, &v)| {
                             let t = i as f32 / (n - 1) as f32;
-                            let vy = ((hi - v) / span).clamp(0.0, 1.0);
+                            let vy = ((hi - v) / vspan).clamp(0.0, 1.0);
                             Pos2::new(
                                 tile.left() + 2.0 + t * (tile.width() - 4.0),
                                 tile.top() + 2.0 + vy * (tile.height() - 4.0),
@@ -5198,28 +5217,33 @@ impl App {
             }
         }
 
-        // action row: source actions left, template/blank right
+        // action row: the selected source feeds the FRAMES — that is the
+        // instrument. Overlay/snap are the study moves.
         let ay = rect.bottom() - 22.0;
         let mut ax = rect.left() + pad;
         if let Some((li, ri)) = self.picker_sel {
             if let Some(row) = manifest.lanes.get(li).and_then(|l| l.rows.get(ri)) {
-                let acts: Vec<(PickerAct, &str)> = match row.kind.as_str() {
-                    "overlay" => vec![(PickerAct::Overlay, "OVERLAY")],
-                    "law" | "exact_skeleton" => vec![
-                        (PickerAct::Overlay, "OVERLAY"),
-                        (PickerAct::Snap, "SNAP POLE"),
-                        (PickerAct::Load, "LOAD"),
-                    ],
-                    _ => vec![
-                        (PickerAct::Overlay, "OVERLAY"),
-                        (PickerAct::Snap, "SNAP POLE"),
-                        (PickerAct::Load, "LOAD PREVIEW"),
-                    ],
-                };
-                for (act, label) in acts {
-                    let w = label.len() as f32 * 6.6 + 16.0;
+                let reference_only = matches!(row.kind_hint.as_deref(), Some("reference"))
+                    || row.kind == "overlay";
+                let has_body =
+                    row.body.is_some() || row.kind == "exact_skeleton";
+                let mut acts: Vec<(PickerAct, &str, Color32)> = Vec::new();
+                if !reference_only && has_body {
+                    acts.push((PickerAct::LowFrame, "→ LOW FRAME", painter::theme::CORNER[0]));
+                    acts.push((PickerAct::HighFrame, "→ HIGH FRAME", painter::theme::CORNER[1]));
+                    acts.push((PickerAct::BothFrames, "→ BOTH", TRUTH));
+                }
+                acts.push((PickerAct::Overlay, "OVERLAY", EMBER));
+                if has_body {
+                    acts.push((PickerAct::Snap, "SNAP POLE", ICE));
+                }
+                if row.kind == "law" {
+                    acts.push((PickerAct::Load, "LOAD LAW", ICE));
+                }
+                for (act, label, color) in acts {
+                    let w = label.chars().count() as f32 * 6.6 + 16.0;
                     let r = Rect::from_min_size(Pos2::new(ax, ay), Vec2::new(w, 18.0));
-                    chip(p, r, label, false, ICE);
+                    chip(p, r, label, false, color);
                     frame.picker_acts.push(Hit {
                         rect: r,
                         value: act,
@@ -5231,25 +5255,10 @@ impl App {
             p.text(
                 Pos2::new(ax, ay + 9.0),
                 Align2::LEFT_CENTER,
-                "click a source · overlay / snap / load",
+                "click a source — feed it to the LOW or HIGH frame · overlay · snap",
                 FontId::monospace(8.5),
                 TEXT_DIM,
             );
-        }
-        let mut rx = rect.right() - pad;
-        for (act, label) in [
-            (PickerAct::Restore, "RESTORE"),
-            (PickerAct::Scratch, "SCRATCH"),
-            (PickerAct::Template, "TWO-FRAME TEMPLATE"),
-        ] {
-            let w = label.len() as f32 * 6.6 + 16.0;
-            let r = Rect::from_min_size(Pos2::new(rx - w, ay), Vec2::new(w, 18.0));
-            chip(p, r, label, false, TEXT_DIM);
-            frame.picker_acts.push(Hit {
-                rect: r,
-                value: act,
-            });
-            rx -= w + 8.0;
         }
         // quarantine stays visible — terse, red, reasons live in the manifest
         let q: Vec<&str> = manifest
@@ -5259,7 +5268,7 @@ impl App {
             .collect();
         if !q.is_empty() {
             p.text(
-                Pos2::new(rx - 12.0, ay + 9.0),
+                Pos2::new(rect.right() - pad, ay + 9.0),
                 Align2::RIGHT_CENTER,
                 format!("quarantine: {}", q.join(" · ")),
                 FontId::monospace(8.0),
@@ -6751,7 +6760,9 @@ impl App {
                         self.run_picker_act(h.value);
                         return;
                     }
-                    if let Some(h) = frame.picker_tiles.iter().find(|h| h.rect.contains(pos)) {
+                    // rev: overlapping tiles — the one drawn on top wins
+                    if let Some(h) = frame.picker_tiles.iter().rev().find(|h| h.rect.contains(pos))
+                    {
                         self.picker_sel = Some(h.value);
                         return;
                     }
@@ -7389,6 +7400,58 @@ fn slugify(s: &str) -> String {
     }
 }
 
+/// Read one frame of a packed body back into editable pole/zero rows.
+/// Poles are exact (conjugate denominator); zeros are exact when the
+/// numerator is a conjugate pair and clamped-inferred when it has real
+/// roots. The result re-packs through pack_body — the plot shows truth.
+fn decode_corner_rows(words: &[[[u16; 5]; STAGES]; CORNERS], morph: f32) -> [CornerStage; STAGES] {
+    let live = live_biquads(words, morph, 0.0);
+    let mut out = [CornerStage {
+        pole_hz: 1000.0,
+        pole_r: RP_MIN,
+        zero_hz: 1000.0,
+        zero_r: 0.0,
+        gain_db: 0.0,
+    }; STAGES];
+    let hz_of = |cosv: f64| -> f32 {
+        (cosv.clamp(-1.0, 1.0).acos() / std::f64::consts::TAU * SR as f64) as f32
+    };
+    for (i, b) in live.iter().enumerate() {
+        let (b0, b1, b2, a1, a2) = (
+            b[0] as f64,
+            b[1] as f64,
+            b[2] as f64,
+            b[3] as f64,
+            b[4] as f64,
+        );
+        let rp = a2.max(0.0).sqrt();
+        let pole_hz = if rp > 1e-3 {
+            hz_of(-a1 / (2.0 * rp))
+        } else {
+            1000.0
+        };
+        let (zero_hz, zero_r, gain_db) = if b0.abs() > 1e-9 {
+            let rz = (b2 / b0).max(0.0).sqrt();
+            let zhz = if rz > 1e-3 {
+                hz_of(-(b1 / b0) / (2.0 * rz))
+            } else {
+                pole_hz
+            };
+            (zhz, rz as f32, 20.0 * b0.abs().log10() as f32)
+        } else {
+            (pole_hz, 0.0, 0.0)
+        };
+        out[i] = CornerStage {
+            pole_hz: pole_hz.clamp(F_MIN, F_MAX),
+            pole_r: (rp as f32).clamp(RP_MIN, RP_MAX),
+            zero_hz: zero_hz.clamp(F_MIN, F_MAX),
+            zero_r: zero_r.clamp(0.0, RZ_MAX),
+            gain_db: gain_db.clamp(GAIN_DB_MIN, GAIN_DB_MAX),
+        };
+    }
+    out
+}
+
 /// Pole positions (Hz, radius) of a packed body at M0 Q0 — snap landmarks.
 fn source_poles(body: &[u8; 240]) -> Vec<(f32, f32)> {
     let live = live_biquads(&words_of(body), 0.0, 0.0);
@@ -7478,14 +7541,13 @@ fn spectral_centroid_hz(db: &[f32]) -> f32 {
     ((num / den).exp() as f32).clamp(F_MIN, F_MAX)
 }
 
-/// Centroid of a packed body at M0 Q0 — the START list sort key.
-fn body_centroid_hz(body: &[u8; 240]) -> f32 {
+/// 96-bin response of a packed body at M0 Q0 — tile curves + centroid input.
+fn body_db_row(body: &[u8; 240]) -> Vec<f32> {
     let live = live_biquads(&words_of(body), 0.0, 0.0);
     let trig = grid_trig(AUDIT_BINS);
-    let db: Vec<f32> = (0..AUDIT_BINS)
+    (0..AUDIT_BINS)
         .map(|i| cascade_db_c(&live, trig[i].0, trig[i].1))
-        .collect();
-    spectral_centroid_hz(&db)
+        .collect()
 }
 
 fn fmt_hz(f: f32) -> String {
