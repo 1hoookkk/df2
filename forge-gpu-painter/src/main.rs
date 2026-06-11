@@ -15,6 +15,12 @@
 
 mod gpu_plot;
 mod model;
+mod painter;
+
+use painter::theme::{
+    with_alpha, BG, EDGE, EMBER, FAULT, GHOST_HI, GHOST_LO, ICE, PANEL, PANEL_HI, TEXT, TEXT_DIM,
+    TRUTH,
+};
 
 use eframe::egui::{
     self, Align2, Color32, Event, FontId, Key, Pos2, Rect, Sense, Stroke, TextureHandle,
@@ -1010,33 +1016,19 @@ const GAIN_DB_MIN: f32 = -26.0;
 const GAIN_DB_MAX: f32 = 12.0;
 
 // ── palette ───────────────────────────────────────────────────────────────────
-
-const BG: Color32 = Color32::from_rgb(13, 14, 17);
-const PANEL: Color32 = Color32::from_rgb(20, 21, 26);
-const PANEL_HI: Color32 = Color32::from_rgb(28, 29, 36);
-const EDGE: Color32 = Color32::from_rgb(43, 44, 53);
-const TEXT: Color32 = Color32::from_rgb(214, 211, 205);
-const TEXT_DIM: Color32 = Color32::from_rgb(133, 130, 124);
-const TRUTH: Color32 = Color32::from_rgb(242, 239, 232);
-const ICE: Color32 = Color32::from_rgb(143, 227, 240);
-const EMBER: Color32 = Color32::from_rgb(199, 116, 31);
-const FAULT: Color32 = Color32::from_rgb(229, 72, 60);
-const GHOST_LO: Color32 = Color32::from_rgb(95, 182, 219);
-const GHOST_HI: Color32 = Color32::from_rgb(224, 154, 95);
+// the physical_mountains mini-plot language — see painter::theme
 
 fn section_color(index: usize) -> Color32 {
+    // six sections, drawn from the corner family hues so the strip reads as
+    // one instrument, not a parade
     match index {
-        0 => Color32::from_rgb(255, 196, 77),
-        1 => Color32::from_rgb(188, 153, 255),
-        2 => Color32::from_rgb(89, 205, 255),
-        3 => Color32::from_rgb(127, 225, 180),
-        4 => Color32::from_rgb(255, 117, 117),
-        _ => Color32::from_rgb(244, 236, 157),
+        0 => Color32::from_rgb(230, 161, 59),
+        1 => Color32::from_rgb(86, 237, 112),
+        2 => Color32::from_rgb(52, 168, 158),
+        3 => Color32::from_rgb(217, 84, 62),
+        4 => Color32::from_rgb(255, 221, 118),
+        _ => Color32::from_rgb(47, 200, 204),
     }
-}
-
-fn with_alpha(c: Color32, a: u8) -> Color32 {
-    Color32::from_rgba_unmultiplied(c.r(), c.g(), c.b(), a)
 }
 
 // ── enums ─────────────────────────────────────────────────────────────────────

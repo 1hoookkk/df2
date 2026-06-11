@@ -1,6 +1,6 @@
 {
   "format": "exact-skeleton-independent-verification-v1",
-  "generated_at_utc": "2026-06-11T09:36:03.917523+00:00",
+  "generated_at_utc": "2026-06-11T11:59:19.544390+00:00",
   "source": "tables\\exact_skeletons.json",
   "runtime": "C:\\Users\\hooki\\df2\\target\\release\\trench_core.dll",
   "method": "fresh scipy reference; table JSON compiled through trench_core.compile_body and checked through packed_probe",

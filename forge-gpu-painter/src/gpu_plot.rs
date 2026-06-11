@@ -220,11 +220,11 @@ const SHADER: &str = r#"
 const F_MIN: f32 = 30.0;
 const F_MAX: f32 = 16000.0;
 
-// palette (gamma space, == main.rs Color32 consts)
+// palette (gamma space, == painter::theme Color32 consts)
 const TRUTH: vec3<f32>    = vec3<f32>(0.949, 0.937, 0.910);
-const ICE: vec3<f32>      = vec3<f32>(0.561, 0.890, 0.941);
-const GHOST_LO: vec3<f32> = vec3<f32>(0.373, 0.714, 0.859);
-const GHOST_HI: vec3<f32> = vec3<f32>(0.878, 0.604, 0.373);
+const ICE: vec3<f32>      = vec3<f32>(0.184, 0.784, 0.800);
+const GHOST_LO: vec3<f32> = vec3<f32>(0.902, 0.631, 0.231);
+const GHOST_HI: vec3<f32> = vec3<f32>(0.337, 0.929, 0.439);
 
 struct U {
     rect_px: vec2<f32>,
