@@ -1,635 +1,1037 @@
-/* df2 forge - painter-only picker + player.
-   Pick two real-physics frames, watch the morph, save the body. Everything on
-   one canvas: hand-drawn, hit-tested. No HTML widgets. Plot is engine-faithful
-   (packed.js word-space morph). */
-import {FRAMES} from "../data/frames.js";
-import {TARGETS} from "../data/targets.js";   // dev study yardstick (behaviour samples, not coeffs)
-import {PACKED_BODIES} from "../data/packed-bodies.js";
-import {stageWordsToKernel,kernelToBiquad,biquadDbCoeffs,wordsAt,packedDb,hexFromWords,bytesFromHex,downloadBody} from "./packed.js";
+import { packWithCore, bodyHex } from "./pack-core.js";
+import { downloadBody, packedDb, wordsFromBytes, wordsAt, stageWordsToKernel, kernelToBiquad, biquadDbCoeffs } from "./packed.js";
 
-const SR=39062.5;
-const F_LO=30, F_HI=18000, DB_LO=-40, DB_HI=26;
-const GROUND="#0d0e11", PANEL="#15171b", LINE="#24272d", DIM="#5a606a",
-      MID="#878d97", INK="#c4cad2", ACCENT="#e8923a", WARN="#d6564c", GOOD="#5fae6e";
-const LAW={
-  paper:"#f2eee5", panel:"#fffaf0", plot:"#f8f3ea", ink:"#17140f",
-  muted:"#746b5f", line:"#cfc4b3", soft:"#e4d8c7", hot:"#ef4b22",
-  pole:"#b54e2e", zero:"#147a73", ok:"#237a4d", warn:"#c38319", bad:"#b93434",
-  blue:"#3f6f9a"
+const SR = 39062.5, F_LO = 20, F_HI = SR / 2, ZERO_END = SR * 0.49, DB_LO = -36, DB_HI = 48;
+const WASM_URL = "wasm/forge_web_wasm.wasm?v=designer_surface";
+
+const $ = id => document.getElementById(id);
+const curveCanvas = $("curve");
+const curveCtx = curveCanvas.getContext("2d");
+const fieldCanvas = $("field");
+const fieldCtx = fieldCanvas.getContext("2d");
+
+const STATE = {
+  name: "vowel_designer",
+  m: 0.5, // boot at the design point: the morph interior is where character lives
+  q: 0.5,
+  drive: 0.40,
+  src: 0,
+  playing: false,
+  railMode: "measured", // "measured" | "12tet" | "free"
+  selStage: 0, // selected stage index (0..5)
+  worstR: 0,
+  auditVerdict: "PASS",
+  bytes: null,
+  hex: "",
+  words: null,
+  corners: null, // [4 corners][6 stages]
+  drag: null, // { stage, type: "pole" | "zero", startX, startY }
 };
-const STAGE_COLORS=["#d24b3f","#e09a2e","#5ba35a","#3f9690","#4f7bb0","#8c6bb8"];
-const PHONE_W=700;
 
-const cv=document.getElementById("c"), ctx=cv.getContext("2d");
-let W=0,H=0,dpr=1;
+// 30 standard P2K vocal/mode resonance frequencies
+const MEASURED_RAILS = [
+  55, 70, 90, 110, 150, 200, 270, 300, 420, 530, 640, 660, 730, 840, 870,
+  1090, 1190, 1500, 1720, 1840, 2240, 2290, 2440, 3010, 3300, 4200, 5500, 7000, 9000, 12000
+];
 
-const state={view:"law", A:null, B:null, armed:"A", morph:0, q:0, playing:false, drag:null, hot:null, t:0, target:null};
+const STAGE_COLORS = ["#d24b3f", "#e09a2e", "#5ba35a", "#3f9690", "#4f7bb0", "#8c6bb8"];
 
-// ---- measurement: distance to a reference target (study yardstick) ------
-const NS=128;
-const SAMP=Array.from({length:NS},(_,i)=>F_LO*Math.pow(F_HI/F_LO,i/(NS-1)));
-function targetCurve(tg,m,q){
-  const mi=Math.min(1.999,m*2), qi=Math.min(1.999,q*2);
-  const m0=Math.floor(mi),q0=Math.floor(qi),mf=mi-m0,qf=qi-q0,g=tg.grid,out=new Array(NS);
-  for(let k=0;k<NS;k++){
-    const a=g[m0][q0][k]*(1-qf)+g[m0][q0+1][k]*qf;
-    const b=g[m0+1][q0][k]*(1-qf)+g[m0+1][q0+1][k]*qf;
-    out[k]=a*(1-mf)+b*mf;
+// --- Helper Functions ---
+const clamp = (v, min, max) => Math.max(min, Math.min(max, v));
+const logF = f => Math.log(clamp(f, F_LO, F_HI));
+const fx = (f, w) => 48 + (logF(f) - logF(F_LO)) / (logF(F_HI) - logF(F_LO)) * (w - 70);
+const fy = (db, h) => 18 + (1 - (clamp(db, DB_LO, DB_HI) - DB_LO) / (DB_HI - DB_LO)) * (h - 48);
+const xToF = (x, w) => Math.exp(logF(F_LO) + clamp((x - 48) / (w - 70), 0, 1) * (logF(F_HI) - logF(F_LO)));
+const yToDb = (y, h) => DB_LO + (1 - clamp((y - 18) / (h - 48), 0, 1)) * (DB_HI - DB_LO);
+
+function snapHz(hz) {
+  if (STATE.railMode === "free") return clamp(hz, F_LO, ZERO_END);
+  if (STATE.railMode === "measured") {
+    return MEASURED_RAILS.reduce((a, b) => Math.abs(b - hz) < Math.abs(a - hz) ? b : a, MEASURED_RAILS[0]);
   }
-  return out;
-}
-const mean=c=>c.reduce((a,b)=>a+b,0)/c.length;
-const norm=c=>{const m=mean(c);return c.map(v=>v-m);};
-function band(c,lo,hi){let s=0,n=0;for(let k=0;k<NS;k++)if(SAMP[k]>=lo&&SAMP[k]<=hi){s+=c[k];n++;}return n?s/n:0;}
-function pkN(c,up){let n=0;for(let k=2;k<NS-2;k++){const e=up?(c[k]>c[k-1]&&c[k]>=c[k+1]&&c[k]-Math.min(c[k-2],c[k+2])>3):(c[k]<c[k-1]&&c[k]<=c[k+1]&&Math.max(c[k-2],c[k+2])-c[k]>3);if(e)n++;}return n;}
-function metrics(cn,tg,m,q){
-  const Lr=SAMP.map(f=>packedDb(cn,m,q,f)), Tr=targetCurve(tg,m,q);
-  const L=norm(Lr), T=norm(Tr);
-  let se=0,mx=0;for(let k=0;k<NS;k++){const d=L[k]-T[k];se+=d*d;mx=Math.max(mx,Math.abs(d));}
-  return {rms:Math.sqrt(se/NS),mx,
-    body:band(L,F_LO,300)-band(T,F_LO,300),
-    tilt:(band(L,50,300)-band(L,4000,16000))-(band(T,50,300)-band(T,4000,16000)),
-    pkL:pkN(L,1),pkT:pkN(T,1),nL:pkN(L,0),nT:pkN(T,0),
-    Tr, offset:mean(Lr)-mean(Tr)};
+  if (STATE.railMode === "12tet") {
+    // Snap to nearest 12-TET chromatic frequency centered on A440
+    const semitones = Math.round(12 * Math.log2(hz / 440));
+    return clamp(440 * Math.pow(2, semitones / 12), F_LO, ZERO_END);
+  }
+  return hz;
 }
 
-// ---- frame helpers ------------------------------------------------------
-function frameDb(frame,f){
-  let s=0;
-  for(const row of frame.words) s+=biquadDbCoeffs(kernelToBiquad(stageWordsToKernel(row)),f);
-  return s;
-}
-function corners(){ // 4-corner body from the A/B pairing: Q lerps toward the hiQ siblings
-  const {A,B}=state; if(!A||!B) return null;
-  return {M0_Q0:A.words, M100_Q0:B.words, M0_Q100:A.wordsHiQ, M100_Q100:B.wordsHiQ};
+// --- Color Heat Map (Spectrogram) ---
+function getHeatColor(db) {
+  const cVoid = [11, 11, 13];
+  const cZero = [52, 27, 77];
+  const c20 = [138, 61, 42];
+  const c33 = [199, 116, 31];
+  const c44 = [246, 232, 200];
+  const cHot = [255, 255, 255];
+  
+  if (db <= -12) return cVoid;
+  if (db <= 0) return lerpColor(cVoid, cZero, (db - (-12)) / 12);
+  if (db <= 20) return lerpColor(cZero, c20, db / 20);
+  if (db <= 33) return lerpColor(c20, c33, (db - 20) / 13);
+  if (db <= 44) return lerpColor(c33, c44, (db - 33) / 11);
+  return cHot;
 }
 
-// ---- live audio: WASM trench-core engine (filter + AGC + Mackie sat + QSound) --
-let audioCtx=null, anode=null;
-state.src=0;
-const SRC_NAMES=["saw","noise","808","voice"];
-function bodyBytes(){ const cn=corners(); return cn?bytesFromHex(hexFromWords(cn)):null; }
-function pushParams(){
-  if(anode) anode.port.postMessage({params:{morph:state.morph,q:state.q,agc:3.5,slam:0.35+0.45*state.q,wide:0.0}});
+function lerpColor(c1, c2, t) {
+  return [
+    Math.round(c1[0] + (c2[0] - c1[0]) * t),
+    Math.round(c1[1] + (c2[1] - c1[1]) * t),
+    Math.round(c1[2] + (c2[2] - c1[2]) * t)
+  ];
 }
-function pushBody(){ const b=bodyBytes(); if(anode&&b) anode.port.postMessage({body:b.buffer.slice(0)}); }
-async function startAudio(){
-  audioCtx=new (window.AudioContext||window.webkitAudioContext)();
-  const wasm=await (await fetch("wasm/forge_web_wasm.wasm")).arrayBuffer();
-  await audioCtx.audioWorklet.addModule("js/forge-worklet.js");
-  const body=bodyBytes();
-  anode=new AudioWorkletNode(audioCtx,"forge-processor",{
-    numberOfInputs:0, numberOfOutputs:1, outputChannelCount:[2],
-    processorOptions:{ wasm, body: body?body.buffer.slice(0):null, src:state.src }
-  });
-  anode.port.onmessage=e=>{
-    if(e.data.ready){ pushParams(); if(state.playing) anode.port.postMessage({playing:true}); }
-    if(e.data.error){ setStatus("audio: "+e.data.error); }
+
+// --- Live Values ---
+function getStageLive(si) {
+  const corners = STATE.corners;
+  const m = STATE.m, q = STATE.q;
+  const w00 = (1 - m) * (1 - q);
+  const w10 = m * (1 - q);
+  const w01 = (1 - m) * q;
+  const w11 = m * q;
+  
+  const c0 = corners[0][si];
+  const c1 = corners[1][si];
+  const c2 = corners[2][si];
+  const c3 = corners[3][si];
+
+  const hz = Math.exp(w00 * Math.log(c0.hz) + w10 * Math.log(c1.hz) + w01 * Math.log(c2.hz) + w11 * Math.log(c3.hz));
+  const r = w00 * c0.r + w10 * c1.r + w01 * c2.r + w11 * c3.r;
+  const gain = w00 * c0.gain + w10 * c1.gain + w01 * c2.gain + w11 * c3.gain;
+  const cutHz = Math.exp(w00 * Math.log(c0.cutHz) + w10 * Math.log(c1.cutHz) + w01 * Math.log(c2.cutHz) + w11 * Math.log(c3.cutHz));
+  const cutDepth = w00 * c0.cutDepth + w10 * c1.cutDepth + w01 * c2.cutDepth + w11 * c3.cutDepth;
+
+  return {
+    on: c0.on,
+    hz,
+    r,
+    gain,
+    cutOn: c0.cutOn,
+    cutHz,
+    cutDepth
   };
-  anode.connect(audioCtx.destination);
 }
-async function toggleAudio(){
-  try{
-    if(!audioCtx) await startAudio();
-    if(audioCtx.state==="suspended") await audioCtx.resume();
-    state.playing=!state.playing;
-    if(anode) anode.port.postMessage({playing:state.playing});
-  }catch(err){ setStatus("audio failed: "+err.message); state.playing=false; }
-  draw();
-}
-function cycleSrc(){ state.src=(state.src+1)%4; if(anode) anode.port.postMessage({src:state.src}); }
-function setStatus(t){ console.log(t); }
-function worstRadius(words,m,q){
-  let worst=0;
-  for(const row of wordsAt(words,m,q)){
-    const bq=kernelToBiquad(stageWordsToKernel(row));
-    const a1=bq[3],a2=bq[4],disc=a1*a1-4*a2;
-    const r=disc<0?Math.sqrt(Math.max(0,a2)):Math.max(Math.abs((-a1+Math.sqrt(disc))/2),Math.abs((-a1-Math.sqrt(disc))/2));
-    worst=Math.max(worst,r);
+
+// --- Distribute Edits ---
+function distributeEdit(si, field, newVal, isGeom = false) {
+  const m = STATE.m, q = STATE.q;
+  const w00 = (1 - m) * (1 - q);
+  const w10 = m * (1 - q);
+  const w01 = (1 - m) * q;
+  const w11 = m * q;
+  const weights = [w00, w10, w01, w11];
+
+  const liveVal = getStageLive(si)[field];
+
+  if (isGeom) {
+    const ratio = newVal / Math.max(1e-3, liveVal);
+    for (let ci = 0; ci < 4; ci++) {
+      const current = STATE.corners[ci][si][field];
+      STATE.corners[ci][si][field] = clamp(current * Math.pow(ratio, weights[ci]), F_LO, ZERO_END);
+    }
+  } else {
+    const delta = newVal - liveVal;
+    for (let ci = 0; ci < 4; ci++) {
+      const current = STATE.corners[ci][si][field];
+      const maxClamp = (field === "r" || field === "cutDepth") ? 0.9995 : 1000.0;
+      const minClamp = (field === "r" || field === "cutDepth") ? 0.05 : -1000.0;
+      STATE.corners[ci][si][field] = clamp(current + delta * weights[ci], minClamp, maxClamp);
+    }
   }
-  return worst;
 }
-// centroid -> hue: low freq warm (red/orange), high freq cool (cyan/violet)
-function hueFor(cen){
-  const t=Math.max(0,Math.min(1,(Math.log(cen)-Math.log(60))/(Math.log(16000)-Math.log(60))));
-  return 14+t*250;
+
+// --- Clean-room Type Solver Skeletons & Gain Normalization ---
+const RIM = 0.9990;
+const NY = SR * 0.49;
+
+// Helper to construct a signature section
+function L(role, a, e, r0, gain, za, ze, zr0, qw, zqw = 0.0) {
+  return { role, a, e, r0, gain, za, ze, zr0, qw, zqw };
 }
-function frameColor(frame,l=58,s=68){ return frame?`hsl(${hueFor(frame.centroid)},${s}%,${l}%)`:DIM; }
-const hz=v=>v>=1000?`${(v/1000).toFixed(v>=10000?0:1)}k`:`${Math.round(v)}`;
 
-// ---- Law Author audit surface ------------------------------------------
-const LAW_BODY=PACKED_BODIES.lawAuthorGolden;
-const LAW_STAGE_KEYS=["M0_S0","M1_S0","M0_S1","M1_S1"];
-const LAW_CORNER_LABELS=["M0 S0","M1 S0","M0 S1","M1 S1"];
-const LAW_CURVES=[[0,0],[1,0],[0,1],[1,1]];
-const LAW_DB_LO=-100, LAW_DB_HI=28;
-let lawCache=null;
+const VOWEL_FORM_MAP = {
+  aah: [730, 1090, 2440, 3400],
+  eee: [270, 2290, 3010, 3400],
+  ooh: [300, 870, 2240, 3400],
+  eh:  [530, 1840, 2480, 3400]
+};
 
-function log2safe(v){ return Math.log(Math.max(1e-6,v))/Math.log(2); }
-function lawInfo(){
-  if(lawCache) return lawCache;
-  const body=LAW_BODY;
-  const stages=body?.stages || {};
-  let remote=0,total=0;
-  const motion=[];
-  for(const key of LAW_STAGE_KEYS){
-    for(const row of stages[key] || []){
-      if(row.pole_hz>0 && row.zero_hz>0){
-        total++;
-        if(Math.abs(log2safe(row.zero_hz/row.pole_hz))>1.5) remote++;
+function vow_format(vA, vB) {
+  const A = VOWEL_FORM_MAP[vA];
+  const B = VOWEL_FORM_MAP[vB];
+  const qw = [0.92, 1.0, 1.0, 0.85];
+  const lanes = [];
+  for (let i = 0; i < 4; i++) {
+    const za = A[i] * 1.5;
+    const ze = B[i] * 1.5;
+    lanes.push(L(`F${i+1}`, A[i], B[i], 0.90, 0.5, za, ze, 0.93, qw[i], 0.12));
+  }
+  return lanes;
+}
+
+const SKELETON_PRESETS = {
+  vow_aah_eee: vow_format("aah", "eee"),
+  vow_ooh_aah: vow_format("ooh", "aah"),
+  lpf_megasweep: [
+    L("cutoff", 300, 6000, 0.93, 0.5, 520, 10200, 0.6, 1.0)
+  ],
+  rez_violent: [320, 520, 820, 1280, 2000, 3150].map((f, i) => 
+    L(`ring${i+1}`, f, f, 0.94, 0.45, f*1.1, f*1.1, 0.90, 1.0)
+  ),
+  eq_acidbass: [
+    L("squelch", 260, 2400, 0.94, 0.6, 300, 2760, 0.9, 1.0),
+    L("grit", 1400, 1700, 0.95, 0.45, 1620, 1960, 0.88, 0.8)
+  ],
+  pha_gargle: [300, 600, 1100, 2000, 3600, 6500].map((f, i) =>
+    L(`n${i+1}`, f, f*1.3, 0.90, 0.5, f, f*1.3, 0.90, 0.15, 1.0)
+  ),
+  bpf_contrary: [
+    L("peakA", 500, 3000, 0.96, 0.55, 375, 2250, 0.0, 1.0),
+    L("peakB", 3000, 500, 0.96, 0.55, 2250, 375, 0.0, 1.0)
+  ]
+};
+
+function fill_to_six(lanes) {
+  const roles = new Set(lanes.map(l => l.role));
+  const out = [...lanes];
+  if (!roles.has("body")) {
+    out.unshift(L("body", 110, 110, 0.96, 0.06, 0, 0, 0.0, 0.02));
+  }
+  if (out.length < 6 && !roles.has("air")) {
+    out.push(L("air", 9000, 9000, 0.90, 0.42, 16000, 16000, 0.5, 0.20));
+  }
+  let i = 0;
+  while (out.length < 6) {
+    const f = [220, 520, 1100, 2400, 4800][i % 5];
+    out.push(L(`fill${i}`, f, f, 0.88, 0.4, f * 1.6, f * 1.6, 0.6, 0.10));
+    i++;
+  }
+  return out.slice(0, 6);
+}
+
+function stage_for(s, m, q) {
+  const pole_hz = s.a * Math.pow(s.e / s.a, m);
+  const pole_r = s.r0 + (RIM - s.r0) * q * s.qw;
+  const zero_hz = s.za > 0 ? s.za * Math.pow(s.ze / Math.max(s.za, 1), m) : 0.0;
+  const zero_r = s.zr0 + (0.999 - s.zr0) * q * s.zqw;
+  
+  return {
+    on: true,
+    hz: Math.min(NY, pole_hz),
+    r: Math.min(pole_r, RIM),
+    gain: s.gain,
+    cutOn: s.za > 0,
+    cutHz: s.za > 0 ? Math.min(NY, zero_hz) : 0.0,
+    cutDepth: s.za > 0 ? Math.min(zero_r, 0.999) : 0.0,
+    role: s.role
+  };
+}
+
+const FF_POINTS = [];
+const logFlo = Math.log(30);
+const logFhi = Math.log(120);
+for (let i = 0; i < 40; i++) {
+  FF_POINTS.push(Math.exp(logFlo + (i / 39) * (logFhi - logFlo)));
+}
+
+function conjPair(hz, r) {
+  const th = 2 * Math.PI * hz / SR;
+  return [-2 * r * Math.cos(th), r * r];
+}
+
+function cornerLowDb(stages) {
+  let sumMag = 0;
+  for (let fi = 0; fi < 40; fi++) {
+    const f = FF_POINTS[fi];
+    const w = 2 * Math.PI * f / SR;
+    const z_re = Math.cos(w);
+    const z_im = -Math.sin(w);
+    const z2_re = Math.cos(2 * w);
+    const z2_im = -Math.sin(2 * w);
+    
+    let H_re = 1.0;
+    let H_im = 0.0;
+    
+    for (const d of stages) {
+      const g = d.gain;
+      const pole_hz = d.hz;
+      const pole_r = d.r;
+      const zero_hz = d.cutOn ? d.cutHz : 0.0;
+      const zero_r = d.cutOn ? d.cutDepth : 0.0;
+      
+      const [a1, a2] = conjPair(pole_hz, pole_r);
+      const [n1, n2] = d.cutOn ? conjPair(zero_hz, zero_r) : [0.0, 0.0];
+      
+      // N(z) = g + g * n1 * z + g * n2 * z^2
+      const num_re = g + g * n1 * z_re + g * n2 * z2_re;
+      const num_im = g * n1 * z_im + g * n2 * z2_im;
+      
+      // D(z) = 1 + a1 * z + a2 * z^2
+      const den_re = 1.0 + a1 * z_re + a2 * z2_re;
+      const den_im = a1 * z_im + a2 * z2_im;
+      
+      // A = H * N
+      const A_re = H_re * num_re - H_im * num_im;
+      const A_im = H_re * num_im + H_im * num_re;
+      
+      // H = A / D
+      const den_sq = den_re * den_re + den_im * den_im + 1e-24;
+      H_re = (A_re * den_re + A_im * den_im) / den_sq;
+      H_im = (A_im * den_re - A_re * den_im) / den_sq;
+    }
+    
+    sumMag += Math.hypot(H_re, H_im);
+  }
+  return 20 * Math.log10(sumMag / 40.0 + 1e-9);
+}
+
+function solvePreset(name) {
+  const fmt = SKELETON_PRESETS[name];
+  if (!fmt) return null;
+  const lanes = fill_to_six(fmt);
+  
+  const pts = [
+    { m: 0, q: 0 }, // M0_Q0
+    { m: 1, q: 0 }, // M100_Q0
+    { m: 0, q: 1 }, // M0_Q100
+    { m: 1, q: 1 }  // M100_Q100
+  ];
+  
+  const corners = [];
+  for (let ci = 0; ci < 4; ci++) {
+    const p = pts[ci];
+    const rows = lanes.map(s => stage_for(s, p.m, p.q));
+    
+    // Per-corner gain normalization — distributed over all 6 lanes (gain^(1/6))
+    // so no single lane's minifloat saturates or underflows.
+    const norm = Math.pow(10, -cornerLowDb(rows) / 20.0);
+    const perLane = Math.pow(norm, 1 / rows.length);
+    for (const row of rows) row.gain = clamp(row.gain * perLane, 0.001, 3.75);
+    
+    corners.push(rows);
+  }
+  return corners;
+}
+
+// --- Seeds ---
+function applySeed(type) {
+  let corners = [[], [], [], []];
+  
+  if (type === "blank") {
+    // Coincident pole-zero pairs spread across the spectrum (flat 0 dB)
+    const freqs = [100, 260, 620, 1500, 3800, 9200];
+    for (let ci = 0; ci < 4; ci++) {
+      for (let si = 0; si < 6; si++) {
+        corners[ci].push({
+          on: true,
+          hz: freqs[si],
+          r: 0.82,
+          gain: 1.0,
+          cutOn: true,
+          cutHz: freqs[si],
+          cutDepth: 0.82,
+          role: `stage_${si + 1}`
+        });
+      }
+    }
+  } else {
+    const solved = solvePreset(type);
+    if (solved) {
+      corners = solved;
+    }
+  }
+  
+  STATE.corners = corners;
+  repack();
+}
+
+// --- Compilation and Repack ---
+async function repack() {
+  try {
+    const rawModel = () => STATE.corners.map(corner => corner.map(s => ({ ...s })));
+
+    STATE.bytes = await packWithCore(rawModel());
+    STATE.words = wordsFromBytes(STATE.bytes);
+
+    // Closed-loop low-end pin: measure the PACKED truth (packedDb) at the 4 corners
+    // over 30-120 Hz and distribute the correction across all 6 lanes, then re-pack.
+    // The JS biquad surrogate disagrees with the engine's minifloat gain semantics,
+    // so the measurement must go through the packed words, not the model.
+    const MQ = [[0, 0], [1, 0], [0, 1], [1, 1]]; // C0..C3 order matches STATE.corners
+    const iters = STATE.drag ? 1 : 3;
+    for (let it = 0; it < iters; it++) {
+      const dbs = MQ.map(([m, q]) => {
+        let sum = 0;
+        for (const f of FF_POINTS) sum += packedDb(STATE.words, m, q, f);
+        return sum / FF_POINTS.length;
+      });
+      if (Math.max(...dbs.map(Math.abs)) < 0.5) break;
+      for (let ci = 0; ci < 4; ci++) {
+        const perLane = Math.pow(10, -dbs[ci] / (20 * STATE.corners[ci].length));
+        for (const row of STATE.corners[ci]) row.gain = clamp(row.gain * perLane, 0.001, 3.75);
+      }
+      STATE.bytes = await packWithCore(rawModel());
+      STATE.words = wordsFromBytes(STATE.bytes);
+    }
+
+    STATE.hex = bodyHex(STATE.bytes);
+    
+    // Update live audio node
+    if (anode) anode.port.postMessage({ body: STATE.bytes.buffer.slice(0) });
+    
+    runAudit();
+    renderUI();
+  } catch (err) {
+    console.error("Repack failed:", err);
+    $("status").textContent = `Error: ${err.message}`;
+  }
+}
+
+// --- Audit & Verdict ---
+function runAudit() {
+  let worst = 0;
+  let hasNonFinite = false;
+  let minPeak = 999;
+  let maxPeak = -999;
+  
+  // Probe a 9x9 grid in real-time
+  const grid = 9;
+  for (let mi = 0; mi < grid; mi++) {
+    const m = mi / (grid - 1);
+    for (let qi = 0; qi < grid; qi++) {
+      const q = qi / (grid - 1);
+      
+      let peak = -999;
+      // evaluate magnitude response across log frequencies
+      for (let fi = 0; fi < 40; fi++) {
+        const f = Math.exp(Math.log(F_LO) + (fi / 39) * (Math.log(F_HI) - Math.log(F_LO)));
+        const db = packedDb(STATE.words, m, q, f);
+        if (!Number.isFinite(db)) {
+          hasNonFinite = true;
+        } else {
+          peak = Math.max(peak, db);
+        }
+      }
+      
+      minPeak = Math.min(minPeak, peak);
+      maxPeak = Math.max(maxPeak, peak);
+
+      // get max pole radius
+      for (const row of wordsAt(STATE.words, m, q)) {
+        const bq = kernelToBiquad(stageWordsToKernel(row));
+        const a1 = bq[3], a2 = bq[4];
+        const disc = a1 * a1 - 4 * a2;
+        const r = disc < 0 ? Math.sqrt(Math.max(0, a2)) : Math.max(Math.abs((-a1 + Math.sqrt(disc)) / 2), Math.abs((-a1 - Math.sqrt(disc)) / 2));
+        worst = Math.max(worst, r);
       }
     }
   }
-  for(const pair of [["M0_S0","M1_S0"],["M0_S1","M1_S1"]]){
-    const a=stages[pair[0]] || [], b=stages[pair[1]] || [];
-    for(let i=0;i<Math.min(a.length,b.length);i++){
-      const poleMove=Math.abs(log2safe(b[i].pole_hz/a[i].pole_hz));
-      const zeroMove=Math.abs(log2safe(b[i].zero_hz/a[i].zero_hz));
-      motion.push(Math.abs(zeroMove-poleMove));
-    }
+  
+  STATE.worstR = worst;
+  
+  // Evaluate verdict based on stability and the +33 to +44 dB iconic corridor
+  const isStable = worst < 1.0 && !hasNonFinite;
+  const inCorridor = maxPeak >= 33.0 && maxPeak <= 44.0;
+  
+  const lamp = $("auditLamp");
+  if (!isStable) {
+    STATE.auditVerdict = "FAIL (unstable)";
+    lamp.className = "lamp fail";
+    lamp.textContent = "unstable";
+  } else if (!inCorridor) {
+    STATE.auditVerdict = "WARN (off-corridor)";
+    lamp.className = "lamp warn";
+    lamp.textContent = `off-corridor (${maxPeak.toFixed(0)} dB)`;
+  } else {
+    STATE.auditVerdict = "PASS";
+    lamp.className = "lamp pass";
+    lamp.textContent = "pass";
   }
-  const freqs=Array.from({length:96},(_,i)=>F_LO*Math.pow(F_HI/F_LO,i/95));
-  const center=freqs.map(f=>packedDb(body.words,.5,.5,f));
-  const cornerMean=freqs.map(f=>{
-    let s=0;
-    for(const [m,q] of LAW_CURVES) s+=packedDb(body.words,m,q,f);
-    return s/LAW_CURVES.length;
-  });
-  const centerSag=mean(center.map((v,i)=>v-cornerMean[i]));
-  const checks=body?.audit?.checks || {};
-  lawCache={
-    stages,
-    verdict:body?.audit?.verdict || (body?.audit?.warnings?.length ? "WARN" : "PASS"),
-    maxRadius:checks.max_pole_radius || 0,
-    tiltSpan:checks.tilt_span_db || 0,
-    bodyBytes:body?.body240Bytes || 0,
-    remoteFraction:total ? remote/total : 0,
-    remoteCount:remote,
-    totalRows:total,
-    zeroMotion:motion.length ? mean(motion) : 0,
-    centerSag,
-    center,
-    cornerMean,
-    freqs,
-  };
-  return lawCache;
 }
-function lawFx(f,r){ return r.x+(Math.log(Math.max(F_LO,Math.min(F_HI,f)))-Math.log(F_LO))/(Math.log(F_HI)-Math.log(F_LO))*r.w; }
-function lawFy(db,r){ return r.y+(1-(Math.max(LAW_DB_LO,Math.min(LAW_DB_HI,db))-LAW_DB_LO)/(LAW_DB_HI-LAW_DB_LO))*r.h; }
-function lawPanel(r,title){
-  fillR(r.x,r.y,r.w,r.h,LAW.panel,4);
-  strokeR(r.x,r.y,r.w,r.h,LAW.line,4);
-  if(title) text(title,r.x+10,r.y+15,LAW.ink,12,"left",true);
-}
-function lawButton(r,label,active=false){
-  fillR(r.x,r.y,r.w,r.h,active?LAW.hot:LAW.panel,4);
-  strokeR(r.x,r.y,r.w,r.h,active?LAW.hot:LAW.ink,4);
-  text(label,r.x+r.w/2,r.y+r.h/2,active?"white":LAW.ink,12,"center",true);
-}
-function lawGrid(r){
-  ctx.save();rr(r.x,r.y,r.w,r.h,4);ctx.clip();
-  ctx.lineWidth=1;
-  for(const f of [100,1000,10000]){
-    const x=lawFx(f,r); ctx.strokeStyle=LAW.soft; ctx.beginPath(); ctx.moveTo(x,r.y); ctx.lineTo(x,r.y+r.h); ctx.stroke();
-  }
-  for(const db of [0,-24,-48,-72]){
-    const y=lawFy(db,r); ctx.strokeStyle=db===0?LAW.line:LAW.soft; ctx.beginPath(); ctx.moveTo(r.x,y); ctx.lineTo(r.x+r.w,y); ctx.stroke();
-  }
-  ctx.restore();
-}
-function lawCurve(r,dbs,color,width,dash=false){
-  const info=lawInfo();
-  ctx.save();rr(r.x,r.y,r.w,r.h,4);ctx.clip();
-  ctx.strokeStyle=color;ctx.lineWidth=width;if(dash)ctx.setLineDash([5,4]);
+
+function drawTriangle(ctx, cx, cy, size, pointingUp, fillStyle) {
+  ctx.fillStyle = fillStyle;
   ctx.beginPath();
-  info.freqs.forEach((f,i)=>{const x=lawFx(f,r), y=lawFy(dbs[i],r); i?ctx.lineTo(x,y):ctx.moveTo(x,y);});
-  ctx.stroke();ctx.setLineDash([]);ctx.restore();
-}
-function drawLawResponse(r){
-  lawPanel(r,"packed response");
-  const plot={x:r.x+9,y:r.y+26,w:r.w-18,h:r.h-38};
-  fillR(plot.x,plot.y,plot.w,plot.h,LAW.plot,4); lawGrid(plot);
-  const body=LAW_BODY;
-  const cornerColors=["#9b8a76","#b59d7a","#7a9a91","#8a7aa8"];
-  LAW_CURVES.forEach(([m,q],idx)=>{
-    const dbs=lawInfo().freqs.map(f=>packedDb(body.words,m,q,f));
-    lawCurve(plot,dbs,cornerColors[idx],1.2,true);
-  });
-  lawCurve(plot,lawInfo().center,LAW.hot,2.5,false);
-  text("M50 S50",plot.x+10,plot.y+14,LAW.hot,11,"left",true);
-  text(`center sag ${lawInfo().centerSag.toFixed(1)} dB`,plot.x+10,plot.y+30,LAW.muted,11);
-  text("100",plot.x+3,plot.y+plot.h-4,LAW.muted,10);
-  text("1k",lawFx(1000,plot),plot.y+plot.h-4,LAW.muted,10,"center");
-  text("10k",lawFx(10000,plot),plot.y+plot.h-4,LAW.muted,10,"center");
-}
-function heatColor(v,bad){
-  if(bad) return LAW.bad;
-  const t=Math.max(0,Math.min(1,(v-.9988)/(.9999-.9988)));
-  if(t<.55) return `rgb(${Math.round(35+t*210)},${Math.round(122-t*18)},${Math.round(77-t*48)})`;
-  return `rgb(${Math.round(205+t*40)},${Math.round(131-(t-.55)*190)},${Math.round(25-(t-.55)*35)})`;
-}
-function drawLawHeat(r){
-  lawPanel(r,"max-radius grid");
-  const audit=LAW_BODY.audit || {}, grid=audit.grid || [], n=audit.grid_n || Math.round(Math.sqrt(grid.length));
-  const gx=r.x+12, gy=r.y+28, gw=r.w-24, gh=r.h-48, gap=2;
-  const cw=(gw-gap*(n-1))/n, ch=(gh-gap*(n-1))/n;
-  for(const cell of grid){
-    const x=gx+cell.morph*(n-1)*(cw+gap);
-    const y=gy+cell.secondary*(n-1)*(ch+gap);
-    fillR(x,y,cw,ch,heatColor(cell.max_pole_radius,cell.unstable_mask||cell.nonfinite_mask),1);
+  if (pointingUp) {
+    ctx.moveTo(cx, cy - size);
+    ctx.lineTo(cx + size, cy + size);
+    ctx.lineTo(cx - size, cy + size);
+  } else {
+    ctx.moveTo(cx, cy + size);
+    ctx.lineTo(cx + size, cy - size);
+    ctx.lineTo(cx - size, cy - size);
   }
-  text("Morph",gx+gw/2,r.y+r.h-12,LAW.muted,10,"center");
-  text("Q",gx-4,gy+4,LAW.muted,10,"right");
-  text(`max r ${lawInfo().maxRadius.toFixed(6)}`,r.x+r.w-10,r.y+15,lawInfo().maxRadius>=.9999?LAW.warn:LAW.ok,11,"right",true);
+  ctx.closePath();
+  ctx.fill();
 }
-function drawLawStats(r){
-  lawPanel(r,"runtime verdict");
-  const info=lawInfo();
-  const stats=[
-    ["verdict",info.verdict,info.verdict==="PASS"?LAW.ok:LAW.warn],
-    ["body",`${info.bodyBytes} bytes`,info.bodyBytes===240?LAW.ok:LAW.bad],
-    ["max r",info.maxRadius.toFixed(6),info.maxRadius<1?LAW.ok:LAW.bad],
-    ["tilt span",`${info.tiltSpan.toFixed(1)} dB`,LAW.blue],
-    ["remote zeros",`${info.remoteCount}/${info.totalRows}`,LAW.zero],
-    ["zero motion",`${info.zeroMotion.toFixed(2)} oct`,LAW.zero],
-  ];
-  const cols=2, gap=7, cw=(r.w-20-gap)/cols, ch=31;
-  stats.forEach((s,i)=>{
-    const x=r.x+10+(i%cols)*(cw+gap), y=r.y+29+Math.floor(i/cols)*(ch+gap);
-    fillR(x,y,cw,ch,LAW.plot,4); strokeR(x,y,cw,ch,LAW.soft,4);
-    text(s[0],x+8,y+10,LAW.muted,10,"left",true);
-    text(s[1],x+8,y+22,s[2],12,"left",true);
-  });
-}
-function drawLawTracks(r){
-  lawPanel(r,"pole / zero tracks");
-  const info=lawInfo(), stages=info.stages;
-  const plot={x:r.x+50,y:r.y+29,w:r.w-64,h:r.h-44};
-  fillR(plot.x,plot.y,plot.w,plot.h,LAW.plot,4);
-  for(const f of [100,300,1000,3000,10000]){
-    const x=lawFx(f,plot); ctx.strokeStyle=LAW.soft; ctx.beginPath(); ctx.moveTo(x,plot.y); ctx.lineTo(x,plot.y+plot.h); ctx.stroke();
-    text(hz(f),x,plot.y+plot.h+10,LAW.muted,9,"center");
+
+// --- Direct Graph Rendering ---
+function drawCurve() {
+  const w = curveCanvas.width;
+  const h = curveCanvas.height;
+  
+  // Clear
+  curveCtx.fillStyle = "#0B0B0D";
+  curveCtx.fillRect(0, 0, w, h);
+  
+  // Draw Grid lines
+  curveCtx.strokeStyle = "rgba(86, 82, 76, 0.2)";
+  curveCtx.lineWidth = 1;
+  
+  // horizontal decibels
+  for (const db of [36, 24, 12, 0, -12, -24, -36]) {
+    const y = fy(db, h);
+    curveCtx.beginPath();
+    curveCtx.moveTo(48, y);
+    curveCtx.lineTo(w - 22, y);
+    curveCtx.stroke();
+    
+    curveCtx.fillStyle = "rgba(242, 239, 232, 0.4)";
+    curveCtx.font = "9px Spline Sans Mono";
+    curveCtx.textAlign = "right";
+    curveCtx.fillText(`${db > 0 ? "+" : ""}${db}`, 40, y + 3);
   }
-  for(let i=0;i<6;i++){
-    const y=plot.y+(i+.5)*plot.h/6;
-    ctx.strokeStyle=LAW.soft; ctx.beginPath(); ctx.moveTo(plot.x,y); ctx.lineTo(plot.x+plot.w,y); ctx.stroke();
-    const role=(stages.M0_S0?.[i]?.role || `lane ${i+1}`).slice(0,12);
-    text(`${i+1} ${role}`,r.x+8,y,LAW.muted,10,"left");
-    for(const kind of ["pole","zero"]){
-      ctx.strokeStyle=kind==="pole"?LAW.pole:LAW.zero;
-      ctx.lineWidth=kind==="pole"?2:1.7;
-      if(kind==="zero") ctx.setLineDash([4,3]);
-      ctx.beginPath();
-      LAW_STAGE_KEYS.forEach((key,j)=>{
-        const row=stages[key]?.[i]; if(!row)return;
-        const f=kind==="pole"?row.pole_hz:row.zero_hz;
-        const x=lawFx(f,plot), yy=y-12+j*8;
-        j?ctx.lineTo(x,yy):ctx.moveTo(x,yy);
-      });
-      ctx.stroke();ctx.setLineDash([]);
-      LAW_STAGE_KEYS.forEach((key,j)=>{
-        const row=stages[key]?.[i]; if(!row)return;
-        const f=kind==="pole"?row.pole_hz:row.zero_hz;
-        const x=lawFx(f,plot), yy=y-12+j*8;
-        ctx.fillStyle=kind==="pole"?LAW.pole:LAW.zero;
-        ctx.beginPath();ctx.arc(x,yy,2.7,0,Math.PI*2);ctx.fill();
-      });
+  
+  // vertical frequencies
+  for (const f of [50, 100, 200, 500, 1000, 2000, 5000, 10000, 15000]) {
+    const x = fx(f, w);
+    curveCtx.beginPath();
+    curveCtx.moveTo(x, 18);
+    curveCtx.lineTo(x, h - 30);
+    curveCtx.stroke();
+    
+    curveCtx.fillStyle = "rgba(242, 239, 232, 0.4)";
+    curveCtx.font = "9px Spline Sans Mono";
+    curveCtx.textAlign = "center";
+    curveCtx.fillText(f >= 1000 ? `${f / 1000}k` : String(f), x, h - 14);
+  }
+  
+  // Draw Corridor Guide Band (+33 to +44 dB)
+  const y33 = fy(33, h);
+  const y44 = fy(44, h);
+  curveCtx.fillStyle = "rgba(199, 116, 31, 0.08)";
+  curveCtx.fillRect(48, y44, w - 70, y33 - y44);
+  
+  curveCtx.strokeStyle = "rgba(199, 116, 31, 0.25)";
+  curveCtx.lineWidth = 1;
+  curveCtx.beginPath();
+  curveCtx.moveTo(48, y33); curveCtx.lineTo(w - 22, y33);
+  curveCtx.moveTo(48, y44); curveCtx.lineTo(w - 22, y44);
+  curveCtx.stroke();
+  
+  curveCtx.fillStyle = "rgba(199, 116, 31, 0.6)";
+  curveCtx.font = "8px Spline Sans Mono";
+  curveCtx.textAlign = "left";
+  curveCtx.fillText("CORRIDOR LIMIT", 54, y44 - 4);
+
+  // Draw response curves (Frame A / B ghosts, and current live)
+  if (STATE.words) {
+    drawResponsePath(0.0, STATE.q, "rgba(143, 227, 240, 0.15)", 1.2, true); // Frame A
+    drawResponsePath(1.0, STATE.q, "rgba(199, 116, 31, 0.15)", 1.2, true);  // Frame B
+    drawResponsePath(STATE.m, STATE.q, "#F2EFE8", 2.3, false);             // Live current
+  }
+  
+  // Draw drag handles for 6 stages (needs packed words + corners from first repack)
+  if (!STATE.words || !STATE.corners) return;
+  for (let si = 0; si < 6; si++) {
+    const live = getStageLive(si);
+    if (!live.on) continue;
+    
+    const isSelected = (si === STATE.selStage);
+    
+    // Pole Peak handle
+    const px = fx(live.hz, w);
+    const py = fy(packedDb(STATE.words, STATE.m, STATE.q, live.hz), h);
+    
+    // Yellow triangle ▲ for poles
+    drawTriangle(curveCtx, px, py, isSelected ? 6 : 4, true, "#F5C842");
+    
+    if (isSelected) {
+      curveCtx.strokeStyle = "#8FE3F0"; // Ice glow outline
+      curveCtx.lineWidth = 1;
+      curveCtx.beginPath();
+      curveCtx.arc(px, py, 11, 0, Math.PI * 2);
+      curveCtx.stroke();
+    }
+    
+    // Zero Valley handle (connected via dashed line)
+    if (live.cutOn) {
+      const zx = fx(live.cutHz, w);
+      // valley depth
+      const zy = fy(packedDb(STATE.words, STATE.m, STATE.q, live.cutHz) - live.cutDepth * 18, h);
+      const topY = fy(packedDb(STATE.words, STATE.m, STATE.q, live.cutHz), h);
+      
+      curveCtx.strokeStyle = "rgba(86, 82, 76, 0.3)";
+      curveCtx.setLineDash([2, 2]);
+      curveCtx.beginPath();
+      curveCtx.moveTo(zx, topY);
+      curveCtx.lineTo(zx, zy);
+      curveCtx.stroke();
+      curveCtx.setLineDash([]);
+      
+      // Red triangle ▼ for zeros
+      drawTriangle(curveCtx, zx, zy, isSelected ? 6 : 4, false, "#E5483C");
+      
+      if (isSelected) {
+        curveCtx.strokeStyle = "#8FE3F0"; // Ice glow outline
+        curveCtx.lineWidth = 1;
+        curveCtx.strokeRect(zx - 7, zy - 7, 14, 14);
+      }
+    }
+    
+    // Label index
+    curveCtx.fillStyle = isSelected ? "#8FE3F0" : "rgba(242, 239, 232, 0.6)";
+    curveCtx.font = "9px Spline Sans Mono";
+    curveCtx.textAlign = "center";
+    curveCtx.fillText(String(si + 1), px, py - 14);
+  }
+}
+
+function drawResponsePath(m, q, color, width, isDashed) {
+  const w = curveCanvas.width;
+  const h = curveCanvas.height;
+  
+  curveCtx.save();
+  if (isDashed) curveCtx.setLineDash([4, 4]);
+  curveCtx.strokeStyle = color;
+  curveCtx.lineWidth = width;
+  curveCtx.beginPath();
+  
+  const points = 300;
+  for (let i = 0; i < points; i++) {
+    const f = Math.exp(logF(F_LO) + (i / (points - 1)) * (logF(F_HI) - logF(F_LO)));
+    const x = fx(f, w);
+    const y = fy(packedDb(STATE.words, m, q, f), h);
+    if (i === 0) curveCtx.moveTo(x, y);
+    else curveCtx.lineTo(x, y);
+  }
+  curveCtx.stroke();
+  curveCtx.restore();
+}
+
+// --- Draw Spectrogram Field ---
+function drawField() {
+  const w = fieldCanvas.width;
+  const h = fieldCanvas.height;
+  
+  if (!STATE.words) return;
+  
+  // Sample a low-res buffer and paint pixels with bilinear smoothing
+  const stepsY = 60;
+  const stepsX = 120;
+  const buffer = new Float32Array(stepsY * stepsX);
+  
+  const logFlo = Math.log(F_LO);
+  const logFhi = Math.log(F_HI);
+  const freqs = [];
+  for (let x = 0; x < stepsX; x++) {
+    freqs.push(Math.exp(logFlo + (x / (stepsX - 1)) * (logFhi - logFlo)));
+  }
+  
+  for (let y = 0; y < stepsY; y++) {
+    const morph = y / (stepsY - 1);
+    const wAt = wordsAt(STATE.words, morph, STATE.q);
+    const bqs = wAt.map(row => kernelToBiquad(stageWordsToKernel(row)));
+    
+    for (let x = 0; x < stepsX; x++) {
+      const f = freqs[x];
+      let db = 0;
+      for (const bq of bqs) db += biquadDbCoeffs(bq, f);
+      buffer[y * stepsX + x] = db;
     }
   }
-  text("pole",r.x+r.w-70,r.y+15,LAW.pole,10,"left",true);
-  text("zero",r.x+r.w-36,r.y+15,LAW.zero,10,"left",true);
+  
+  const imgData = fieldCtx.createImageData(w, h);
+  for (let cy = 0; cy < h; cy++) {
+    const yFrac = 1 - (cy / (h - 1));
+    const yIdx = Math.floor(yFrac * (stepsY - 1));
+    const yLerp = yFrac * (stepsY - 1) - yIdx;
+    
+    for (let cx = 0; cx < w; cx++) {
+      const xFrac = cx / (w - 1);
+      const xIdx = Math.floor(xFrac * (stepsX - 1));
+      const xLerp = xFrac * (stepsX - 1) - xIdx;
+      
+      const i00 = buffer[yIdx * stepsX + xIdx];
+      const i10 = buffer[yIdx * stepsX + xIdx + 1];
+      const i01 = buffer[(yIdx + 1) * stepsX + xIdx];
+      const i11 = buffer[(yIdx + 1) * stepsX + xIdx + 1];
+      
+      const v = (1 - yLerp) * (1 - xLerp) * i00 + (1 - yLerp) * xLerp * i10 + yLerp * (1 - xLerp) * i01 + yLerp * xLerp * i11;
+      const [r, g, b] = getHeatColor(v);
+      
+      const pixIdx = (cy * w + cx) * 4;
+      imgData.data[pixIdx] = r;
+      imgData.data[pixIdx + 1] = g;
+      imgData.data[pixIdx + 2] = b;
+      imgData.data[pixIdx + 3] = 255;
+    }
+  }
+  
+  fieldCtx.putImageData(imgData, 0, 0);
+  
+  // Draw Headroom Spine (20px left margin gutter)
+  fieldCtx.fillStyle = "rgba(26, 25, 28, 0.9)";
+  fieldCtx.fillRect(0, 0, 20, h);
+  fieldCtx.strokeStyle = "rgba(86, 82, 76, 0.4)";
+  fieldCtx.lineWidth = 1;
+  fieldCtx.beginPath();
+  fieldCtx.moveTo(20, 0); fieldCtx.lineTo(20, h);
+  fieldCtx.stroke();
+  
+  // Draw maximum magnitude flares along the spine
+  for (let cy = 0; cy < h; cy++) {
+    const yFrac = 1 - (cy / (h - 1));
+    const yIdx = Math.floor(yFrac * (stepsY - 1));
+    let maxVal = -999;
+    for (let x = 0; x < stepsX; x++) {
+      maxVal = Math.max(maxVal, buffer[yIdx * stepsX + x]);
+    }
+    const [r, g, b] = getHeatColor(maxVal);
+    fieldCtx.fillStyle = `rgb(${r},${g},${b})`;
+    fieldCtx.fillRect(4, cy, 12, 1);
+  }
+
+  // Draw current morph playhead bar
+  const py = (1 - STATE.m) * h;
+  fieldCtx.strokeStyle = "#F2EFE8";
+  fieldCtx.lineWidth = 1.5;
+  fieldCtx.beginPath();
+  fieldCtx.moveTo(20, py);
+  fieldCtx.lineTo(w, py);
+  fieldCtx.stroke();
+  
+  // If a stage is selected, overlay its frequency trajectory thread as a glowing Ice line
+  if (STATE.selStage !== null) {
+    fieldCtx.strokeStyle = "#8FE3F0";
+    fieldCtx.lineWidth = 2;
+    fieldCtx.beginPath();
+    
+    for (let cy = 0; cy < h; cy++) {
+      const morph = 1 - (cy / (h - 1));
+      const live = getStageLive(STATE.selStage);
+      
+      // Calculate pole frequency at this morph slice
+      const c0 = STATE.corners[0][STATE.selStage];
+      const c1 = STATE.corners[1][STATE.selStage];
+      const c2 = STATE.corners[2][STATE.selStage];
+      const c3 = STATE.corners[3][STATE.selStage];
+      
+      const w00 = (1 - morph) * (1 - STATE.q);
+      const w10 = morph * (1 - STATE.q);
+      const w01 = (1 - morph) * STATE.q;
+      const w11 = morph * STATE.q;
+      
+      const fHz = Math.exp(w00 * Math.log(c0.hz) + w10 * Math.log(c1.hz) + w01 * Math.log(c2.hz) + w11 * Math.log(c3.hz));
+      const cx = fx(fHz, w);
+      
+      if (cy === 0) fieldCtx.moveTo(cx, cy);
+      else fieldCtx.lineTo(cx, cy);
+    }
+    fieldCtx.stroke();
+  }
 }
-function drawLawTables(r){
-  lawPanel(r,"four corner stage tables");
-  const stages=lawInfo().stages, gap=7;
-  const cols=W<PHONE_W?1:(W<1050?2:4);
-  const rows=Math.ceil(LAW_STAGE_KEYS.length/cols);
-  const tw=(r.w-20-gap*(cols-1))/cols, th=(r.h-31-gap*(rows-1))/rows;
-  LAW_STAGE_KEYS.forEach((key,idx)=>{
-    const x=r.x+10+(idx%cols)*(tw+gap), y=r.y+26+Math.floor(idx/cols)*(th+gap);
-    fillR(x,y,tw,th,LAW.plot,4); strokeR(x,y,tw,th,LAW.soft,4);
-    text(LAW_CORNER_LABELS[idx],x+7,y+12,LAW.ink,10,"left",true);
-    const data=stages[key] || [];
-    data.forEach((row,i)=>{
-      const yy=y+29+i*((th-34)/6);
-      const col=STAGE_COLORS[i%STAGE_COLORS.length];
-      ctx.fillStyle=col;ctx.fillRect(x+7,yy-6,4,12);
-      text(`${i+1}`,x+15,yy,LAW.muted,9,"left",true);
-      text(`${hz(row.pole_hz)} r${row.pole_r.toFixed(3)}`,x+30,yy,LAW.pole,9);
-      text(`${hz(row.zero_hz)} r${row.zero_r.toFixed(2)}`,x+Math.min(tw-74,112),yy,LAW.zero,9);
-      text(row.gain.toFixed(2),x+tw-7,yy,LAW.muted,9,"right");
-    });
+
+// --- Hit Testing ---
+function hitTestGraph(pt) {
+  const w = curveCanvas.width;
+  const h = curveCanvas.height;
+  const range = 18;
+  
+  for (let si = 0; si < 6; si++) {
+    const live = getStageLive(si);
+    if (!live.on) continue;
+    
+    // Check pole peak
+    const px = fx(live.hz, w);
+    const py = fy(packedDb(STATE.words, STATE.m, STATE.q, live.hz), h);
+    if (Math.hypot(pt.x - px, pt.y - py) < range) {
+      return { si, type: "pole" };
+    }
+    
+    // Check zero notch
+    if (live.cutOn) {
+      const zx = fx(live.cutHz, w);
+      const zy = fy(packedDb(STATE.words, STATE.m, STATE.q, live.cutHz) - live.cutDepth * 18, h);
+      if (Math.hypot(pt.x - zx, pt.y - zy) < range) {
+        return { si, type: "zero" };
+      }
+    }
+  }
+  return null;
+}
+
+// --- Event Listeners for curve canvas ---
+function getCanvasCoords(e, canvas) {
+  const r = canvas.getBoundingClientRect();
+  return {
+    x: (e.clientX - r.left) * canvas.width / r.width,
+    y: (e.clientY - r.top) * canvas.height / r.height
+  };
+}
+
+curveCanvas.addEventListener("pointerdown", e => {
+  const pt = getCanvasCoords(e, curveCanvas);
+  const hit = hitTestGraph(pt);
+  
+  if (hit) {
+    STATE.selStage = hit.si;
+    STATE.drag = {
+      si: hit.si,
+      type: hit.type,
+      startX: pt.x,
+      startY: pt.y
+    };
+    curveCanvas.setPointerCapture(e.pointerId);
+    repack();
+  }
+});
+
+curveCanvas.addEventListener("pointermove", e => {
+  if (!STATE.drag) return;
+  
+  const pt = getCanvasCoords(e, curveCanvas);
+  const w = curveCanvas.width;
+  const h = curveCanvas.height;
+  
+  if (STATE.drag.type === "pole") {
+    // Edit pole frequency (horizontal) and radius (vertical)
+    const newHz = snapHz(xToF(pt.x, w));
+    const newDb = yToDb(pt.y, h);
+    
+    // Map peak magnitude back to radius
+    // Peak dB is proportional to 1 / (1 - r)
+    // Map -36..48 dB range to 0.5..0.9992 radius
+    const normDb = clamp((newDb - DB_LO) / (DB_HI - DB_LO), 0, 1);
+    const newR = clamp(0.5 + normDb * 0.4992, 0.5, 0.9992);
+    
+    distributeEdit(STATE.drag.si, "hz", newHz, true);
+    distributeEdit(STATE.drag.si, "r", newR, false);
+  } else if (STATE.drag.type === "zero") {
+    // Edit zero frequency (horizontal) and notch depth (vertical)
+    const newHz = snapHz(xToF(pt.x, w));
+    const newDb = yToDb(pt.y, h);
+    
+    // Map notch depth back to zero radius
+    const peakDb = packedDb(STATE.words, STATE.m, STATE.q, newHz);
+    const diffDb = clamp(peakDb - newDb, 0, 60);
+    const newDepth = clamp(diffDb / 60.0, 0.05, 0.9995);
+    
+    distributeEdit(STATE.drag.si, "cutHz", newHz, true);
+    distributeEdit(STATE.drag.si, "cutDepth", newDepth, false);
+  }
+  
+  repack();
+});
+
+curveCanvas.addEventListener("pointerup", () => {
+  STATE.drag = null;
+  repack();
+});
+
+// --- UI Rendering ---
+function renderUI() {
+  $("morphVal").textContent = STATE.m.toFixed(2);
+  $("qVal").textContent = STATE.q.toFixed(2);
+  $("morphSlider").value = Math.round(STATE.m * 100);
+  $("qSlider").value = Math.round(STATE.q * 100);
+  $("driveVal").textContent = Math.round(STATE.drive * 100);
+  $("driveSlider").value = Math.round(STATE.drive * 100);
+  
+  // Lanes list
+  const list = $("laneList");
+  list.innerHTML = "";
+  for (let si = 0; si < 6; si++) {
+    const live = getStageLive(si);
+    const row = document.createElement("div");
+    row.className = `laneRow ${si === STATE.selStage ? "selected" : ""}`;
+    row.innerHTML = `
+      <div class="index">${si + 1}</div>
+      <div class="role">${live.role || `stage_${si + 1}`}</div>
+      <div class="vals">
+        pole: <span>${Math.round(live.hz)}</span> Hz / <span>${live.r.toFixed(3)}</span><br>
+        zero: <span>${live.cutOn ? Math.round(live.cutHz) : "off"}</span> / <span>${live.cutOn ? live.cutDepth.toFixed(3) : "—"}</span>
+      </div>
+    `;
+    row.onclick = () => {
+      STATE.selStage = si;
+      renderUI();
+    };
+    list.appendChild(row);
+  }
+  
+  $("status").textContent = `Words Interpolated · Max Radius: ${STATE.worstR.toFixed(5)} · Verdict: ${STATE.auditVerdict}`;
+  
+  drawCurve();
+  drawField();
+}
+
+// --- FFI and Audio Worklet playback ---
+let actx = null, anode = null;
+function getDriveParameters() {
+  const d = clamp(STATE.drive, 0, 1);
+  return {
+    agc: 4.0 + 4.0 * d,
+    slam: 0.25 * d * d,
+    wide: 0.0,
+    inputGain: 1.0,
+    makeup: 1.5 + 2.5 * d
+  };
+}
+
+function pushEngineParams() {
+  if (!anode) return;
+  const p = getDriveParameters();
+  anode.port.postMessage({
+    params: {
+      morph: STATE.m,
+      q: STATE.q,
+      agc: p.agc,
+      slam: p.slam,
+      wide: p.wide,
+      inputGain: p.inputGain,
+      makeup: p.makeup
+    }
   });
 }
-function lawLayout(){
-  const mobile=W<PHONE_W;
-  const pad=mobile?10:14, top=mobile?64:44, gap=mobile?8:10;
-  const saveW=mobile?84:84, pickW=mobile?76:86;
-  const save={x:W-pad-saveW,y:mobile?38:9,w:saveW,h:mobile?28:26};
-  const pick={x:save.x-gap-pickW,y:mobile?38:9,w:pickW,h:mobile?28:26};
-  let stats, heat, response, tracks;
-  if(mobile){
-    stats={x:pad,y:top,w:W-pad*2,h:132};
-    response={x:pad,y:stats.y+stats.h+gap,w:W-pad*2,h:164};
-    heat={x:pad,y:response.y+response.h+gap,w:W-pad*2,h:168};
-    tracks={x:pad,y:heat.y+heat.h+gap,w:W-pad*2,h:238};
-  }else if(W<980){
-    const topW=(W-pad*2-gap)/2;
-    stats={x:pad,y:top,w:topW,h:150};
-    heat={x:pad+topW+gap,y:top,w:topW,h:150};
-    response={x:pad,y:top+stats.h+gap,w:W-pad*2,h:150};
-    tracks={x:pad,y:response.y+response.h+gap,w:W-pad*2,h:Math.max(160,Math.min(210,H*.24))};
-  }else{
-    stats={x:pad,y:top,w:Math.max(260,Math.min(360,W*.30)),h:150};
-    heat={x:stats.x+stats.w+gap,y:top,w:Math.max(205,Math.min(270,W*.24)),h:150};
-    response={x:heat.x+heat.w+gap,y:top,w:W-pad-(heat.x+heat.w+gap),h:150};
-    tracks={x:pad,y:top+stats.h+gap,w:W-pad*2,h:Math.max(176,Math.min(230,H*.27))};
-  }
-  const tablesH=mobile?900:H-(tracks.y+tracks.h+gap)-pad;
-  const tables={x:pad,y:tracks.y+tracks.h+gap,w:W-pad*2,h:tablesH};
-  return {save,pick,stats,heat,response,tracks,tables};
-}
-function drawLaw(){
-  ctx.setTransform(dpr,0,0,dpr,0,0);
-  ctx.fillStyle=LAW.paper;ctx.fillRect(0,0,W,H);
-  const L=lawLayout(); state._lawL=L;
-  const info=lawInfo();
-  if(W<PHONE_W){
-    const compactName=W<460?"hedz_like_anchor":LAW_BODY.name;
-    text("df2 Law Author",10,22,LAW.hot,15,"left",true);
-    text(compactName,10,52,LAW.muted,11,"left");
-    text(info.verdict,Math.min(W-176,160),22,info.verdict==="PASS"?LAW.ok:LAW.warn,12,"center",true);
-  }else{
-    text("df2 Law Author",14,23,LAW.hot,17,"left",true);
-    text(LAW_BODY.name,166,23,LAW.muted,12,"left");
-    text(info.verdict,Math.max(360,W/2),23,info.verdict==="PASS"?LAW.ok:LAW.warn,13,"center",true);
-  }
-  lawButton(L.pick,"picker",state.hot==="pick");
-  lawButton(L.save,"body240",state.hot==="lawSave");
-  drawLawStats(L.stats);
-  drawLawHeat(L.heat);
-  drawLawResponse(L.response);
-  drawLawTracks(L.tracks);
-  drawLawTables(L.tables);
-}
 
-// ---- layout (css px) ----------------------------------------------------
-function layout(){
-  const pad=14, top=46, gap=12;
-  const stripH=118, ctrlH=40;
-  const bodyTop=top, bodyBot=H-pad-stripH-gap-ctrlH-gap;
-  const frameH=Math.round((bodyBot-bodyTop-gap)*0.52);
-  const colW=(W-pad*2-gap)/2;
-  const fA={x:pad,y:bodyTop,w:colW,h:frameH};
-  const fB={x:pad+colW+gap,y:bodyTop,w:colW,h:frameH};
-  const casc={x:pad,y:bodyTop+frameH+gap,w:W-pad*2,h:bodyBot-(bodyTop+frameH+gap)};
-  const ctrlY=bodyBot+gap;
-  const playW=80, srcW=66;
-  const faderW=(W-pad*2-gap*3-playW-srcW)/2;
-  const morph={x:pad,y:ctrlY,w:faderW,h:ctrlH};
-  const qf={x:pad+faderW+gap,y:ctrlY,w:faderW,h:ctrlH};
-  const srcBtn={x:pad+faderW*2+gap*2,y:ctrlY,w:srcW,h:ctrlH};
-  const play={x:srcBtn.x+srcW+gap,y:ctrlY,w:playW,h:ctrlH};
-  const strip={x:pad,y:ctrlY+ctrlH+gap,w:W-pad*2,h:stripH};
-  const save={x:W-pad-72,y:9,w:72,h:26};
-  const target={x:save.x-8-150,y:9,w:150,h:26};
-  const law={x:target.x-8-86,y:9,w:86,h:26};
-  return {fA,fB,casc,morph,qf,srcBtn,play,strip,save,target,law,pad,top};
-}
-
-// ---- low-level paint ----------------------------------------------------
-function rr(x,y,w,h,r=4){ctx.beginPath();ctx.moveTo(x+r,y);ctx.arcTo(x+w,y,x+w,y+h,r);ctx.arcTo(x+w,y+h,x,y+h,r);ctx.arcTo(x,y+h,x,y,r);ctx.arcTo(x,y,x+w,y,r);ctx.closePath();}
-function fillR(x,y,w,h,c,r=4){ctx.fillStyle=c;rr(x,y,w,h,r);ctx.fill();}
-function strokeR(x,y,w,h,c,r=4,lw=1){ctx.strokeStyle=c;ctx.lineWidth=lw;rr(x,y,w,h,r);ctx.stroke();}
-function text(t,x,y,c=INK,sz=12,al="left",b=false){ctx.fillStyle=c;ctx.font=`${b?"600 ":""}${sz}px Consolas,monospace`;ctx.textAlign=al;ctx.textBaseline="middle";ctx.fillText(t,x,y);}
-const fx=(f,r)=>r.x+(Math.log(Math.max(F_LO,Math.min(F_HI,f)))-Math.log(F_LO))/(Math.log(F_HI)-Math.log(F_LO))*r.w;
-const fy=(db,r)=>r.y+(1-(Math.max(DB_LO,Math.min(DB_HI,db))-DB_LO)/(DB_HI-DB_LO))*r.h;
-
-function curve(r,dbFn,color,width){
-  ctx.strokeStyle=color;ctx.lineWidth=width;ctx.beginPath();
-  const n=Math.max(80,Math.round(r.w));
-  for(let i=0;i<n;i++){
-    const t=i/(n-1), f=Math.exp(Math.log(F_LO)+t*(Math.log(F_HI)-Math.log(F_LO)));
-    const x=r.x+t*r.w, y=fy(dbFn(f),r);
-    i?ctx.lineTo(x,y):ctx.moveTo(x,y);
-  }
-  ctx.stroke();
-}
-function grat(r){
-  ctx.save();rr(r.x,r.y,r.w,r.h,4);ctx.clip();
-  ctx.lineWidth=1;
-  for(const f of [100,1000,10000]){const x=fx(f,r);ctx.strokeStyle="#1b1e23";ctx.beginPath();ctx.moveTo(x,r.y);ctx.lineTo(x,r.y+r.h);ctx.stroke();}
-  for(const db of [12,0,-12,-24]){const y=fy(db,r);ctx.strokeStyle=db===0?"#23272e":"#191c21";ctx.beginPath();ctx.moveTo(r.x,y);ctx.lineTo(r.x+r.w,y);ctx.stroke();}
-  ctx.restore();
-}
-
-// ---- panels -------------------------------------------------------------
-function framePanel(r,frame,slot){
-  const armed=state.armed===slot;
-  fillR(r.x,r.y,r.w,r.h,PANEL);
-  grat(r);
-  if(frame){
-    const col=frameColor(frame);
-    curve(r,f=>frameDb(frame,f),col,2.2);
-    // soft fill under the curve
-    ctx.save();rr(r.x,r.y,r.w,r.h,4);ctx.clip();
-    ctx.globalAlpha=.12;ctx.fillStyle=col;
-    ctx.beginPath();const n=Math.round(r.w);
-    for(let i=0;i<n;i++){const t=i/(n-1),f=Math.exp(Math.log(F_LO)+t*(Math.log(F_HI)-Math.log(F_LO)));i?ctx.lineTo(r.x+t*r.w,fy(frameDb(frame,f),r)):ctx.moveTo(r.x,fy(frameDb(frame,f),r));}
-    ctx.lineTo(r.x+r.w,r.y+r.h);ctx.lineTo(r.x,r.y+r.h);ctx.closePath();ctx.fill();ctx.restore();
-    text(frame.source.replace(/_/g," "),r.x+10,r.y+15,INK,12,"left",true);
-    text(`${hz(frame.centroid)} Hz`,r.x+10,r.y+31,frameColor(frame,66),11);
-  }else{
-    text("click a frame below",r.x+r.w/2,r.y+r.h/2,DIM,12,"center");
-  }
-  // slot chip
-  const cw=22;
-  fillR(r.x+r.w-cw-8,r.y+8,cw,18,armed?ACCENT:LINE,3);
-  text(slot,r.x+r.w-cw-8+cw/2,r.y+8+9,armed?GROUND:MID,12,"center",true);
-  strokeR(r.x,r.y,r.w,r.h,armed?ACCENT:LINE,4,armed?1.5:1);
-}
-
-function cascade(r){
-  fillR(r.x,r.y,r.w,r.h,PANEL);
-  grat(r);
-  const cn=corners();
-  const tg=state.target!=null?TARGETS[state.target]:null;
-  if(cn){
-    curve(r,f=>packedDb(cn,0,0,f),frameColor(state.A,40,40),1.2);
-    curve(r,f=>packedDb(cn,1,0,f),frameColor(state.B,40,40),1.2);
-    let M=null;
-    if(tg){
-      M=metrics(cn,tg,state.morph,state.q);
-      // ghost target curve (level-aligned), dashed
-      ctx.save();rr(r.x,r.y,r.w,r.h,4);ctx.clip();
-      ctx.strokeStyle="#7d6a4a";ctx.lineWidth=1.6;ctx.setLineDash([5,4]);ctx.beginPath();
-      for(let k=0;k<NS;k++){const x=r.x+k/(NS-1)*r.w,y=fy(M.Tr[k]+M.offset,r);k?ctx.lineTo(x,y):ctx.moveTo(x,y);}
-      ctx.stroke();ctx.setLineDash([]);ctx.restore();
+async function startAudio() {
+  actx = new (window.AudioContext || window.webkitAudioContext)();
+  const wasmRes = await fetch("wasm/forge_web_wasm.wasm");
+  const wasm = await wasmRes.arrayBuffer();
+  
+  await actx.audioWorklet.addModule("js/forge-worklet.js");
+  
+  anode = new AudioWorkletNode(actx, "forge-processor", {
+    numberOfInputs: 0,
+    numberOfOutputs: 1,
+    outputChannelCount: [2],
+    processorOptions: {
+      wasm,
+      body: STATE.bytes ? STATE.bytes.buffer.slice(0) : null,
+      src: STATE.src
     }
-    curve(r,f=>packedDb(cn,state.morph,state.q,f),INK,2.6);
-    const wr=worstRadius(cn,state.morph,state.q);
-    ctx.fillStyle=wr>=.999?WARN:GOOD;ctx.beginPath();ctx.arc(r.x+r.w-12,r.y+12,4,0,Math.PI*2);ctx.fill();
-    if(M) drawMatch(r,tg,M);
-  }else{
-    text(tg?"pick two frames — match the dashed target":"pick two frames to morph between",r.x+r.w/2,r.y+r.h/2,DIM,12,"center");
-  }
-  text("morph",r.x+10,r.y+14,MID,11,"left",true);
-  strokeR(r.x,r.y,r.w,r.h,LINE,4);
-}
-function drawMatch(r,tg,M){
-  const x=r.x+r.w-200, y=r.y+10, lh=15;
-  const rc=M.rms<3?GOOD:M.rms<8?ACCENT:WARN;
-  const sg=v=>(v>=0?"+":"")+v.toFixed(0);
-  text("match: "+tg.label,x,y,MID,11,"left",true);
-  text(`rms ${M.rms.toFixed(1)}  max ${M.mx.toFixed(0)} dB`,x,y+lh,rc,12,"left",true);
-  text(`body ${sg(M.body)}  tilt ${sg(M.tilt)} dB`,x,y+lh*2,Math.abs(M.body)<3&&Math.abs(M.tilt)<4?GOOD:ACCENT,11,"left");
-  text(`peaks ${M.pkL}/${M.pkT}   notch ${M.nL}/${M.nT}`,x,y+lh*3,(M.nL<M.nT-1||M.pkL<M.pkT-1)?WARN:MID,11,"left");
+  });
+  
+  anode.port.onmessage = e => {
+    if (e.data.ready) {
+      pushEngineParams();
+      if (STATE.playing) anode.port.postMessage({ playing: true });
+    }
+    if (e.data.level != null) {
+      const m = $("meter");
+      m.firstElementChild.style.width = Math.min(100, e.data.level * 140) + "%";
+      m.classList.toggle("flood", e.data.peak > 0.985);
+    }
+  };
+  
+  anode.connect(actx.destination);
 }
 
-function fader(r,label,val,color){
-  fillR(r.x,r.y,r.w,r.h,PANEL);strokeR(r.x,r.y,r.w,r.h,LINE,4);
-  const tx=r.x+12, tw=r.w-24, my=r.y+r.h/2+4;
-  text(label,r.x+12,r.y+13,MID,11,"left",true);
-  text(`${Math.round(val*100)}`,r.x+r.w-12,r.y+13,color,11,"right");
-  ctx.strokeStyle="#2a2e35";ctx.lineWidth=3;ctx.lineCap="round";
-  ctx.beginPath();ctx.moveTo(tx,my);ctx.lineTo(tx+tw,my);ctx.stroke();
-  const kx=tx+val*tw;
-  ctx.strokeStyle=color;ctx.beginPath();ctx.moveTo(tx,my);ctx.lineTo(kx,my);ctx.stroke();
-  ctx.fillStyle=INK;ctx.beginPath();ctx.arc(kx,my,5,0,Math.PI*2);ctx.fill();
-  return {tx,tw};
-}
-function button(r,label,active){
-  fillR(r.x,r.y,r.w,r.h,active?ACCENT:PANEL,4);strokeR(r.x,r.y,r.w,r.h,active?ACCENT:LINE,4);
-  text(label,r.x+r.w/2,r.y+r.h/2,active?GROUND:INK,12,"center",true);
-}
-function strip(r){
-  fillR(r.x,r.y,r.w,r.h,PANEL);strokeR(r.x,r.y,r.w,r.h,LINE,4);
-  text("quarry  low",r.x+10,r.y+13,MID,10,"left",true);
-  text("high",r.x+r.w-10,r.y+13,MID,10,"right",true);
-  const n=FRAMES.length, gap=4, x0=r.x+8, y0=r.y+22, tw=(r.w-16-gap*(n-1))/n, th=r.h-30;
-  for(let i=0;i<n;i++){
-    const f=FRAMES[i], tx=x0+i*(tw+gap), tr={x:tx,y:y0,w:tw,h:th};
-    const sel=(f===state.A?"A":f===state.B?"B":null), hov=state.hot===("tile"+i);
-    fillR(tx,y0,tw,th,"#101216",3);
-    // sparkline
-    ctx.save();rr(tx,y0,tw,th,3);ctx.clip();
-    ctx.strokeStyle=frameColor(f,60);ctx.lineWidth=1.4;ctx.beginPath();
-    const m=Math.max(16,Math.round(tw));
-    for(let k=0;k<m;k++){const t=k/(m-1),fr=Math.exp(Math.log(F_LO)+t*(Math.log(F_HI)-Math.log(F_LO)));
-      const yy=y0+th-(Math.max(DB_LO,Math.min(DB_HI,frameDb(f,fr))-DB_LO)/(DB_HI-DB_LO))*th;
-      k?ctx.lineTo(tx+t*tw,yy):ctx.moveTo(tx,yy);}
-    ctx.stroke();ctx.restore();
-    strokeR(tx,y0,tw,th,sel?frameColor(f,70):hov?MID:"#23262c",3,sel?1.6:1);
-    if(sel){fillR(tx+tw/2-7,y0-1,14,12,frameColor(f,62),2);text(sel,tx+tw/2,y0+5,GROUND,9,"center",true);}
+async function toggleAudio() {
+  try {
+    if (!actx) await startAudio();
+    if (actx.state === "suspended") await actx.resume();
+    
+    STATE.playing = !STATE.playing;
+    if (anode) anode.port.postMessage({ playing: STATE.playing });
+    
+    const playBtn = $("playBtn");
+    playBtn.classList.toggle("primary", STATE.playing);
+    playBtn.textContent = STATE.playing ? "❚❚ stop" : "▶ play";
+  } catch (err) {
+    console.error("Audio activation failed:", err);
+    $("status").textContent = `Audio Error: ${err.message}`;
   }
-  r._tiles={x0,y0,tw,th,gap,n};
 }
 
-function draw(){
-  if(state.view==="law"){ drawLaw(); return; }
-  ctx.setTransform(dpr,0,0,dpr,0,0);
-  ctx.fillStyle=GROUND;ctx.fillRect(0,0,W,H);
-  const L=layout();
-  text("df2 forge",L.pad,23,ACCENT,17,"left",true);
-  text("pick A + B  ·  morph between  ·  Q sharpens",L.pad+108,23,DIM,11,"left");
-  button(L.law,"law",state.hot==="law");
-  button(L.target,state.target!=null?`◎ ${TARGETS[state.target].label}`:"target ·off",state.target!=null||state.hot==="target");
-  button(L.save,"save",state.hot==="save");
-  framePanel(L.fA,state.A,"A");
-  framePanel(L.fB,state.B,"B");
-  cascade(L.casc);
-  state._mf=fader(L.morph,"MORPH",state.morph,ACCENT);state._mr=L.morph;
-  state._qf=fader(L.qf,"Q",state.q,"#6fa8d0");state._qr=L.qf;
-  button(L.srcBtn,SRC_NAMES[state.src],state.hot==="src");
-  button(L.play,state.playing?"❚❚ stop":"▶ play",state.playing);
-  strip(L.strip);
-  state._L=L;
-}
+// --- Wire UI Events ---
+$("morphSlider").oninput = e => {
+  STATE.m = +e.target.value / 100;
+  pushEngineParams();
+  renderUI();
+};
 
-// ---- interaction --------------------------------------------------------
-function inR(p,r){return p.x>=r.x&&p.x<=r.x+r.w&&p.y>=r.y&&p.y<=r.y+r.h;}
-function pos(e){const b=cv.getBoundingClientRect();return {x:e.clientX-b.left,y:e.clientY-b.top};}
-function tileAt(p){
-  const r=state._L?.strip, t=r?._tiles; if(!t)return -1;
-  if(p.y<t.y0||p.y>t.y0+t.th)return -1;
-  const i=Math.floor((p.x-t.x0)/(t.tw+t.gap));
-  if(i<0||i>=t.n)return -1;
-  const tx=t.x0+i*(t.tw+t.gap); return (p.x>=tx&&p.x<=tx+t.tw)?i:-1;
-}
-function pickFrame(i){
-  const f=FRAMES[i];
-  if(state.armed==="A"){state.A=f;state.armed="B";}
-  else{state.B=f;state.armed="A";}
-  draw(); pushBody();    // live: reload the paired body into the engine
-}
-cv.addEventListener("pointerdown",e=>{
-  const p=pos(e);
-  if(state.view==="law"){
-    const lawL=state._lawL; if(!lawL)return;
-    if(inR(p,lawL.pick)){ state.view="picker"; state.hot=null; resize(); return; }
-    if(inR(p,lawL.save)){ downloadBody(`${LAW_BODY.name}.body240`,LAW_BODY.body240Hex); return; }
-    return;
-  }
-  const L=state._L; if(!L)return;
-  if(inR(p,L.law)){ state.view="law"; state.hot=null; resize(); return; }
-  if(inR(p,L.save)){ const cn=corners(); if(cn){downloadBody(`${state.A.id}_${state.B.id}.body240`,hexFromWords(cn));} return; }
-  if(inR(p,L.target)){ state.target = (!TARGETS.length)?null : (state.target==null?0 : (state.target+1>=TARGETS.length?null:state.target+1)); draw(); return; }
-  if(inR(p,L.fA)){state.armed="A";draw();return;}
-  if(inR(p,L.fB)){state.armed="B";draw();return;}
-  if(inR(p,L.srcBtn)){cycleSrc();draw();return;}
-  if(inR(p,L.play)){toggleAudio();return;}
-  if(inR(p,L.morph)){state.drag="morph";onDrag(p);cv.setPointerCapture(e.pointerId);return;}
-  if(inR(p,L.qf)){state.drag="q";onDrag(p);cv.setPointerCapture(e.pointerId);return;}
-  const ti=tileAt(p); if(ti>=0){pickFrame(ti);return;}
+$("qSlider").oninput = e => {
+  STATE.q = +e.target.value / 100;
+  pushEngineParams();
+  renderUI();
+};
+
+$("driveSlider").oninput = e => {
+  STATE.drive = +e.target.value / 100;
+  pushEngineParams();
+  renderUI();
+};
+
+$("playBtn").onclick = toggleAudio;
+
+// Excitation Source Toggles
+document.querySelectorAll("#foot [data-src]").forEach(b => {
+  b.onclick = () => {
+    document.querySelectorAll("#foot [data-src]").forEach(x => x.classList.remove("active"));
+    b.classList.add("active");
+    STATE.src = +b.dataset.src;
+    if (anode) anode.port.postMessage({ src: STATE.src });
+  };
 });
-function onDrag(p){
-  if(state.drag==="morph"){const f=state._mf;state.morph=Math.max(0,Math.min(1,(p.x-f.tx)/f.tw));}
-  else if(state.drag==="q"){const f=state._qf;state.q=Math.max(0,Math.min(1,(p.x-f.tx)/f.tw));}
-  draw(); pushParams();   // live: morph/q straight to the engine
-}
-cv.addEventListener("pointermove",e=>{
-  const p=pos(e);
-  if(state.view==="law"){
-    const L=state._lawL; if(!L)return;
-    let hot=null;
-    if(inR(p,L.pick)) hot="pick"; else if(inR(p,L.save)) hot="lawSave";
-    if(hot!==state.hot){state.hot=hot;cv.style.cursor=hot?"pointer":"default";draw();}
-    return;
-  }
-  if(state.drag){onDrag(p);return;}
-  const L=state._L;if(!L)return;
-  let hot=null;
-  if(inR(p,L.law))hot="law"; else if(inR(p,L.save))hot="save"; else if(inR(p,L.target))hot="target";
-  else if(inR(p,L.srcBtn))hot="src"; else if(inR(p,L.play))hot="play";
-  else {const ti=tileAt(p);if(ti>=0)hot="tile"+ti;}
-  if(hot!==state.hot){state.hot=hot;cv.style.cursor=hot?"pointer":"default";draw();}
-});
-cv.addEventListener("pointerup",()=>{state.drag=null;});
 
-// ---- play loop + resize -------------------------------------------------
-// play now means LIVE AUDIO; morph/q are driven by hand off the sliders.
-function frame(){ requestAnimationFrame(frame); }
-function mobileLawHeight(width){
-  const pad=10, top=64, gap=8;
-  const statsH=132, responseH=164, heatH=168, tracksH=238, tablesH=900;
-  return top+statsH+gap+responseH+gap+heatH+gap+tracksH+gap+tablesH+pad;
+// Snap Rails Toggles
+document.querySelectorAll("#railSelect [data-rail]").forEach(b => {
+  b.onclick = () => {
+    document.querySelectorAll("#railSelect [data-rail]").forEach(x => x.classList.remove("active"));
+    b.classList.add("active");
+    STATE.railMode = b.dataset.rail;
+  };
+});
+
+// Seed Toggles
+document.querySelectorAll("#seedSelect [data-seed]").forEach(b => {
+  b.onclick = () => {
+    document.querySelectorAll("#seedSelect [data-seed]").forEach(x => x.classList.remove("active"));
+    b.classList.add("active");
+    applySeed(b.dataset.seed);
+  };
+});
+
+$("nameInput").oninput = e => {
+  STATE.name = e.target.value.trim() || "untitled";
+};
+
+$("resetBtn").onclick = () => {
+  applySeed("blank");
+};
+
+$("saveBtn").onclick = () => {
+  downloadBody(`${STATE.name}.body240`, STATE.hex);
+  $("status").textContent = `Exported body: ${STATE.name}.body240`;
+};
+
+// --- Initialization ---
+function resizeCanvases() {
+  const dpr = Math.min(window.devicePixelRatio || 1, 2);
+  
+  const curveW = curveCanvas.clientWidth;
+  const curveH = curveCanvas.clientHeight;
+  curveCanvas.width = curveW * dpr;
+  curveCanvas.height = curveH * dpr;
+  curveCtx.scale(dpr, dpr);
+  
+  const fieldW = fieldCanvas.clientWidth;
+  const fieldH = fieldCanvas.clientHeight;
+  fieldCanvas.width = fieldW * dpr;
+  fieldCanvas.height = fieldH * dpr;
+  fieldCtx.scale(dpr, dpr);
+  
+  drawCurve();
+  drawField();
 }
-function desiredCanvasHeight(width, viewportHeight){
-  if(width<PHONE_W && state.view==="law") return Math.max(viewportHeight, mobileLawHeight(width));
-  if(width<PHONE_W) return Math.max(viewportHeight, 780);
-  return viewportHeight;
-}
-function resize(){
-  dpr=Math.min(2,window.devicePixelRatio||1);
-  const cssW=Math.max(1,document.documentElement.clientWidth || window.innerWidth || cv.clientWidth);
-  const viewportH=Math.max(1,window.innerHeight || document.documentElement.clientHeight || cv.clientHeight);
-  const cssH=desiredCanvasHeight(cssW,viewportH);
-  cv.style.height=`${cssH}px`;
-  W=cv.clientWidth;H=cv.clientHeight;
-  cv.width=Math.round(W*dpr);cv.height=Math.round(H*dpr);
-  draw();
-}
-window.addEventListener("resize",resize);
-if(window.visualViewport) window.visualViewport.addEventListener("resize",resize);
-resize();
-requestAnimationFrame(frame);
+
+window.addEventListener("resize", resizeCanvases);
+
+// Boot up
+const bootSeed = "vow_aah_eee";
+document.querySelector(`#seedSelect [data-seed="${bootSeed}"]`)?.classList.add("active");
+applySeed(bootSeed);
+setTimeout(resizeCanvases, 200);
