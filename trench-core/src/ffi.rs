@@ -3,8 +3,8 @@ use crate::cascade::{NUM_COEFFS, NUM_STAGES};
 use crate::dsp::BASE_AGC_TABLE;
 use crate::engine::{FilterEngine, InputMode, SpatialMode};
 use crate::minifloat::{decode, encode, pole_radius, PackedCorners};
-use std::ffi::{c_char, c_void};
 use std::ffi::CStr;
+use std::ffi::{c_char, c_void};
 
 #[no_mangle]
 pub unsafe extern "C" fn trench_engine_create() -> *mut c_void {
@@ -307,6 +307,51 @@ pub unsafe extern "C" fn trench_packed_probe(
     *out_max_pole_radius = max_r;
     *out_unstable_mask = unstable_mask;
     *out_nonfinite_mask = nonfinite_mask;
+    0
+}
+
+/// Forward authoring compiler (single owner). Reads `n_params` f64 section params
+/// (must be 168 = 4 corners x 6 stages x 7 in canonical order
+/// `[on, pole_hz, pole_r, gain, zero_on, zero_hz, zero_depth]`) and writes 240 body bytes.
+/// Returns 0 ok, -1 null ptr, -4 wrong length.
+#[no_mangle]
+pub unsafe extern "C" fn trench_compile_body(
+    params: *const f64,
+    n_params: usize,
+    out_body: *mut u8,
+) -> i32 {
+    if params.is_null() || out_body.is_null() {
+        return -1;
+    }
+    if n_params != crate::compiler::PARAM_LEN {
+        return -4;
+    }
+    let p = std::slice::from_raw_parts(params, n_params);
+    let body = crate::compiler::pack_body(p);
+    let out = std::slice::from_raw_parts_mut(out_body, crate::compiler::BODY_LEN);
+    out.copy_from_slice(&body);
+    0
+}
+
+/// Typed-section compiler for v1 preset authoring. Reads 42 f64 values
+/// (6 cards x `[type_id, fc_A, fc_B, q_lo, q_hi, gain_db, enabled]`) and writes
+/// one canonical 240-byte body. Returns 0 ok, -1 null ptr, -4 wrong length.
+#[no_mangle]
+pub unsafe extern "C" fn trench_compile_body_typed(
+    cards: *const f64,
+    n_values: usize,
+    out_body: *mut u8,
+) -> i32 {
+    if cards.is_null() || out_body.is_null() {
+        return -1;
+    }
+    if n_values != crate::compiler::TYPED_PARAM_LEN {
+        return -4;
+    }
+    let p = std::slice::from_raw_parts(cards, n_values);
+    let body = crate::compiler::pack_typed_body(p);
+    let out = std::slice::from_raw_parts_mut(out_body, crate::compiler::BODY_LEN);
+    out.copy_from_slice(&body);
     0
 }
 

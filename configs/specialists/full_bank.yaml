@@ -13,18 +13,18 @@ slots:
   - {id: fuzz_mask, profile: slope_cross}
   - {id: bell_decay, profile: comb_field}
   - {id: dual_acid, profile: band_focus}
-  - {id: vowel_open_to_bright, profile: vowel_field}
+  - {id: vowel_oo_to_ee, profile: vowel_field}
   - {id: round_sub, profile: sub_mass}
-  - {id: multi_resonant_voice, profile: vowel_field}
-  - {id: speech_stack, profile: vowel_field}
+  - {id: vowel_ah_to_ee, profile: vowel_field}
+  - {id: vowel_eh_to_ee, profile: vowel_field}
   - {id: zoomed_peaks, profile: comb_field}
   - {id: alkaline_motion, profile: lift_field}
   - {id: bass_tracking, profile: sub_mass}
   - {id: rogue_resonance, profile: q_pressure}
   - {id: blade_field, profile: descent_field}
-  - {id: radio_formant, profile: vowel_field}
-  - {id: vowel_bright_to_open, profile: vowel_field}
-  - {id: orator_stack, profile: vowel_field}
+  - {id: vowel_ao_to_ee, profile: vowel_field}
+  - {id: vowel_ee_to_ah, profile: vowel_field}
+  - {id: vowel_ae_to_ee, profile: vowel_field}
   - {id: deep_mouth, profile: deep_cavity}
   - {id: irregular_shift, profile: wide_motion}
   - {id: crossing_push, profile: slope_cross}
@@ -51,8 +51,8 @@ slots:
   - {id: phase_field_two, profile: phase_field}
   - {id: bliss_phase_field, profile: phase_field}
   - {id: light_flange, profile: phase_field}
-  - {id: vowel_open_mid_bright, profile: vowel_field}
-  - {id: vowel_round_to_open, profile: vowel_field}
+  - {id: vowel_oo_to_ah, profile: vowel_field}
+  - {id: vowel_uh_to_ee, profile: vowel_field}
 
 profiles:
   sub_mass:
@@ -137,6 +137,22 @@ profiles:
     secondary_shift_octaves: [0.20, 0.95]
     secondary_pole_scale: 0.55
   vowel_field:
+    # OCTAVE-NATIVE, SLOT-PINNED. Each slot IS one real Peterson-Barney transition: a real START
+    # formant (table) + a MOVE in octaves (move_oct = log2(end/start)). The slot name, the octave
+    # move, and the formants all point at the same real vowel move -- nothing invented, no label
+    # that the poles don't honor. Q = radius only; Talking-Hedz lane plan; foundation held.
+    transitions:
+      vowel_oo_to_ee: {start_hz: [300.0, 870.0, 2240.0], move_oct: [-0.15, 1.40, 0.43]}
+      vowel_ah_to_ee: {start_hz: [730.0, 1090.0, 2440.0], move_oct: [-1.44, 1.07, 0.30]}
+      vowel_eh_to_ee: {start_hz: [530.0, 1840.0, 2480.0], move_oct: [-0.97, 0.32, 0.28]}
+      vowel_ao_to_ee: {start_hz: [570.0, 840.0, 2410.0], move_oct: [-1.08, 1.45, 0.32]}
+      vowel_ee_to_ah: {start_hz: [270.0, 2290.0, 3010.0], move_oct: [1.44, -1.07, -0.30]}
+      vowel_ae_to_ee: {start_hz: [660.0, 1720.0, 2410.0], move_oct: [-1.29, 0.41, 0.32]}
+      vowel_oo_to_ah: {start_hz: [300.0, 870.0, 2240.0], move_oct: [1.28, 0.33, 0.12]}
+      vowel_uh_to_ee: {start_hz: [640.0, 1190.0, 2390.0], move_oct: [-1.25, 0.95, 0.33]}
+    foundation_hz: [130.0, 240.0]
+    bite_hz: [2600.0, 6000.0]
+    air_kill_hz: [7000.0, 11000.0]
     bases_hz: [230.0, 520.0, 1050.0, 2050.0, 3900.0, 7000.0]
     direction_signs: [1, -1, 1, -1, 1, -1]
     contrary_indices: [1, 2, 4]

@@ -3,6 +3,7 @@
 #include "../TrenchRates.h"
 #include "TrenchDspBridge.h"
 #include <juce_audio_basics/juce_audio_basics.h>
+#include <vector>
 
 namespace trench
 {
@@ -33,6 +34,8 @@ private:
     
     // Intermediate buffers at 39062.5 Hz
     juce::AudioBuffer<float> internalBuffer;
+    std::vector<float> hostFifoL, hostFifoR;
+    std::vector<float> processedFifoL, processedFifoR;
     
     bool bypassSRC = false;
 };

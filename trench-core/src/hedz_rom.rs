@@ -1,212 +1,71 @@
-//! Talking Hedz cartridge — baked from `cartridges/factory/_source/heritage_designer_sections.json`.
+//! Talking Hedz P2K ROM cartridge.
 //!
-//! DO NOT EDIT BY HAND. Regenerate with `python authoring/compilers/bake_hedz_const.py`.
-//!
-//! Source: E-mu MorphDesigner XML template `hedz`, extracted from the
-//! NotebookLM filter bundles and compiled through the E-mu type 1/2/3
-//! firmware recipes (pyruntime/heritage_coeffs.py). The committed float
-//! values are the post-f32-cast kernel coefficients the Rust cascade
-//! consumes directly.
-//!
-//! Corner order matches `Cartridge::corners`:
-//!     0: M0_Q0, 1: M100_Q0, 2: M0_Q100, 3: M100_Q100
-//!
-//! Talking Hedz is a morph-only heritage filter — the Q axis is
-//! collapsed, so Q0 and Q100 share identical coefficients at each
-//! morph endpoint. The 4-corner shape is kept so the runtime
-//! `Cartridge::interpolate` can walk the standard Q-then-morph path
-//! without special-casing morph-only bodies.
+//! This module intentionally points at the provenance-bearing 240-byte P2K
+//! ROM bank, not the older MorphDesigner-derived float fixture. The byte
+//! source is `ref/presets/P2k_013_talking_hedz.bin`, verified against both the
+//! Cheat Engine live object dump and a fresh static extraction from
+//! `EmulatorX.dll`.
 
 use crate::cartridge::{CornerData, NUM_CORNERS};
+use crate::cascade::{NUM_COEFFS, NUM_STAGES};
+use crate::minifloat::{stage_words_to_biquad, PackedCorners, PackedStage};
 
-/// Authoring name — one heap allocation at plugin init, never on the
-/// audio thread.
 pub const HEDZ_NAME: &str = "Talking Hedz";
 
-/// Per-corner post-cascade boost. All four corners carry the heritage
-/// default `boost = 4.0` from `compile_designer_to_body`.
-pub const HEDZ_BOOSTS: [f64; NUM_CORNERS] = [4e+00, 4e+00, 4e+00, 4e+00];
+/// P2K ROM skins carry no separate post-cascade heritage boost in the packed
+/// bank path. The derived JSON cartridges use `boost = 1.0` on all corners.
+pub const HEDZ_BOOSTS: [f64; NUM_CORNERS] = [1.0; NUM_CORNERS];
 
-/// Full cartridge — 4 corners × 6 stages × 5 coefficients.
-pub const HEDZ_CORNERS: [CornerData; NUM_CORNERS] = [
-    // M0_Q0
+pub const HEDZ_ROM_SHA256: &str =
+    "e686bf124086bf79e598850d803b606a6c0b89a0622ef0bf428dc617a2fb777a";
+
+pub const HEDZ_PACKED_WORDS: [[PackedStage; NUM_STAGES]; NUM_CORNERS] = [
     [
-        [
-            0.0147877037525177,
-            0.014650344848632812,
-            0.0010835230350494385,
-            0.0009461641311645508,
-            0.25006103515625,
-        ], // stage 1
-        [
-            0.001999199390411377,
-            0.0015871524810791016,
-            0.0258064866065979,
-            0.025394439697265625,
-            0.25006103515625,
-        ], // stage 2
-        [
-            0.04846978187561035,
-            0.04688262939453125,
-            0.004761457443237305,
-            0.003174304962158203,
-            0.25006103515625,
-        ], // stage 3
-        [
-            0.011964797973632812,
-            0.005860328674316406,
-            0.0998697280883789,
-            0.0937652587890625,
-            0.25006103515625,
-        ], // stage 4
-        [
-            0.20511245727539062,
-            0.179718017578125,
-            0.03760337829589844,
-            0.012208938598632812,
-            0.25006103515625,
-        ], // stage 5
-        [
-            2.7191162109375,
-            0.9688720703125,
-            0.0010835230350494385,
-            0.0009461641311645508,
-            1.3358891010284424e-05,
-        ], // stage 6
+        [27900, 53244, 60668, 47356, 53754],
+        [37116, 51964, 34044, 46332, 53754],
+        [43516, 50172, 40956, 46844, 53754],
+        [48124, 48124, 45564, 35068, 53754],
+        [57852, 60412, 53244, 51708, 53754],
+        [57084, 496, 16891, 41468, 53754],
     ],
-    // M100_Q0
     [
-        [
-            0.0147877037525177,
-            0.014650344848632812,
-            0.937652587890625,
-            0.156280517578125,
-            0.177154541015625,
-        ], // stage 1
-        [
-            0.004639387130737305,
-            0.003052234649658203,
-            0.05042290687561035,
-            0.04883575439453125,
-            0.25006103515625,
-        ], // stage 2
-        [
-            0.0959634780883789,
-            0.0898590087890625,
-            0.012208938598632812,
-            0.006104469299316406,
-            0.25006103515625,
-        ], // stage 3
-        [
-            0.03711509704589844,
-            0.011720657348632812,
-            0.21292495727539062,
-            0.187530517578125,
-            0.25006103515625,
-        ], // stage 4
-        [
-            0.4610137939453125,
-            0.35943603515625,
-            0.12599563598632812,
-            0.024417877197265625,
-            0.25006103515625,
-        ], // stage 5
-        [
-            2.7191162109375,
-            0.9688720703125,
-            1.8479156494140625,
-            0.0976715087890625,
-            0.26568603515625,
-        ], // stage 6
+        [41724, 52220, 59388, 49916, 53424],
+        [33276, 49916, 16891, 40956, 53424],
+        [45308, 56060, 45564, 45564, 53424],
+        [47612, 51964, 47100, 44540, 53424],
+        [54780, 61693, 53500, 53244, 53424],
+        [65277, 496, 42236, 35836, 53424],
     ],
-    // M0_Q100
     [
-        [
-            0.0147877037525177,
-            0.014650344848632812,
-            0.0010835230350494385,
-            0.0009461641311645508,
-            0.25006103515625,
-        ], // stage 1
-        [
-            0.001999199390411377,
-            0.0015871524810791016,
-            0.0258064866065979,
-            0.025394439697265625,
-            0.25006103515625,
-        ], // stage 2
-        [
-            0.04846978187561035,
-            0.04688262939453125,
-            0.004761457443237305,
-            0.003174304962158203,
-            0.25006103515625,
-        ], // stage 3
-        [
-            0.011964797973632812,
-            0.005860328674316406,
-            0.0998697280883789,
-            0.0937652587890625,
-            0.25006103515625,
-        ], // stage 4
-        [
-            0.20511245727539062,
-            0.179718017578125,
-            0.03760337829589844,
-            0.012208938598632812,
-            0.25006103515625,
-        ], // stage 5
-        [
-            2.7191162109375,
-            0.9688720703125,
-            0.0010835230350494385,
-            0.0009461641311645508,
-            1.3358891010284424e-05,
-        ], // stage 6
+        [27644, 54012, 61693, 28668, 53646],
+        [36860, 52220, 34812, 27900, 53646],
+        [43004, 49916, 40444, 27644, 53646],
+        [47612, 47100, 45052, 27388, 53646],
+        [57852, 61180, 52732, 36348, 53646],
+        [56316, 496, 13561, 27644, 53646],
     ],
-    // M100_Q100
     [
-        [
-            0.0147877037525177,
-            0.014650344848632812,
-            0.937652587890625,
-            0.156280517578125,
-            0.177154541015625,
-        ], // stage 1
-        [
-            0.004639387130737305,
-            0.003052234649658203,
-            0.05042290687561035,
-            0.04883575439453125,
-            0.25006103515625,
-        ], // stage 2
-        [
-            0.0959634780883789,
-            0.0898590087890625,
-            0.012208938598632812,
-            0.006104469299316406,
-            0.25006103515625,
-        ], // stage 3
-        [
-            0.03711509704589844,
-            0.011720657348632812,
-            0.21292495727539062,
-            0.187530517578125,
-            0.25006103515625,
-        ], // stage 4
-        [
-            0.4610137939453125,
-            0.35943603515625,
-            0.12599563598632812,
-            0.024417877197265625,
-            0.25006103515625,
-        ], // stage 5
-        [
-            2.7191162109375,
-            0.9688720703125,
-            1.8479156494140625,
-            0.0976715087890625,
-            0.26568603515625,
-        ], // stage 6
+        [41212, 50940, 60412, 27900, 53341],
+        [33020, 49404, 16377, 25852, 53341],
+        [44028, 56060, 44540, 26876, 53341],
+        [46332, 51964, 45820, 27388, 53341],
+        [54012, 62205, 52732, 48124, 53341],
+        [65277, 496, 40444, 28156, 53341],
     ],
 ];
+
+pub fn packed_corners() -> PackedCorners {
+    PackedCorners {
+        words: HEDZ_PACKED_WORDS,
+    }
+}
+
+pub fn decoded_corners() -> [CornerData; NUM_CORNERS] {
+    let mut corners = [[[0.0; NUM_COEFFS]; NUM_STAGES]; NUM_CORNERS];
+    for ci in 0..NUM_CORNERS {
+        for si in 0..NUM_STAGES {
+            corners[ci][si] = stage_words_to_biquad(HEDZ_PACKED_WORDS[ci][si]);
+        }
+    }
+    corners
+}

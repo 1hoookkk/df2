@@ -142,15 +142,14 @@ pub struct Cartridge {
 
 impl Cartridge {
     pub fn hedz_rom() -> Self {
-        Self {
-            name: crate::hedz_rom::HEDZ_NAME.to_string(),
-            corners: crate::hedz_rom::HEDZ_CORNERS,
-            boosts: crate::hedz_rom::HEDZ_BOOSTS,
-            packed: None,
-            drive: DriveBlock::default(),
-            spatial_profile: None,
-            mod_fn: None,
-        }
+        Self::from_packed(
+            crate::hedz_rom::HEDZ_NAME.to_string(),
+            crate::hedz_rom::packed_corners(),
+            crate::hedz_rom::HEDZ_BOOSTS,
+            DriveBlock::default(),
+            None,
+            None,
+        )
     }
 
     /// Canonical assembler: build a cartridge from a decoded packed corner bank.

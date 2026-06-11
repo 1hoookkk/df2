@@ -62,18 +62,26 @@ def evaluate_body(body: bytes, grid_steps: int) -> dict[str, Any]:
         "median_zero_motion_octaves": _median(zero_motion),
         "median_pole_motion_octaves": _median(pole_motion),
         "median_pole_zero_disagreement_octaves": _median(disagreement),
+        # leader travel: the anchor+mover structure of real iconic bodies keeps most lanes
+        # held (median ~0) while one or two carry all the motion. Max captures the leader.
+        "max_zero_motion_octaves": float(max(zero_motion)) if zero_motion else 0.0,
+        "max_pole_motion_octaves": float(max(pole_motion)) if pole_motion else 0.0,
         "highest_endpoint_peak_db": max(float(state["peak_db"]) for state in endpoints),
         "deepest_endpoint_floor_db": min(float(state["floor_db"]) for state in endpoints),
         "endpoint_span_db_mean": float(np.mean([state["span_db"] for state in endpoints])),
     }
+    # Objective grounded in the real 50-body corridor: reward morph motion, span, mountains
+    # + canyons, the LEADER's travel (max), AND the Q bloom. CORRECTED 2026-06-09: secondary
+    # contrast was wrongly dropped on the bent "Q barely moves" belief — the ROM decodes bloom
+    # 6-34 dB under Q (Talking Hedz 6.3, Meaty Gizmo 33.9), so it IS iconic and is rewarded again.
     metrics["objective"] = (
         0.32 * metrics["endpoint_span_db_mean"]
         + 0.28 * metrics["center_span_db"]
         + 1.10 * metrics["morph_contrast_rms_db"]
-        + 0.85 * metrics["secondary_contrast_rms_db"]
-        + 3.5 * (metrics["center_response_peaks"] + metrics["center_response_valleys"])
-        + 14.0 * metrics["ceiling_occupancy_fraction"]
-        + 7.0 * metrics["median_zero_motion_octaves"]
+        + 0.60 * metrics["secondary_contrast_rms_db"]
+        + 4.0 * (metrics["center_response_peaks"] + metrics["center_response_valleys"])
+        + 5.0 * metrics["max_zero_motion_octaves"]
+        + 2.0 * metrics["max_pole_motion_octaves"]
     )
     return metrics
 
@@ -86,6 +94,16 @@ def gate_failures(metrics: dict[str, Any], gates: Any, reference: dict[str, Any]
                          reference["median_morph_contrast_db"] * float(gates.reference_morph_contrast_ratio))
     required_secondary = max(float(gates.minimum_secondary_contrast_db),
                              reference["median_secondary_contrast_db"] * float(gates.reference_secondary_contrast_ratio))
+    required_leader_zero = float(getattr(
+        gates,
+        "minimum_leader_zero_motion_octaves",
+        getattr(gates, "minimum_zero_motion_octaves", 0.0),
+    ))
+    required_leader_pole = float(getattr(
+        gates,
+        "minimum_leader_pole_motion_octaves",
+        getattr(gates, "minimum_pole_motion_octaves", 0.0),
+    ))
     checks = (
         (metrics["stable"] and metrics["finite"] and not metrics["grid_unstable_rows"]
          and not metrics["grid_nonfinite_rows"] and not metrics["interior_unstable_rows"]
@@ -99,7 +117,8 @@ def gate_failures(metrics: dict[str, Any], gates: Any, reference: dict[str, Any]
         (metrics["secondary_contrast_rms_db"] >= required_secondary, "Secondary contrast is too weak"),
         (metrics["center_response_peaks"] >= int(gates.minimum_center_peaks), "not enough center mountains"),
         (metrics["center_response_valleys"] >= int(gates.minimum_center_valleys), "not enough center canyons"),
-        (metrics["median_zero_motion_octaves"] >= float(gates.minimum_zero_motion_octaves), "zeros do not travel enough"),
+        (metrics["max_zero_motion_octaves"] >= required_leader_zero, "no lane's canyon travels (leader)"),
+        (metrics["max_pole_motion_octaves"] >= required_leader_pole, "no lane sweeps (leader pole)"),
     )
     for passed, reason in checks:
         if not passed:

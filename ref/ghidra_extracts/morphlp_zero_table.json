@@ -15,6 +15,12 @@
     "purpose": "Null target for df2 MorphLP-style body (Small Talk) — verify a df2-authored 16-row zero table produces equivalent vocal character",
     "ships_in_df2_binary": false
   },
+  "_CORRECTION_2026-06-03": {
+    "issue": "The interpretation fields below label this 16-step table 'zeros'. That is WRONG.",
+    "evidence": "rtfilter_decode_packed_words_to_kernel @ 0x1802c3600 (DLL-verified bit-identical to pyruntime/packed_interp.py): kernel slot 0/1 = numerator (ZEROS), slot 2/3 = denominator (POLES), slot 4 = gain. In FUN_1802c59b0 the table entries (param_5) are written to stage slots 2/3/4 = the POLE / denominator path; the designer-section bytes go to slots 0/1 = the ZERO / numerator path.",
+    "corrected_reading": "DAT_1806d73c0 is a 16-step morph-indexed POLE table (denominator). The ZEROS come from the preset designer-section bytes. The unit-circle / symmetric-triplet note must be re-derived for the pole polynomial; do not trust the old zero labels.",
+    "supersedes": "layout.interpretation below (kept for history only)"
+  },
   "format": "morphlp-zero-table-v1",
   "source": {
     "binary": "EosAudioEngine.dll",

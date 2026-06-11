@@ -125,7 +125,7 @@ def lane(
         "pole_r": round(realized_pole_r, 7),
         "zero_hz": round(clamp(zero_hz, 24.0, AUTHORING_SR * 0.48), 4),
         "zero_r": round(clamp(zero_r, 0.05, 0.9985), 7),
-        "gain": round(clamp(gain, 0.025, 3.75), 7),
+        "gain": round(clamp(gain, 0.001, 3.75), 7),
         "role": role,
     }
 
@@ -148,6 +148,22 @@ def load_law(path: Path) -> Law:
         sections=sections,
         source_contract=data.get("source_contract"),
     )
+
+
+def corner_radius_override(section: dict[str, Any], stem: str, label: str, default: float) -> float:
+    packed_alias = {
+        "M0_S0": "M0_Q0",
+        "M1_S0": "M100_Q0",
+        "M0_S1": "M0_Q100",
+        "M1_S1": "M100_Q100",
+    }[label]
+    by_corner = section.get(f"{stem}_by_corner")
+    if isinstance(by_corner, dict):
+        if label in by_corner:
+            return float(by_corner[label])
+        if packed_alias in by_corner:
+            return float(by_corner[packed_alias])
+    return default
 
 
 def compile_law(law: Law) -> dict[str, list[dict[str, Any]]]:
@@ -174,6 +190,19 @@ def compile_section_law(law: Law) -> dict[str, list[dict[str, Any]]]:
         rows = []
         for i, section in enumerate(sections):
             role = str(section.get("role", f"section_{i + 1}"))
+            if bool(section.get("bypass", False)):
+                rows.append(
+                    lane(
+                        pole_hz=1000.0,
+                        pole_q=None,
+                        zero_hz=1000.0,
+                        zero_r=0.5,
+                        gain=1.0,
+                        role=role,
+                        pole_r=0.5,
+                    )
+                )
+                continue
             fc = clamp(float(section["fc_hz"]), 24.0, AUTHORING_SR * 0.48)
             gain = float(section.get("gain_db", 0.0))
             bw_oct = float(section.get("bw_oct", 1.0))
@@ -182,6 +211,12 @@ def compile_section_law(law: Law) -> dict[str, list[dict[str, Any]]]:
             zero_offset_oct = float(section.get("zero_offset_oct", 0.0))
             zero_morph_oct = float(section.get("zero_morph_oct", 0.0)) * law.morph_spread
             zero_secondary_oct = float(section.get("zero_secondary_oct", 0.0))
+            gain_trim_db = (
+                float(section.get("gain_trim_db", 0.0))
+                + float(section.get("gain_morph_db", 0.0)) * morph
+                + float(section.get("gain_secondary_db", 0.0)) * secondary
+            )
+            gain_trim = 10.0 ** (gain_trim_db / 20.0)
 
             pole_hz = clamp(fc * (2.0 ** (morph_oct * morph)), 24.0, AUTHORING_SR * 0.48)
             zero_hz = clamp(
@@ -198,8 +233,10 @@ def compile_section_law(law: Law) -> dict[str, list[dict[str, Any]]]:
             else:
                 pole_r = clamp(0.44 + 0.25 * (1.0 - depth) + 0.10 * q_pressure, 0.18, 0.94)
                 zero_r = clamp(0.74 + depth * 0.24 + 0.02 * q_pressure, 0.35, 0.9985)
-            if role == "anchor" and secondary > 0.0:
+            if role == "anchor" and secondary > 0.0 and bool(section.get("rim_lock", True)):
                 pole_r = RIM_RADIUS
+            pole_r = clamp(corner_radius_override(section, "pole_radius", label, pole_r), 0.18, RIM_RADIUS)
+            zero_r = clamp(corner_radius_override(section, "zero_radius", label, zero_r), 0.05, 0.9985)
 
             rows.append(
                 lane(
@@ -207,7 +244,7 @@ def compile_section_law(law: Law) -> dict[str, list[dict[str, Any]]]:
                     pole_q=None,
                     zero_hz=zero_hz,
                     zero_r=zero_r,
-                    gain=unity_dc_gain(pole_hz, pole_r, zero_hz, zero_r),
+                    gain=unity_dc_gain(pole_hz, pole_r, zero_hz, zero_r) * gain_trim,
                     role=role,
                     pole_r=pole_r,
                 )
@@ -520,6 +557,8 @@ def write_outputs(law_path: Path, out_dir: Path, grid_n: int) -> dict[str, Any]:
     cart["provenance"] = "law-author-v1"
     cart["lawSource"] = "law_source.json"
     cart["authoringModel"] = "response-surface-v1"
+    cart["secondary_target"] = "packed"
+    cart["morph_taper"] = "linear"
     cart_path.write_text(json.dumps(cart, indent=2) + "\n", encoding="utf-8")
     body = author_body.raw_from_words(words)
     body_path.write_bytes(body)

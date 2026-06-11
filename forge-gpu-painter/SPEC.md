@@ -1,211 +1,385 @@
-# TRENCH FORGE — authoring surface spec v3 (Rust GPU painter)
+# Forge Painter Spec: Peak/Shelf Morph Surface
 
-**This document supersedes `forge-web/FORGE_DESIGN_BRIEF.md` and the layout/interaction
-tiers of `forge-web/DESIGNER_UX.md`.** Tier-1 invariants and the measured Tier-2 defaults
-from those documents are absorbed here unchanged. The web designer surfaces remain as
-inspection tools; the product authoring surface is `forge-gpu-painter` (eframe/wgpu,
-fully custom painted, trench-core linked in-process).
+## 1. Product
 
-Evidence grades: **OBSERVED** (proven by execution) · **INFERRED** · **UNKNOWN**.
+Forge is a custom-painted filter authoring surface for making legal DF2/P2K-style
+`.body240` bodies without asking the user to think in packed words, corners, or
+coefficient rows during normal work.
 
----
+The front surface is built around the Peak/Shelf Morph workflow from the Dillusion
+tutorial:
 
-## 1. The object and the one law
+```text
+low morph frame + high morph frame
+each frame: FREQ, SHELF, PEAK
+global: MORPH, PRESSURE, MASTER PEAK
+```
 
-A body = 240 bytes = 4 corners × 6 second-order sections × 5 packed u16 minifloat words.
-Each section is a conjugate pole pair + conjugate zero pair (always both). Corners:
-C0 = low·Q0, C1 = high·Q0, C2 = low·Q100, C3 = high·Q100. The runtime interpolates the
-**log-encoded words** (integer u16 lerp, morph first then Q), so the interior diverges
-from any continuous model by up to ~20 dB (OBSERVED). Consequences, non-negotiable:
+The result is still the packed runtime artifact:
 
-- **Every curve on screen is computed from the packed words through the engine's own
-  word-lerp.** The painter packs via `trench_core::compiler::pack_body` (the one
-  CONSTRUCT encoder) and decodes the bytes it just packed. Plot == engine by
-  construction — there is no second code path to drift.
-- Hard limits (format + compiler): pole r ∈ [0.5, 0.9992] UI / clamped inside the unit
-  circle by the compiler; zero r ∈ [0, 0.9995]; gain ∈ [−26, +12] dB packed linear;
-  conjugate pairs only; `zero_on = 1` always (the all-pole branch rolls off −12 dB/oct —
-  "no notch" = zero masked near the pole or low r_z).
+```text
+4 corners x 6 stages x 5 packed u16 words x 2 bytes = 240 bytes
+```
 
-## 2. The platform decision (why Rust changed the plan)
+The UI is an authoring grammar over the packed body, not a replacement for it.
 
-The browser plan assumed packing was expensive (WASM round-trips), so solvers were
-specced as "continuous model at gesture rate, true runtime on release." **That plan is
-obsolete.** In-process, a full forward pass — params → `pack_body` → 240 bytes → word
-lerp → |H| over a 40–480-bin window — costs well under a millisecond (OBSERVED: the
-curve-grip solver runs ~14 forward passes per pointer-move at frame rate, debug build).
+## 2. Runtime Contract
 
-**Rule: no solver in this product ever optimizes a surrogate.** Anything interactive is
-solved against the true packed runtime, in-process. The ~20 dB interior divergence makes
-any continuous-model preview a lying drag — the curve would track the finger, then snap
-on release. With the encoder in-process the surrogate is unnecessary; the honesty gap is
-closed by architecture, not by a disclaimer.
+- A body is exactly 240 bytes.
+- A body has four corner banks:
+  - low frame, low pressure
+  - high frame, low pressure
+  - low frame, high pressure
+  - high frame, high pressure
+- Each corner has six stages.
+- Each stage has five packed words.
+- Zeros are first-class. Every authored stage must have pole Hz/radius, zero
+  Hz/radius, and gain.
+- Plots, audits, audition slots, and KEEP outputs must be generated from packed
+  runtime-probed data.
+- P2K/reference bodies that already exist as packed words remain packed-word
+  truth. They may be previewed, overlaid, auditioned, and used as snap targets.
+  They are not editable as FREQ/SHELF/PEAK unless a writer grammar or inverse
+  fit explicitly produces an editable source.
 
-## 3. The two grips
+## 3. PDF-Derived Authoring Model
 
-**Grip 1 — per-feature handles (primary).** Filled circle = pole pair, ring = zero pair,
-sitting on the section's own contribution curve. Drag horizontal = frequency (quantize
-rails apply), vertical = radius (pole up = resonant, zero down = deeper notch),
-Alt = per-frame gain, wheel = pole radius, Shift = fine. This grip is structure-
-preserving by definition and teaches the instrument. (BUILT, OBSERVED.)
+The Dillusion tutorial describes five practical controls:
 
-**Grip 2 — the pottery grip (mould the sum; the stages follow).** The cascade in dB is
-the sum of six section responses; wherever skirts overlap no single handle owns the
-composite. Grab the combined curve anywhere that isn't a handle and mould it like clay:
-- **The hand has width.** Wheel sets the brush (Gaussian σ, 0.12–1.2 oct); the footprint
-  band is drawn on the plot. Fingertip moves one section; palm moves the band.
-- **Recruitment under the brush:** every unlocked enabled section whose pole sits within
-  ~1.5 σ of the brush center (cap 4), re-evaluated every frame.
-- **Viscous following, both axes:** each frame the material steps toward the finger from
-  where it is *now* (target re-based per frame; minimum motion toward the frame start —
-  clay keeps what you pressed, no spring-back). Sideways drag smears the brush center
-  and drags pole frequencies with it. Damped Gauss-Newton in root domain
-  [log2 f_p, ln(1 − r_p), gain dB], small per-step trust region so sections never swap
-  roles.
-- **Stiff where structure lives:** locks and parked zeros are never moved by the brush —
-  clay with tendons. The cascade can't hold arbitrary shapes (120 numbers, not infinite
-  plasticity); the live residual in dB is where the material resists.
-(BUILT for docked corners, OBSERVED.)
+- `MORPH`: position between the two filter frames. In the hardware workflow,
+  FilFreq sweeps this value.
+- `FREQ`: a frame frequency control whose meaning depends on SHELF.
+- `SHELF`: frame tone, from low-pass through mid shelf to high-pass.
+  - low values behave more like low-pass
+  - middle values behave more like a mid shelf
+  - high values behave more like high-pass
+  - values between boundaries blend those behaviors
+- `PEAK`: per-frame relative level for the filter sweep.
+- `PRESSURE`: overall resonance/saturation pressure. In the tutorial this is
+  driven by FilRes and makes the sweep more drastic.
 
-Constraint system (this is what makes the inverse problem usable — the solver may only
-move what is allowed to move):
+Forge names these plainly:
 
-1. **Locks are the regularizer.** Locked sections (anchors) are excluded from the
-   solver, from fits, and from corner tools. Parked zeros are never touched by the
-   curve grip at all — a traveling or deepening zero is always a deliberate manual act.
-2. **Minimum motion.** Tikhonov pull toward the grab state, frequency pinned hardest
-   (λ_f > λ_r > λ_g), so the solver prefers radius/gain over re-placing poles.
-3. **Trust region** (±0.5 per step in normalized params): sections never swap roles
-   under a drag. Section index is the morph pairing — a role swap at one corner wrecks
-   the interior, so pairing preservation is a hard property, not a preference.
-4. **Visible motion.** Whatever the solver moved shows as moved handles, never a
-   silently mutated body. The weighted residual vs the target prints live in dB.
-5. **Docked first.** The grip currently requires MORPH and Q docked at 0/1 — the solve
-   is exact there and the mental model is simple. The interior grip (solve corner moves
-   so the *interpolated middle* lands where pulled) uses the same machinery and unlocks
-   after the docked feel is proven. It is the only direct grip on the emergent interior
-   and the interactive front-end of the surface optimizer (§5).
+```text
+MORPH      = where we are between the two frames
+PRESSURE   = Q / saturation / danger amount
+FREQ       = the frame's main frequency
+SHELF      = low-pass <-> mid shelf <-> high-pass tone
+PEAK       = frame level/emphasis
+MASTER     = overall filter level
+```
 
-## 4. Solver doctrine (the research, distilled)
+## 4. Front Surface
 
-Searched the current landscape (2026-06). The **slice problem** — fit a static magnitude
-target with a biquad cascade — is a mature, solved field twice over. The **surface
-problem** — fit a 2D morph surface through a log-word interpolator — appears nowhere.
-That asymmetry drives the sequencing.
+The first screen must be sparse.
 
-- **Classical capture: benchmark AAA against vector fitting before committing.** AAA
-  (barycentric rational approximation, greedy support points, no initial pole guess,
-  ~40 lines) superseded vector fitting as the default; its known weakness is **noisy
-  data**, where approximation-based methods (VF) do better. Our captures are real
-  measurements — run both on the dirtiest reference capture and keep the winner.
-  Pipeline either way: magnitude → minimum phase (cepstral) → complex fit → poles/zeros
-  → project into format (order 12, conjugate pairs, radius clamps, six sections) →
-  **polish closed-loop through the packed runtime**. That last step is ours alone; no
-  paper has a bit-exact shipped-engine null to refine against.
-- **The root domain is independently validated.** The differentiable-DSP literature
-  converged on frequency-sampled biquad cascades (evaluate |H| at sampled frequencies —
-  literally how our plot works) and on **stability via parameterization** (SVF-style
-  frequency/damping params) rather than constraint penalties. Our (f_p, r_p, f_z, r_z,
-  gain) control surface is the same move. Their failure mode (deep cascades N ≥ 64
-  destabilize training) does not apply at N = 6.
-- **No neural warm start needed for the curve grip.** Six sections under lock masks is a
-  small Gauss-Newton problem at gesture rate (OBSERVED — shipped). IIRNet-style
-  amortized prediction is a later luxury for draw-the-target capture, not a
-  prerequisite.
-- **The surface optimizer is an unclaimed combination of mature parts.** The packed
-  chain — corner params → log words → bilinear word blend → decoded coefficients → |H|
-  over a (morph, Q) grid — is differentiable almost everywhere (log-encode smooth,
-  blend linear, magnitude evaluation standard). A surface-level loss with gradients
-  through that chain is buildable from published components; nobody has assembled them
-  across a morph dimension. Sequenced after the bank proves demand (≥ 3 banked bodies).
+Visible by default:
 
-## 5. Topology: never re-architect the runtime
+- full-width response plot
+- `START`
+- `MORPH`
+- `PRESSURE`
+- frame A controls: `FREQ`, `SHELF`, `PEAK`
+- frame B controls: `FREQ`, `SHELF`, `PEAK`
+- `SWEEP`
+- `AUDITION`
+- `BAKE`
+- `KEEP`
+- stable/checking lamp
+- `DETAILS`
 
-The "mature" way to build a morphing filter — interpolating LSFs or lattice
-coefficients, as speech codecs have for forty years — guarantees a smooth, predictable
-interior. **That is exactly the wrong outcome.** The 20 dB divergence, the cancellation
-cells, the collapsing columns, the corner blooms — the emergent interior characterized
-across the 50 reference bodies — comes from linear interpolation of log-encoded
-direct-form words. A predictable interior is a crossfade; ours is an instrument.
+Hidden behind `DETAILS`:
 
-Invention happens on the **authoring side only**: parameterizations (root domain,
-locks/anchors, lawful paths, scopes) layered over a fixed runtime. Derived topology
-labels (resonant SOS, pole-zero resonator, near-allpass, …) stay readback vocabulary —
-information about root geometry, never a choice and never a quality judgment.
+- four corner banks
+- six-biquad budget
+- per-stage pole/zero rows
+- packed word/provenance data
+- audit heat map
+- source inventory details
+- advanced snap settings
 
-## 6. Format restriction: aggressive yes
+Forbidden on the front surface:
 
-- **Identity:** every verified asset — byte-null, corridor, 17×17 audit, reference
-  fingerprints, plot==engine — hangs off this format. A second format forks the
-  evidence chain and orphans half of it.
-- **Headroom:** free corners, secondary-responsive zeros, drive routing, section
-  re-pairing, ±25 dB per-frame gain rides are all in-format and mostly territory no
-  reference ever used. Breaking format buys nothing we can't already reach.
-- **Discipline:** the format is the regularizer that turns research output into
-  shippable bodies. An unconstrained fit returns whatever order it likes; forcing
-  order-12 conjugate-pair radius-clamped solutions is what turns "a match" into a body.
+- `TABLE`
+- `packedWords`
+- coefficient editor language
+- normal per-corner editing
+- visible six-card workbench
+- research corpus/provenance jargon
 
-Revisit condition (the only one): a specific authored intention repeatedly failing to
-express in-format — a seventh section, real-axis poles, more than bilinear corners.
-That is a format-v2 project with its own measured corridor and harness, sequenced after
-the bank proves the demand. Never a quiet extension of this tool.
+## 5. Main Layout
 
-## 7. Workflow: corners-first, measured middle (LOCKED, Tyson 2026-06-10)
+```text
+top bar:
+  TRENCH FORGE | body name | stable lamp | AUDITION | BAKE | KEEP
 
-1. Author the four corners as the intended states (corner chips / keys 1–4; edit scope
-   = this corner / this frame / all corners).
-2. Probe the interior through the real runtime: the surface map (morph × Q max |H|),
-   the morph-sweep heat map, and the live curve at any (morph, Q).
-3. Repair by re-editing corners — scope + locks express the orthogonal moves (common,
-   morph-differential, Q-differential); root→word nonlinearity is absorbed by always
-   measuring through the engine.
-4. Verify the pin states: center (m50 q50) + the four 25/75 quarter states — printed
-   under the surface map; four general-position samples pin the bilinear surface.
-5. The ambient 17×17 audit (stability + max |H|) re-judges continuously; the lamp is
-   the standing verdict. Unstable cells render red at their coordinates.
+plot:
+  live packed response, large and uncluttered
+  low-frame ghost
+  high-frame ghost
+  optional source overlay
 
-## 8. Design space: all the type families
+control band:
+  START | SWEEP | MORPH slider | PRESSURE slider | MASTER
 
-The taxonomy to cover (clean-room: the manual's category descriptions, never its
-coefficients): low-pass sweeps · high-pass · band-pass · parametric EQ boost/cut ·
-vowel formant morphs · notch combs / phase-shifter · flanger · resonant peaks ·
-wah/distortion-tone hybrids. Order 2–12 = how many of the six sections are enabled.
+frame band:
+  LOW FRAME:  FREQ | SHELF | PEAK
+  HIGH FRAME: FREQ | SHELF | PEAK
 
-Seeds exist for each family (SEED menu) as **start states, not presets**: type
-templates are textbook constructions; vowel pairs come from Peterson-Barney formants
-with radius from bandwidth (r = exp(−πB/SR)); tube partials and metallic mode ratios
-come from `tables/*.json`. LPC fit: drop a WAV → trench-core LPC poles + spectral
-valleys into the low (Shift: high) frame, locked sections held.
+details drawer:
+  source, snap, corners, six-stage budget, audit
+```
 
-## 9. Rule tiers (carried over)
+The plot is the hero. Controls orbit it; they do not compete with it.
 
-- **Tier 1 — invariants:** format + stability physics (§1 limits); every curve through
-  the packed runtime; 17×17 audit before anything enters the bank; clean-room.
-- **Tier 2 — measured defaults, one gesture to override:** zeros boot parked and
-  Q-invariant (the reference set's numerator is secondary-invariant — median zero
-  radius change +0.0000 across 193 sections); Q-axis = pole radius toward the rim
-  (~0.999); quantize defaults to the measured-resonance table. Off-corridor moves are
-  available novelty, never faults.
-- **Tier 3 — taste/ergonomics:** layout, colors, glyphs, drag feel — hypotheses until
-  Tyson's hands vote. Current palette: near-black ground, white truth curve, per-section
-  hues, ice for interaction, ember for audit-in-progress, red reserved for instability.
+## 6. Custom Painter Architecture
 
-## 10. Pipeline (end-to-end, all BUILT)
+This remains full custom code painter style.
 
-`pack_body` bytes → live plot/maps → ambient audit → **BAKE**
-(`dev/tmp/forge_gpu_painter/<name>.body240` + source JSON) → **AUDITION**
-(`Documents/TRENCH/authoring_slot.json`, compiled-v1 packedWords — hot-reloaded by the
-plugin's Forge Audition slot) → keep/kill by ear in the plugin → bank entry with
-Tyson's verdict (KEEP-into-bank wiring from this surface: not yet built).
+- egui hosts the window, input events, and painter access only.
+- Product UI is not built from stock egui widgets.
+- Every visible control is drawn by Forge code:
+  - layout rects
+  - hit-test records
+  - custom text, chips, dials, sliders, mini plots
+  - explicit hover/active/drag states
+- The response plot stays wgpu-backed.
+- GPU resources are retained and updated; no per-frame buffer or texture creation.
+- Paint code must not read source files from disk. Source body bytes and mini-plot
+  previews are loaded or cached outside the paint path.
+- Input follows the same structure:
 
-## 11. Sequencing
+```text
+layout() -> draw_*() fills Frame hit lists -> interact() consumes hit lists
+```
 
-| # | item | status |
-|---|---|---|
-| 1 | custom-painted surface, handles, locks, undo, seeds, audit, bake/audition | **BUILT (OBSERVED)** |
-| 2 | curve grip, docked corners, true-runtime Gauss-Newton | **BUILT (OBSERVED)** |
-| 3 | in-app audio (engine → cpal, AGC + saturation chain = the product chain) | next |
-| 4 | interior curve grip (corner moves so the interpolated middle lands) | after 3 proves the feel |
-| 5 | capture fit: AAA vs vector fitting benchmark on the dirtiest reference, then draw-the-target | after 3 |
-| 6 | KEEP → bank artifacts from this surface (17×17 + byte provenance recorded) | with first keeper |
-| 7 | differentiable surface optimizer (gradient through the packed chain, surface loss) | own project; bank ≥ 3 first |
+This keeps the app painter-like and deterministic while avoiding widget soup.
+
+## 7. Data Model
+
+Normal editable body:
+
+```rust
+struct PeakShelfPatch {
+    name: String,
+    low: FrameControls,
+    high: FrameControls,
+    morph: f32,
+    pressure: f32,
+    master_peak_db: f32,
+}
+
+struct FrameControls {
+    freq_hz: f32,
+    shelf: f32,      // -64..+63
+    peak_db: f32,
+}
+```
+
+Advanced compiled body:
+
+```rust
+struct Section {
+    on: bool,
+    locked: bool,
+    role: String,
+    corners: [CornerStage; 4],
+}
+
+struct CornerStage {
+    pole_hz: f32,
+    pole_r: f32,
+    zero_hz: f32,
+    zero_r: f32,
+    gain_db: f32,
+}
+```
+
+Packed source body:
+
+```text
+raw .body240 bytes
+compiled-v1 cartridge JSON
+audit/provenance sidecars
+```
+
+The UI always distinguishes:
+
+- `editable`: controls can be changed and recompiled
+- `packed preview`: exact packed body, not editable yet
+- `study overlay`: visual/reference only
+
+## 8. Peak/Shelf Compiler
+
+The Peak/Shelf controls compile into exactly six pole-zero lanes.
+
+Suggested lane roles:
+
+1. `shelf_spine`: low-pass/high-pass boundary energy
+2. `low_weight`: bass/body compensation
+3. `mouth_band`: mid shelf or vowel-ish emphasis
+4. `bite_cut`: moving notch/canyon
+5. `upper_tear`: high-mid edge
+6. `air_cap`: high restraint/air
+
+Corner mapping:
+
+```text
+C0 = low frame, pressure 0
+C1 = high frame, pressure 0
+C2 = low frame, pressure 1
+C3 = high frame, pressure 1
+```
+
+SHELF mapping:
+
+```text
+-64       mostly low-pass
+  0       mostly mid shelf
++63       mostly high-pass
+between   blend the neighboring behaviors
+```
+
+FREQ mapping depends on SHELF:
+
+- low-pass region: cutoff/rolloff boundary
+- mid-shelf region: band center
+- high-pass region: boundary/knee
+
+PRESSURE mapping:
+
+- increases pole radius
+- deepens or focuses zeros where useful
+- may trim gain to avoid unstable or unusable bodies
+- must never hide instability
+
+MASTER PEAK:
+
+- applies a final level/emphasis policy during compile
+- must be audited post-pack
+
+## 9. Source Browser
+
+`START` opens a categorized source browser with mini plots.
+
+Categories:
+
+- `Peak/Shelf Morph`
+- `Verified Editable`
+- `Packed Preview`
+- `Clean Templates`
+- `Study Overlay`
+
+Rules:
+
+- mini plots are generated from packed/runtime response when body bytes exist
+- verified editable rows load source controls or stage sidecars
+- packed preview rows do not pretend to be editable
+- P2K/reference packed bodies can be selected as overlays or snap targets
+- failed or unverified sources stay hidden or quarantined
+
+## 10. Core Interactions
+
+Basic authoring path:
+
+```text
+START -> set LOW frame -> set HIGH frame -> sweep MORPH -> raise PRESSURE -> AUDITION -> BAKE -> KEEP
+```
+
+Direct manipulation:
+
+- drag curve left/right region: adjust frame FREQ
+- drag curve up/down: adjust frame PEAK
+- drag shelf handle: adjust SHELF tone
+- hold modifier or use DETAILS: expose pole/zero surgery
+- snap: move the current frame toward a verified source landmark
+- overlay: show source response without applying it
+
+The default interaction edits the simple frame controls. It must not make the
+user babysit four corners.
+
+## 11. Bake And Keep
+
+`BAKE` writes:
+
+```text
+dev/tmp/forge_gpu_painter/<name>.body240
+dev/tmp/forge_gpu_painter/<name>.source.json
+```
+
+`AUDITION` writes:
+
+```text
+Documents/TRENCH/authoring_slot.json
+```
+
+`KEEP` stages:
+
+```text
+desk/bank/v1/staging/<slug>/<slug>.body240
+desk/bank/v1/staging/<slug>/<slug>.cart.json
+desk/bank/v1/staging/<slug>/<slug>.source.json
+desk/bank/v1/staging/<slug>/<slug>.audit.json
+desk/bank/v1/staging/<slug>/<slug>.provenance.json
+```
+
+KEEP refuses unstable packed audits.
+
+## 12. What Current Forge Helps
+
+Forge already helps with:
+
+- exact 240-byte packed body output
+- packed-runtime plotting
+- stable/audit checks
+- custom painter architecture
+- audition/bake/keep pipeline
+- six-biquad budget in advanced view
+
+Forge currently hurts the Peak/Shelf workflow when it:
+
+- exposes stage/corner detail too early
+- makes `SNAP`/`TABLE`/source research language visible before sound-making
+- lacks direct `FREQ / SHELF / PEAK` frame controls
+- makes the user infer that MORPH is the hardware-style FilFreq sweep
+- treats Q pressure as a technical row issue instead of the "make it drastic"
+  control from the tutorial
+
+## 13. Verification
+
+Before claiming the app works:
+
+```powershell
+cargo check -p forge-gpu-painter
+cargo build -p forge-gpu-painter --release
+.\target\release\forge-gpu-painter.exe --mag-test
+.\target\release\forge-gpu-painter.exe --goal-test
+.\target\release\forge-gpu-painter.exe --interior-test
+.\target\release\forge-gpu-painter.exe --draw-test
+.\target\release\forge-gpu-painter.exe --table-gen-test
+python tools/law_author.py --preset hedz_like_anchor_canyons --out dev/tmp/law_author/golden_hedz_like
+```
+
+UI screenshot checks:
+
+- no visible `TABLE`
+- no default per-corner workbench
+- plot dominates the screen
+- LOW/HIGH frames are visible
+- each frame has FREQ/SHELF/PEAK
+- MORPH and PRESSURE are obvious
+- DETAILS contains the packed/corner/stage machinery
+
+## 14. Implementation Order
+
+1. Replace the front workbench with the Peak/Shelf frame surface.
+2. Keep existing packed-runtime plot and audit code.
+3. Add `PeakShelfPatch` source JSON.
+4. Write `compile_peak_shelf_patch()` to six lanes and four corners.
+5. Add `START -> Peak/Shelf Morph` with mini plot.
+6. Move corner chips, section cards, and six-biquad budget into DETAILS.
+7. Keep packed preview and source overlay, but label them honestly.
+8. Verify bake/audition/keep from the simplified surface.
+
+The target is not a smaller coefficient editor. It is a simpler musical
+instrument for producing the same exact 240-byte packed bodies.

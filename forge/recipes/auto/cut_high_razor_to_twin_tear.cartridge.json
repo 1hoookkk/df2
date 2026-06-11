@@ -1,0 +1,327 @@
+{
+  "format": "forge-cartridge-v1",
+  "keyframes": [
+    {
+      "boost": 1.0,
+      "label": "M0_Q0",
+      "packedWords": [
+        [
+          46205,
+          62586,
+          9431,
+          33698,
+          20550
+        ],
+        [
+          46225,
+          62586,
+          21937,
+          33698,
+          32991
+        ],
+        [
+          46528,
+          62586,
+          37624,
+          33698,
+          48104
+        ],
+        [
+          52901,
+          51445,
+          53249,
+          33698,
+          53858
+        ],
+        [
+          58756,
+          54184,
+          57903,
+          33698,
+          56074
+        ],
+        [
+          62811,
+          54184,
+          62235,
+          33698,
+          56481
+        ]
+      ]
+    },
+    {
+      "boost": 1.0,
+      "label": "M100_Q0",
+      "packedWords": [
+        [
+          46205,
+          62586,
+          9431,
+          33698,
+          20550
+        ],
+        [
+          46216,
+          62586,
+          19076,
+          33698,
+          29865
+        ],
+        [
+          46406,
+          62586,
+          34767,
+          33698,
+          45543
+        ],
+        [
+          49108,
+          51445,
+          49291,
+          33698,
+          53835
+        ],
+        [
+          55655,
+          54184,
+          54543,
+          33698,
+          55942
+        ],
+        [
+          60403,
+          54184,
+          59383,
+          33698,
+          56175
+        ]
+      ]
+    },
+    {
+      "boost": 1.0,
+      "label": "M0_Q100",
+      "packedWords": [
+        [
+          46205,
+          62586,
+          9359,
+          28767,
+          20493
+        ],
+        [
+          46225,
+          62586,
+          21934,
+          28767,
+          32989
+        ],
+        [
+          46528,
+          62586,
+          37630,
+          28767,
+          48113
+        ],
+        [
+          52901,
+          51445,
+          53255,
+          28767,
+          53864
+        ],
+        [
+          58756,
+          54184,
+          57909,
+          28767,
+          56083
+        ],
+        [
+          62811,
+          54184,
+          62242,
+          28767,
+          56491
+        ]
+      ]
+    },
+    {
+      "boost": 1.0,
+      "label": "M100_Q100",
+      "packedWords": [
+        [
+          46205,
+          62586,
+          9359,
+          28767,
+          20493
+        ],
+        [
+          46216,
+          62586,
+          19066,
+          28767,
+          29857
+        ],
+        [
+          46406,
+          62586,
+          34774,
+          28767,
+          45548
+        ],
+        [
+          49108,
+          51445,
+          49296,
+          28767,
+          53841
+        ],
+        [
+          55655,
+          54184,
+          54550,
+          28767,
+          55951
+        ],
+        [
+          60403,
+          54184,
+          59392,
+          28767,
+          56185
+        ]
+      ]
+    }
+  ],
+  "meta": {
+    "family": "cut",
+    "note": "highest razor -> twin tearing edges",
+    "source": "tables/ physical models"
+  },
+  "name": "cut_high_razor_to_twin_tear",
+  "recipe": {
+    "axes": {
+      "morph": {
+        "high": "AWAY",
+        "low": "HOME",
+        "scale": "log",
+        "slide_semitones": 0.0
+      },
+      "secondary": {
+        "amount": 0.25,
+        "high": "TIGHT",
+        "low": "OPEN",
+        "mode": "q_crank"
+      }
+    },
+    "constraints": {
+      "headroom_db": 18.0,
+      "max_radius": 0.999,
+      "on_unstable": "reject",
+      "unity_dc": true
+    },
+    "lanes": [
+      {
+        "anatomy": {
+          "pole_hz": 110.0,
+          "sharp": 0.9976
+        },
+        "articulation": {
+          "cut": "hug"
+        },
+        "id": 0,
+        "label": "sub dome",
+        "role": "foundation",
+        "survival": {
+          "gain": 1.0
+        }
+      },
+      {
+        "anatomy": {
+          "away_hz": 250.0,
+          "pole_hz": 320.0,
+          "sharp": 0.9976
+        },
+        "articulation": {
+          "cut": "hug"
+        },
+        "id": 1,
+        "label": "body_low",
+        "role": "body_low",
+        "survival": {
+          "gain": 1.0
+        }
+      },
+      {
+        "anatomy": {
+          "away_hz": 950.0,
+          "pole_hz": 1200.0,
+          "sharp": 0.9976
+        },
+        "articulation": {
+          "cut": "hug"
+        },
+        "id": 2,
+        "label": "body_mid",
+        "role": "body_mid",
+        "survival": {
+          "gain": 1.0
+        }
+      },
+      {
+        "anatomy": {
+          "away_hz": 3200.0,
+          "pole_hz": 4500.0,
+          "sharp": 0.9976
+        },
+        "articulation": {
+          "cut": "custom",
+          "zero": {
+            "depth": 0.95,
+            "ratio": 1.0
+          }
+        },
+        "id": 3,
+        "label": "scoop_notch",
+        "role": "scoop_notch",
+        "survival": {
+          "gain": 0.55
+        }
+      },
+      {
+        "anatomy": {
+          "away_hz": 5200.0,
+          "pole_hz": 7000.0,
+          "sharp": 0.9976
+        },
+        "articulation": {
+          "cut": "tear"
+        },
+        "id": 4,
+        "label": "tear_lo",
+        "role": "tear_lo",
+        "survival": {
+          "gain": 1.0
+        }
+      },
+      {
+        "anatomy": {
+          "away_hz": 8200.0,
+          "pole_hz": 11000.0,
+          "sharp": 0.9976
+        },
+        "articulation": {
+          "cut": "tear"
+        },
+        "id": 5,
+        "label": "tear_hi",
+        "role": "tear_hi",
+        "survival": {
+          "gain": 1.0
+        }
+      }
+    ]
+  },
+  "sampleRate": 39062.5
+}

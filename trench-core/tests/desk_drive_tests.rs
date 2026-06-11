@@ -91,6 +91,23 @@ fn desk_drive_generates_harmonics_when_driven() {
 }
 
 #[test]
+fn desk_drive_outputs_driven_signal_on_twenty_bit_grid() {
+    let mut drive = DeskDrive::new();
+    drive.configure(18.0, SUPPORTED_MODEL);
+
+    let input = coherent_sine(48_000.0, 29, 2048, 0.7);
+    let scale = 524_287.0f32;
+    for sample in input {
+        let output = drive.process(sample);
+        let grid = output * scale;
+        assert!(
+            (grid - grid.round()).abs() < 0.02,
+            "output was not on 20-bit grid: output={output}, scaled={grid}"
+        );
+    }
+}
+
+#[test]
 fn filter_engine_applies_selectable_pre_cascade_desk_drive() {
     let input = coherent_sine(44_100.0, 41, 4096, 0.55);
 

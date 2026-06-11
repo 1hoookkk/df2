@@ -1,0 +1,327 @@
+{
+  "format": "forge-cartridge-v1",
+  "keyframes": [
+    {
+      "boost": 1.0,
+      "label": "M0_Q0",
+      "packedWords": [
+        [
+          46205,
+          62586,
+          9377,
+          30862,
+          20507
+        ],
+        [
+          46222,
+          62586,
+          21263,
+          30862,
+          32170
+        ],
+        [
+          46501,
+          62586,
+          37233,
+          30862,
+          47560
+        ],
+        [
+          45436,
+          51445,
+          45579,
+          30862,
+          53800
+        ],
+        [
+          48792,
+          62586,
+          49827,
+          30862,
+          58238
+        ],
+        [
+          62581,
+          62586,
+          57671,
+          30862,
+          50590
+        ]
+      ]
+    },
+    {
+      "boost": 1.0,
+      "label": "M100_Q0",
+      "packedWords": [
+        [
+          46205,
+          62586,
+          9377,
+          30862,
+          20507
+        ],
+        [
+          46225,
+          62586,
+          21934,
+          30862,
+          32989
+        ],
+        [
+          46528,
+          62586,
+          37628,
+          30862,
+          48110
+        ],
+        [
+          46007,
+          51445,
+          46179,
+          30862,
+          53810
+        ],
+        [
+          48945,
+          62586,
+          50104,
+          30862,
+          58427
+        ],
+        [
+          62581,
+          62586,
+          57907,
+          30862,
+          50885
+        ]
+      ]
+    },
+    {
+      "boost": 1.0,
+      "label": "M0_Q100",
+      "packedWords": [
+        [
+          46205,
+          62586,
+          9359,
+          28767,
+          20493
+        ],
+        [
+          46222,
+          62586,
+          21263,
+          28767,
+          32170
+        ],
+        [
+          46501,
+          62586,
+          37235,
+          28767,
+          47563
+        ],
+        [
+          45436,
+          51445,
+          45581,
+          28767,
+          53802
+        ],
+        [
+          48792,
+          62586,
+          49830,
+          28767,
+          58240
+        ],
+        [
+          62581,
+          62586,
+          57673,
+          28767,
+          50593
+        ]
+      ]
+    },
+    {
+      "boost": 1.0,
+      "label": "M100_Q100",
+      "packedWords": [
+        [
+          46205,
+          62586,
+          9359,
+          28767,
+          20493
+        ],
+        [
+          46225,
+          62586,
+          21934,
+          28767,
+          32989
+        ],
+        [
+          46528,
+          62586,
+          37630,
+          28767,
+          48113
+        ],
+        [
+          46007,
+          51445,
+          46181,
+          28767,
+          53812
+        ],
+        [
+          48945,
+          62586,
+          50107,
+          28767,
+          58429
+        ],
+        [
+          62581,
+          62586,
+          57909,
+          28767,
+          50888
+        ]
+      ]
+    }
+  ],
+  "meta": {
+    "family": "resonant",
+    "note": "copper plate ring -> iron sheet ring",
+    "source": "tables/ physical models"
+  },
+  "name": "resonant_copper_sheet_to_iron_ring",
+  "recipe": {
+    "axes": {
+      "morph": {
+        "high": "AWAY",
+        "low": "HOME",
+        "scale": "log",
+        "slide_semitones": 0.0
+      },
+      "secondary": {
+        "amount": 0.25,
+        "high": "TIGHT",
+        "low": "OPEN",
+        "mode": "q_crank"
+      }
+    },
+    "constraints": {
+      "headroom_db": 18.0,
+      "max_radius": 0.999,
+      "on_unstable": "reject",
+      "unity_dc": true
+    },
+    "lanes": [
+      {
+        "anatomy": {
+          "pole_hz": 110.0,
+          "sharp": 0.9985
+        },
+        "articulation": {
+          "cut": "hug"
+        },
+        "id": 0,
+        "label": "sub dome",
+        "role": "foundation",
+        "survival": {
+          "gain": 1.0
+        }
+      },
+      {
+        "anatomy": {
+          "away_hz": 320.0,
+          "pole_hz": 300.0,
+          "sharp": 0.9985
+        },
+        "articulation": {
+          "cut": "hug"
+        },
+        "id": 1,
+        "label": "low_mode",
+        "role": "low_mode",
+        "survival": {
+          "gain": 1.0
+        }
+      },
+      {
+        "anatomy": {
+          "away_hz": 1200.0,
+          "pole_hz": 1150.0,
+          "sharp": 0.9985
+        },
+        "articulation": {
+          "cut": "hug"
+        },
+        "id": 2,
+        "label": "mid_mode",
+        "role": "mid_mode",
+        "survival": {
+          "gain": 1.0
+        }
+      },
+      {
+        "anatomy": {
+          "away_hz": 2500.0,
+          "pole_hz": 2350.0,
+          "sharp": 0.9985
+        },
+        "articulation": {
+          "cut": "custom",
+          "zero": {
+            "depth": 0.95,
+            "ratio": 1.0
+          }
+        },
+        "id": 3,
+        "label": "scoop_notch",
+        "role": "scoop_notch",
+        "survival": {
+          "gain": 0.55
+        }
+      },
+      {
+        "anatomy": {
+          "away_hz": 3500.0,
+          "pole_hz": 3400.0,
+          "sharp": 0.9985
+        },
+        "articulation": {
+          "cut": "hug"
+        },
+        "id": 4,
+        "label": "hi_mode",
+        "role": "hi_mode",
+        "survival": {
+          "gain": 1.0
+        }
+      },
+      {
+        "anatomy": {
+          "away_hz": 7000.0,
+          "pole_hz": 6800.0,
+          "sharp": 0.9985
+        },
+        "articulation": {
+          "cut": "air_cap"
+        },
+        "id": 5,
+        "label": "top_mode",
+        "role": "top_mode",
+        "survival": {
+          "gain": 0.8
+        }
+      }
+    ]
+  },
+  "sampleRate": 39062.5
+}

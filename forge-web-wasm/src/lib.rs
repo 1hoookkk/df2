@@ -1,4 +1,4 @@
-use trench_core::minifloat::encode;
+use trench_core::compiler::{pack_body, pack_typed_body};
 use trench_core::{Cartridge, FilterEngine, InputMode, SpatialMode};
 
 // ---- live engine: filter cascade + AGC + Mackie saturation + QSound, in WASM.
@@ -97,8 +97,6 @@ pub extern "C" fn forge_engine_process(n: usize) {
     }
 }
 
-const SR: f64 = 39_062.5;
-const TAU: f64 = core::f64::consts::PI * 2.0;
 const STAGES: usize = 6;
 const CORNERS: usize = 4;
 const PARAMS_PER_STAGE: usize = 7;
@@ -128,67 +126,43 @@ pub extern "C" fn forge_body_len() -> usize {
     BODY_LEN
 }
 
-fn biquad_to_words(b: [f64; 5]) -> [u16; 5] {
-    let (b0, b1, b2, a1, a2) = (b[0], b[1], b[2], b[3], b[4]);
-    let c4 = b0;
-    let c0 = if c4 != 0.0 { b1 / c4 + 2.0 } else { 2.0 };
-    let c1 = if c4 != 0.0 { 1.0 - b2 / c4 } else { 1.0 };
-    let c2 = a1 + 2.0;
-    let c3 = 1.0 - a2;
-    [
-        encode((c0 - c1) / 4.0),
-        encode(c1),
-        encode((c2 - c3) / 4.0),
-        encode(c3),
-        encode(c4 / 4.0),
-    ]
+#[no_mangle]
+pub extern "C" fn forge_pack_params() -> i32 {
+    // Forward compile is owned ONCE by trench-core (compiler::pack_body). WASM, the
+    // Python author server, and the DLL all run this same Rust object code, so the
+    // bytes the browser auditions are bit-identical to what /bake writes.
+    unsafe {
+        let body = pack_body(&PARAMS[..]);
+        BODY[..].copy_from_slice(&body);
+    }
+    0
 }
 
-fn stage_biquad(p: &[f64]) -> [f64; 5] {
-    let on = p[0] >= 0.5;
-    if !on {
-        return [1.0, 0.0, 0.0, 0.0, 0.0];
-    }
+// ---- Rossum Filter Designer path: 6 typed cards -> 240 body bytes.
+// Each card is [type_id, fc_A, fc_B, q_lo, q_hi, gain_db, enabled] (7 f64).
+// type_id: 0=Peak 1=LowShelf 2=Notch 3=LP 4=HP 5=BP 6=HighShelf. The card IS a
+// heritage designer-section: fc_A/fc_B are its low/high-frame frequencies, Morph
+// interpolates between them. Routed through trench-core's pack_typed_body (one
+// owner) so the designed body is bit-identical to the DLL.
+const TYPED_FIELDS_PER_CARD: usize = 7;
+const TYPED_PARAM_LEN: usize = STAGES * TYPED_FIELDS_PER_CARD;
+static mut TYPED: [f64; TYPED_PARAM_LEN] = [0.0; TYPED_PARAM_LEN];
 
-    let fp = p[1].clamp(20.0, SR * 0.49);
-    let rp = p[2].clamp(0.5, 0.9999);
-    let gain = p[3].clamp(0.05, 4.0);
-    let cut_on = p[4] >= 0.5;
-    let cut_hz = p[5].clamp(20.0, SR * 0.49);
-    let cut_depth = p[6].clamp(0.0, 0.9999);
-
-    let wp = TAU * fp / SR;
-    let a1 = -2.0 * rp * wp.cos();
-    let a2 = rp * rp;
-
-    if !cut_on || cut_depth <= 0.0001 {
-        let g = (1.0 - rp * rp).max(1e-4) * gain;
-        return [g, 0.0, 0.0, a1, a2];
-    }
-
-    let wz = TAU * cut_hz / SR;
-    let nb1 = -2.0 * cut_depth * wz.cos();
-    let nb2 = cut_depth * cut_depth;
-    let g = (1.0 + a1 + a2) / (1.0 + nb1 + nb2).max(1e-9) * gain;
-    [g, g * nb1, g * nb2, a1, a2]
+#[no_mangle]
+pub extern "C" fn forge_typed_ptr() -> *mut f64 {
+    unsafe { TYPED.as_mut_ptr() }
 }
 
 #[no_mangle]
-pub extern "C" fn forge_pack_params() -> i32 {
+pub extern "C" fn forge_typed_len() -> usize {
+    TYPED_PARAM_LEN
+}
+
+#[no_mangle]
+pub extern "C" fn forge_pack_typed() -> i32 {
     unsafe {
-        let mut out = 0usize;
-        for ci in 0..CORNERS {
-            for si in 0..STAGES {
-                let i = (ci * STAGES + si) * PARAMS_PER_STAGE;
-                let bq = stage_biquad(&PARAMS[i..i + PARAMS_PER_STAGE]);
-                let words = biquad_to_words(bq);
-                for word in words {
-                    BODY[out] = (word & 0xff) as u8;
-                    BODY[out + 1] = (word >> 8) as u8;
-                    out += 2;
-                }
-            }
-        }
+        let body = pack_typed_body(&TYPED[..]);
+        BODY[..].copy_from_slice(&body);
     }
     0
 }

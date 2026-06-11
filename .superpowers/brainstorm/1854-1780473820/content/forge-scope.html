@@ -1,0 +1,325 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8"/>
+<meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+<title>df2 forge — scope</title>
+<link href="https://fonts.googleapis.com/css2?family=Archivo:wght@600;700;800;900&family=DM+Mono:wght@400;500&display=swap" rel="stylesheet"/>
+<style>
+:root{
+  --bg:#04060a; --field:#06090e; --panel:#090d13; --panel2:#0c121a;
+  --hair:#16221c; --hair2:#11201a; --grid:#0f2018;
+  --ink:#bfd8c6; --ink2:#5d7064; --dim:#3a4a40;
+  --green:#5dff77; --greenD:#2bbf4b;
+  --amber:#e8a93c; --orange:#e8742e; --red:#e0473e; --blue:#4aa6df; --purple:#9b6bdf; --teal:#2fd6c4;
+}
+*{box-sizing:border-box;margin:0;padding:0}
+html,body{height:100%}
+body{background:var(--bg);color:var(--ink);font-family:"DM Mono",ui-monospace,monospace;
+  -webkit-font-smoothing:antialiased;padding:12px;overflow:hidden}
+.arch{font-family:"Archivo";font-weight:800}
+.app{height:calc(100vh - 24px);display:grid;grid-template-rows:auto 1fr auto;gap:10px;max-width:1340px;margin:0 auto}
+.lab{font-size:9.5px;letter-spacing:1.4px;color:var(--ink2);text-transform:uppercase}
+
+/* topbar — tabs + transport */
+.top{display:flex;align-items:center;gap:9px}
+.tabs{display:flex;gap:6px}
+.tab{font-family:"Archivo";font-weight:800;font-size:11px;letter-spacing:.5px;padding:7px 14px;border-radius:5px;
+  border:1.5px solid var(--hair);color:var(--ink2);background:var(--panel);cursor:pointer}
+.tab.on{border-color:var(--green);color:var(--green);box-shadow:0 0 12px -4px var(--green)}
+.transport{display:flex;align-items:center;gap:6px;margin-left:6px}
+.tb{font-family:"DM Mono";font-size:10px;padding:6px 9px;border-radius:5px;border:1.5px solid var(--hair);
+  color:var(--ink2);background:var(--panel);cursor:pointer}
+.tb.on{border-color:var(--green);color:var(--green)}
+.spacer{flex:1}
+.field-id{font-size:10px;color:var(--ink2);text-align:right;line-height:1.3}
+.field-id b{color:var(--green);font-family:"Archivo";font-weight:800;font-size:12px}
+.ready{display:flex;align-items:center;gap:6px;font-size:10px;color:var(--green)}
+.ready .d{width:7px;height:7px;border-radius:50%;background:var(--green);box-shadow:0 0 8px var(--green)}
+
+/* main grid */
+.main{display:grid;grid-template-columns:188px 1fr 270px;gap:10px;min-height:0}
+.col{display:flex;flex-direction:column;gap:10px;min-height:0}
+.card{background:var(--panel);border:1.5px solid var(--hair);border-radius:9px}
+.card .ch{padding:9px 11px 6px;display:flex;justify-content:space-between;align-items:center}
+
+/* six voices rail */
+.voices{flex:1;display:flex;flex-direction:column;min-height:0}
+.vlist{flex:1;overflow:auto;padding:3px 7px 7px;display:flex;flex-direction:column;gap:5px}
+.fcard{border:1.5px solid var(--hair);border-radius:7px;background:var(--field);padding:6px 7px;cursor:pointer;position:relative}
+.fcard:hover{border-color:var(--ink2)}
+.fcard.sel{box-shadow:0 0 0 1px currentColor, 0 0 14px -5px currentColor}
+.fcard .nm{font-family:"Archivo";font-weight:800;font-size:10.5px;display:flex;justify-content:space-between;align-items:center}
+.fcard .nm small{font-family:"DM Mono";font-weight:400;color:var(--ink2);font-size:8.5px}
+.fcard .fp{height:30px;width:100%;margin-top:3px}
+.fcard.off{opacity:.4}
+.addv{display:flex;gap:6px;padding:7px 9px;border-top:1.5px solid var(--hair2)}
+.mini{font-family:"DM Mono";font-size:10px;padding:6px 8px;border-radius:5px;border:1.5px solid var(--hair);
+  background:var(--panel2);color:var(--ink2);cursor:pointer;flex:1;text-align:center}
+.mini:hover{border-color:var(--ink2);color:var(--ink)}
+
+/* hero scope */
+.hero{flex:1;position:relative;min-height:0;overflow:hidden;background:
+   radial-gradient(120% 90% at 50% 110%, rgba(45,191,75,.06), transparent 60%), var(--field)}
+.hero svg{position:absolute;inset:0;width:100%;height:100%}
+.scopeTag{position:absolute;top:9px;left:12px;font-size:10px;color:var(--ink2);z-index:4}
+.scopeTag b{color:var(--green)}
+.scopeR{position:absolute;top:9px;right:12px;font-size:9px;color:var(--dim);z-index:4}
+.bandlab{position:absolute;bottom:5px;left:12px;right:12px;display:flex;font-size:8.5px;color:var(--dim);z-index:4;pointer-events:none}
+.bandlab span{flex:1;text-align:center}
+/* floating corner fingerprint cards on the scope */
+.ccard{position:absolute;width:118px;border:1.5px solid;border-radius:7px;background:rgba(6,9,14,.86);
+  padding:5px 7px;z-index:5;cursor:pointer;backdrop-filter:blur(2px)}
+.ccard .cn{font-family:"Archivo";font-weight:800;font-size:10px;display:flex;justify-content:space-between}
+.ccard .cn small{font-weight:400;font-family:"DM Mono";color:var(--ink2);font-size:8px}
+.ccard svg{height:34px;width:100%;margin-top:2px;display:block}
+.ccard.act{box-shadow:0 0 0 1px currentColor,0 0 18px -4px currentColor}
+.node{position:absolute;width:13px;height:13px;border-radius:50%;border:2px solid var(--green);
+  background:var(--field);z-index:6;transform:translate(-50%,-50%);box-shadow:0 0 10px var(--green)}
+.vmark{position:absolute;transform:translate(-50%,-50%);z-index:6;pointer-events:none}
+.vmark .t{width:16px;height:16px;border-radius:4px;border:2px solid;display:flex;align-items:center;justify-content:center;
+  font-family:"Archivo";font-weight:900;font-size:8px;background:var(--field)}
+.callout{position:absolute;transform:translate(-50%,-100%);background:#03130a;border:1px solid var(--greenD);
+  color:var(--ink);font-size:9.5px;padding:3px 7px;border-radius:5px;white-space:nowrap;z-index:7;text-align:center;line-height:1.3}
+.callout b{color:var(--green);font-family:"Archivo";font-weight:800}
+
+/* inspector + assist */
+.ihead{display:flex;align-items:center;gap:9px;padding:10px 11px}
+.swatch{width:26px;height:26px;border-radius:6px;border:2px solid;display:flex;align-items:center;justify-content:center;
+  font-family:"Archivo";font-weight:900;font-size:10px;background:var(--field)}
+.ibody{padding:0 11px 11px}
+.field{margin-top:10px}
+.field .fl{display:flex;justify-content:space-between;font-size:9.5px;color:var(--ink2)}
+.field .fv{font-family:"Archivo";font-weight:700;font-size:11px;color:var(--ink)}
+.slide{height:7px;border-radius:4px;background:var(--grid);margin-top:5px;position:relative;border:1px solid var(--hair2)}
+.slide .fill{position:absolute;left:0;top:0;bottom:0;border-radius:4px;background:var(--green);box-shadow:0 0 8px -2px var(--green)}
+.slide .knob{position:absolute;top:50%;width:13px;height:13px;border-radius:50%;background:var(--field);border:2px solid var(--green);transform:translate(-50%,-50%)}
+.row3{display:flex;gap:6px;margin-top:12px}
+.assistList{padding:4px 8px 9px;overflow:auto;flex:1}
+.note{display:flex;gap:8px;padding:7px 8px;font-size:10.5px;line-height:1.35;border-radius:6px;margin-top:5px;background:var(--field);border:1px solid var(--hair2)}
+.note .ic{flex:none;width:15px;height:15px;border-radius:4px;display:flex;align-items:center;justify-content:center;font-family:"Archivo";font-weight:900;font-size:9px;color:#03130a}
+.note.warn .ic{background:var(--amber)} .note.bad .ic{background:var(--red)} .note.ok .ic{background:var(--green)}
+.note .fix{margin-left:auto;align-self:center;color:var(--green);font-weight:700;cursor:pointer;white-space:nowrap;font-size:9.5px}
+
+/* footer: morph desk + actions + stability */
+.foot{display:grid;grid-template-columns:188px 1fr 270px;gap:10px}
+.deskc{padding:9px 11px;display:flex;flex-direction:column;gap:8px;justify-content:center}
+.mrow{display:flex;align-items:center;gap:9px}
+.mrow .ml{font-family:"Archivo";font-weight:800;font-size:10px;width:50px}
+.seg{flex:1;height:12px;display:flex;gap:2px}
+.seg i{flex:1;border-radius:1.5px;background:var(--grid)}
+.seg i.on{background:var(--green);box-shadow:0 0 6px -2px var(--green)}
+.seg i.onq{background:var(--blue);box-shadow:0 0 6px -2px var(--blue)}
+.mv{font-family:"Archivo";font-weight:700;font-size:10px;width:30px;text-align:right;color:var(--green)}
+.actbar{display:flex;gap:6px;align-items:center;padding:9px 10px;flex-wrap:wrap}
+.act{font-family:"Archivo";font-weight:700;font-size:10.5px;padding:8px 10px;border-radius:6px;cursor:pointer;
+  border:1.5px solid var(--hair);background:var(--panel2);color:var(--ink);white-space:nowrap}
+.act:hover{border-color:var(--green);color:var(--green)}
+.act small{display:block;color:var(--ink2);font-weight:400;font-size:8px;font-family:"DM Mono";margin-top:1px}
+.stab{padding:9px 11px;display:flex;flex-direction:column;gap:5px;justify-content:center}
+.stab .sl{display:flex;justify-content:space-between;font-size:9.5px;color:var(--ink2)}
+.stab .sl b{color:var(--green);font-family:"Archivo";font-weight:700}
+.livemid{height:34px;width:100%}
+</style>
+</head>
+<body>
+<div class="app">
+
+  <!-- TOP -->
+  <div class="top">
+    <div class="tabs"><div class="tab on">01 SHAPE</div><div class="tab">02 PLAYER</div><div class="tab">03 PUSH</div></div>
+    <div class="transport">
+      <div class="tb on">▶ PLAY</div><div class="tb">SAW</div><div class="tb">PINK</div><div class="tb">808</div>
+      <div class="tb">DRIVE</div><div class="tb">WIDE</div>
+    </div>
+    <div class="spacer"></div>
+    <div class="ready"><span class="d"></span> READY · bakes to 4×6</div>
+    <div class="field-id">ACTIVE BODY<br><b>808 THROAT KNOCK</b></div>
+  </div>
+
+  <!-- MAIN -->
+  <div class="main">
+    <!-- voices -->
+    <div class="col">
+      <div class="card voices">
+        <div class="ch"><span class="lab">Six Voices</span><span class="lab" id="kit">VOWEL kit</span></div>
+        <div class="vlist" id="vlist"></div>
+        <div class="addv"><div class="mini">＋ VOICE</div><div class="mini">KITS ▾</div></div>
+      </div>
+    </div>
+
+    <!-- hero scope -->
+    <div class="col">
+      <div class="card hero" id="hero">
+        <svg id="svg" viewBox="0 0 900 460" preserveAspectRatio="none"></svg>
+        <div class="scopeTag">SHAPE · <b id="cornerName">HOME</b> · click a corner card to shape it</div>
+        <div class="scopeR" id="scopeR">6×DF2T · 39062 Hz</div>
+        <div class="bandlab"><span>SUB</span><span>LOW</span><span>BODY</span><span>HONK</span><span>PRESENCE</span><span>EDGE</span><span>AIR</span></div>
+      </div>
+    </div>
+
+    <!-- inspector + assist -->
+    <div class="col">
+      <div class="card" id="insp"></div>
+      <div class="card" style="flex:1;display:flex;flex-direction:column;min-height:0">
+        <div class="ch"><span class="lab">Counterpoint</span><span class="lab">the body watching itself</span></div>
+        <div class="assistList" id="assistList"></div>
+      </div>
+    </div>
+  </div>
+
+  <!-- FOOT -->
+  <div class="foot">
+    <div class="card deskc" id="deskc"></div>
+    <div class="card actbar" id="actbar"></div>
+    <div class="card stab" id="stab"></div>
+  </div>
+</div>
+
+<script>
+const VOICES=[
+ {id:'P',name:'PRESSURE',role:'sub weight', col:'var(--red)',   raw:'#e0473e', homeF:80, awayF:110, g:7, q:0.9, tight:2.4, on:true, kind:'pole'},
+ {id:'T',name:'THROAT',  role:'low body',  col:'var(--blue)',  raw:'#4aa6df', homeF:320,awayF:470, g:6, q:1.0, tight:3.0, on:true, kind:'pole'},
+ {id:'B',name:'BODY',    role:'formant',   col:'var(--green)', raw:'#5dff77', homeF:700,awayF:1050,g:8, q:1.1, tight:3.2, on:true, kind:'pole'},
+ {id:'N',name:'NASAL',   role:'scoop',     col:'var(--purple)',raw:'#9b6bdf', homeF:1100,awayF:1500,g:7,q:2.0, tight:3.4, on:true, kind:'zero'},
+ {id:'E',name:'BITE',    role:'presence',  col:'var(--amber)', raw:'#e8a93c', homeF:2400,awayF:3400,g:9,q:1.4, tight:3.6, on:true, kind:'pole'},
+ {id:'A',name:'AIR',     role:'top sheen', col:'var(--teal)',  raw:'#2fd6c4', homeF:9000,awayF:11000,g:5,q:0.7,tight:1.6, on:true, kind:'pole'},
+];
+let morph=0.5, secondary=0.4, sel=2, activeCorner=0;
+// name + character color per corner (matches the reference fingerprint cards)
+const CORNERS=[
+  {n:'HOME',sub:'M0 S0',m:0,s:0,raw:'#5dff77'},
+  {n:'AWAY',sub:'M1 S0',m:1,s:0,raw:'#e8742e'},
+  {n:'TIGHT HOME',sub:'M0 S1',m:0,s:1,raw:'#4aa6df'},
+  {n:'TIGHT AWAY',sub:'M1 S1',m:1,s:1,raw:'#e0473e'},
+];
+const F0=20,F1=20000,LO=Math.log10(F0),HI=Math.log10(F1);
+const xN=hz=>(Math.log10(hz)-LO)/(HI-LO), hzAt=x=>Math.pow(10,LO+(HI-LO)*x);
+function voiceAt(v,m,s){const f=v.homeF*Math.pow(v.awayF/v.homeF,m);const q=v.q*(1+s*(v.tight-1));
+  return {f,g:v.g*(v.kind==='zero'?-1:1),q};}
+function peak(fc,db,q,hz){const r=Math.log2(hz/fc),bw=1/Math.max(q,.25);return db*Math.exp(-(r*r)/(2*bw*bw));}
+function magCurve(m,s,N){const a=[];for(let i=0;i<N;i++){const hz=hzAt(i/(N-1));let d=0;
+  for(const v of VOICES){if(!v.on)continue;const p=voiceAt(v,m,s);d+=peak(p.f,p.g,p.q,hz);}a.push(d);}return a;}
+function path(a,W,H,pad){let p='';const MAX=30,MIN=-12;for(let i=0;i<a.length;i++){const x=i/(a.length-1)*W;
+  const v=Math.max(MIN,Math.min(MAX,a[i]));const y=H-pad-((v-MIN)/(MAX-MIN))*(H-pad*1.5);p+=(i?'L':'M')+x.toFixed(1)+','+y.toFixed(1)+' ';}return p;}
+function yOf(a,hz,W,H,pad){const i=Math.round(xN(hz)*(a.length-1)),MAX=30,MIN=-12;
+  const v=Math.max(MIN,Math.min(MAX,a[i]||0));return H-pad-((v-MIN)/(MAX-MIN))*(H-pad*1.5);}
+
+function renderHero(){
+  const W=900,H=460,pad=34,svg=document.getElementById('svg');
+  let g=`<defs><filter id="glow" x="-20%" y="-50%" width="140%" height="200%">
+    <feGaussianBlur stdDeviation="4" result="b"/><feMerge><feMergeNode in="b"/><feMergeNode in="SourceGraphic"/></feMerge></filter>
+    <linearGradient id="gf" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#5dff77" stop-opacity="0.30"/><stop offset="1" stop-color="#5dff77" stop-opacity="0"/></linearGradient></defs>`;
+  // grid
+  [60,250,700,1200,3000,6000,10000].forEach(f=>{const x=xN(f)*W;g+=`<line x1="${x}" y1="0" x2="${x}" y2="${H}" stroke="#0f2018" stroke-width="1"/>`;});
+  [24,12,0,-12].forEach(db=>{const y=H-pad-((db+12)/42)*(H-pad*1.5);g+=`<line x1="0" y1="${y}" x2="${W}" y2="${y}" stroke="#0f2018" stroke-width="1"/>`;});
+  // 4 corner ghosts (colored faint)
+  CORNERS.forEach(c=>{g+=`<path d="${path(magCurve(c.m,c.s,200),W,H,pad)}" fill="none" stroke="${c.raw}" stroke-opacity="0.16" stroke-width="1.3"/>`;});
+  // live middle (dashed green)
+  g+=`<path d="${path(magCurve(0.5,0.5,200),W,H,pad)}" fill="none" stroke="#5dff77" stroke-opacity="0.5" stroke-width="1.4" stroke-dasharray="5 4"/>`;
+  // HERO at active corner: filled + glowing green
+  const cur=magCurve(CORNERS[activeCorner].m,CORNERS[activeCorner].s,200);const dp=path(cur,W,H,pad);
+  g+=`<path d="${dp} L${W},${H} L0,${H} Z" fill="url(#gf)"/>`;
+  g+=`<path d="${dp}" fill="none" stroke="#5dff77" stroke-width="2.6" stroke-linejoin="round" filter="url(#glow)"/>`;
+  svg.innerHTML=g;
+
+  // overlays
+  const hero=document.getElementById('hero');
+  hero.querySelectorAll('.vmark,.callout,.node,.ccard').forEach(e=>e.remove());
+  // corner fingerprint cards at the 4 positions
+  const slots=[[12,46],[12,46,'r'],[null]];
+  const place=[{l:'10px',t:'40px'},{r:'10px',t:'40px'},{l:'10px',b:'34px'},{r:'10px',b:'34px'}];
+  CORNERS.forEach((c,i)=>{
+    const el=document.createElement('div');el.className='ccard'+(i===activeCorner?' act':'');
+    el.style.color=c.raw;el.style.borderColor=c.raw;
+    const pp=place[i];if(pp.l)el.style.left=pp.l;if(pp.r)el.style.right=pp.r;if(pp.t)el.style.top=pp.t;if(pp.b)el.style.bottom=pp.b;
+    const a=magCurve(c.m,c.s,80);
+    el.innerHTML=`<div class="cn" style="color:${c.raw}">${c.n}<small>${c.sub}</small></div>
+      <svg viewBox="0 0 110 34" preserveAspectRatio="none"><path d="${path(a,110,34,5)} L110,34 L0,34 Z" fill="${c.raw}" fill-opacity="0.12"/><path d="${path(a,110,34,5)}" fill="none" stroke="${c.raw}" stroke-width="1.5"/></svg>`;
+    el.onclick=()=>{activeCorner=i;renderAll();};
+    hero.appendChild(el);
+  });
+  // voice markers on hero
+  const cc=CORNERS[activeCorner];
+  VOICES.forEach((v,i)=>{if(!v.on)return;const a=voiceAt(v,cc.m,cc.s);
+    const xp=xN(a.f)*100,yp=yOf(cur,a.f,W,H,pad)/H*100;
+    const el=document.createElement('div');el.className='vmark';el.style.left=xp+'%';el.style.top=yp+'%';
+    el.innerHTML=`<div class="t" style="border-color:${v.raw};color:${v.raw}${i===sel?';box-shadow:0 0 10px '+v.raw:''}">${v.id}</div>`;
+    hero.appendChild(el);});
+  // selected voice callout + node
+  const v=VOICES[sel];if(v.on){const a=voiceAt(v,cc.m,cc.s);const xp=xN(a.f)*100,yp=yOf(cur,a.f,W,H,pad)/H*100;
+    const nd=document.createElement('div');nd.className='node';nd.style.left=xp+'%';nd.style.top=yp+'%';nd.style.borderColor=v.raw;nd.style.boxShadow='0 0 10px '+v.raw;hero.appendChild(nd);
+    const c=document.createElement('div');c.className='callout';c.style.left=xp+'%';c.style.top=(yp-5)+'%';
+    c.innerHTML=`${v.name} · ${v.role}<br><b>${hzToNote(a.f)} · ${fmtHz(a.f)}</b>`;hero.appendChild(c);}
+}
+function fmtHz(f){return f>=1000?(f/1000).toFixed(2)+'k':Math.round(f)+' Hz';}
+const NN=['C','C#','D','D#','E','F','F#','G','G#','A','A#','B'];
+function hzToNote(f){const n=Math.round(12*Math.log2(f/440)+69);return NN[((n%12)+12)%12]+(Math.floor(n/12)-1);}
+
+function fp(v,W,H){const a=[];for(let i=0;i<40;i++){const hz=hzAt(i/39);const p=voiceAt(v,morph,secondary);a.push(peak(p.f,p.g,p.q,hz));}
+  return `<svg class="fp" viewBox="0 0 ${W} ${H}" preserveAspectRatio="none"><path d="${path(a,W,H,4)} L${W},${H} L0,${H} Z" fill="${v.raw}" fill-opacity="0.10"/><path d="${path(a,W,H,4)}" fill="none" stroke="${v.raw}" stroke-width="1.5"/></svg>`;}
+function renderVoices(){const list=document.getElementById('vlist');list.innerHTML='';
+  VOICES.forEach((v,i)=>{const d=document.createElement('div');d.className='fcard'+(i===sel?' sel':'')+(v.on?'':' off');
+    d.style.color=v.raw;d.style.borderColor=i===sel?v.raw:'';
+    d.innerHTML=`<div class="nm" style="color:${v.raw}">${v.name}<small>${v.locked?'PIN · ':''}${v.role}</small></div>${fp(v,160,30)}`;
+    d.onclick=()=>{sel=i;renderAll();};list.appendChild(d);});
+  document.getElementById('insp').innerHTML=inspector();bindInsp();}
+
+function inspector(){const v=VOICES[sel],cc=CORNERS[activeCorner],a=voiceAt(v,cc.m,cc.s),place=Math.round(xN(a.f)*100);
+  return `<div class="ihead"><div class="swatch" style="border-color:${v.raw};color:${v.raw}">${v.id}</div>
+    <div><div class="arch" style="font-size:13px;color:${v.raw}">${v.name}</div><div class="lab" style="letter-spacing:.5px">${v.role}</div></div>
+    <div style="margin-left:auto" class="arch" style="font-size:12px">${hzToNote(a.f)}</div></div>
+   <div class="ibody">
+    <div class="field"><div class="fl"><span>PLACE</span><span class="fv">${hzToNote(a.f)} · ${fmtHz(a.f)}</span></div>
+      <div class="slide" id="sPlace"><div class="fill" style="width:${place}%"></div><div class="knob" style="left:${place}%"></div></div></div>
+    <div class="field"><div class="fl"><span>WEIGHT</span><span class="fv">+${v.g.toFixed(0)} dB</span></div>
+      <div class="slide"><div class="fill" style="width:${v.g/14*100}%"></div><div class="knob" style="left:${v.g/14*100}%"></div></div></div>
+    <div class="field"><div class="fl"><span>WIDTH</span><span class="fv">Q ${v.q.toFixed(1)} → ${(v.q*v.tight).toFixed(1)} tight</span></div>
+      <div class="slide"><div class="fill" style="width:${Math.min(100,v.q/4*100)}%"></div><div class="knob" style="left:${Math.min(100,v.q/4*100)}%"></div></div></div>
+    <div class="row3">
+      <div class="mini" onclick="VOICES[${sel}].on=!VOICES[${sel}].on;renderAll()">${v.on?'MUTE':'UNMUTE'}</div>
+      <div class="mini" onclick="VOICES[${sel}].locked=!VOICES[${sel}].locked;renderAll()">${v.locked?'UNPIN':'PIN'}</div>
+      <div class="mini">EDIT ZERO</div>
+    </div>
+   </div>`;}
+function bindInsp(){const s=document.getElementById('sPlace');if(!s)return;
+  const drag=e=>{const r=s.getBoundingClientRect();const x=Math.max(0,Math.min(1,(e.clientX-r.left)/r.width));
+    const ratio=VOICES[sel].awayF/VOICES[sel].homeF;VOICES[sel].homeF=hzAt(x);VOICES[sel].awayF=hzAt(x)*ratio;renderAll();};
+  s.onmousedown=e=>{drag(e);const mv=ev=>drag(ev);const up=()=>{removeEventListener('mousemove',mv);removeEventListener('mouseup',up);};
+    addEventListener('mousemove',mv);addEventListener('mouseup',up);};}
+
+function assist(){const out=[],cc=CORNERS[activeCorner];
+  const act=VOICES.filter(v=>v.on).map(v=>({v,a:voiceAt(v,cc.m,cc.s)})).sort((x,y)=>x.a.f-y.a.f);
+  for(let i=1;i<act.length;i++){const r=Math.log2(act[i].a.f/act[i-1].a.f);
+    if(r<0.25)out.push(['bad','✕',`<b style="color:${act[i-1].v.raw}">${act[i-1].v.name}</b> &amp; <b style="color:${act[i].v.raw}">${act[i].v.name}</b> only ${(r*12).toFixed(0)} semis apart — they'll mush.`,'SPREAD']);}
+  act.forEach(o=>{if(o.a.q*o.v.tight>9&&o.v.g>6)out.push(['warn','!',`<b style="color:${o.v.raw}">${o.v.name}</b> goes razor at TIGHT — near ringing.`,'EASE']);});
+  const sub=act.find(o=>o.a.f<90);if(sub&&sub.v.g>6)out.push(['warn','!',`<b style="color:${sub.v.raw}">${sub.v.name}</b> loud under 90 Hz — may boom on a club rig.`,'SUB SAFE']);
+  if(!act.some(o=>o.a.f>6000))out.push(['ok','+','Nothing up top — could sound dull. Add AIR.','ADD AIR']);
+  if(!out.length)out.push(['ok','✓','Six voices sit clean across the spectrum. Good counterpoint.','']);
+  return out.map(n=>`<div class="note ${n[0]}"><div class="ic">${n[1]}</div><div>${n[2]}</div>${n[3]?`<div class="fix">${n[3]}</div>`:''}</div>`).join('');}
+function renderAssist(){document.getElementById('assistList').innerHTML=assist();}
+
+function renderActions(){const acts=[['MAKE WORK','fix all'],['Q DOES Q','tight bite'],['ADD TEAR','rip notch'],['ADD AIR','open top'],['SUB SAFE','tame lows'],['MOUNTAIN','+more ▾']];
+  document.getElementById('actbar').innerHTML=acts.map(a=>`<div class="act">${a[0]}<small>${a[1]}</small></div>`).join('');}
+function renderDesk(){const seg=(v,c)=>{let s='';for(let i=0;i<24;i++)s+=`<i class="${i<Math.round(v*24)?c:''}"></i>`;return s;};
+  document.getElementById('deskc').innerHTML=
+   `<div class="mrow"><div class="ml">MORPH</div><div class="seg">${seg(morph,'on')}</div><div class="mv">${(morph*100).toFixed(0)}</div></div>
+    <div class="mrow"><div class="ml">SECOND</div><div class="seg">${seg(secondary,'onq')}</div><div class="mv" style="color:var(--blue)">${(secondary*100).toFixed(0)}</div></div>`;
+  bindSeg();}
+function bindSeg(){document.querySelectorAll('#deskc .seg').forEach((row,ri)=>{const set=e=>{const r=row.getBoundingClientRect();
+    const x=Math.max(0,Math.min(1,(e.clientX-r.left)/r.width));if(ri===0)morph=x;else secondary=x;renderDesk();renderVoices();renderHero();renderAssist();renderStab();};
+   row.onmousedown=e=>{set(e);const mv=ev=>set(ev);const up=()=>{removeEventListener('mousemove',mv);removeEventListener('mouseup',up);};addEventListener('mousemove',mv);addEventListener('mouseup',up);};});}
+function renderStab(){const mid=magCurve(0.5,0.5,80);const peakdb=Math.max(...mid).toFixed(1);
+  const ringrisk=VOICES.some(v=>v.on&&v.q*v.tight>9);
+  document.getElementById('stab').innerHTML=
+   `<div class="sl"><span>LIVE MIDDLE</span><b>${ringrisk?'WATCH':'STABLE'}</b></div>
+    <svg class="livemid" viewBox="0 0 240 34" preserveAspectRatio="none"><path d="${path(mid,240,34,5)}" fill="none" stroke="#5dff77" stroke-width="1.6" filter="url(#glow)"/></svg>
+    <div class="sl"><span>peak ${peakdb} dB</span><span>maxR ${(ringrisk?0.997:0.985).toFixed(3)}</span></div>`;}
+function renderAll(){document.getElementById('cornerName').textContent=CORNERS[activeCorner].n;
+  renderVoices();renderHero();renderActions();renderDesk();renderAssist();renderStab();}
+document.querySelectorAll('.tb,.tab').forEach(b=>b.onclick=()=>{
+  if(b.classList.contains('tab')){document.querySelectorAll('.tab').forEach(x=>x.classList.remove('on'));b.classList.add('on');}});
+renderAll();addEventListener('resize',renderHero);
+</script>
+</body>
+</html>

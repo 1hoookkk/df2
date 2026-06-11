@@ -1,0 +1,106 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>df2 — carve zeros</title>
+<link rel="stylesheet" href="css/basic.css">
+<style>
+  .hand{grid-template-columns:minmax(0,1fr) 270px;grid-template-rows:auto minmax(380px,1fr) auto auto 18px;}
+  .top{min-height:42px;flex-wrap:wrap;align-items:center;gap:10px}
+  .nameInput{height:28px;min-width:160px;max-width:260px;border:1px solid var(--line);background:#fffdf7;color:var(--ink);padding:0 8px}
+  .micro{font:11px Consolas,"Courier New",monospace;color:var(--muted);white-space:nowrap}
+  .transport{grid-column:1/3;display:flex;gap:10px;align-items:center;flex-wrap:wrap}
+  .transport button,.chip{height:34px;border:1px solid var(--line);background:#fffdf7;color:var(--ink);padding:0 12px;cursor:pointer}
+  #play{min-width:120px;font-weight:700;letter-spacing:.08em}
+  #play.on{background:var(--hot,#c52f4d);color:#fff;border-color:var(--hot,#c52f4d)}
+  .chip.on{background:var(--ink);color:#fffdf7}
+  #meter{width:120px;height:14px;border:1px solid var(--line);background:#efe9dc;position:relative;overflow:hidden}
+  #meter>i{position:absolute;left:0;bottom:0;width:100%;height:0;background:#5ba35a;transition:height .05s}
+  #meter.flood{outline:2px solid var(--bad,#c52f4d)}
+  #meter.flood>i{background:var(--bad,#c52f4d)}
+  .side{display:grid;gap:10px;align-content:start}
+  .zeroRail{border:1px solid var(--ink);background:var(--panel);padding:8px;display:grid;gap:6px}
+  .zeroRail h4{margin:0;font:700 11px Arial;text-transform:uppercase;letter-spacing:.05em}
+  .zeroGrid{display:grid;grid-template-columns:repeat(3,1fr);gap:5px}
+  .zBtn{height:30px;border:1px solid var(--line);background:#fffdf7;color:var(--muted);font:11px Consolas,monospace;cursor:pointer;text-align:left;padding:0 6px}
+  .zBtn.on{color:var(--ink);border-color:var(--hot,#c52f4d);background:#fff7ee}
+  .zBtn.sel{box-shadow:inset 0 0 0 1px var(--hot,#c52f4d)}
+  .hint{font:11px Consolas,monospace;color:var(--muted);line-height:1.5}
+  .utility{grid-column:1/3;display:flex;gap:6px;flex-wrap:wrap}
+  .utility button{height:30px;padding:0 10px}
+  details.fit summary,details.more summary{cursor:pointer;font-weight:700;text-transform:uppercase;font-size:11px;letter-spacing:.05em}
+  .fitRow{display:flex;gap:5px;flex-wrap:wrap;margin-top:6px}
+  .fitRow button{height:28px;padding:0 8px;font-size:11px}
+  #moreBody{font:11px Consolas,monospace;color:var(--muted);line-height:1.5}
+  @media(max-width:900px){
+    .hand{grid-template-columns:1fr}
+    .top,.transport,.plotShell,.side,.utility{grid-column:1}
+    #plot{min-height:300px}
+  }
+</style>
+</head>
+<body>
+<main class="forge hand">
+  <header class="top">
+    <div class="brand">df2 · carve zeros</div>
+    <input id="nameInput" class="nameInput" value="hand_vowel" spellcheck="false" autocomplete="off">
+    <span class="micro">poles fit &amp; locked · you carve the zero canyons · drag ● on the curve</span>
+    <div id="light" class="light" title="packed grid stability"></div>
+  </header>
+
+  <section class="plotShell">
+    <canvas id="plot"></canvas>
+    <div class="moves">
+      <label><span>Morph</span><output id="mOut">0</output><input id="morph" type="range" min="0" max="100" value="0"></label>
+      <label><span>Q</span><output id="qOut">0</output><input id="q" type="range" min="0" max="100" value="0"></label>
+    </div>
+  </section>
+
+  <section class="transport">
+    <button id="play">▶ play</button>
+    <div id="meter"><i></i></div>
+    <button class="chip on" data-src="0">saw</button>
+    <button class="chip" data-src="1">noise</button>
+    <button class="chip" data-src="2">808</button>
+    <button class="chip" data-src="3">voice</button>
+  </section>
+
+  <aside class="side">
+    <section class="zeroRail">
+      <h4>zero canyons</h4>
+      <div id="zeroGrid" class="zeroGrid"></div>
+      <div class="hint">click a lane to toggle its zero · drag ● = Hz · scroll ● = depth · each canyon tracks its formant across morph</div>
+    </section>
+    <details class="fit">
+      <summary>poles (fit source)</summary>
+      <div class="fitRow">
+        <button id="openBtn">open .wav</button>
+        <button id="micBtn">mic</button>
+        <button id="testBtn">test</button>
+        <button id="freezeBtn">freeze</button>
+        <button id="placeBtn">→ poles</button>
+        <input id="openFile" type="file" accept="audio/*,.wav" hidden>
+      </div>
+      <div id="fitState" class="hint">idle</div>
+    </details>
+    <details class="more">
+      <summary>audit</summary>
+      <div id="moreBody"></div>
+    </details>
+  </aside>
+
+  <section class="utility">
+    <button id="saveBtn">save .body240</button>
+    <button id="keepBtn">json</button>
+    <button id="openJsonBtn">open json</button>
+    <button id="resetBtn">reset</button>
+    <button id="scoreBtn">score</button>
+    <input id="openJsonFile" type="file" accept="application/json,.json" hidden>
+  </section>
+
+  <footer id="status">loading...</footer>
+</main>
+<script type="module" src="js/basic-forge.js?v=carve-zeros-20260608"></script>
+</body>
+</html>

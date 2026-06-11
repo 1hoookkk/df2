@@ -1,0 +1,170 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8"/>
+<meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+<title>Forge — how do you know where to place?</title>
+<link href="https://fonts.googleapis.com/css2?family=Archivo:wght@600;800;900&family=DM+Mono:wght@500&display=swap" rel="stylesheet"/>
+<style>
+  :root{
+    --paper:#EFEBDD; --paper2:#F5F2E7; --ink:#16140F; --ink2:#4a463b;
+    --line:#211e16; --warm:#E8542B; --amber:#F2A100; --hot:#FF3D7F;
+    --voice:#F5C518; --grid:#d8d2bf;
+  }
+  *{box-sizing:border-box;margin:0;padding:0}
+  html,body{height:100%}
+  body{background:var(--paper);color:var(--ink);
+    font-family:"DM Mono",ui-monospace,monospace;
+    padding:26px 26px 30px; -webkit-font-smoothing:antialiased;}
+  .h{display:flex;align-items:baseline;gap:14px;margin-bottom:4px}
+  .h b{font-family:"Archivo";font-weight:900;font-size:26px;letter-spacing:-.5px}
+  .h span{font-size:12px;color:var(--ink2);letter-spacing:.5px}
+  .sub{font-size:12px;color:var(--ink2);margin-bottom:18px;max-width:760px;line-height:1.5}
+  .row{display:grid;grid-template-columns:1fr 1fr 1fr;gap:18px}
+  .card{background:var(--paper2);border:2.5px solid var(--line);border-radius:4px;
+    padding:0;overflow:hidden;display:flex;flex-direction:column}
+  .cap{display:flex;align-items:center;gap:8px;padding:11px 13px;border-bottom:2px solid var(--line);background:var(--paper)}
+  .tag{font-family:"Archivo";font-weight:900;font-size:13px;background:var(--ink);color:var(--paper);
+    padding:3px 8px;border-radius:3px;letter-spacing:.5px}
+  .cap h3{font-family:"Archivo";font-weight:800;font-size:14px;letter-spacing:-.2px}
+  .plot{position:relative;height:230px;background:
+     repeating-linear-gradient(0deg,transparent,transparent 28px,#e7e1cd 28px,#e7e1cd 29px);}
+  svg{position:absolute;inset:0;width:100%;height:100%;display:block}
+  .desc{padding:11px 13px;font-size:11.5px;line-height:1.5;color:var(--ink2);border-top:2px solid var(--line);min-height:74px}
+  .desc b{color:var(--ink)}
+  /* band labels */
+  .bands{position:absolute;left:0;right:0;bottom:0;display:flex;height:22px;font-size:9.5px;
+    letter-spacing:.5px;color:var(--ink2)}
+  .bands div{flex:1;border-left:1px solid var(--grid);display:flex;align-items:center;justify-content:center}
+  .bands div:first-child{border-left:none}
+  /* note ruler */
+  .keys{position:absolute;left:0;right:0;bottom:0;height:26px;display:flex}
+  .keys .k{flex:1;border-left:1px solid #c9c2ad;position:relative;font-size:8px;color:#9a937e;padding:1px 0 0 2px}
+  .keys .k.b{background:#e3ddca}
+  /* actor sticker */
+  .actor{position:absolute;width:21px;height:21px;border:2px solid var(--line);border-radius:4px;
+    transform:translate(-50%,-50%);display:flex;align-items:center;justify-content:center;
+    font-family:"Archivo";font-weight:900;font-size:10px;color:var(--ink)}
+  /* grabbed callout */
+  .grab{position:absolute;transform:translate(-50%,-100%);background:var(--ink);color:var(--paper);
+    font-size:10px;padding:4px 7px;border-radius:4px;white-space:nowrap;font-weight:500;line-height:1.25;text-align:center}
+  .grab b{color:var(--voice);font-family:"Archivo";font-weight:900}
+  .grab:after{content:"";position:absolute;left:50%;top:100%;transform:translateX(-50%);
+    border:5px solid transparent;border-top-color:var(--ink)}
+  .flag{position:absolute;transform:translate(-50%,0);font-size:8.5px;color:#8a8470;text-align:center;white-space:nowrap}
+  .flag:before{content:"";position:absolute;left:50%;top:-180px;height:180px;border-left:1px dashed #c4bda7}
+  .foot{margin-top:18px;font-size:12px;color:var(--ink2)}
+  .foot b{color:var(--ink)}
+</style>
+</head>
+<body>
+  <div class="h"><b>WHERE DO I PLACE IT?</b><span>same sound · three ways to read frequency · pick the one that feels obvious</span></div>
+  <div class="sub">Rendered from real <b style="color:var(--ink)">Three&nbsp;Point&nbsp;Morph.xml</b> section data. The shape is the sound. The coloured tiles are the six actors. The question is only: how do you know <i>where you are</i> while you drag — without a DSP grid.</div>
+
+  <div class="row">
+    <!-- A -->
+    <div class="card">
+      <div class="cap"><span class="tag">A</span><h3>MUSICAL BANDS</h3></div>
+      <div class="plot" id="pA">
+        <svg viewBox="0 0 400 230" preserveAspectRatio="none" id="svgA"></svg>
+        <div class="bands"><div>SUB</div><div>LOW</div><div>BODY</div><div>PRESENCE</div><div>AIR</div></div>
+      </div>
+      <div class="desc">The canvas always names itself in <b>music</b>, not numbers. You drag into <b>BODY</b> or <b>AIR</b>. Grab a handle and it whispers the exact spot. Calmest. Most "musical intent."</div>
+    </div>
+    <!-- B -->
+    <div class="card">
+      <div class="cap"><span class="tag">B</span><h3>NOTE RULER</h3></div>
+      <div class="plot" id="pB">
+        <svg viewBox="0 0 400 230" preserveAspectRatio="none" id="svgB"></svg>
+        <div class="keys" id="keysB"></div>
+      </div>
+      <div class="desc">A thin keyboard runs the floor. You place against <b>notes you know</b> — 808 ≈ E1, vocal body ≈ A3, snap ≈ A5. Best if you think in pitch. Handle shows note + Hz.</div>
+    </div>
+    <!-- C -->
+    <div class="card">
+      <div class="cap"><span class="tag">C</span><h3>SOUND LANDMARKS</h3></div>
+      <div class="plot" id="pC">
+        <svg viewBox="0 0 400 230" preserveAspectRatio="none" id="svgC"></svg>
+      </div>
+      <div class="desc">Faint flags mark where <b>real material</b> lives — KICK, VOX, SNAP, AIR. You place relative to the sound itself. Hz shows only on the handle you hold. Most intuitive, least "ruler."</div>
+    </div>
+  </div>
+
+  <div class="foot">In all three, the <b>exact value rides the handle you're touching</b> — never sprayed across the screen. Tell me <b>A, B, or C</b> (or "mix A+C"), and whether this flat-on-cream <b>look</b> is the right language (this is NOT the ink thing).</div>
+
+<script>
+/* ---- honest-ish magnitude from real preset section numbers ---- */
+const SECTIONS=[ // lowG,lowF,highG,highF,type  (Three Point Morph.xml, sections 1-4)
+ [97,56,32,127,2],[96,37,79,97,2],[112,68,80,103,1],[107,76,115,94,0]];
+const MORPH=0.42;
+const F0=20,F1=20000, LO=Math.log10(F0), HI=Math.log10(F1);
+function xOf(hz){return (Math.log10(hz)-LO)/(HI-LO);}      // 0..1 across log freq
+function hzOf(x){return Math.pow(10,LO+(HI-LO)*x);}
+function fIdxToHz(fi){return F0*Math.pow(F1/F0, fi/127);}   // 0..127 designer -> Hz
+function bump(fc,db,q,hz){const r=Math.log2(hz/fc); return db*Math.exp(-(r*r)/(2*(1/q)*(1/q)));}
+function mag(hz){let d=0;for(const s of SECTIONS){
+  const g=s[0]+(s[2]-s[0])*MORPH, fi=s[1]+(s[3]-s[1])*MORPH, fc=fIdxToHz(fi), db=(g/127)*22, t=s[4];
+  if(t===2) d+=bump(fc,db,2.6,hz);
+  else if(t===1) d+= db*0.5*(1/(1+Math.pow(fc/hz,2.2)));      // high shelf-ish
+  else if(t===0) d+= db*0.6*(1/(1+Math.pow(hz/fc,2.4)));      // low/broad
+  else if(t===3) d-=bump(fc,db,3.2,hz);
+  } return d;}
+const N=200, MAXDB=26;
+function pathFill(w,h){let top="",pad=18;
+  const pts=[];for(let i=0;i<N;i++){const x=i/(N-1);const hz=hzOf(x);
+    let v=mag(hz); v=Math.max(-6,Math.min(MAXDB,v));
+    const px=x*w, py=h-pad-((v+6)/(MAXDB+6))*(h-pad-14);pts.push([px,py]);}
+  let dp="M0,"+h+" L0,"+pts[0][1].toFixed(1);
+  for(const p of pts)dp+=" L"+p[0].toFixed(1)+","+p[1].toFixed(1);
+  dp+=" L"+w+","+h+" Z";
+  let lp="M"+pts[0][0]+","+pts[0][1].toFixed(1);
+  for(const p of pts)lp+=" L"+p[0].toFixed(1)+","+p[1].toFixed(1);
+  return {fill:dp,line:lp,pts};}
+function yAtHz(pts,hz,w,h){const x=xOf(hz)*w;let best=pts[0];for(const p of pts)if(Math.abs(p[0]-x)<Math.abs(best[0]-x))best=p;return best[1];}
+
+const ACT=[ // name letter, color, hz, label
+ ['R','#E5352B',70,'ROOT'],['B','#F0863A',180,'BODY'],['M','#F5C518',520,'MOUTH'],
+ ['S','#2FA84F',1300,'SCAR'],['E','#2D6CDF',3400,'EDGE'],['P','#18A0A0',9000,'RIP']];
+
+function render(svgId,plotId,opts){
+ const svg=document.getElementById(svgId), W=400,H=230;
+ const {fill,line,pts}=pathFill(W,H);
+ svg.innerHTML=
+  '<path d="'+fill+'" fill="'+(opts.fill||'#E8542B')+'" fill-opacity="0.9"/>'+
+  '<path d="'+line+'" fill="none" stroke="#16140F" stroke-width="3" stroke-linejoin="round"/>';
+ // actors as html stickers placed over the plot
+ const plot=document.getElementById(plotId);
+ // remove old
+ plot.querySelectorAll('.actor,.grab,.flag').forEach(e=>e.remove());
+ const rect=()=>plot.getBoundingClientRect();
+ ACT.forEach((a,i)=>{
+   const xpct=xOf(a[2])*100;
+   const yPx=yAtHz(pts,a[2],W,H)/H*100;
+   const el=document.createElement('div');el.className='actor';
+   el.style.left=xpct+'%';el.style.top=yPx+'%';el.style.background=a[1];el.textContent=a[0];
+   plot.appendChild(el);
+ });
+ // grabbed handle = MOUTH (i=2)
+ const g=ACT[2], gx=xOf(g[2])*100, gy=yAtHz(pts,g[2],W,H)/H*100 - 14;
+ const cal=document.createElement('div');cal.className='grab';cal.style.left=gx+'%';cal.style.top=gy+'%';
+ cal.innerHTML=opts.callout;
+ plot.appendChild(cal);
+ // landmarks for C
+ if(opts.flags){opts.flags.forEach(f=>{const fl=document.createElement('div');fl.className='flag';
+   fl.style.left=xOf(f[1])*100+'%';fl.style.bottom='4px';fl.textContent=f[0];plot.appendChild(fl);});}
+}
+
+render('svgA','pA',{fill:'#E8542B',callout:'MOUTH<br><b>BODY</b> · 520 Hz'});
+render('svgB','pB',{fill:'#E8542B',callout:'MOUTH<br><b>≈ C5</b> · 520 Hz'});
+render('svgC','pC',{fill:'#E8542B',callout:'MOUTH<br><b>520 Hz</b>',
+  flags:[['KICK',55],['808',70],['VOX',300],['SNAP',2200],['AIR',9000]]});
+
+// note ruler for B
+const keys=document.getElementById('keysB');
+const notes=['C1','C2','C3','C4','C5','C6','C7','C8'];
+const noteHz=[32.7,65.4,130.8,261.6,523.3,1046.5,2093,4186];
+notes.forEach((n,i)=>{const k=document.createElement('div');k.className='k'+(i%2?' b':'');
+  k.style.flex='1';k.textContent=n;keys.appendChild(k);});
+</script>
+</body>
+</html>

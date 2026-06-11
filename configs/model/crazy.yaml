@@ -1,0 +1,82 @@
+# crazy.yaml — MUCH less tame than wild.yaml. Poles shoved up against the rim
+# (near self-oscillation), morph sweeps to ~5.5 octaves, violent zero counter-
+# motion, full spectrum, big shelf gains. Gate = STABILITY ONLY (don't blow up +
+# move at least a hair). Yield drops because more candidates go unstable at the
+# rim and get rejected — that's fine, the survivors are the screaming-hot ones.
+# The EAR judges; the distiller surfaces the 20 that stand.
+name: crazy_open
+iterations: 100000
+search_grid_steps: 5
+final_grid_steps: 17
+require_full_specialist_coverage: false
+keepers_per_specialist: 1
+families:
+  - opposed_window
+  - vocal_mountains
+  - lp6_tear
+  - shelf_crossing
+
+generation:
+  frequency_hz: [30.0, 19000.0]
+  pole_radius_q0: [0.840, 0.99850]          # broad → already tight at Q0
+  pole_radius_q100: [0.99750, 0.9999200]    # SHOVED to the rim (Q up to ~6000)
+  zero_radius_q0: [0.750, 0.999800]
+  zero_radius_q100: [0.97000, 0.9999900]
+  morph_motion_octaves: [0.05, 5.50]        # tiny → MASSIVE multi-octave sweeps
+  zero_counter_motion_octaves: [0.10, 6.00]
+  secondary_shift_octaves: [0.0, 2.00]      # Q does huge things
+  constructor_jitter_octaves: [-0.90, 0.90]
+  local_zero_offset_octaves: [-1.50, 1.50]
+  global_zero_offset_octaves: [-3.50, 3.50]
+  secondary_pole_scale: 0.85
+  land_peaks_on_notes: true        # peaks LAND on 12-TET notes at both frames; Q = radius-only; the sweep glides between
+  opposed_window:
+    bases_hz: [70.0, 240.0, 620.0, 1500.0, 3800.0, 10500.0]
+  vocal_mountains:
+    bases_hz: [140.0, 420.0, 980.0, 2300.0, 4600.0, 9200.0]
+    contrary_indices: [1, 2, 4, 5]
+    local_indices: [1, 2, 4]
+  lp6_tear:
+    cutoff_start_hz: [1800.0, 14000.0]
+    cutoff_end_hz: [160.0, 3200.0]
+    secondary_pole_octaves: [-0.90, 0.50]
+    section_q: [0.51764, 0.70711, 1.41421, 1.93185, 2.61313, 3.70000, 5.00000]
+    actor_bases_hz: [220.0, 1100.0, 4200.0, 8800.0]
+  shelf_crossing:
+    lowshelf:
+      pole_start_hz: [90.0, 760.0]
+      pole_end_hz: [360.0, 2600.0]
+      gain_start_db: [-32.0, 24.0]
+      gain_end_db: [12.0, 38.0]
+      secondary_gain_db: [-22.0, 22.0]
+    highshelf:
+      pole_start_hz: [1300.0, 7500.0]
+      pole_end_hz: [3200.0, 15000.0]
+      gain_start_db: [-38.0, 16.0]
+      gain_end_db: [6.0, 38.0]
+      secondary_gain_db: [-22.0, 22.0]
+    actor_bases_hz: [300.0, 900.0, 2400.0, 6200.0, 11000.0]
+    actor_local_indices: [0, 2]
+
+gates:
+  # STABILITY ONLY. Don't blow up, and move at least a hair. Everything else = ear.
+  maximum_pole_radius: 0.999850          # allow the hottest STABLE bodies (Q ~ 3000+)
+  minimum_ceiling_radius: 0.0            # no hot-pole requirement
+  minimum_center_span_db: 3.0
+  minimum_endpoint_span_db: 3.0
+  maximum_span_db: 600.0                 # let span go insane
+  minimum_morph_contrast_db: 1.0         # must move a hair (no dead bodies)
+  minimum_secondary_contrast_db: 0.0
+  minimum_center_peaks: 0
+  minimum_center_valleys: 0
+  minimum_leader_zero_motion_octaves: 0.0
+  minimum_leader_pole_motion_octaves: 0.0
+  reference_endpoint_span_ratio: 0.0
+  reference_morph_contrast_ratio: 0.0
+  reference_secondary_contrast_ratio: 0.0
+
+archive:
+  span_bins: [50.0, 110.0, 180.0, 280.0, 420.0]
+  motion_bins: [12.0, 35.0, 70.0, 130.0]
+  complexity_bins: [3.0, 6.0, 9.0]
+  zero_motion_bins: [0.3, 1.0, 2.5, 4.5]

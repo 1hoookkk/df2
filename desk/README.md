@@ -24,3 +24,6 @@ that's a bug report, not your problem to fix.
 - `sheets/` — the sheets themselves (plots + audio, self-contained)
 - `bank/v1/` — the kept bodies + `BANK.md`, the keeper ledger
 - `KILLS.md` — the kill ledger
+- `RECIPES.md` — the cookbook: measured tables (vowel formants, tube partials,
+  metal mode ratios, the iconic-corridor numbers) + step-by-step recipes.
+  No invented data; every section states its source.

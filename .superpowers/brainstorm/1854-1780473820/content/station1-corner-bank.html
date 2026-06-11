@@ -1,0 +1,220 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8"/>
+<meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+<title>forge — station 1 · corner bank</title>
+<link href="https://fonts.googleapis.com/css2?family=Archivo:wght@600;700;800;900&family=DM+Mono:wght@400;500&display=swap" rel="stylesheet"/>
+<style>
+:root{
+  --bg:#04060a;--field:#06090e;--panel:#090d13;--panel2:#0c121a;--hair:#16221c;--grid:#0e1c15;
+  --ink:#bfd8c6;--ink2:#5d7064;--dim:#374a3f;
+  --green:#5dff77;--amber:#e8a93c;--orange:#e8742e;--red:#e0473e;--blue:#4aa6df;--purple:#9b6bdf;--teal:#2fd6c4;
+}
+*{box-sizing:border-box;margin:0;padding:0}
+html,body{height:100%}
+body{background:var(--bg);color:var(--ink);font-family:"DM Mono",ui-monospace,monospace;padding:16px;overflow:hidden;-webkit-font-smoothing:antialiased}
+.arch{font-family:"Archivo";font-weight:800}
+.lab{font-size:9.5px;letter-spacing:1.4px;color:var(--ink2);text-transform:uppercase}
+.app{height:calc(100vh - 32px);display:grid;grid-template-rows:auto auto 1fr auto;gap:13px;max-width:1300px;margin:0 auto}
+
+/* breadcrumb of stations */
+.flow{display:flex;align-items:center;gap:8px;font-family:"Archivo";font-weight:800;font-size:11px}
+.flow b{padding:5px 11px;border-radius:6px;border:1.5px solid var(--hair);color:var(--dim)}
+.flow b.on{border-color:var(--green);color:var(--green);box-shadow:0 0 14px -5px var(--green)}
+.flow span{color:var(--dim)}
+
+.head{display:flex;align-items:flex-end;justify-content:space-between}
+.head h1{font-family:"Archivo";font-weight:900;font-size:22px;letter-spacing:-.5px}
+.head p{font-size:11.5px;color:var(--ink2);margin-top:3px}
+.head .right{display:flex;align-items:center;gap:10px}
+.home{font-size:11px;color:var(--ink2);text-align:right}
+.home b{display:block;font-family:"Archivo";font-weight:900;font-size:15px;color:var(--green)}
+.next{font-family:"Archivo";font-weight:800;font-size:12px;padding:9px 15px;border-radius:7px;border:1.5px solid var(--hair);color:var(--dim);cursor:not-allowed}
+.next.go{border-color:var(--green);color:var(--green);cursor:pointer;box-shadow:0 0 16px -5px var(--green)}
+
+.bankwrap{overflow:auto;min-height:0}
+.bank{display:grid;grid-template-columns:repeat(4,1fr);gap:11px}
+.cc{background:var(--field);border:1.5px solid var(--hair);border-radius:10px;padding:10px 11px 11px;cursor:pointer;position:relative;transition:border-color .1s}
+.cc:hover{border-color:var(--ink2)}
+.cc.sel{border-color:currentColor;box-shadow:0 0 0 1px currentColor,0 0 22px -6px currentColor}
+.cc .cn{display:flex;justify-content:space-between;align-items:baseline}
+.cc .cn .nm{font-family:"Archivo";font-weight:800;font-size:13px}
+.cc .cn .fam{font-size:8px;letter-spacing:.5px;color:var(--ink2);text-transform:uppercase}
+.cc .plot{height:62px;width:100%;margin:7px 0 6px}
+.cc .roles{display:flex;flex-wrap:wrap;gap:4px}
+.cc .roles i{font-style:normal;font-size:8px;color:var(--ink2);border:1px solid var(--hair);border-radius:3px;padding:1px 4px}
+.cc .play{position:absolute;top:9px;right:9px;width:20px;height:20px;border-radius:50%;border:1.5px solid currentColor;
+  display:flex;align-items:center;justify-content:center;font-size:8px;opacity:.55}
+.cc.playing .play{opacity:1;box-shadow:0 0 12px -2px currentColor}
+.cc.sel .selflag{position:absolute;bottom:-1px;left:-1px;right:-1px;text-align:center;font-family:"Archivo";font-weight:900;
+  font-size:8.5px;letter-spacing:1px;color:#04060a;background:currentColor;border-radius:0 0 9px 9px;padding:2px}
+
+.foot{display:flex;align-items:center;gap:14px;padding:11px 14px;background:var(--panel);border:1.5px solid var(--hair);border-radius:10px}
+.src{display:flex;border:1.5px solid var(--hair);border-radius:7px;overflow:hidden}
+.src button{font-family:"DM Mono";font-size:10px;padding:7px 11px;border:0;background:transparent;color:var(--ink2);cursor:pointer}
+.src button.on{background:var(--ink);color:var(--bg)}
+.stopb{font-family:"Archivo";font-weight:800;font-size:11px;padding:8px 13px;border-radius:7px;border:1.5px solid var(--hair);color:var(--ink2);cursor:pointer;background:var(--panel2)}
+.hint{font-size:10.5px;color:var(--ink2);line-height:1.4;max-width:560px}
+.hint b{color:var(--green)}
+.disc{margin-left:auto;font-size:9px;color:var(--dim);text-align:right;line-height:1.4}
+</style>
+</head>
+<body>
+<div class="app">
+  <div class="flow">
+    <b class="on">1 · CORNER BANK</b><span>→</span><b>2 · MORPH BENCH</b><span>→</span><b>3 · SURGICAL EDIT</b><span>→</span><b>4 · PACKED PROOF</b><span>→</span><b>5 · KEEP / KILL</b>
+  </div>
+
+  <div class="head">
+    <div><h1>CHOOSE THE HOME CORNER</h1>
+      <p>Math places the peaks and dips. Your ear picks. Click a card to hear it — this is where the sound <i>starts</i>, before you change anything.</p></div>
+    <div class="right">
+      <div class="home">HOME CORNER<b id="homeName">— none —</b></div>
+      <div class="next" id="next">NEXT · PICK THE OTHER END →</div>
+    </div>
+  </div>
+
+  <div class="bankwrap"><div class="bank" id="bank"></div></div>
+
+  <div class="foot">
+    <span class="lab">source</span>
+    <div class="src" id="src"><button class="on" data-s="pink">PINK</button><button data-s="saw">SAW</button><button data-s="noise">808</button></div>
+    <div class="stopb" id="stop">■ STOP</div>
+    <div class="hint">Pick the shape you want at <b>one end</b>. You set the other end next — the slide between the two ends is the actual sound. Don't overthink it.</div>
+    <div class="disc">rough browser preview only.<br>the real bench plays the actual df2 engine.</div>
+  </div>
+</div>
+
+<script>
+/* ===================== real generator math (ported from generators.rs) ===================== */
+const SR=39062.5, TAU=Math.PI*2, RMAX=0.9990, S7=0.6674199;
+const clampf=f=>Math.max(20,Math.min(SR*0.49,f));
+const lerp=(a,b,t)=>a+(b-a)*t, llerp=(a,b,t)=>Math.exp(Math.log(a)+(Math.log(b)-Math.log(a))*t);
+const g_tamed=rp=>Math.max(1e-4,1-rp*rp);
+function radius_ceiling(f){return f<=2500?0.99:Math.max(0.96,Math.min(0.99,0.99-(f-2500)/(16000-2500)*(0.99-0.96)));}
+function r_from_q(f,q){const bw=f/Math.max(0.3,q);return Math.min(0.99985,Math.exp(-Math.PI*bw/SR));}
+// section as {fp,rp, fz,rz, g}  (zero optional)
+const PZ=(fp,rp,fz,rz,g)=>({fp,rp,fz,rz,g});
+const POLE=(fp,rp,g)=>({fp,rp,g});
+const band=(fp,rp)=>PZ(fp,rp,fp*S7,0.6,g_tamed(rp));
+const notch=(f,rz)=>PZ(f,0.55,f,Math.max(0.4,Math.min(0.999,rz)),1);
+function lowpass(fc,q){const w=TAU*clampf(fc)/SR,c=Math.cos(w),s=Math.sin(w),al=s/(2*Math.max(0.3,q));
+  let b0=(1-c)/2,b1=1-c,b2=(1-c)/2,a0=1+al,a1=-2*c,a2=1-al;return {lp:true,b0:b0/a0,b1:b1/a0,b2:b2/a0,a1:a1/a0,a2:a2/a0,fc,q};}
+const PASS=null;
+const formant_peak=(f,q)=>band(clampf(f),r_from_q(clampf(f),q));
+
+/* architecture HOME corner (x=0,y=0,z=0) → sections[6] */
+const GEN={
+ formant:()=>{const f1=300,f2=950,f3=Math.min(7000,f2*1.2);return [
+   PZ(f1,Math.min(0.997,RMAX),f1*0.5,0.6,g_tamed(0.997)),band(f2,0.95),band(f3,0.95),band(3300,0.93),notch(Math.sqrt(f1*f2),0.45),PASS];},
+ hedz:()=>{const U=[350,650,2200,3300],t=6;const c=[lowpass(8000,0.7)];for(let k=0;k<4;k++){const s=formant_peak(U[k],t);s.g*=(1+0.5*k);c.push(s);} const hi=5200;c.push(band(hi,r_from_q(hi,t*0.9)));return c;},
+ vowelAh:()=>vowel([[700,130],[1220,70],[2600,160],[3300,250],[3850,300]]),
+ vowelEe:()=>vowel([[310,45],[2020,200],[2960,400],[3300,250],[3850,300]]),
+ lucifer:()=>{const BASE=[800,1000,1300,1600,2000,2500];return BASE.map(f=>band(clampf(f*0.6),r_from_q(clampf(f*0.6),6)));},
+ earbender:()=>{const AH=[700,1220,2600,3300];const c=AH.map(f=>formant_peak(f*0.92,9));c.push(formant_peak(380,8));c.push(formant_peak(570,8));return c;},
+ acid:()=>{const fc=110,rup=0.99;return [PZ(fc,rup,SR*0.49,0.2,g_tamed(rup)),PASS,PASS,PASS,PASS,PASS];},
+ destruction:()=>{const fa=250,fb=4000,fc=900,r=0.95;return [
+   PZ(fa,r,fa*Math.pow(2,-0.15),0.85,g_tamed(r)),PZ(fb,r,fb*Math.pow(2,0.15),0.85,g_tamed(r)),band(fc,r),notch(Math.sqrt(fa*fb),0.5),PASS,PASS];},
+ comb:()=>{let f=80,c=[];for(let i=0;i<6;i++){if(f<14000){c.push(PZ(f,0.85,f,0.85,g_tamed(0.85)));f*=1.5;}else c.push(PASS);}return c;},
+ tube:()=>physical([1,3,5,7,9,11],71,95,0.90,0.86),
+ bell:()=>physical([1,2,2.4,3,4.5,5.33],520,115,0.93,0.90),
+ cavity:()=>physical([1,2.3,3.7,5,6.2,7.4],280,14,0.60,0.50),
+};
+function vowel(fmts){const c=[];for(let i=0;i<fmts.length&&i<6;i++){const[f,bw]=fmts[i];const fs=f*(i==0?0.875:1);const bws=Math.max(20,bw);
+  const rad=Math.min(RMAX,Math.exp(-Math.PI*bws/SR));const s=band(clampf(fs),rad);s.g*=Math.pow(0.9,i);c.push(s);}while(c.length<6)c.push(PASS);return c;}
+function physical(ratios,f0,q0,qt,at){const ring=0.25,stress=0.125,open=0;const c=[];
+  for(let i=0;i<6&&i<ratios.length;i++){const detune=1+stress*0.05*i;const f=clampf(f0*ratios[i]*detune);
+    const q=Math.max(2.5,q0*(0.35+1.3*ring)*Math.pow(qt,i)*(1+stress));const rad=r_from_q(f,q);const g=Math.pow(at,i)*(0.45+0.55*open);
+    const s=band(f,rad);s.g*=Math.max(0.04,Math.min(1.5,g));c.push(s);}while(c.length<6)c.push(PASS);return c;}
+
+/* magnitude (dB) of a section cascade at hz */
+function secMag(s,hz){if(!s)return 0;const w=TAU*hz/SR;
+  if(s.lp){const c1=Math.cos(w),c2=Math.cos(2*w),s1=Math.sin(w),s2=Math.sin(2*w);
+    const nr=s.b0+s.b1*c1+s.b2*c2,ni=-(s.b1*s1+s.b2*s2),dr=1+s.a1*c1+s.a2*c2,di=-(s.a1*s1+s.a2*s2);
+    return 10*Math.log10((nr*nr+ni*ni)/(dr*dr+di*di));}
+  const a1=-2*s.rp*Math.cos(TAU*clampf(s.fp)/SR),a2=s.rp*s.rp;
+  let b0=s.g||1,b1=0,b2=0;
+  if(s.fz!==undefined){const wz=TAU*clampf(s.fz)/SR;b1=b0*(-2*s.rz*Math.cos(wz));b2=b0*(s.rz*s.rz);}
+  const c1=Math.cos(w),c2=Math.cos(2*w),s1=Math.sin(w),s2=Math.sin(2*w);
+  const nr=b0+b1*c1+b2*c2,ni=-(b1*s1+b2*s2),dr=1+a1*c1+a2*c2,di=-(a1*s1+a2*s2);
+  return 10*Math.log10((nr*nr+ni*ni)/(dr*dr+di*di));}
+function curve(secs,N){const F0=20,F1=20000,LO=Math.log10(F0),HI=Math.log10(F1),a=[];
+  for(let i=0;i<N;i++){const hz=Math.pow(10,LO+(HI-LO)*i/(N-1));let d=0;for(const s of secs)d+=secMag(s,hz);a.push(d);}return a;}
+
+/* ===================== bank definition ===================== */
+const BANK=[
+ {key:'formant',  nm:'LOW + 3 MID PEAKS',   fam:'300 Hz – 3.3 kHz',     col:'#5dff77', roles:['low peak','mid peaks','one dip']},
+ {key:'hedz',     nm:'ROLLOFF + 4 PEAKS',   fam:'350 Hz → 3.3 kHz',     col:'#5dff77', roles:['high rolloff','4 peaks','rising']},
+ {key:'vowelAh',  nm:'3 WIDE PEAKS',        fam:'700 / 1.2k / 2.6k Hz', col:'#7dffa0', roles:['wide peaks','spaced']},
+ {key:'vowelEe',  nm:'LOW PEAK + HIGH PAIR',fam:'310 Hz + 2–3 kHz',     col:'#7dffa0', roles:['low peak','high pair']},
+ {key:'cavity',   nm:'TIGHT MID CLUSTER',   fam:'280 Hz – 2 kHz',       col:'#4aa6df', roles:['mid cluster','damped']},
+ {key:'tube',     nm:'HOLLOW ODD STACK',    fam:'71 Hz, odd harmonics', col:'#4aa6df', roles:['low','odd spacing']},
+ {key:'bell',     nm:'HIGH METAL RING',     fam:'520 Hz up, metallic',  col:'#2fd6c4', roles:['high','uneven spacing']},
+ {key:'comb',     nm:'EVEN STACKED TEETH',  fam:'80 Hz, evenly stacked',col:'#9b6bdf', roles:['evenly spaced','teeth']},
+ {key:'lucifer',  nm:'SHARP MID CLUSTER',   fam:'480 Hz – 1.5 kHz',     col:'#e8a93c', roles:['mid cluster','sharp']},
+ {key:'earbender',nm:'FIXED PEAKS + SWEEP', fam:'700 Hz + moving peak', col:'#e8a93c', roles:['fixed peaks','one sweep']},
+ {key:'acid',     nm:'RESONANT LOWPASS',    fam:'110 Hz, one sharp peak',col:'#e8742e',roles:['lowpass','resonant']},
+ {key:'destruction',nm:'RISING + FALLING PEAK',fam:'two peaks cross mid',col:'#e0473e', roles:['rising peak','falling peak','dip']},
+];
+let selected=null, source='pink';
+
+function plotSvg(secs,col){const a=curve(secs,120);let mn=Math.min(...a),mx=Math.max(...a);const rng=Math.max(8,mx-mn);
+  const W=200,H=62,pad=5;let p='';for(let i=0;i<a.length;i++){const x=i/(a.length-1)*W;const y=H-pad-((a[i]-mn)/rng)*(H-pad*2);p+=(i?'L':'M')+x.toFixed(1)+','+y.toFixed(1)+' ';}
+  return `<svg class="plot" viewBox="0 0 ${W} ${H}" preserveAspectRatio="none">
+    <defs><linearGradient id="g_${col.slice(1)}" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="${col}" stop-opacity=".22"/><stop offset="1" stop-color="${col}" stop-opacity="0"/></linearGradient></defs>
+    <path d="${p} L${W},${H} L0,${H} Z" fill="url(#g_${col.slice(1)})"/><path d="${p}" fill="none" stroke="${col}" stroke-width="2"/></svg>`;}
+
+function renderBank(){const bank=document.getElementById('bank');bank.innerHTML='';
+  BANK.forEach(b=>{const secs=GEN[b.key]();const d=document.createElement('div');
+    d.className='cc'+(selected===b.key?' sel':'');d.style.color=b.col;
+    d.innerHTML=`<div class="play">▶</div>
+      <div class="cn"><span class="nm" style="color:${b.col}">${b.nm}</span></div>
+      <div class="cn"><span class="fam">${b.fam}</span></div>
+      ${plotSvg(secs,b.col)}
+      <div class="roles">${b.roles.map(r=>`<i>${r}</i>`).join('')}</div>
+      ${selected===b.key?'<div class="selflag">HOME CORNER</div>':''}`;
+    d.onclick=()=>{selected=b.key;audition(b.key);renderBank();updateHead(b);};
+    bank.appendChild(d);});
+}
+function updateHead(b){document.getElementById('homeName').textContent=b?b.nm:'— none —';
+  if(b){document.getElementById('homeName').style.color=b.col;document.getElementById('next').classList.add('go');}}
+
+/* ===================== audition (WebAudio preview voice) ===================== */
+let actx=null, master=null, srcNode=null, chainNodes=[];
+function ensureCtx(){if(actx)return;actx=new (window.AudioContext||window.webkitAudioContext)();
+  master=actx.createGain();master.gain.value=0.0;const lp=actx.createBiquadFilter();lp.type='lowpass';lp.frequency.value=14000;
+  master.connect(lp);lp.connect(actx.destination);}
+function makeSource(){if(source==='saw'){const o=actx.createOscillator();o.type='sawtooth';o.frequency.value=82.4;o.start();return o;}
+  // pink/noise buffer loop
+  const len=actx.sampleRate*2;const buf=actx.createBuffer(1,len,actx.sampleRate);const ch=buf.getChannelData(0);
+  let b0=0,b1=0,b2=0;for(let i=0;i<len;i++){const white=Math.random()*2-1;
+    if(source==='pink'){b0=0.99765*b0+white*0.0990460;b1=0.96300*b1+white*0.2965164;b2=0.57000*b2+white*1.0526913;ch[i]=(b0+b1+b2+white*0.1848)*0.12;}
+    else ch[i]=white*0.25;}
+  const s=actx.createBufferSource();s.buffer=buf;s.loop=true;s.start();return s;}
+function audition(key){ensureCtx();if(actx.state==='suspended')actx.resume();stopChain();
+  srcNode=makeSource();let node=srcNode;
+  const secs=GEN[key]();
+  secs.forEach(s=>{if(!s)return;const bq=actx.createBiquadFilter();
+    if(s.lp){bq.type='lowpass';bq.frequency.value=Math.min(16000,s.fc);bq.Q.value=0.7;}
+    else if(s.fz!==undefined && s.rz>0.7 && Math.abs(s.fz-s.fp)<s.fp*0.2){bq.type='notch';bq.frequency.value=clampf(s.fp);bq.Q.value=6;}
+    else{bq.type='peaking';bq.frequency.value=clampf(s.fp);bq.Q.value=Math.max(0.7,Math.min(16,1/(2*(1-Math.min(0.99,s.rp)))));
+      bq.gain.value=Math.max(-12,Math.min(15,9*(s.g||1)));}
+    node.connect(bq);node=bq;chainNodes.push(bq);});
+  node.connect(master);master.gain.cancelScheduledValues(actx.currentTime);
+  master.gain.setValueAtTime(master.gain.value,actx.currentTime);master.gain.linearRampToValueAtTime(0.5,actx.currentTime+0.05);
+  document.querySelectorAll('.cc').forEach(c=>c.classList.remove('playing'));
+  const idx=BANK.findIndex(x=>x.key===key);if(idx>=0)document.getElementById('bank').children[idx].classList.add('playing');}
+function stopChain(){if(srcNode){try{srcNode.stop?srcNode.stop():srcNode.disconnect();}catch(e){}srcNode.disconnect&&srcNode.disconnect();}
+  chainNodes.forEach(n=>n.disconnect());chainNodes=[];}
+function stopAll(){if(!actx)return;master.gain.linearRampToValueAtTime(0,actx.currentTime+0.05);
+  setTimeout(stopChain,80);document.querySelectorAll('.cc').forEach(c=>c.classList.remove('playing'));}
+document.getElementById('stop').onclick=stopAll;
+document.getElementById('src').onclick=e=>{const b=e.target.closest('button');if(!b)return;
+  document.querySelectorAll('#src button').forEach(x=>x.classList.remove('on'));b.classList.add('on');source=b.dataset.s;
+  if(selected)audition(selected);};
+document.getElementById('next').onclick=()=>{if(selected)document.getElementById('next').textContent='→ building the other end…';};
+renderBank();
+</script>
+</body>
+</html>

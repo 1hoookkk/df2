@@ -2,6 +2,38 @@
 
 namespace trench
 {
+namespace
+{
+constexpr int kInterpolatorGuardSamples = 8;
+constexpr int kProcessedFifoMargin = 16;
+
+void appendToFifo (std::vector<float>& fifo, const float* data, int count)
+{
+    if (data == nullptr || count <= 0)
+        return;
+
+    fifo.insert (fifo.end(), data, data + count);
+}
+
+void eraseConsumed (std::vector<float>& fifo, int consumed)
+{
+    if (consumed <= 0)
+        return;
+
+    if (consumed >= (int) fifo.size())
+    {
+        fifo.clear();
+        return;
+    }
+
+    fifo.erase (fifo.begin(), fifo.begin() + consumed);
+}
+
+int sharedSize (const std::vector<float>& a, const std::vector<float>& b)
+{
+    return juce::jmin ((int) a.size(), (int) b.size());
+}
+}
 
 FixedRateTrenchIsland::FixedRateTrenchIsland()
 {
@@ -31,6 +63,10 @@ void FixedRateTrenchIsland::prepare (double hostSampleRate, int maxBlockSizeSamp
     inputResamplerR.reset();
     outputResamplerL.reset();
     outputResamplerR.reset();
+    hostFifoL.clear();
+    hostFifoR.clear();
+    processedFifoL.clear();
+    processedFifoR.clear();
 
     const double ratio = TrenchRates::emuInternalRate / hostRate;
     const int internalSamplesNeeded = juce::roundToInt (maxBlockSizeSamples * ratio) + 128;
@@ -49,41 +85,81 @@ void FixedRateTrenchIsland::process (juce::AudioBuffer<float>& buffer, TrenchDsp
     }
 
     const int numSamplesHost = buffer.getNumSamples();
+    if (numSamplesHost <= 0)
+        return;
+
     const double inputRatio = hostRate / TrenchRates::emuInternalRate;
     const double outputRatio = TrenchRates::emuInternalRate / hostRate;
 
-    const int numInternal = juce::roundToInt (numSamplesHost * (TrenchRates::emuInternalRate / hostRate));
-    
-    if (numInternal > internalBuffer.getNumSamples())
-        internalBuffer.setSize (2, numInternal + 64, false, true, true);
-    internalBuffer.clear (0, 0, juce::jmin (internalBuffer.getNumSamples(), numInternal + 4));
-    internalBuffer.clear (1, 0, juce::jmin (internalBuffer.getNumSamples(), numInternal + 4));
+    appendToFifo (hostFifoL, buffer.getReadPointer (0), numSamplesHost);
+    appendToFifo (hostFifoR,
+                  (buffer.getNumChannels() > 1) ? buffer.getReadPointer (1) : buffer.getReadPointer (0),
+                  numSamplesHost);
 
-    const float* hostL = buffer.getReadPointer (0);
-    const float* hostR = (buffer.getNumChannels() > 1) ? buffer.getReadPointer (1) : buffer.getReadPointer (0);
-    float* intL = internalBuffer.getWritePointer (0);
-    float* intR = internalBuffer.getWritePointer (1);
+    const int internalNeededForOutput = (int) std::ceil ((double) numSamplesHost * outputRatio)
+                                      + kProcessedFifoMargin;
 
-    // The interpolators keep fractional position across blocks. With the old
-    // unbounded overload, normal block sizes occasionally consumed one sample
-    // past the supplied buffer (44.1/48 kHz on the input side, 96 kHz on the
-    // output side). That reads random host/internal memory and becomes audible
-    // static even when the Bypass body is selected. The bounded overload
-    // zero-feeds short block edges instead of reading outside the buffer.
-    inputResamplerL.process (inputRatio, hostL, intL, numInternal, numSamplesHost, 0);
-    inputResamplerR.process (inputRatio, hostR, intR, numInternal, numSamplesHost, 0);
+    while (sharedSize (processedFifoL, processedFifoR) < internalNeededForOutput)
+    {
+        const int availableHost = sharedSize (hostFifoL, hostFifoR);
+        if (availableHost <= kInterpolatorGuardSamples)
+            break;
 
-    // 2. Process through DSP Bridge at 39062.5 Hz
-    // We need to pass the internal buffer to the bridge.
-    // However, TrenchDspBridge::process takes an AudioBuffer.
-    // We can use a temporary AudioBuffer wrapper.
-    juce::AudioBuffer<float> intWrapper (internalBuffer.getArrayOfWritePointers(), 2, numInternal);
-    bridge.process (intWrapper, params);
+        // JUCE's interpolator returns how many input samples it consumed. Keep
+        // a small unread guard in the host FIFO so the bounded overload never
+        // has to zero-feed a fractional edge on normal sustained audio.
+        const int safeHost = availableHost - kInterpolatorGuardSamples;
+        const int numInternal = juce::jmax (1, (int) std::floor ((double) safeHost / inputRatio));
 
-    // 3. Resample Internal -> Host
-    outputResamplerL.process (outputRatio, intL, buffer.getWritePointer (0), numSamplesHost, numInternal, 0);
+        if (numInternal > internalBuffer.getNumSamples())
+            internalBuffer.setSize (2, numInternal + 64, false, true, true);
+
+        float* intL = internalBuffer.getWritePointer (0);
+        float* intR = internalBuffer.getWritePointer (1);
+        const int consumedL = inputResamplerL.process (inputRatio, hostFifoL.data(), intL, numInternal, availableHost, 0);
+        const int consumedR = inputResamplerR.process (inputRatio, hostFifoR.data(), intR, numInternal, availableHost, 0);
+        const int consumed = juce::jmax (0, juce::jmin (consumedL, consumedR));
+
+        if (consumed <= 0)
+            break;
+
+        eraseConsumed (hostFifoL, consumed);
+        eraseConsumed (hostFifoR, consumed);
+
+        juce::AudioBuffer<float> intWrapper (internalBuffer.getArrayOfWritePointers(), 2, numInternal);
+        bridge.process (intWrapper, params);
+
+        appendToFifo (processedFifoL, intL, numInternal);
+        appendToFifo (processedFifoR, intR, numInternal);
+    }
+
+    const int availableInternal = sharedSize (processedFifoL, processedFifoR);
+    if (availableInternal < internalNeededForOutput)
+    {
+        buffer.clear();
+        return;
+    }
+
+    const int consumedL = outputResamplerL.process (outputRatio,
+                                                    processedFifoL.data(),
+                                                    buffer.getWritePointer (0),
+                                                    numSamplesHost,
+                                                    availableInternal,
+                                                    0);
+    int consumedR = consumedL;
     if (buffer.getNumChannels() > 1)
-        outputResamplerR.process (outputRatio, intR, buffer.getWritePointer (1), numSamplesHost, numInternal, 0);
+    {
+        consumedR = outputResamplerR.process (outputRatio,
+                                              processedFifoR.data(),
+                                              buffer.getWritePointer (1),
+                                              numSamplesHost,
+                                              availableInternal,
+                                              0);
+    }
+
+    const int consumed = juce::jmax (0, juce::jmin (consumedL, consumedR));
+    eraseConsumed (processedFifoL, consumed);
+    eraseConsumed (processedFifoR, consumed);
 }
 
 } // namespace trench

@@ -1,0 +1,48 @@
+{
+  "fixture": {
+    "path": "qcreator_qright90_impulse_11025.wav",
+    "sha256": "43a28384e29538a738a3b1c88604623500fe0cc3ea47fb589e7905e022759a42",
+    "classification": "dll-grounded primary-render fixture; not a vendor-supplied wav",
+    "format": {
+      "sample_rate_hz": 11025,
+      "channels": 2,
+      "sample_format": "pcm16",
+      "frames": 166591
+    }
+  },
+  "vendor_engine": {
+    "qcreator_exe_sha256": "365cae84988c5d22db340af9ae2786fa99a935d233cf0fde751d93ac6c9052b3",
+    "qmixer_dll_sha256": "0d3784fad66e05de38253861efcdfda200da4eb60c154ce23955b4a2945b110e",
+    "ghidra_recovered_pan_law": "angle_deg = (pan_index - 15) * 6",
+    "target_angle_degrees": 90,
+    "target_raw_pan_index": 30
+  },
+  "stimulus": {
+    "classification": "constructed clean analysis stimulus",
+    "sample_rate_hz": 11025,
+    "channels": 1,
+    "sample_format": "pcm16",
+    "frames": 166591,
+    "impulse_sample": 30000,
+    "impulse_amplitude": 0.5,
+    "qchk_pan_records_degrees": [90, 90, 90, 90, 90, 90, 90, 90]
+  },
+  "measured_export": {
+    "left": {
+      "argmax_sample": 30001,
+      "peak": -0.29345703125,
+      "first_nonzero_sample": 30001,
+      "last_nonzero_sample": 30022,
+      "nonzero_samples": 22,
+      "rms_dbfs": -62.07080490091122
+    },
+    "right": {
+      "argmax_sample": 30000,
+      "peak": 0.49993896484375,
+      "first_nonzero_sample": 30000,
+      "last_nonzero_sample": 30000,
+      "nonzero_samples": 1,
+      "rms_dbfs": -58.23817561876727
+    }
+  }
+}

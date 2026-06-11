@@ -39,7 +39,9 @@ PluginProcessor::PluginProcessor()
                                          (int) apvts.getRawParameterValue (ParamID::body)->load());
     pendingBodyIndex.store (startIndex, std::memory_order_relaxed);
     loadedBodyIndex.store (startIndex, std::memory_order_relaxed);
-    lastLoadOk.store (dspBridge.loadCartridge (trench::bodyCartridgeJson (startIndex)),
+    const auto startJson = trench::bodyCartridgeJson (startIndex);
+    storeLoadedBodyBehavior (startIndex, startJson);
+    lastLoadOk.store (startJson.isNotEmpty() && dspBridge.loadCartridge (startJson),
                       std::memory_order_relaxed);
 
     dspBridge.setSpatialMode (kSpatialOff);
@@ -102,6 +104,35 @@ void PluginProcessor::changeProgramName (int index, const juce::String& newName)
     juce::ignoreUnused (index, newName);
 }
 
+float PluginProcessor::mapMorphForLoadedBody (float morph) const noexcept
+{
+    return trench::applyMorphTaper (
+        static_cast<trench::MorphTaper> (loadedMorphTaper.load (std::memory_order_relaxed)),
+        morph);
+}
+
+float PluginProcessor::mapSecondaryForLoadedBody (float q) const noexcept
+{
+    const auto target = static_cast<trench::SecondaryTarget> (
+        loadedSecondaryTarget.load (std::memory_order_relaxed));
+    const auto x = juce::jlimit (0.0f, 1.0f, q);
+    return trench::secondaryTargetUsesPacked (target) ? x : 0.0f;
+}
+
+bool PluginProcessor::loadedSecondaryDrivesSlam() const noexcept
+{
+    const auto target = static_cast<trench::SecondaryTarget> (
+        loadedSecondaryTarget.load (std::memory_order_relaxed));
+    return trench::secondaryTargetUsesSlam (target);
+}
+
+void PluginProcessor::storeLoadedBodyBehavior (int bodyIndex, const juce::String& cartridgeJson)
+{
+    const auto behavior = trench::bodyBehaviorFromCartridgeJson (bodyIndex, cartridgeJson);
+    loadedSecondaryTarget.store (static_cast<int> (behavior.secondaryTarget), std::memory_order_relaxed);
+    loadedMorphTaper.store (static_cast<int> (behavior.morphTaper), std::memory_order_relaxed);
+}
+
 //==============================================================================
 void PluginProcessor::prepareToPlay (double sampleRate, int samplesPerBlock)
 {
@@ -117,6 +148,10 @@ void PluginProcessor::prepareToPlay (double sampleRate, int samplesPerBlock)
     outputGain.reset (sampleRate, 0.02); // 20 ms ramp
     const float outDb = apvts.getRawParameterValue (ParamID::output)->load();
     outputGain.setCurrentAndTargetValue (juce::Decibels::decibelsToGain (outDb));
+
+    smoothedMorph = apvts.getRawParameterValue (ParamID::morph)->load();
+    smoothedQ = apvts.getRawParameterValue (ParamID::q)->load();
+    controlSmoothersPrimed = true;
 }
 
 void PluginProcessor::releaseResources()
@@ -163,20 +198,37 @@ void PluginProcessor::processBlock (juce::AudioBuffer<float>& buffer, juce::Midi
         return;
     }
 
-    // PL-2: single signal path. TrenchParams default-initialises slamDrive=0
-    // and fiveD=0 (TrenchDspBridge.h:23-24); in the shipping build those
-    // parameters do not exist in the layout, so there is nothing to read and
-    // nothing to force. Input mode is always read from the parameter (default
-    // OFF) so a user who wants SLAM/EOS gets it without a runtime gate.
+    // PL-2: single signal path. Slam and 5D are runtime controls that default
+    // to off; the selected body supplies only the six packed filter stages.
     TrenchParams params;
-    params.morph = apvts.getRawParameterValue (ParamID::morph)->load();
-    params.q     = apvts.getRawParameterValue (ParamID::q)->load();
+    const int loadedIndex = loadedBodyIndex.load (std::memory_order_relaxed);
+    const float morphTarget = apvts.getRawParameterValue (ParamID::morph)->load();
+    const float qTarget = apvts.getRawParameterValue (ParamID::q)->load();
+    if (! controlSmoothersPrimed)
+    {
+        smoothedMorph = morphTarget;
+        smoothedQ = qTarget;
+        controlSmoothersPrimed = true;
+    }
 
-    // SLAM — the Slam knob is the shipping input-character control. >0 engages
-    // the Mackie desk-slam stage and sets its amount; 0 is a clean bypass, so a
-    // resting plug-in adds no input colour. (The legacy inputMode choice param is
-    // retained for the diagnostic FX pane only and is no longer read here.)
+    const auto sampleRate = juce::jmax (1.0, getSampleRate());
+    const auto blockSeconds = (double) buffer.getNumSamples() / sampleRate;
+    constexpr double controlTauSeconds = 0.035;
+    const auto controlAlpha = (float) (1.0 - std::exp (-blockSeconds / controlTauSeconds));
+    smoothedMorph += (morphTarget - smoothedMorph) * controlAlpha;
+    smoothedQ += (qTarget - smoothedQ) * controlAlpha;
+
+    params.morph = mapMorphForLoadedBody (smoothedMorph);
+    params.q     = mapSecondaryForLoadedBody (smoothedQ);
+
+    // SLAM = Mackie desk input into the E-mu/G-chip path. The fixed-rate
+    // wrapper has already resampled to the internal rate; the desk model adds
+    // the 20-bit input character before the packed filter and table AGC.
     params.slamDrive = apvts.getRawParameterValue (ParamID::slamDrive)->load();
+    if (loadedSecondaryDrivesSlam())
+    {
+        params.slamDrive = juce::jmax (params.slamDrive, juce::jlimit (0.0f, 1.0f, smoothedQ));
+    }
     const int inMode = params.slamDrive > 0.001f ? 1 /*MackieDeskSlam*/ : kCleanInputMode;
     if (inMode != lastInputModeSent)
     {
@@ -184,13 +236,10 @@ void PluginProcessor::processBlock (juce::AudioBuffer<float>& buffer, juce::Midi
         lastInputModeSent = inMode;
     }
 
-    // 5D — QSound width. The choice (Off/Narrow/Wide/Full) maps to a depth and
-    // engages the QSound spatial stage; Off is a true spatial bypass.
-    static constexpr float kSpaceForChoice[] = { 0.0f, 0.33f, 0.66f, 1.0f };
-    const int spaceChoice = juce::jlimit (0, 3,
-        (int) apvts.getRawParameterValue (ParamID::fiveD)->load());
-    params.fiveD = kSpaceForChoice[spaceChoice];
-    dspBridge.setSpatialMode (spaceChoice > 0 ? 0 /*QSound*/ : kSpatialOff);
+    // 5D — QSound runtime toggle. It is not authored or baked into a body.
+    const bool fiveDOn = apvts.getRawParameterValue (ParamID::fiveD)->load() > 0.5f;
+    params.fiveD = fiveDOn ? 1.0f : 0.0f;
+    dspBridge.setSpatialMode (fiveDOn ? 0 /*QSound*/ : kSpatialOff);
 
     auto channelPeak = [&buffer] (int channel)
     {
@@ -317,7 +366,9 @@ void PluginProcessor::handleAsyncUpdate()
 
     const auto json = trench::bodyCartridgeJson (want);
     const bool ok = json.isNotEmpty() && dspBridge.loadCartridge (json);
+    storeLoadedBodyBehavior (want, json);
     lastLoadOk.store (ok, std::memory_order_release);
+    controlSmoothersPrimed = false;
     // Reflect the user's selection even if the audition slot is empty, so the
     // strip and the watcher agree; the status line reports any load failure.
     loadedBodyIndex.store (want, std::memory_order_relaxed);
@@ -357,7 +408,11 @@ void PluginProcessor::timerCallback()
         return;
     // PL-3: bypass while the audition slot reload swaps coefficients in.
     lastLoadOk.store (false, std::memory_order_release);
-    lastLoadOk.store (dspBridge.loadCartridge (json), std::memory_order_release);
+    const int loadedIndex = loadedBodyIndex.load (std::memory_order_relaxed);
+    const bool ok = dspBridge.loadCartridge (json);
+    storeLoadedBodyBehavior (loadedIndex, json);
+    lastLoadOk.store (ok, std::memory_order_release);
+    controlSmoothersPrimed = false;
 #endif // TRENCH_PLAYER_DIAGNOSTICS
 }
 
@@ -415,16 +470,15 @@ void PluginProcessor::setParameterDenormalized (const char* parameterID, float v
 
 void PluginProcessor::forceCleanAudioUiState()
 {
-    // PL-2: the shipping parameter layout omits slam / 5D / teleport so the
-    // setParameterDenormalized calls for them noop (null param lookup). The
-    // #ifdef just makes that explicit so the next reader doesn't wonder why
-    // it dead-ends. body / inputMode / output exist in every build.
+    // PL-2: keep clean/restored state actually clean. Slam and 5D are present
+    // in the current parameter layout, so clear them unconditionally; Teleport
+    // remains extras-only.
     setParameterDenormalized (ParamID::body, (float) trench::kNoFilterIndex);
     setParameterDenormalized (ParamID::inputMode, 0.0f);
     setParameterDenormalized (ParamID::output, 0.0f);
-#ifdef TRENCH_PLAYER_EXTRAS
     setParameterDenormalized (ParamID::slamDrive, 0.0f);
     setParameterDenormalized (ParamID::fiveD, 0.0f);
+#ifdef TRENCH_PLAYER_EXTRAS
     setParameterDenormalized (ParamID::teleportMode, 0.0f);
     setParameterDenormalized (ParamID::teleportAmount, 0.0f);
 #endif

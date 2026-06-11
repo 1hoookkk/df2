@@ -1,0 +1,176 @@
+{
+  "schema_version": "1.0",
+  "asset": {
+    "name": "TRENCH horizontal thumbwheel roller",
+    "target_runtime": "JUCE plugin UI",
+    "primary_files": [
+      "juce-shell/source/PluginEditor.cpp",
+      "juce-shell/tools/thumbwheel/render_raw_85x11_strip.py",
+      "juce-shell/assets/ui/thumbwheel_strip_129_85x16.png",
+      "juce-shell/assets/ui/thumbwheel_runtime_strip_129_141x28.png",
+      "juce-shell/assets/ui/df2_panel_shadow.png"
+    ],
+    "must_not_modify": [
+      "Do not redraw the panel.",
+      "Do not redraw the well or frame.",
+      "Do not create a mockup-only replacement."
+    ]
+  },
+  "hard_contract": {
+    "raw_strip": {
+      "frames": 129,
+      "frame_indices": "0..128",
+      "frame_width_px": 85,
+      "frame_height_px": 16,
+      "strip_width_px": 10965,
+      "strip_height_px": 16,
+      "frame_0": "no glow",
+      "frame_128": "byte-identical to frame 0 and no glow"
+    },
+    "runtime_strip": {
+      "frames": 129,
+      "frame_width_px": 141,
+      "frame_height_px": 28,
+      "strip_width_px": 18189,
+      "strip_height_px": 28,
+      "frame_0": "no glow",
+      "frame_128": "byte-identical to frame 0 and no glow"
+    },
+    "runtime_rendering": {
+      "source": "crop one frame from the runtime strip",
+      "destination": "inside the existing black well from df2_panel_shadow.png",
+      "glow_layer": "no separate JUCE glow overlay",
+      "panel": "draw panel image first, then draw thumbwheel strip frame into the existing well"
+    }
+  },
+  "visual_goal": {
+    "short_description": "A tactile horizontal spinning thumbwheel embedded in a dark mechanical aperture.",
+    "read_order": [
+      "existing black recessed well",
+      "dark smoked rubber or graphite wheel body",
+      "coarse moving rib/window pattern",
+      "fixed directional grey/specular light islands",
+      "internal cyan emitter visible through broken apertures"
+    ],
+    "fit_requirement": "The roller must feel physically installed in the plugin panel, not pasted over it. Leave the existing well visible as the surrounding aperture and shadow."
+  },
+  "geometry_model": {
+    "orientation": "horizontal",
+    "motion_illusion": "phase-shift the rib/window pattern horizontally under fixed lighting",
+    "body_shape": {
+      "type": "low horizontal smoked roller slab",
+      "not": [
+        "vertical spinning drum",
+        "cylinder/barrel seen from the side",
+        "chain links",
+        "clean pill button",
+        "LED strip"
+      ],
+      "end_behavior": "dark rounded rolloff and alpha falloff at left/right ends, but not a drawn capsule outline",
+      "top_bottom_behavior": "subtle alpha and luma falloff so the existing black aperture frames the body"
+    },
+    "rib_window_pattern": {
+      "scale": "coarse enough to read at plugin size; avoid fine comb teeth",
+      "pattern": "irregular vertical occluders and windows phase-shift horizontally",
+      "role": "occludes both shadow and cyan emitter",
+      "must_avoid": [
+        "evenly spaced LED dots",
+        "uniform gear teeth",
+        "stone block fins",
+        "straight ruled center line"
+      ]
+    },
+    "shadow_logic": {
+      "type": "same geometry as wheel occlusion",
+      "rule": "shadow must be broken by the rib/window mask; do not draw a continuous horizontal black stripe through the roller",
+      "darkest_region": "jagged recessed aperture pockets and occluder gaps",
+      "must_avoid": "one full-width black band across the center"
+    }
+  },
+  "lighting_model": {
+    "fixed_material_light": {
+      "description": "Panel-compatible grey/white directional light on the wheel surface.",
+      "motion": "fixed relative to the well, not scrolling with the cyan emitter",
+      "preferred_zones": [
+        "broad broken highlight island along upper-left/top surface",
+        "small hard highlights on selected top ridges",
+        "lower/mid grey reflection patches behind the mask"
+      ],
+      "color": "grey, graphite, smoked metal, dirty white",
+      "must_not_be": "cyan"
+    },
+    "cyan_emitter": {
+      "description": "Internal moving light behind the mask, visible only through apertures.",
+      "motion": "moves horizontally with parameter frame",
+      "shape": "short hot bead cluster plus uneven trailing cells",
+      "placement": "slightly lower/recessed than the top highlight, behind the black mechanical mask",
+      "trail": {
+        "length": "short-to-medium, never full-width",
+        "rolloff": "uneven fade through apertures",
+        "must_not_be": "straight horizontal glow line"
+      },
+      "compositing_rule": "cyan should lift and color existing dark window pixels, with rib occlusion preserved; it should not appear as a pasted blob or separate overlay"
+    }
+  },
+  "negative_constraints": {
+    "do_not_make": [
+      "vertical spinning drum",
+      "horizontal cylinder/barrel with round 3D ends",
+      "chain link or tank tread",
+      "clean pill-shaped button",
+      "orange/copper material",
+      "straight cyan line",
+      "even LED dots",
+      "fine comb of identical teeth",
+      "blocky stone fin shapes",
+      "full-width center shadow band",
+      "separate runtime glow ellipse"
+    ],
+    "do_not_interpret_emu_as": [
+      "cyan drawn on top of a wheel",
+      "a row of independent LEDs",
+      "a cylindrical drum with highlights",
+      "a chain of repeating mechanical links"
+    ]
+  },
+  "implementation_guidance": {
+    "renderer_priority": [
+      "Author at runtime displayed size first.",
+      "Generate raw 85x11 strip from the same geometry or parallel renderer.",
+      "Keep frame 0 and frame 128 byte-identical.",
+      "Use one strip frame as the source of truth; do not add JUCE glow."
+    ],
+    "recommended_algorithm": {
+      "base": "dark smoked roller body with alpha/end falloff",
+      "surface": "coarse procedural rib/window field, phase shifted by frame",
+      "shadow": "computed from same rib/window field",
+      "highlight": "fixed broad grey islands independent of frame phase",
+      "emitter": "moving cyan field multiplied by rib/window aperture mask",
+      "final_fit": "draw inset inside the panel well so df2_panel_shadow.png supplies the surrounding aperture"
+    },
+    "preview_checks": [
+      "View a single frame composited into df2_panel_shadow.png at plugin size.",
+      "Check frame 0 has no cyan.",
+      "Check frame 64 has a readable short cyan cluster, not a dot and not a stripe.",
+      "Check the body reads as a tactile horizontal thumbwheel from normal plugin viewing distance.",
+      "Check the existing black well remains visible around the roller."
+    ]
+  },
+  "acceptance_tests": {
+    "machine_checks": [
+      "raw image size equals 10965x16",
+      "runtime image size equals 18189x28",
+      "raw frame 0 bytes equal raw frame 128 bytes",
+      "runtime frame 0 bytes equal runtime frame 128 bytes",
+      "PluginEditor.cpp does not draw an extra cyan glow overlay"
+    ],
+    "visual_checks": [
+      "Fits inside existing well without redrawing panel/well/frame",
+      "Reads as horizontal tactile wheel, not vertical drum/cylinder/chain link",
+      "No continuous horizontal black line through center",
+      "No continuous horizontal cyan line",
+      "Cyan appears internal and masked by wheel structure",
+      "Surface light is grey/material light and separate from cyan"
+    ]
+  }
+}

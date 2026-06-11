@@ -1,0 +1,9 @@
+{
+  "created_unix": 1781168518,
+  "encoder": "trench_core::compiler::pack_body",
+  "format": "240 bytes = 4 corners × 6 second-order sections × 5 packed u16",
+  "pending": "Tyson's verdict + BANK.md row complete the bank entry",
+  "q_link": true,
+  "sha256_body240": "b14565977cd6f16693b6cbff2e476886f11833351555411e017a39a465afe0db",
+  "surface": "forge-gpu-painter"
+}

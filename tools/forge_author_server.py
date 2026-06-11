@@ -277,18 +277,27 @@ def _flat_typed_cards(cards):
     return flat
 
 def keep(payload):
-    """The KEEP button: typed cards -> DLL compile -> null vs browser WASM bytes ->
-    17x17 packed audit -> bank artifacts (body240+cart+png+BANK.md row) ->
-    plugin override dir + live audition slot. FAIL audits do not enter the bank."""
+    """The KEEP button: typed cards (v1) OR 168 general-SOS params (v2 plot editor)
+    -> DLL compile -> null vs browser WASM bytes -> 17x17 packed audit -> bank
+    artifacts (body240+cart+png+BANK.md row) -> plugin override dir + live
+    audition slot. FAIL audits do not enter the bank."""
     name = (payload.get("name") or "").strip()
     if not name:
         raise ValueError("name it before keeping — the bank has no anonymous rows")
     slug = _slugify(name)
-    cards = payload["cards"]
-    body = t.compile_body_typed(_flat_typed_cards(cards))
+    cards = payload.get("cards")
+    params168 = payload.get("params168")
+    if params168 is not None:
+        if len(params168) != 168:
+            raise ValueError(f"expected 168 SOS params (4 corners x 6 sections x 7), got {len(params168)}")
+        body = t.compile_body([float(v) for v in params168])
+        null_name = "compile_body"
+    else:
+        body = t.compile_body_typed(_flat_typed_cards(cards))
+        null_name = "compile_body_typed"
     if payload.get("hex"):
         if bytes.fromhex(payload["hex"]) != body:
-            raise RuntimeError("NULL FAILED: browser WASM bytes != DLL compile_body_typed — encoder drift, nothing banked")
+            raise RuntimeError(f"NULL FAILED: browser WASM bytes != DLL {null_name} — encoder drift, nothing banked")
     rep = audit(body)
     if rep["verdict"] != "PASS":
         return {"ok": False, "banked": False, "verdict": rep["verdict"],
@@ -298,7 +307,23 @@ def keep(payload):
     cart = {"format": "compiled-v1", "name": name, "sampleRate": SR, "stages": 6,
             "cornerOrder": CORNER_KEYS,
             "keyframes": [{"label": k, "boost": 1.0, "packedWords": words[k]} for k in CORNER_KEYS],
-            "typedCards": cards, "lawAudit": rep}
+            "lawAudit": rep}
+    if cards is not None:
+        cart["typedCards"] = cards
+    if params168 is not None:
+        cart["sosParams168"] = params168
+    secondary_target = payload.get("secondary_target")
+    if secondary_target:
+        if secondary_target not in {"packed", "slam", "packed+slam"}:
+            raise ValueError("secondary_target must be one of: packed, slam, packed+slam")
+        cart["secondary_target"] = secondary_target
+    morph_taper = payload.get("morph_taper")
+    if morph_taper:
+        if morph_taper not in {"linear", "log_1p45"}:
+            raise ValueError("morph_taper must be one of: linear, log_1p45")
+        cart["morph_taper"] = morph_taper
+    if payload.get("category"):
+        cart["category"] = payload["category"]
     cart_text = json.dumps(cart, indent=2) + "\n"
     BANK_DIR.mkdir(parents=True, exist_ok=True)
     if (BANK_DIR / f"{slug}.body240").exists():

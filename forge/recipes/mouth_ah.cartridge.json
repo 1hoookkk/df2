@@ -1,0 +1,321 @@
+{
+  "format": "forge-cartridge-v1",
+  "keyframes": [
+    {
+      "boost": 1.0,
+      "label": "M0_Q0",
+      "packedWords": [
+        [
+          46205,
+          62586,
+          24621,
+          52683,
+          35139
+        ],
+        [
+          46313,
+          62586,
+          31788,
+          50193,
+          42381
+        ],
+        [
+          39328,
+          54184,
+          37451,
+          48705,
+          55000
+        ],
+        [
+          47724,
+          62586,
+          46434,
+          50193,
+          55118
+        ],
+        [
+          48792,
+          62586,
+          49636,
+          51445,
+          57296
+        ],
+        [
+          61367,
+          61521,
+          59755,
+          55377,
+          53747
+        ]
+      ]
+    },
+    {
+      "boost": 1.0,
+      "label": "M100_Q0",
+      "packedWords": [
+        [
+          46209,
+          62586,
+          25078,
+          52683,
+          35847
+        ],
+        [
+          46451,
+          62586,
+          36236,
+          50193,
+          46601
+        ],
+        [
+          43674,
+          54184,
+          42029,
+          48705,
+          55364
+        ],
+        [
+          49371,
+          62586,
+          51057,
+          50193,
+          58374
+        ],
+        [
+          50544,
+          62586,
+          54111,
+          51445,
+          59539
+        ],
+        [
+          61367,
+          61521,
+          63126,
+          55377,
+          57319
+        ]
+      ]
+    },
+    {
+      "boost": 1.0,
+      "label": "M0_Q100",
+      "packedWords": [
+        [
+          46205,
+          62586,
+          13157,
+          44668,
+          24137
+        ],
+        [
+          46313,
+          62586,
+          31201,
+          42080,
+          41932
+        ],
+        [
+          39328,
+          54184,
+          37447,
+          40602,
+          54994
+        ],
+        [
+          47724,
+          62586,
+          46554,
+          42080,
+          55249
+        ],
+        [
+          48792,
+          62586,
+          49777,
+          43376,
+          57445
+        ],
+        [
+          61367,
+          61521,
+          60256,
+          47431,
+          54101
+        ]
+      ]
+    },
+    {
+      "boost": 1.0,
+      "label": "M100_Q100",
+      "packedWords": [
+        [
+          46209,
+          62586,
+          16686,
+          44668,
+          27343
+        ],
+        [
+          46451,
+          62586,
+          36066,
+          42080,
+          46474
+        ],
+        [
+          43674,
+          54184,
+          42092,
+          40602,
+          55440
+        ],
+        [
+          49371,
+          62586,
+          51220,
+          42080,
+          58513
+        ],
+        [
+          50544,
+          62586,
+          54287,
+          43376,
+          59762
+        ],
+        [
+          61367,
+          61521,
+          63587,
+          47431,
+          57657
+        ]
+      ]
+    }
+  ],
+  "meta": {
+    "note": "Source-state recipe (no keyframes yet). Run the forge bake to populate keyframes.",
+    "tags": [
+      "vocal",
+      "ah",
+      "example"
+    ]
+  },
+  "name": "mouth_ah",
+  "recipe": {
+    "axes": {
+      "morph": {
+        "high": "AWAY",
+        "low": "HOME",
+        "scale": "log",
+        "slide_semitones": 7.0
+      },
+      "secondary": {
+        "amount": 0.25,
+        "high": "TIGHT",
+        "low": "OPEN",
+        "mode": "q_crank"
+      }
+    },
+    "constraints": {
+      "headroom_db": 18.0,
+      "max_radius": 0.999,
+      "on_unstable": "reject",
+      "unity_dc": true
+    },
+    "lanes": [
+      {
+        "anatomy": {
+          "pole_hz": 120,
+          "sharp": 0.94
+        },
+        "articulation": {
+          "cut": "hug"
+        },
+        "id": 0,
+        "label": "sub dome",
+        "role": "foundation",
+        "survival": {
+          "gain": 1.0
+        }
+      },
+      {
+        "anatomy": {
+          "pole_hz": 700,
+          "sharp": 0.96
+        },
+        "articulation": {
+          "cut": "hug"
+        },
+        "id": 1,
+        "label": "F1 / openness",
+        "role": "window",
+        "survival": {
+          "gain": 1.0
+        }
+      },
+      {
+        "anatomy": {
+          "pole_hz": 1180,
+          "sharp": 0.97
+        },
+        "articulation": {
+          "cut": "tear"
+        },
+        "id": 2,
+        "label": "F2 / mouth dome",
+        "role": "mouth",
+        "survival": {
+          "gain": 1.0
+        }
+      },
+      {
+        "anatomy": {
+          "pole_hz": 2600,
+          "sharp": 0.96
+        },
+        "articulation": {
+          "cut": "hug"
+        },
+        "id": 3,
+        "label": "F3",
+        "role": "counterweight",
+        "survival": {
+          "gain": 0.9
+        }
+      },
+      {
+        "anatomy": {
+          "pole_hz": 3400,
+          "sharp": 0.95
+        },
+        "articulation": {
+          "cut": "hug"
+        },
+        "id": 4,
+        "label": "F4 / presence",
+        "role": "slope",
+        "survival": {
+          "gain": 0.85
+        }
+      },
+      {
+        "anatomy": {
+          "pole_hz": 9000,
+          "sharp": 0.9
+        },
+        "articulation": {
+          "cut": "air_kill"
+        },
+        "id": 5,
+        "label": "air cap",
+        "role": "edge_cap",
+        "survival": {
+          "gain": 0.7
+        }
+      }
+    ]
+  },
+  "sampleRate": 39062.5
+}

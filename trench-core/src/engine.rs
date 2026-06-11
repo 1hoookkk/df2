@@ -234,10 +234,11 @@ impl FilterEngine {
         // Pre-compute fixed pre-drive from dB
         self.pre_drive_gain = 10.0_f32.powf(cart.drive.input_gain_db / 20.0);
 
-        // Setup Spatial Profile
-        if let Some(profile) = &cart.spatial_profile {
-            self.spatial.set_profile(profile);
-        }
+        // 5D is a runtime UI toggle, never body-authored. Ignore cartridge
+        // spatial profiles on engine load so filter bodies cannot bake in
+        // per-preset QSound; the QSound module still supports profiles for
+        // direct study/fixture tests.
+        self.spatial.clear_profile();
 
         self.cartridge = Some(cart);
     }

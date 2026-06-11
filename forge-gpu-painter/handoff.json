@@ -1,0 +1,21 @@
+{
+  "date": "2026-06-11",
+  "task": "painter feels janky — systematic-debugging mid-flight, root cause found, fix experiment pending",
+  "finding_OBSERVED": "continuous animation renders at a steady ~50 ms/frame = exactly 3 vsync intervals @60Hz, with <1 ms CPU per frame. All time sits in the present/repaint path. NOT the solver, NOT autosave (save=0.0 throughout), NOT the DSP math. Evidence: dev/tmp/painter_ux_session/jank_log.csv (336 spike rows, uniform ~50 ms, present_est ~49-51).",
+  "probe": "temporary instrumentation in main.rs update(): per-phase spans [keys,pump,follow,misc,save,draw,interact] + present_est; spikes >24 ms print attribution in the status bar and flush to jank_log.csv every 5 s. Remove when done.",
+  "next_experiment": {
+    "what": "discriminate gpu_plot callback vs eframe/winit present scheduling",
+    "state": "--no-gpu-plot flag ADDED to main.rs App::new but NOT rebuilt (Tyson stopped the build)",
+    "run": "cargo build -p forge-gpu-painter --release; ./target/release/forge-gpu-painter.exe --boot-seed --boot-sweep --no-gpu-plot; wait 30 s; read dev/tmp/painter_ux_session/jank_log.csv",
+    "verdict_rule": "still ~50 ms -> eframe/winit/present scheduling (try NativeOptions wgpu present_mode / desired_maximum_frame_latency); drops to ~16.7 ms -> gpu_plot::PlotCallback is the thief (reuse resources, no per-frame texture recreate)"
+  },
+  "separate_known_defect": "autosave does fs::write on the UI thread (update(), ~30 s after edit) — wrong regardless, unproven as the felt jank",
+  "open_design_question": "Tyson asked 'is canvas dragging the wrong idea' — if jank persists after the present fix, the pottery grip's designed viscosity is a separate taste verdict; handle drags + draw-the-target are already 1:1 by construction",
+  "this_session_also": [
+    "canvas legibility pass: selected section's contribution curve now drawn under its handles; one home per state fact (title bar hints only, bar2 chips removed, status bar trimmed, drag HUD dedupe); all four headless proofs unchanged",
+    "SPEC.md section 10/11 KEEP contradiction fixed; desk/SHEETS.md now lists wave3_clean (20 note-landed candidates, additive, judge or skip) + sheets-are-local note",
+    "bank still empty; 60 audited candidates on 3 sheets; verdict session remains the product bottleneck"
+  ],
+  "tree_warning": "uncommitted: ~56 modified / 5 deleted / 160 untracked incl. src/gpu_plot.rs — single-copy exposure; commit packaging plan offered, awaiting Tyson's word",
+  "resume_with": "Read forge-gpu-painter/handoff.json and forge-gpu-painter/HANDOFF.md, then continue the next_experiment."
+}

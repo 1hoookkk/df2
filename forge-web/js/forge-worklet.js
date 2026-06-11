@@ -10,6 +10,7 @@ class ForgeProcessor extends AudioWorkletProcessor {
     this.playing = false;
     this.src = 0;
     this.morph = 0; this.q = 0; this.agc = 3.5; this.slam = 0.0; this.wide = 0.4;
+    this.inputGain = 1.0; this.makeup = 0.6;
     // engine-domain source state
     this.phase = 0; this.kickT = 1e9; this.rng = 0x9e3779b9 >>> 0;
     // resample queue (engine-domain processed output)
@@ -37,7 +38,12 @@ class ForgeProcessor extends AudioWorkletProcessor {
   }
   onmsg(d) {
     if (d.body) this.loadBody(new Uint8Array(d.body));
-    if (d.params) { const p = d.params; this.morph = p.morph; this.q = p.q; this.agc = p.agc; this.slam = p.slam; this.wide = p.wide; }
+    if (d.params) {
+      const p = d.params;
+      this.morph = p.morph; this.q = p.q; this.agc = p.agc; this.slam = p.slam; this.wide = p.wide;
+      if (p.inputGain != null) this.inputGain = Math.max(0.05, Math.min(16, p.inputGain));
+      if (p.makeup != null) this.makeup = Math.max(0.05, Math.min(16, p.makeup));
+    }
     if ("playing" in d) this.playing = d.playing;
     if ("src" in d) this.src = d.src;
   }
@@ -69,11 +75,11 @@ class ForgeProcessor extends AudioWorkletProcessor {
     const need = Math.ceil(this.frac + frames * step) + 2;
     while (this.ql.length < need) {
       const block = Math.min(this.maxN, 256);
-      for (let i = 0; i < block; i++) this.inV[i] = this.gen();
+      for (let i = 0; i < block; i++) this.inV[i] = this.gen() * this.inputGain;
       this.ex.forge_engine_process(block);
       for (let i = 0; i < block; i++) { this.ql.push(this.olV[i]); this.qr.push(this.orV[i]); }
     }
-    const master = 0.6;
+    const master = this.makeup;
     for (let f = 0; f < frames; f++) {
       const idx = Math.floor(this.frac), t = this.frac - idx;
       L[f] = (this.ql[idx] + (this.ql[idx + 1] - this.ql[idx]) * t) * master;

@@ -567,7 +567,7 @@ fn arma_fit_from_logmag(logmag: &[f64], runtime_sr: f64) -> Option<CornerData> {
     for i in 0..NUM_STAGES {
         let [_, a1, a2] = den[i];
         let [_, b1, b2] = num[i]; // monic numerator (b0 = 1); level set below
-        // kernel form: c0 = 2 + b1/b0, c1 = 1 - b2/b0, c2 = a1 + 2, c3 = 1 - a2, c4 = b0
+                                  // kernel form: c0 = 2 + b1/b0, c1 = 1 - b2/b0, c2 = a1 + 2, c3 = 1 - a2, c4 = b0
         corner[i] = [2.0 + b1, 1.0 - b2, a1 + 2.0, 1.0 - a2, 1.0];
     }
     normalize_peak(&mut corner, runtime_sr, 0.5);

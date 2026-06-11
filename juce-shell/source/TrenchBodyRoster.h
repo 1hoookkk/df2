@@ -2,6 +2,7 @@
 
 #include "BinaryData.h"
 
+#include <cmath>
 #include <juce_core/juce_core.h>
 
 namespace trench
@@ -17,6 +18,26 @@ struct BodyEntry
 {
     const char* displayName;
     const char* base; // e.g. "speaker_knockerz" -> resource "speaker_knockerz_json"
+    const char* category;
+};
+
+enum class SecondaryTarget : int
+{
+    packed = 0,
+    slam,
+    packedAndSlam,
+};
+
+enum class MorphTaper : int
+{
+    linear = 0,
+    log1p45,
+};
+
+struct BodyBehavior
+{
+    SecondaryTarget secondaryTarget = SecondaryTarget::packed;
+    MorphTaper morphTaper = MorphTaper::linear;
 };
 
 // Sentinel base for the live Forge-audition entry. When selected, the body
@@ -33,75 +54,27 @@ inline const BodyEntry* bodyRoster (int& countOut) noexcept
         // compiled-v1 packed-word cartridge so every roster row has the same
         // load contract. PluginProcessor bypasses the DSP island while this
         // row is selected, making the resting plug-in explicitly transparent.
-        { kNoFilterName,     "bypass"      },
-        // Neon Vane = first character body. Was the boot default until the
-        // AGC-engagement diagnosis above moved it down a slot.
-        { "Neon Vane",      "neon_vane"   },
-        // Razor Shell — first body from the filter-type-card system
-        // (make_class_bodies, class EQ_CUT/PHASER). Generated, gate-clean.
-        { "Razor Shell",    "razor_shell_v1" },
-        // === V1 ORIGINALS (this session) ===
-        // 7 generated originals spanning the design space. All structural intent
-        // (no random pole placement). Clean-room: no legacy preset names copied.
-        { "Voice Walk",     "voice_walk"  },   // Klatt vowel formant morph
-        { "Mason Tube",     "mason_tube"  },   // physical Helmholtz cavity
-        { "Hollow Chamber", "hollow_chamber" }, // cavity foundation + hollow mouth contrast
-        { "Knock Burst",    "knock_burst" },   // 808 knock + grit, sub-safe
-        { "Metal Scream",   "metal_scream"},   // resonant modal cluster
-        { "Phaser Slide",   "phaser_slide"},   // chambered phaser comb
-        { "Cut Edge",       "cut_edge"    },   // single-tear razor
-        { "Maul",           "maul"        },   // direct-biquad insane, AGC-driven
-        { "Gong",           "gong"        },
-        { "Anvil",          "anvil"       },
-        { "Razor",          "razor"       },
-        { "Scream",         "scream"      },
-        { "Bloom",          "bloom"       },
-        { "Ascension",      "ascension"   },
-        { "Talkbox",        "talkbox"     },
-        { "Vowelshift",     "vowelshift"  },
-        { "Siphon",         "siphon"      },
-        { "Spectre",        "spectre"     },
-        // Keeper 04 — midpoint-search outlier Tyson kept (no-pedestal + stable
-        // gated; renders peak 0.980 / 0 unstable rows). Placeholder name; wants a
-        // material name (Glass Throat / Rust Choir style) when one's chosen.
-        { "Keeper 04",      "keeper_04"   },
-        // ROM audition set — the 33 stable-decoding E-mu P2K bodies (real, complex
-        // tells). For auditioning by ear + reading their magnitude shape; cull to
-        // keepers, not the final ship list.
-        { "Ace Of Bass",    "P2k_000_ace_of_bass"     },
-        { "Megasweepz",     "P2k_001_megasweepz"      },
-        { "Early Rizer",    "P2k_002_early_rizer"     },
-        { "Millennium",     "P2k_003_millennium"      },
-        { "Meaty Gizmo",    "P2k_004_meaty_gizmo"     },
-        { "Klub Klassik",   "P2k_005_klub_klassik"    },
-        { "BassBox 303",    "P2k_006_bassbox_303"     },
-        { "Fuzzi Face",     "P2k_007_fuzzi_face"      },
-        { "Dead Ringer",    "P2k_008_dead_ringer"     },
-        { "TB or Not TB",   "P2k_009_tb_or_not_tb"    },
-        { "Ooh to Eee",     "P2k_010_ooh_to_eee"      },
-        { "Boland Bass",    "P2k_011_boland_bass"     },
-        { "Multi Q Vox",    "P2k_012_multi_q_vox"     },
-        { "Talking Hedz",   "P2k_013_talking_hedz"    },
-        { "Zoom Peaks",     "P2k_014_zoom_peaks"      },
-        { "DJ Alkaline",    "P2k_015_dj_alkaline"     },
-        { "Bass Tracer",    "P2k_016_bass_tracer"     },
-        { "Rogue Hertz",    "P2k_017_rogue_hertz"     },
-        { "Razor Blades",   "P2k_018_razor_blades"    },
-        { "Radio Craze",    "P2k_019_radio_craze"     },
-        { "Eeh to Aah",     "P2k_020_eeh_to_aah"      },
-        { "Ubu Orator",     "P2k_021_ubu_orator"      },
-        { "Deep Bouche",    "P2k_022_deep_bouche"     },
-        { "Freak Shifta",   "P2k_023_freak_shifta"    },
-        { "Cruz Pusher",    "P2k_024_cruz_pusher"     },
-        { "Angelz Hairz",   "P2k_025_angelz_hairz"    },
-        { "Dream Weava",    "P2k_026_dream_weava"     },
-        { "Acid Ravage",    "P2k_027_acid_ravage"     },
-        { "Bass-O-Matic",   "P2k_028_bass_o_matic"    },
-        { "Lucifer's Q",    "P2k_029_lucifer_s_q"     },
-        { "Tooth Comb",     "P2k_030_tooth_comb"      },
-        { "Ear Bender",     "P2k_031_ear_bender"      },
-        { "Klang Kling",    "P2k_032_klang_kling"     },
-        { "Forge Audition", kAuditionBase },
+        { kNoFilterName,        "bypass",             "SYSTEM" },
+
+        // Keep the faceplate audition-first until a body earns a product slot
+        // by ear. Stable/valid is not enough.
+        { "Forge Audition",     kAuditionBase,        "SYSTEM" },
+
+        { "Talking Mouth",      "v1_talking_mouth",   "VOWELS" },
+        { "Vowel Shift",        "vowelshift",         "VOWELS" },
+        { "Voice Walk",         "voice_walk",         "VOWELS" },
+        { "Talkbox",            "talkbox",            "VOWELS" },
+
+        { "Razor Shell",        "razor_shell_v1",     "CUTTERS" },
+        { "Metal Scream",       "metal_scream",       "CUTTERS" },
+        { "Needle Comb",        "v1_needle_comb",     "CUTTERS" },
+
+        { "Hollow Chamber",     "hollow_chamber",     "SPACE" },
+        { "Phaser Slide",       "phaser_slide",       "MOTION" },
+
+        { "Knock Burst",        "knock_burst",        "IMPACT" },
+        { "808 Tear",           "v1_808_tear",        "IMPACT" },
+        { "Bass Sharpener",     "v1_bass_sharpener",  "IMPACT" },
     };
     countOut = (int) (sizeof (entries) / sizeof (entries[0]));
     return entries;
@@ -144,6 +117,102 @@ inline int wrapBodyIndex (int index) noexcept
 inline bool bodyIsNoFilter (int index) noexcept
 {
     return wrapBodyIndex (index) == kNoFilterIndex;
+}
+
+inline bool bodyUsesLogMorph (int index) noexcept
+{
+    int n = 0;
+    const auto* r = bodyRoster (n);
+    if (n <= 0)
+        return false;
+
+    return juce::String (r[wrapBodyIndex (index)].base) == "v1_bass_sharpener";
+}
+
+inline bool bodySecondaryDrivesSlam (int index) noexcept
+{
+    int n = 0;
+    const auto* r = bodyRoster (n);
+    if (n <= 0)
+        return false;
+
+    return juce::String (r[wrapBodyIndex (index)].base) == "v1_bass_sharpener";
+}
+
+inline BodyBehavior fallbackBodyBehavior (int index) noexcept
+{
+    BodyBehavior behavior;
+    if (bodyUsesLogMorph (index))
+        behavior.morphTaper = MorphTaper::log1p45;
+    if (bodySecondaryDrivesSlam (index))
+        behavior.secondaryTarget = SecondaryTarget::slam;
+    return behavior;
+}
+
+inline SecondaryTarget secondaryTargetFromString (juce::String value) noexcept
+{
+    value = value.trim().toLowerCase();
+    if (value == "slam" || value == "drive")
+        return SecondaryTarget::slam;
+    if (value == "packed+slam" || value == "packed_secondary_plus_slam" || value == "both")
+        return SecondaryTarget::packedAndSlam;
+    return SecondaryTarget::packed;
+}
+
+inline MorphTaper morphTaperFromString (juce::String value) noexcept
+{
+    value = value.trim().toLowerCase();
+    if (value == "log_1p45" || value == "fixed_axis_log_1p45" || value == "log")
+        return MorphTaper::log1p45;
+    return MorphTaper::linear;
+}
+
+inline BodyBehavior bodyBehaviorFromCartridgeJson (int index, const juce::String& json)
+{
+    auto behavior = fallbackBodyBehavior (index);
+    if (json.isEmpty())
+        return behavior;
+
+    const auto root = juce::JSON::parse (json);
+    const auto* obj = root.getDynamicObject();
+    if (obj == nullptr)
+        return behavior;
+
+    const auto secondary = obj->getProperty ("secondary_target");
+    if (! secondary.isVoid())
+        behavior.secondaryTarget = secondaryTargetFromString (secondary.toString());
+
+    const auto taper = obj->getProperty ("morph_taper");
+    if (! taper.isVoid())
+        behavior.morphTaper = morphTaperFromString (taper.toString());
+
+    return behavior;
+}
+
+inline bool secondaryTargetUsesPacked (SecondaryTarget target) noexcept
+{
+    return target == SecondaryTarget::packed || target == SecondaryTarget::packedAndSlam;
+}
+
+inline bool secondaryTargetUsesSlam (SecondaryTarget target) noexcept
+{
+    return target == SecondaryTarget::slam || target == SecondaryTarget::packedAndSlam;
+}
+
+inline float applyMorphTaper (MorphTaper taper, float morph) noexcept
+{
+    const auto x = juce::jlimit (0.0f, 1.0f, morph);
+    if (taper != MorphTaper::log1p45)
+        return x;
+
+    // Bass Sharpener is a fixed-axis bass-frequency move. Keep the sweep
+    // logarithmic-feeling without hiding the center of the original move.
+    return std::pow (x, 1.45f);
+}
+
+inline float bodyMorphForEngine (int index, float morph) noexcept
+{
+    return applyMorphTaper (fallbackBodyBehavior (index).morphTaper, morph);
 }
 
 inline juce::String bodyDisplayName (int index) noexcept

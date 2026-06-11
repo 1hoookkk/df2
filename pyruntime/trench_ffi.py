@@ -33,6 +33,8 @@ _fit_ok = False     # the trench_fit_corner_from_magnitude symbol bound OK
 _raw_fit_ok = False # the trench_fit_corner_arma symbol bound OK
 _dc_block_toggle_ok = False
 _saturation_toggle_ok = False
+_compile_ok = False # the trench_compile_body forward compiler bound OK
+_compile_typed_ok = False # the trench_compile_body_typed compiler bound OK
 
 
 def _candidate_paths():
@@ -92,6 +94,7 @@ def _load():
             _bind_agc(lib)     # optional: read-only AGC curve accessor (non-fatal)
             _bind_fit(lib)     # optional: response-curve factorizer (non-fatal)
             _bind_raw_fit(lib) # optional: recorded-audio ARMA fitter (non-fatal)
+            _bind_compile(lib) # optional: forward authoring compiler (non-fatal)
             return _lib
         except (OSError, AttributeError):
             continue
@@ -288,6 +291,88 @@ def fit_corner_arma(samples, sr_in: float, runtime_sr: float = 39062.5) -> list[
         raise RuntimeError(f"trench_fit_corner_arma failed (rc={rc})")
     flat = list(out)
     return [tuple(flat[si * NUM_COEFFS:(si + 1) * NUM_COEFFS]) for si in range(NUM_STAGES)]
+
+
+def _bind_compile(lib) -> None:
+    """Bind the forward authoring compiler (single owner of params -> 240 bytes).
+    Non-fatal: an older DLL without it still does decode/interp/probe; `compile_body`
+    then raises loudly telling you to rebuild, rather than silently using a stale copy."""
+    global _compile_ok, _compile_typed_ok
+    try:
+        lib.trench_compile_body.argtypes = [
+            ctypes.POINTER(ctypes.c_double),  # params[n]
+            ctypes.c_size_t,                  # n (must be 168)
+            ctypes.POINTER(ctypes.c_uint8),   # out_body[240]
+        ]
+        lib.trench_compile_body.restype = ctypes.c_int
+        _compile_ok = True
+    except AttributeError:
+        _compile_ok = False
+    try:
+        lib.trench_compile_body_typed.argtypes = [
+            ctypes.POINTER(ctypes.c_double),  # cards[n]
+            ctypes.c_size_t,                  # n (must be 42)
+            ctypes.POINTER(ctypes.c_uint8),   # out_body[240]
+        ]
+        lib.trench_compile_body_typed.restype = ctypes.c_int
+        _compile_typed_ok = True
+    except AttributeError:
+        _compile_typed_ok = False
+
+
+_PARAM_LEN = 4 * NUM_STAGES * 7  # 168 = 4 corners x 6 stages x 7 params
+_TYPED_CARD_LEN = 7
+_TYPED_PARAM_LEN = NUM_STAGES * _TYPED_CARD_LEN
+
+
+def compile_body(params) -> bytes:
+    """Forward-compile 168 section params (4 corners x 6 stages x
+    [on,pole_hz,pole_r,gain,zero_on,zero_hz,zero_depth]) to the canonical 240-byte
+    body, via the shipped trench-core compiler — the SINGLE owner of the forward path.
+
+    Raises if the core isn't built or is a stale build missing trench_compile_body.
+    """
+    lib = _load()
+    if lib is None:
+        raise RuntimeError("trench_core library not available; build: cargo build --release -p trench-core")
+    if not _compile_ok:
+        raise RuntimeError("trench_core is loaded but missing trench_compile_body (stale build); "
+                           "rebuild: cargo build --release -p trench-core")
+    vals = [float(v) for v in params]
+    if len(vals) != _PARAM_LEN:
+        raise ValueError(f"expected {_PARAM_LEN} params, got {len(vals)}")
+    arr = (ctypes.c_double * _PARAM_LEN)(*vals)
+    out = (ctypes.c_uint8 * BODY_BYTES)()
+    rc = lib.trench_compile_body(arr, ctypes.c_size_t(_PARAM_LEN), out)
+    if rc != 0:
+        raise RuntimeError(f"trench_compile_body failed (rc={rc})")
+    return bytes(out)
+
+
+def compile_body_typed(cards) -> bytes:
+    """Forward-compile 6 typed section cards to a canonical 240-byte body.
+
+    Card order is exactly:
+    [type_id, fc_A, fc_B, q_lo, q_hi, gain_db, enabled]
+
+    The zero fields from the legacy pole/zero authoring path are deliberately
+    absent: typed PEAK/NOTCH/shelf sections own their pole-zero shape.
+    """
+    lib = _load()
+    if lib is None:
+        raise RuntimeError("trench_core library not available; build: cargo build --release -p trench-core")
+    if not _compile_typed_ok:
+        raise RuntimeError("trench_core is loaded but missing trench_compile_body_typed (stale build); "
+                           "rebuild: cargo build --release -p trench-core")
+    vals = [float(v) for v in cards]
+    if len(vals) != _TYPED_PARAM_LEN:
+        raise ValueError(f"expected {_TYPED_PARAM_LEN} typed-card values, got {len(vals)}")
+    arr = (ctypes.c_double * _TYPED_PARAM_LEN)(*vals)
+    out = (ctypes.c_uint8 * BODY_BYTES)()
+    rc = lib.trench_compile_body_typed(arr, ctypes.c_size_t(_TYPED_PARAM_LEN), out)
+    if rc != 0:
+        raise RuntimeError(f"trench_compile_body_typed failed (rc={rc})")
+    return bytes(out)
 
 
 def available() -> bool:

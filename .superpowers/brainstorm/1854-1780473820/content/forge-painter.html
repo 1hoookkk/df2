@@ -1,0 +1,217 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8"/>
+<meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+<title>df2 forge — painter</title>
+<link href="https://fonts.googleapis.com/css2?family=Archivo:wght@600;700;800&family=DM+Mono:wght@400;500&display=swap" rel="stylesheet"/>
+<style>
+/* FULL PAINTER. One canvas. Every pixel drawn — no DOM widgets. Maps 1:1 to egui/canvas.
+   No glow, no gradient, no shadow, no rounding-as-skeuomorphism. Flat strokes only.
+   60:30:10 — 60% dark ground, 30% grey structure, 10% one accent. */
+*{box-sizing:border-box;margin:0;padding:0}
+html,body{height:100%}
+body{background:#0e1013;display:flex;align-items:center;justify-content:center;padding:14px}
+#ui{width:min(1180px,98vw);height:min(680px,96vh);display:block;cursor:default}
+</style>
+</head>
+<body>
+<canvas id="ui"></canvas>
+<script>
+/* ---------- 60:30:10 palette ---------- */
+const C = {
+  ground:'#0e1013',          // 60
+  panel:'#14171b', sunk:'#0a0c0e', line:'#23282e', line2:'#2e343b',  // 30 structure
+  dim:'#566069', mid:'#7c858d', ink:'#b9c0c6',     // 30 text
+  accent:'#e0762e',          // 10
+  cut:'#9a5b50',             // muted, for zeros (kept inside the 30 family)
+};
+const FA='Archivo,system-ui,sans-serif', FM='"DM Mono",ui-monospace,monospace';
+
+/* ---------- the body: 6 voices (pole journeys) + a cut behaviour each ---------- */
+const VOICES = [
+  {id:'1', name:'LOW',   home:120,  away:160,  q:4,  lvl:8, cut:'hug'},
+  {id:'2', name:'BODY',  home:520,  away:880,  q:6,  lvl:8, cut:'tear'},
+  {id:'3', name:'MID',   home:1090, away:1700, q:9,  lvl:7, cut:'hug'},
+  {id:'4', name:'BITE',  home:2440, away:3300, q:10, lvl:8, cut:'tear'},
+  {id:'5', name:'EDGE',  home:3600, away:5200, q:6,  lvl:6, cut:'hug'},
+  {id:'6', name:'AIR',   home:9000, away:11000,q:3,  lvl:5, cut:'air'},
+];
+const CUT_LABEL={hug:'HUG',tear:'TEAR',air:'AIR KILL',sub:'SUB KILL',remote:'REMOTE',none:'—'};
+let morph=0.33, push=0, sel=1, source='SAW';
+
+/* ---------- honest log-freq magnitude ---------- */
+const F0=20,F1=20000,LO=Math.log10(F0),HI=Math.log10(F1);
+const xN=hz=>(Math.log10(Math.max(F0,Math.min(F1,hz)))-LO)/(HI-LO);
+const hzAt=x=>Math.pow(10,LO+(HI-LO)*x);
+const llerp=(a,b,t)=>Math.exp(Math.log(a)+(Math.log(b)-Math.log(a))*t);
+function voiceAt(v,m,p){const f=llerp(v.home,v.away,m);const q=v.q*(1+p*1.2);
+  let cf,cd; if(v.cut==='hug'){cf=f*0.667;cd=5;} else if(v.cut==='tear'){cf=f*1.15;cd=12+p*8;}
+  else if(v.cut==='air'){cf=12000;cd=7;} else if(v.cut==='sub'){cf=55;cd=8;} else {cf=f*0.25;cd=7;}
+  return {f,q,lvl:v.lvl,cf,cd,cut:v.cut};}
+function bump(fc,db,q,hz){const r=Math.log2(hz/fc),bw=1/Math.max(.25,q*.5);return db*Math.exp(-(r*r)/(2*bw*bw));}
+function mag(m,p,hz){let d=0;for(const v of VOICES){const a=voiceAt(v,m,p);d+=bump(a.f,a.lvl,a.q,hz);d-=bump(a.cf,a.cd,Math.max(2,a.q*.7),hz);}return d;}
+
+/* ---------- canvas plumbing ---------- */
+const cv=document.getElementById('ui');let W=0,H=0,c=null,DPR=1;
+function begin(){DPR=window.devicePixelRatio||1;const r=cv.getBoundingClientRect();W=Math.round(r.width);H=Math.round(r.height);
+  cv.width=W*DPR;cv.height=H*DPR;c=cv.getContext('2d');c.setTransform(DPR,0,0,DPR,0,0);}
+function rF(x,y,w,h,col){c.fillStyle=col;c.fillRect(x,y,w,h);}
+function rS(x,y,w,h,col,lw){c.strokeStyle=col;c.lineWidth=lw||1;c.strokeRect(x+.5,y+.5,w-1,h-1);}
+function tx(t,x,y,col,sz,wt,al,fam){c.fillStyle=col;c.font=`${wt||500} ${sz}px ${fam||FM}`;c.textAlign=al||'left';c.textBaseline='alphabetic';c.fillText(t,x,y);}
+function ln(x1,y1,x2,y2,col,lw,dash){c.strokeStyle=col;c.lineWidth=lw||1;c.setLineDash(dash||[]);c.beginPath();c.moveTo(x1,y1);c.lineTo(x2,y2);c.stroke();c.setLineDash([]);}
+function inR(p,r){return r&&p.x>=r.x&&p.x<=r.x+r.w&&p.y>=r.y&&p.y<=r.y+r.h;}
+let hot={};
+
+/* plot mapping inside the hero rect */
+let PLOT={x:0,y:0,w:0,h:0};
+const DBLO=-24,DBHI=30;
+const fx=hz=>PLOT.x+xN(hz)*PLOT.w;
+const fy=db=>PLOT.y+PLOT.h-((Math.max(DBLO,Math.min(DBHI,db))-DBLO)/(DBHI-DBLO))*PLOT.h;
+const xToHz=px=>hzAt(Math.max(0,Math.min(1,(px-PLOT.x)/PLOT.w)));
+
+function paint(){
+  begin(); if(!c)return; hot={voices:[],src:[],cuts:[]};
+  rF(0,0,W,H,C.ground);
+  const pad=12;
+
+  /* ---- header ---- */
+  const hY=10, hH=30;
+  rF(pad,hY+4,26,22,C.accent); tx('df',pad+5,hY+19,C.ground,13,800,'left',FA);
+  tx('2',pad+19,hY+19,C.ground,13,800,'left',FA);
+  tx('FORGE',pad+36,hY+19,C.ink,12,700,'left',FA);
+  tx('vowel bench',pad+90,hY+13,C.mid,9,500); tx('· ready',pad+90,hY+24,C.dim,9,500);
+  // right header controls
+  const ctl=[['SNAP·OFF',58],['CUT',40],['▶ PLAY',58],['SAVE',46]];
+  let cx=W-pad; for(let i=ctl.length-1;i>=0;i--){const [lab,w]=ctl[i];cx-=w; rS(cx,hY+4,w,22,C.line2,1);
+    tx(lab,cx+w/2,hY+19,i===2?C.accent:C.mid,10,600,'center',FA); cx-=6;}
+  ln(pad,hY+hH+4,W-pad,hY+hH+4,C.line,1);
+
+  /* ---- layout ---- */
+  const top=hY+hH+12, bot=H-64, rightW=250, gap=12;
+  const heroX=pad, heroW=W-pad*2-rightW-gap, heroY=top, heroH=bot-top;
+  const rx=heroX+heroW+gap, rw=rightW;
+
+  /* ===== HERO: response + the MOVE via tethers ===== */
+  rS(heroX,heroY,heroW,heroH,C.line,1);
+  PLOT={x:heroX+10,y:heroY+10,w:heroW-20,h:heroH-26};
+  // faint rail bands (where cuts live) — the answer to "where do zeros go"
+  const rails=[['sub',30,150],['mouth',640,950],['tear',2200,5500],['air',8000,16000]];
+  for(const [nm,a,b] of rails){const x0=fx(a),x1=fx(b); rF(x0,PLOT.y,x1-x0,PLOT.h,'#121518');
+    tx(nm,x0+3,PLOT.y+PLOT.h-4,C.dim,7,500);}
+  // grid
+  for(const [f,lab] of [[100,'100'],[1000,'1k'],[10000,'10k']]){const x=fx(f);ln(x,PLOT.y,x,PLOT.y+PLOT.h,C.line,1);tx(lab,x,PLOT.y+PLOT.h+11,C.dim,8,500,'center');}
+  for(const db of [24,12,0,-12]){const y=fy(db);ln(PLOT.x,y,PLOT.x+PLOT.w,y,'#181c20',1);tx((db>0?'+':'')+db,PLOT.x+2,y-2,C.dim,8,500);}
+  // 4 corner ghost curves (the four snapshots), very dim
+  const N=200, corners=[[0,0],[1,0],[0,1],[1,1]];
+  for(const [m,p] of corners){c.strokeStyle='#1b2026';c.lineWidth=1;c.beginPath();
+    for(let i=0;i<N;i++){const x=PLOT.x+i/(N-1)*PLOT.w;const y=fy(mag(m,p,hzAt(i/(N-1))));i?c.lineTo(x,y):c.moveTo(x,y);}c.stroke();}
+  // live curve (current morph) — the consequence, in ink
+  c.strokeStyle=C.ink;c.lineWidth=2;c.beginPath();
+  for(let i=0;i<N;i++){const x=PLOT.x+i/(N-1)*PLOT.w;const y=fy(mag(morph,push,hzAt(i/(N-1))));i?c.lineTo(x,y):c.moveTo(x,y);}c.stroke();
+
+  // tethers + handles for each voice
+  VOICES.forEach((v,i)=>{const a=voiceAt(v,morph,push);const seld=i===sel;
+    const px=fx(a.f), py=fy(curveDbAt(a.f)); // pole sits on the live curve
+    // TETHER: pole -> its HOME and AWAY positions (the journey) — selected only, bright
+    if(seld){
+      const hx=fx(v.home),hy=fy(magOne(v,0,0,v.home)), ax=fx(v.away),ay=fy(magOne(v,1,push,v.away));
+      ln(hx,hy,px,py,C.accent,1,[2,3]); ln(px,py,ax,ay,C.accent,1,[2,3]);
+      dot(hx,hy,2.5,C.dim); dot(ax,ay,2.5,C.dim);
+      tx('HOME',hx,hy-6,C.dim,7,600,'center',FA); tx('AWAY',ax,ay-6,C.dim,7,600,'center',FA);
+    }
+    // TETHER: pole -> its CUT (rail-locked zero)
+    const cxp=fx(a.cf), cyp=fy(curveDbAt(a.cf));
+    ln(px,py,cxp,cyp, seld?C.cut:'#2a2e33', 1, [1,3]);
+    // the CUT mark (rail-locked O)
+    c.strokeStyle=seld?C.cut:'#3a4047';c.lineWidth=1.4;c.beginPath();c.arc(cxp,cyp,4,0,7);c.stroke();
+    // the POLE handle (numbered square)
+    const col=seld?C.accent:C.mid, s=seld?9:7;
+    rF(px-s,py-s,s*2,s*2,C.sunk); rS(px-s,py-s,s*2,s*2,col,seld?1.6:1);
+    tx(v.id,px,py+3.5,col,9,800,'center',FA);
+    hot.voices.push({x:px-s-2,y:py-s-2,w:s*2+4,h:s*2+4,i});
+  });
+  // selected readout (no Hz wall — only the one you touch)
+  {const v=VOICES[sel],a=voiceAt(v,morph,push);
+   tx(`${Math.round(a.f)} Hz · ${VOICES[sel].name}`,fx(a.f),fy(curveDbAt(a.f))+ (sel<3?22:-16),C.accent,9,600,'center',FA);}
+  tx('drag a voice to shape the sound · cuts ride the rails',PLOT.x,heroY+heroH-2,C.dim,8,500);
+
+  /* ===== RIGHT: voices ===== */
+  rS(rx,heroY,rw,heroH,C.line,1);
+  tx('SIX VOICES',rx+10,heroY+18,C.mid,9,700,'left',FA);
+  tx(`MORPH ${Math.round(morph*100)}`,rx+rw-10,heroY+18,C.dim,9,600,'right',FA);
+  let vy=heroY+30;const rowH=(heroH-44)/6;
+  VOICES.forEach((v,i)=>{const a=voiceAt(v,morph,push);const seld=i===sel;
+    const ry=vy+i*rowH;
+    if(seld){rF(rx+1,ry,rw-2,rowH-3,C.panel); rF(rx+1,ry,3,rowH-3,C.accent);}
+    tx(v.id,rx+12,ry+18,seld?C.accent:C.dim,11,800,'left',FA);
+    tx(v.name,rx+30,ry+17,seld?C.ink:C.mid,11,700,'left',FA);
+    tx(`${Math.round(a.f)} Hz`,rx+30,ry+30,C.dim,9,500);
+    // cut chip
+    tx('CUT',rx+rw-78,ry+17,C.dim,7,600,'left',FA);
+    tx(CUT_LABEL[v.cut],rx+rw-78,ry+30,seld?C.cut:C.mid,9,600,'left',FA);
+    // tiny sparkline of the voice's own bump
+    const sx=rx+rw-46,sw=36,sh=rowH-14,sy0=ry+6;
+    c.strokeStyle=seld?C.accent:'#3a4047';c.lineWidth=1;c.beginPath();
+    for(let k=0;k<24;k++){const hz=hzAt(k/23);const d=bump(a.f,a.lvl,a.q,hz)-bump(a.cf,a.cd,a.q*.7,hz);
+      const x=sx+k/23*sw, y=sy0+sh-((Math.max(-12,Math.min(12,d))+12)/24)*sh; k?c.lineTo(x,y):c.moveTo(x,y);}c.stroke();
+    hot.voices.push({x:rx,y:ry,w:rw,h:rowH,i});
+  });
+
+  /* ===== BOTTOM: morph / push / source ===== */
+  const by=bot+10, bh=44;
+  // morph + push segmented bars
+  drawBar(pad, by, 360, 'MORPH', morph, C.accent, 'HOME','AWAY');
+  drawBar(pad, by+22, 360, 'PUSH', push, C.cut, 'SOFT','HARD');
+  hot.morph={x:pad+52,y:by-4,w:300,h:16}; hot.push={x:pad+52,y:by+18,w:300,h:16};
+  // source
+  const srcs=['SAW','PINK','808','VOICE']; let sxp=pad+400;
+  tx('SOURCE',sxp,by+10,C.dim,8,600,'left',FA); sxp+=52;
+  srcs.forEach(s=>{const on=s===source; rS(sxp,by-2,46,18,on?C.accent:C.line2,1);
+    tx(s,sxp+23,by+11,on?C.accent:C.mid,9,600,'center',FA); hot.src.push({x:sxp,y:by-2,w:46,h:18,s}); sxp+=50;});
+  tx('DRIVE  GRIT  WIDE',sxp+6,by+11,C.dim,9,500,'left',FA);
+  // cut picker for selected voice
+  const cuts=['hug','tear','air','sub','none']; let cxp2=pad+400;
+  tx('CUT',cxp2,by+32,C.dim,8,600,'left',FA); cxp2+=52;
+  cuts.forEach(ct=>{const on=VOICES[sel].cut===ct; const lab=CUT_LABEL[ct]; const w=lab.length*6.5+14;
+    rS(cxp2,by+20,w,18,on?C.cut:C.line2,1); tx(lab,cxp2+w/2,by+33,on?C.cut:C.mid,8.5,600,'center',FA);
+    hot.cuts.push({x:cxp2,y:by+20,w:w,h:18,ct}); cxp2+=w+5;});
+}
+function dot(x,y,r,col){c.fillStyle=col;c.beginPath();c.arc(x,y,r,0,7);c.fill();}
+function curveDbAt(hz){return mag(morph,push,hz);}
+function magOne(v,m,p,hz){const a=voiceAt(v,m,p);return bump(a.f,a.lvl,a.q,hz)-bump(a.cf,a.cd,a.q*.7,hz);}
+function drawBar(x,y,w,label,val,col,l0,l1){
+  tx(label,x,y+11,C.mid,9,700,'left',FA);
+  const tx0=x+52, tw=300, seg=28, sg=2, sw=(tw-sg*(seg-1))/seg, h=10, cy=y+1;
+  const fill=Math.round(val*seg);
+  for(let i=0;i<seg;i++){rF(tx0+i*(sw+sg),cy,sw,h, i<fill?col:'#1c2026');}
+  tx(Math.round(val*100),x+tw+58,y+11,col,10,700,'right',FA);
+  tx(l0,tx0,y+22,C.dim,7,500,'left'); tx(l1,tx0+tw,y+22,C.dim,7,500,'right');
+}
+
+/* ---------- interaction ---------- */
+function pt(e){const r=cv.getBoundingClientRect();return {x:e.clientX-r.left,y:e.clientY-r.top};}
+let drag=null;
+cv.addEventListener('mousedown',e=>{const p=pt(e);
+  for(const r of hot.src) if(inR(p,r)){source=r.s;paint();return;}
+  for(const r of hot.cuts) if(inR(p,r)){VOICES[sel].cut=r.ct;paint();return;}
+  if(inR(p,hot.morph)){drag='morph';setBar(p);return;}
+  if(inR(p,hot.push)){drag='push';setBar(p);return;}
+  for(const r of hot.voices) if(inR(p,r)){sel=r.i;drag='pole';paint();return;}
+  paint();
+});
+addEventListener('mousemove',e=>{if(!drag)return;const p=pt(e);
+  if(drag==='morph'||drag==='push')setBar(p);
+  else if(drag==='pole'){const hz=xToHz(p.x);const v=VOICES[sel];
+    if(morph<0.5)v.home=hz; else v.away=hz; paint();}
+});
+addEventListener('mouseup',()=>drag=null);
+function setBar(p){const r=drag==='morph'?hot.morph:hot.push;const val=Math.max(0,Math.min(1,(p.x-r.x)/r.w));
+  if(drag==='morph')morph=val; else push=val; paint();}
+
+requestAnimationFrame(paint);
+if(document.fonts&&document.fonts.ready)document.fonts.ready.then(paint);
+addEventListener('resize',()=>requestAnimationFrame(paint));
+</script>
+</body>
+</html>

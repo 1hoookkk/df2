@@ -39,7 +39,6 @@ sys.path.insert(0, str(ROOT))
 from tools import target_browser as tb
 from tools import make_class_bodies as mc
 from pyruntime import trench_ffi
-from pyruntime.packed_interp import coeffs_to_words  # noqa: F401 (legacy; bodies now via compile_body)
 from src.compiler import encode
 from src.utils.body240 import CORNER_ORDER
 
@@ -513,9 +512,9 @@ def generate_insane(seed, count):
         tight_a_k, _        = _insane_corner(rng, focus=away_focus)
         corner_kernels = {"M0_Q0": home_k, "M100_Q0": away_k,
                           "M0_Q100": tight_h_k, "M100_Q100": tight_a_k}
-        corner_words = {KEY[lab]: [coeffs_to_words(*k) for k in corner_kernels[lab]]
-                        for lab in LABELS}
-        body = tb.body_bytes(corner_words)
+        body = encode.body_from_kernels([corner_kernels[c] for c in CORNER_ORDER])  # ONE encoder (compile_body)
+        cw = encode.words_from_body(body)
+        corner_words = {KEY[lab]: cw[lab] for lab in LABELS}
         maxr, unstable, nonfinite = tb.grid_stability(body)
         passes = (maxr < 1.0 and unstable == 0 and nonfinite == 0)
         # Mud cull: the BALANCE rule. Low-mid peak (150–800 Hz) must NOT exceed the

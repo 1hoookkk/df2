@@ -1,0 +1,324 @@
+{
+  "format": "forge-cartridge-v1",
+  "keyframes": [
+    {
+      "boost": 1.0,
+      "label": "M0_Q0",
+      "packedWords": [
+        [
+          46308,
+          62586,
+          30944,
+          30862,
+          41739
+        ],
+        [
+          46628,
+          62586,
+          39115,
+          30862,
+          49642
+        ],
+        [
+          47158,
+          62586,
+          43969,
+          30862,
+          53846
+        ],
+        [
+          47896,
+          62586,
+          47230,
+          30862,
+          56557
+        ],
+        [
+          48838,
+          62586,
+          49910,
+          30862,
+          58295
+        ],
+        [
+          49565,
+          62586,
+          51968,
+          30862,
+          59525
+        ]
+      ]
+    },
+    {
+      "boost": 1.0,
+      "label": "M100_Q0",
+      "packedWords": [
+        [
+          46229,
+          62586,
+          22760,
+          30862,
+          33628
+        ],
+        [
+          46308,
+          62586,
+          30944,
+          30862,
+          41739
+        ],
+        [
+          46442,
+          62586,
+          35826,
+          30862,
+          46304
+        ],
+        [
+          46628,
+          62586,
+          39115,
+          30862,
+          49642
+        ],
+        [
+          46866,
+          62586,
+          41811,
+          30862,
+          51917
+        ],
+        [
+          47158,
+          62586,
+          43969,
+          30862,
+          53846
+        ]
+      ]
+    },
+    {
+      "boost": 1.0,
+      "label": "M0_Q100",
+      "packedWords": [
+        [
+          46308,
+          62586,
+          30946,
+          28767,
+          41741
+        ],
+        [
+          46628,
+          62586,
+          39118,
+          28767,
+          49644
+        ],
+        [
+          47158,
+          62586,
+          43972,
+          28767,
+          53849
+        ],
+        [
+          47896,
+          62586,
+          47233,
+          28767,
+          56561
+        ],
+        [
+          48838,
+          62586,
+          49912,
+          28767,
+          58297
+        ],
+        [
+          49565,
+          62586,
+          51971,
+          28767,
+          59529
+        ]
+      ]
+    },
+    {
+      "boost": 1.0,
+      "label": "M100_Q100",
+      "packedWords": [
+        [
+          46229,
+          62586,
+          22761,
+          28767,
+          33628
+        ],
+        [
+          46308,
+          62586,
+          30946,
+          28767,
+          41741
+        ],
+        [
+          46442,
+          62586,
+          35829,
+          28767,
+          46307
+        ],
+        [
+          46628,
+          62586,
+          39118,
+          28767,
+          49644
+        ],
+        [
+          46866,
+          62586,
+          41814,
+          28767,
+          51920
+        ],
+        [
+          47158,
+          62586,
+          43972,
+          28767,
+          53849
+        ]
+      ]
+    }
+  ],
+  "meta": {
+    "family": "tube",
+    "note": "open-open 25 cm -> closed-open 25 cm (length scale)",
+    "source": "tables/ physical models"
+  },
+  "name": "tube_oo_25cm_to_co_25cm",
+  "recipe": {
+    "axes": {
+      "morph": {
+        "high": "AWAY",
+        "low": "HOME",
+        "scale": "log",
+        "slide_semitones": 0.0
+      },
+      "secondary": {
+        "amount": 0.25,
+        "high": "TIGHT",
+        "low": "OPEN",
+        "mode": "q_crank"
+      }
+    },
+    "constraints": {
+      "headroom_db": 18.0,
+      "max_radius": 0.999,
+      "on_unstable": "reject",
+      "unity_dc": true
+    },
+    "lanes": [
+      {
+        "anatomy": {
+          "away_hz": 343.0,
+          "pole_hz": 686.0,
+          "sharp": 0.9985
+        },
+        "articulation": {
+          "cut": "hug"
+        },
+        "id": 0,
+        "label": "p1",
+        "role": "partial 1",
+        "survival": {
+          "gain": 1.0
+        }
+      },
+      {
+        "anatomy": {
+          "away_hz": 686.0,
+          "pole_hz": 1372.0,
+          "sharp": 0.9985
+        },
+        "articulation": {
+          "cut": "hug"
+        },
+        "id": 1,
+        "label": "p2",
+        "role": "partial 2",
+        "survival": {
+          "gain": 1.0
+        }
+      },
+      {
+        "anatomy": {
+          "away_hz": 1029.0,
+          "pole_hz": 2058.0,
+          "sharp": 0.9985
+        },
+        "articulation": {
+          "cut": "hug"
+        },
+        "id": 2,
+        "label": "p3",
+        "role": "partial 3",
+        "survival": {
+          "gain": 1.0
+        }
+      },
+      {
+        "anatomy": {
+          "away_hz": 1372.0,
+          "pole_hz": 2744.0,
+          "sharp": 0.9985
+        },
+        "articulation": {
+          "cut": "hug"
+        },
+        "id": 3,
+        "label": "p4",
+        "role": "partial 4",
+        "survival": {
+          "gain": 1.0
+        }
+      },
+      {
+        "anatomy": {
+          "away_hz": 1715.0,
+          "pole_hz": 3430.0,
+          "sharp": 0.9985
+        },
+        "articulation": {
+          "cut": "hug"
+        },
+        "id": 4,
+        "label": "p5",
+        "role": "partial 5",
+        "survival": {
+          "gain": 1.0
+        }
+      },
+      {
+        "anatomy": {
+          "away_hz": 2058.0,
+          "pole_hz": 4116.0,
+          "sharp": 0.9985
+        },
+        "articulation": {
+          "cut": "hug"
+        },
+        "id": 5,
+        "label": "p6",
+        "role": "partial 6",
+        "survival": {
+          "gain": 1.0
+        }
+      }
+    ]
+  },
+  "sampleRate": 39062.5
+}

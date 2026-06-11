@@ -328,6 +328,11 @@ impl QSoundSpatial {
         self.dirty = true;
     }
 
+    pub fn clear_profile(&mut self) {
+        self.profile = None;
+        self.dirty = true;
+    }
+
     pub fn set_space(&mut self, space: f32) {
         self.space = space.clamp(0.0, 1.0);
     }
@@ -335,8 +340,8 @@ impl QSoundSpatial {
     /// Set the local-recreation pan when no cartridge spatial profile is
     /// loaded. `-1` is exaggerated left, `0` is dry mono center, and `+1`
     /// is the clean QCreator/QMixer.dll right-90 fixture. The default is
-    /// `+1` so the existing 5D SPACE control keeps the requested extreme
-    /// QSound-right behavior without another UI control.
+    /// `+1` so the 5D toggle uses the requested extreme QSound-right behavior
+    /// without a second UI control.
     pub fn set_fallback_pan(&mut self, pan: f32) {
         self.fallback_pan = pan.clamp(-1.0, 1.0);
     }

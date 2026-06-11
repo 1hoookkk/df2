@@ -52,19 +52,23 @@ generation:
     actor_local_indices: [0, 2]
 
 gates:
-  maximum_pole_radius: 0.99990
-  minimum_ceiling_radius: 0.9980
-  minimum_center_span_db: 60.0
-  minimum_endpoint_span_db: 72.0
-  maximum_span_db: 300.0
-  minimum_morph_contrast_db: 15.0
-  minimum_secondary_contrast_db: 12.0
-  minimum_center_peaks: 2
-  minimum_center_valleys: 2
-  minimum_zero_motion_octaves: 0.25
-  reference_endpoint_span_ratio: 0.75
-  reference_morph_contrast_ratio: 0.65
-  reference_secondary_contrast_ratio: 0.65
+  # DERIVED FROM THE ICONIC-15 CORRIDOR (megasweepz, talking_hedz, lucifer_s_q, ear_bender,
+  # razor_blades, acid_ravage, ...) — NOT the muddy full 50. Each floor sits just under what the
+  # iconic references actually do. This is the measured signature of an iconic P2K body.
+  maximum_pole_radius: 0.99990          # stability ceiling (keep)
+  minimum_ceiling_radius: 0.983         # iconic: 0.985-0.988 (moderate-high Q, never screaming)
+  minimum_center_span_db: 40.0          # iconic: min 42.3
+  minimum_endpoint_span_db: 54.0        # iconic: min 56.9
+  maximum_span_db: 150.0                # iconic: max ~120 (no pathological span)
+  minimum_morph_contrast_db: 8.0        # iconic: min 9.4 (every iconic body MOVES)
+  minimum_secondary_contrast_db: 5.7    # iconic: min 6.34 (Talking Hedz) via evaluate_body on ROM decodes; up to 33.9 (Meaty Gizmo). Q BLOOMS — co-leader. Old 0.25/"subtle" was the bent ruler (2026-06-09).
+  minimum_center_peaks: 1               # iconic: 1-5, p50 3
+  minimum_center_valleys: 0             # iconic: tb_or_not_tb reads 0 mid-morph but its leader canyon travels >1oct (guaranteed by leader_zero gate)
+  minimum_leader_zero_motion_octaves: 0.9   # iconic: every leader canyon travels >= 1.0 oct
+  minimum_leader_pole_motion_octaves: 0.9   # iconic: every leader pole SWEEPS >= 1.0 oct
+  reference_endpoint_span_ratio: 0.0    # corridor floors are already reference-derived
+  reference_morph_contrast_ratio: 0.0
+  reference_secondary_contrast_ratio: 0.0
 
 archive:
   span_bins: [72.0, 100.0, 140.0, 190.0, 240.0]

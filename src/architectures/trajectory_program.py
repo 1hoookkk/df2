@@ -28,6 +28,13 @@ def _geo(a: float, b: float, amount: float) -> float:
     return float(a) * (float(b) / float(a)) ** float(amount)
 
 
+def _snap_12tet(hz: float, ref: float = 440.0) -> float:
+    """Snap a frequency to the nearest 12-TET note (A440 grid) — a landing pitch."""
+    if hz <= 0.0:
+        return hz
+    return ref * 2.0 ** (round(12.0 * math.log2(hz / ref)) / 12.0)
+
+
 def _kernel_from_biquad(b0: float, b1: float, b2: float, a1: float, a2: float) -> tuple[float, ...]:
     if b0 <= 1.0e-12:
         raise ValueError("biquad b0 must be positive")
@@ -73,6 +80,16 @@ def _rbj_shelf(freq_hz: float, gain_db: float, *, high: bool) -> tuple[float, ..
     return _kernel_from_biquad(b0 / a0, b1 / a0, b2 / a0, a1 / a0, a2 / a0)
 
 
+def _rbj_peaking(freq_hz: float, gain_db: float, q: float) -> tuple[float, ...]:
+    """RBJ peaking EQ bell — flat both ends, a clean boost/cut at freq. Serial-cascade safe."""
+    a = 10.0 ** (gain_db / 40.0)
+    w0 = 2.0 * math.pi * freq_hz / AUTHORING_SR
+    alpha, cw = math.sin(w0) / (2.0 * max(q, 1e-3)), math.cos(w0)
+    b0, b1, b2 = 1.0 + alpha * a, -2.0 * cw, 1.0 - alpha * a
+    a0, a1, a2 = 1.0 + alpha / a, -2.0 * cw, 1.0 - alpha / a
+    return _kernel_from_biquad(b0 / a0, b1 / a0, b2 / a0, a1 / a0, a2 / a0)
+
+
 @dataclass(frozen=True)
 class StageTrajectory:
     kind: str
@@ -108,6 +125,8 @@ class StageTrajectory:
             return _rbj_lowpass(pole_hz, self.section_q)
         gain_db = self.gain_start_db + (self.gain_end_db - self.gain_start_db) * morph
         gain_db += self.secondary_gain_db * secondary
+        if self.kind == "peaking":
+            return _rbj_peaking(pole_hz, gain_db, self.section_q)
         if self.kind == "highshelf":
             return _rbj_shelf(pole_hz, gain_db, high=True)
         if self.kind == "lowshelf":
@@ -161,20 +180,29 @@ def _random_actor(rng: random.Random, cfg: Any, base_hz: float, index: int, *,
     pole_move = direction * rng.uniform(motion_lo, motion_hi)
     zero_move = (-direction if contrary else direction) * rng.uniform(zero_lo, zero_hi)
     offset = rng.uniform(*_range(cfg, "local_zero_offset_octaves" if local else "global_zero_offset_octaves"))
+    land = bool(cfg.get("land_peaks_on_notes", False))
     p0 = _bounded_freq(base_hz, cfg)
+    if land:
+        p0 = _bounded_freq(_snap_12tet(p0), cfg)        # Frame A peak lands on a note
+    pend = _bounded_freq(p0 * 2.0 ** pole_move, cfg)
+    if land:
+        pend = _bounded_freq(_snap_12tet(pend), cfg)    # Frame B peak lands on a note
     z0 = _bounded_freq(p0 * 2.0 ** offset, cfg)
     pr0 = rng.uniform(*_range(cfg, "pole_radius_q0"))
     pr1 = rng.uniform(*_range(cfg, "pole_radius_q100"))
     zr0 = rng.uniform(*_range(cfg, "zero_radius_q0"))
     zr1 = rng.uniform(*_range(cfg, "zero_radius_q100"))
+    # land=True => Q is radius-ONLY (no pole-freq shift) so every parked position
+    # stays on its note; the morph glides (portamento) between the two landing notes.
+    sec_pole = 0.0 if land else rng.uniform(-shift_hi, shift_hi) * float(
+        profile.get("secondary_pole_scale", cfg.secondary_pole_scale))
     return StageTrajectory(
         kind="actor",
         pole_start_hz=p0,
-        pole_end_hz=_bounded_freq(p0 * 2.0 ** pole_move, cfg),
+        pole_end_hz=pend,
         zero_start_hz=z0,
         zero_end_hz=_bounded_freq(z0 * 2.0 ** zero_move, cfg),
-        secondary_pole_octaves=rng.uniform(-shift_hi, shift_hi) * float(
-            profile.get("secondary_pole_scale", cfg.secondary_pole_scale)),
+        secondary_pole_octaves=sec_pole,
         secondary_zero_octaves=rng.uniform(-shift_hi, shift_hi),
         pole_radius_q0=pr0,
         pole_radius_q100=max(pr0, pr1),
@@ -183,11 +211,67 @@ def _random_actor(rng: random.Random, cfg: Any, base_hz: float, index: int, *,
     )
 
 
+def _vowel_program(seed: int, specialist: str, profile: Any, cfg: Any) -> ProgramGenome:
+    """Real-vowel formant filter: FIVE formants at measured Hz with real bandwidths.
+
+    lane0 = low-body shelf (the voiced chest, flat above so the formants ride on top);
+    lanes 1-3 = F1,F2,F3 from the Peterson-Barney table, gliding START->END vowel (the
+    'talk'); lanes 4-5 = F4,F5 fixed high formants (the whispered-vowel ring that makes
+    it read as a real vowel, not just a resonance). Bandwidths are real (Klatt-class):
+    r = exp(-pi*BW/SR), tight so formants are CRISP not muddy. Zeros stay shallow so
+    each formant is a clean peak (no scooped canyons). Q = radius only — it sharpens
+    the formants, never moves them (the vowel law)."""
+    rng = random.Random(int(seed))
+    tr = profile.transitions.get(specialist) or next(iter(profile.transitions.values()))
+    a = [float(x) for x in tr["start_hz"]]                              # [F1,F2,F3] START vowel
+    b = [a[i] * 2.0 ** float(m) for i, m in enumerate(tr["move_oct"])]  # END vowel (table move)
+    ca = a + [3400.0, 4700.0]                                           # 5 start centers (F4,F5 fixed)
+    cb = b + [3400.0, 4700.0]                                           # 5 end centers
+
+    def rad(bw_hz: float) -> float:                                     # bandwidth -> pole radius
+        return math.exp(-math.pi * bw_hz / AUTHORING_SR)
+
+    # Every formant is a genuine POLE+ZERO biquad (the DC-pinned _actor_kernel), NOT an
+    # RBJ EQ bell. A resonant pole sits near the circle (it RINGS); a zero co-located at
+    # the same angle but a little deeper in flattens the skirts. Because _actor_kernel is
+    # DC-pinned (gain=1 at DC), a co-located pole+zero is a SHARP resonance on a ~flat
+    # background — so it doesn't roll off -12 dB/oct and crush the upper formants. The
+    # pole/zero radius GAP sets the formant boost; Q sharpens the pole, never moves it.
+    bw_q0 = [110.0, 140.0, 190.0, 240.0, 300.0]                        # soft at Q0
+    bw_q100 = [55.0, 80.0, 120.0, 180.0, 240.0]                        # crisp at Q100
+    # Each formant is a pole+zero biquad whose ZERO sits in the VALLEY above the formant
+    # (toward the next one), carving the inter-formant canyon — the anti-resonance that
+    # is the vowel's character. Canyon DEPTH tracks the formant gap: a wide gap (/ee/'s
+    # F1->F2) gets a deep canyon; close formants (/ah/'s F1,F2) get a shallow zero so the
+    # merged hump survives. The canyon WALKS with the vowel (zero glides START->END).
+    stages: list[StageTrajectory] = [
+        StageTrajectory(kind="lowshelf",
+            pole_start_hz=rng.uniform(*_range(profile, "foundation_hz")),
+            pole_end_hz=rng.uniform(*_range(profile, "foundation_hz")),
+            gain_start_db=4.0, gain_end_db=4.0, secondary_gain_db=0.0),
+    ]
+    for i in range(5):
+        hi_a = ca[i + 1] if i < 4 else ca[i] * 1.6                      # valley toward the next formant
+        hi_b = cb[i + 1] if i < 4 else cb[i] * 1.6
+        gap = abs(math.log2(max(hi_a, 1.0) / max(ca[i], 1.0)))         # octaves to next formant
+        depth = _clip(0.50 + 0.31 * min(gap, 1.5), 0.50, 0.965)        # wide gap -> deep canyon
+        stages.append(StageTrajectory(kind="actor",
+            pole_start_hz=ca[i], pole_end_hz=cb[i],
+            zero_start_hz=math.sqrt(ca[i] * hi_a), zero_end_hz=math.sqrt(cb[i] * hi_b),
+            secondary_pole_octaves=0.0, secondary_zero_octaves=0.0,
+            pole_radius_q0=rad(bw_q0[i]), pole_radius_q100=rad(bw_q100[i]),
+            zero_radius_q0=depth * 0.92, zero_radius_q100=depth))       # canyon deepens with Q
+    return ProgramGenome(family="vowel_real", specialist=str(specialist),
+                         seed=int(seed), stages=tuple(stages))
+
+
 def sample_specialist_program(seed: int, specialist: str, profile_name: str, cfg: Any,
                               profiles: Any) -> ProgramGenome:
     """Sample one original specialist slot from a clean-room macro palette."""
     rng = random.Random(int(seed))
     profile = profiles[profile_name]
+    if "transitions" in profile:
+        return _vowel_program(seed, specialist, profile, cfg)
     jitter = lambda: 2.0 ** rng.uniform(*_range(cfg, "constructor_jitter_octaves"))
     directions = [float(value) for value in profile.direction_signs]
     bases = [float(value) for value in profile.bases_hz]

@@ -9,7 +9,7 @@ namespace ParamID
     inline constexpr auto body      = "body";
     inline constexpr auto slamDrive = "slamDrive";
     inline constexpr auto inputMode = "inputMode";  // 0=OFF, 1=SLAM, 2=EOS (CVSD)
-    inline constexpr auto fiveD     = "fiveD";       // 5D / QSound depth: 0=Off,1=Narrow,2=Wide,3=Full
+    inline constexpr auto fiveD     = "fiveD";       // 5D / QSound toggle: 0=Off, 1=On
     inline constexpr auto output    = "output";      // final makeup gain, dB
 
     // Teleport motion mode — shakes/snaps Morph/Q around the host center.

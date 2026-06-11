@@ -1,10 +1,17 @@
 """Pack (theta,r,g) params -> the 240-byte body the runtime ships.
 
-THE ONE ENCODER: trench_ffi.compile_body (the shipped trench-core forward compiler,
+THE CONSTRUCT PATH: trench_ffi.compile_body (the shipped trench-core forward compiler,
 byte-identical to the forge-web WASM GUI — proven 240/240, 0.0000 dB). The old
 coeffs_to_words path was a rogue reimplementation that skipped the engine's gain
-normalization and diverged up to 59 dB. Every body MUST come from compile_body so the
-plot, the corridor gate, and the GUI all null to 0 against what the engine actually plays.
+normalization and diverged up to 59 dB. Every body DESIGNED in pole/zero language must
+come from compile_body so the plot, the corridor gate, and the GUI all null to 0 against
+what the engine actually plays.
+
+Scope (OBSERVED 2026-06-10, dev/tmp/tension_roundtrip): compile_body's param space is a
+SUBSET of the raw word format — no real-axis root pairs, no baked gain words, clamped
+zero radius. Bodies whose design IS raw words (ROM study, QD-search kernel packing) are
+the VERBATIM path and stay on it; the law is one design, one path, bytes audited — never
+re-express one design through the other path and expect a null.
 """
 from __future__ import annotations
 import math

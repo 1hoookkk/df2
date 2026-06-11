@@ -1,0 +1,327 @@
+{
+  "format": "forge-cartridge-v1",
+  "keyframes": [
+    {
+      "boost": 1.0,
+      "label": "M0_Q0",
+      "packedWords": [
+        [
+          46205,
+          62586,
+          9708,
+          37788,
+          20766
+        ],
+        [
+          46225,
+          62586,
+          21960,
+          37788,
+          33008
+        ],
+        [
+          46365,
+          62586,
+          33546,
+          37788,
+          44250
+        ],
+        [
+          47500,
+          62586,
+          45760,
+          37788,
+          55163
+        ],
+        [
+          49108,
+          51445,
+          49281,
+          37788,
+          53824
+        ],
+        [
+          56354,
+          54184,
+          55126,
+          37788,
+          55947
+        ]
+      ]
+    },
+    {
+      "boost": 1.0,
+      "label": "M100_Q0",
+      "packedWords": [
+        [
+          46205,
+          62586,
+          9708,
+          37788,
+          20766
+        ],
+        [
+          46220,
+          62586,
+          20664,
+          37788,
+          31242
+        ],
+        [
+          46283,
+          62586,
+          29443,
+          37788,
+          40257
+        ],
+        [
+          48223,
+          62586,
+          48407,
+          37788,
+          57446
+        ],
+        [
+          52572,
+          51445,
+          52887,
+          37788,
+          53845
+        ],
+        [
+          59435,
+          54184,
+          58494,
+          37788,
+          56097
+        ]
+      ]
+    },
+    {
+      "boost": 1.0,
+      "label": "M0_Q100",
+      "packedWords": [
+        [
+          46205,
+          62586,
+          9365,
+          29605,
+          20498
+        ],
+        [
+          46225,
+          62586,
+          21934,
+          29605,
+          32989
+        ],
+        [
+          46365,
+          62586,
+          33558,
+          29605,
+          44268
+        ],
+        [
+          47500,
+          62586,
+          45776,
+          29605,
+          55184
+        ],
+        [
+          49108,
+          51445,
+          49296,
+          29605,
+          53840
+        ],
+        [
+          56354,
+          54184,
+          55148,
+          29605,
+          55971
+        ]
+      ]
+    },
+    {
+      "boost": 1.0,
+      "label": "M100_Q100",
+      "packedWords": [
+        [
+          46205,
+          62586,
+          9365,
+          29605,
+          20498
+        ],
+        [
+          46220,
+          62586,
+          20634,
+          29605,
+          31195
+        ],
+        [
+          46283,
+          62586,
+          29449,
+          29605,
+          40267
+        ],
+        [
+          48223,
+          62586,
+          48433,
+          29605,
+          57461
+        ],
+        [
+          52572,
+          51445,
+          52915,
+          29605,
+          53862
+        ],
+        [
+          59435,
+          54184,
+          58513,
+          29605,
+          56123
+        ]
+      ]
+    }
+  ],
+  "meta": {
+    "family": "knock",
+    "note": "gritty mid forward -> popping high tear",
+    "source": "tables/ physical models"
+  },
+  "name": "knock_gritty_mids_to_popping_top",
+  "recipe": {
+    "axes": {
+      "morph": {
+        "high": "AWAY",
+        "low": "HOME",
+        "scale": "log",
+        "slide_semitones": 0.0
+      },
+      "secondary": {
+        "amount": 0.25,
+        "high": "TIGHT",
+        "low": "OPEN",
+        "mode": "q_crank"
+      }
+    },
+    "constraints": {
+      "headroom_db": 18.0,
+      "max_radius": 0.999,
+      "on_unstable": "reject",
+      "unity_dc": true
+    },
+    "lanes": [
+      {
+        "anatomy": {
+          "pole_hz": 110.0,
+          "sharp": 0.9952
+        },
+        "articulation": {
+          "cut": "hug"
+        },
+        "id": 0,
+        "label": "sub dome",
+        "role": "foundation",
+        "survival": {
+          "gain": 1.0
+        }
+      },
+      {
+        "anatomy": {
+          "away_hz": 280.0,
+          "pole_hz": 320.0,
+          "sharp": 0.9952
+        },
+        "articulation": {
+          "cut": "hug"
+        },
+        "id": 1,
+        "label": "knock",
+        "role": "knock",
+        "survival": {
+          "gain": 1.0
+        }
+      },
+      {
+        "anatomy": {
+          "away_hz": 600.0,
+          "pole_hz": 850.0,
+          "sharp": 0.9952
+        },
+        "articulation": {
+          "cut": "hug"
+        },
+        "id": 2,
+        "label": "body",
+        "role": "body",
+        "survival": {
+          "gain": 1.0
+        }
+      },
+      {
+        "anatomy": {
+          "away_hz": 3000.0,
+          "pole_hz": 2400.0,
+          "sharp": 0.9952
+        },
+        "articulation": {
+          "cut": "hug"
+        },
+        "id": 3,
+        "label": "grit",
+        "role": "grit",
+        "survival": {
+          "gain": 1.0
+        }
+      },
+      {
+        "anatomy": {
+          "away_hz": 4400.0,
+          "pole_hz": 3200.0,
+          "sharp": 0.9952
+        },
+        "articulation": {
+          "cut": "custom",
+          "zero": {
+            "depth": 0.95,
+            "ratio": 1.0
+          }
+        },
+        "id": 4,
+        "label": "scoop_notch",
+        "role": "scoop_notch",
+        "survival": {
+          "gain": 0.55
+        }
+      },
+      {
+        "anatomy": {
+          "away_hz": 7500.0,
+          "pole_hz": 5500.0,
+          "sharp": 0.9952
+        },
+        "articulation": {
+          "cut": "tear"
+        },
+        "id": 5,
+        "label": "tear",
+        "role": "tear",
+        "survival": {
+          "gain": 1.0
+        }
+      }
+    ]
+  },
+  "sampleRate": 39062.5
+}

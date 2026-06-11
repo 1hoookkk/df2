@@ -13,10 +13,8 @@
 //! Cascade path: Rust trench-core Cascade (the actual runtime path).
 //!
 //! Source: ref/p2k_skins/00_talking_hedz.json (P2K format, has Q variation).
-//! Packed words are derived-packed-canonical.
-//!
-//! Note: hedz_rom.rs is Q-collapsed (Q0==Q100), so packed and float give
-//! identical results for that data. The P2K JSON has distinct Q corners.
+//! The current `hedz_rom.rs` fixture points at the same packed ROM words; older
+//! Q-collapsed float fixtures were retired.
 
 #[cfg(feature = "packed_interp")]
 mod ab_render {

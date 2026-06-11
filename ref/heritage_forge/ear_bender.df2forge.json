@@ -1,0 +1,427 @@
+{
+  "format_version": 1,
+  "body_id": "ear_bender",
+  "body_name": "EAR BENDER",
+  "authoring_sample_rate": 39062.5,
+  "notes": "P2K heritage reference — study only, do not ship bytes",
+  "corners": [
+    [
+      {
+        "enabled": true,
+        "role": "",
+        "locked": false,
+        "pole": {
+          "kind": "complex",
+          "freq_hz": 301.75294680215706,
+          "radius": 0.8570636531021194
+        },
+        "zero": {
+          "kind": "complex",
+          "freq_hz": 10958.811304956353,
+          "radius": 0.8570636531021194
+        },
+        "gain": 0.45819091796875,
+        "provenance": "p2k-heritage"
+      },
+      {
+        "enabled": true,
+        "role": "",
+        "locked": false,
+        "pole": {
+          "kind": "complex",
+          "freq_hz": 3722.883789108087,
+          "radius": 0.927074189444607
+        },
+        "zero": {
+          "kind": "complex",
+          "freq_hz": 13401.257769695618,
+          "radius": 0.9862391667804503
+        },
+        "gain": 0.45819091796875,
+        "provenance": "p2k-heritage"
+      },
+      {
+        "enabled": true,
+        "role": "",
+        "locked": false,
+        "pole": {
+          "kind": "complex",
+          "freq_hz": 10282.750964972132,
+          "radius": 0.8883434317505674
+        },
+        "zero": {
+          "kind": "complex",
+          "freq_hz": 14391.161190254319,
+          "radius": 0.9682576558868996
+        },
+        "gain": 0.45819091796875,
+        "provenance": "p2k-heritage"
+      },
+      {
+        "enabled": true,
+        "role": "",
+        "locked": false,
+        "pole": {
+          "kind": "complex",
+          "freq_hz": 13570.978298199925,
+          "radius": 0.9100640377107398
+        },
+        "zero": {
+          "kind": "complex",
+          "freq_hz": 16286.922654927619,
+          "radius": 0.9186084871882988
+        },
+        "gain": 0.45819091796875,
+        "provenance": "p2k-heritage"
+      },
+      {
+        "enabled": true,
+        "role": "",
+        "locked": false,
+        "pole": {
+          "kind": "complex",
+          "freq_hz": 14394.083412709046,
+          "radius": 0.9100640377107398
+        },
+        "zero": {
+          "kind": "complex",
+          "freq_hz": 16811.224540967898,
+          "radius": 0.6375689300969739
+        },
+        "gain": 0.45819091796875,
+        "provenance": "p2k-heritage"
+      },
+      {
+        "enabled": true,
+        "role": "",
+        "locked": false,
+        "pole": {
+          "kind": "complex",
+          "freq_hz": 15836.83576247521,
+          "radius": 0.8478992307277734
+        },
+        "zero": {
+          "kind": "complex",
+          "freq_hz": 3039.379880054121,
+          "radius": 0.9999981485290077
+        },
+        "gain": 0.45819091796875,
+        "provenance": "p2k-heritage"
+      }
+    ],
+    [
+      {
+        "enabled": true,
+        "role": "",
+        "locked": false,
+        "pole": {
+          "kind": "complex",
+          "freq_hz": 6271.614482425387,
+          "radius": 0.484375
+        },
+        "zero": {
+          "kind": "complex",
+          "freq_hz": 839.3686640194616,
+          "radius": 0.9702727133046635
+        },
+        "gain": 0.6068115234375,
+        "provenance": "p2k-heritage"
+      },
+      {
+        "enabled": true,
+        "role": "",
+        "locked": false,
+        "pole": {
+          "kind": "complex",
+          "freq_hz": 738.1925135398862,
+          "radius": 0.9682576558868996
+        },
+        "zero": {
+          "kind": "complex",
+          "freq_hz": 1619.341403514881,
+          "radius": 0.9722835945255858
+        },
+        "gain": 0.6068115234375,
+        "provenance": "p2k-heritage"
+      },
+      {
+        "enabled": true,
+        "role": "",
+        "locked": false,
+        "pole": {
+          "kind": "complex",
+          "freq_hz": 2383.5565903414094,
+          "radius": 0.9519956808553217
+        },
+        "zero": {
+          "kind": "complex",
+          "freq_hz": 2374.4049405159985,
+          "radius": 0.9682576558868996
+        },
+        "gain": 0.6068115234375,
+        "provenance": "p2k-heritage"
+      },
+      {
+        "enabled": true,
+        "role": "",
+        "locked": false,
+        "pole": {
+          "kind": "complex",
+          "freq_hz": 5910.280125138808,
+          "radius": 0.9682576558868996
+        },
+        "zero": {
+          "kind": "complex",
+          "freq_hz": 4947.62602984864,
+          "radius": 0.9877233325136128
+        },
+        "gain": 0.6068115234375,
+        "provenance": "p2k-heritage"
+      },
+      {
+        "enabled": true,
+        "role": "",
+        "locked": false,
+        "pole": {
+          "kind": "complex",
+          "freq_hz": 5520.695588909556,
+          "radius": 0.9722835945255858
+        },
+        "zero": {
+          "kind": "complex",
+          "freq_hz": 5604.753841700564,
+          "radius": 0.9872288585185286
+        },
+        "gain": 0.6068115234375,
+        "provenance": "p2k-heritage"
+      },
+      {
+        "enabled": true,
+        "role": "",
+        "locked": false,
+        "pole": {
+          "kind": "complex",
+          "freq_hz": 813.6040027462881,
+          "radius": 0.9682576558868996
+        },
+        "zero": {
+          "kind": "complex",
+          "freq_hz": 17960.825044314846,
+          "radius": 0.9999981485290077
+        },
+        "gain": 0.6068115234375,
+        "provenance": "p2k-heritage"
+      }
+    ],
+    [
+      {
+        "enabled": true,
+        "role": "",
+        "locked": false,
+        "pole": {
+          "kind": "complex",
+          "freq_hz": 45.4514802921149,
+          "radius": 0.9973122716947532
+        },
+        "zero": {
+          "kind": "complex",
+          "freq_hz": 10958.811304956353,
+          "radius": 0.8570636531021194
+        },
+        "gain": 0.15191650390625,
+        "provenance": "p2k-heritage"
+      },
+      {
+        "enabled": true,
+        "role": "",
+        "locked": false,
+        "pole": {
+          "kind": "complex",
+          "freq_hz": 10190.384500461074,
+          "radius": 0.9941262354680609
+        },
+        "zero": {
+          "kind": "complex",
+          "freq_hz": 13401.257769695618,
+          "radius": 0.9862391667804503
+        },
+        "gain": 0.15191650390625,
+        "provenance": "p2k-heritage"
+      },
+      {
+        "enabled": true,
+        "role": "",
+        "locked": false,
+        "pole": {
+          "kind": "complex",
+          "freq_hz": 12653.418451317717,
+          "radius": 0.879505004382792
+        },
+        "zero": {
+          "kind": "complex",
+          "freq_hz": 14391.161190254319,
+          "radius": 0.9682576558868996
+        },
+        "gain": 0.15191650390625,
+        "provenance": "p2k-heritage"
+      },
+      {
+        "enabled": true,
+        "role": "",
+        "locked": false,
+        "pole": {
+          "kind": "complex",
+          "freq_hz": 13545.527974827422,
+          "radius": 0.9941262354680609
+        },
+        "zero": {
+          "kind": "complex",
+          "freq_hz": 16286.922654927619,
+          "radius": 0.9186084871882988
+        },
+        "gain": 0.15191650390625,
+        "provenance": "p2k-heritage"
+      },
+      {
+        "enabled": true,
+        "role": "",
+        "locked": false,
+        "pole": {
+          "kind": "complex",
+          "freq_hz": 14559.871099772214,
+          "radius": 0.9941262354680609
+        },
+        "zero": {
+          "kind": "real",
+          "a": -0.883115903794102,
+          "b": -0.9908617573387105
+        },
+        "gain": 0.15191650390625,
+        "provenance": "p2k-heritage"
+      },
+      {
+        "enabled": true,
+        "role": "",
+        "locked": false,
+        "pole": {
+          "kind": "complex",
+          "freq_hz": 16131.112059903315,
+          "radius": 0.9941262354680609
+        },
+        "zero": {
+          "kind": "complex",
+          "freq_hz": 17960.825044314846,
+          "radius": 0.9999981485290077
+        },
+        "gain": 0.15191650390625,
+        "provenance": "p2k-heritage"
+      }
+    ],
+    [
+      {
+        "enabled": true,
+        "role": "",
+        "locked": false,
+        "pole": {
+          "kind": "complex",
+          "freq_hz": 5713.539911053138,
+          "radius": 0.9924056646834994
+        },
+        "zero": {
+          "kind": "complex",
+          "freq_hz": 5604.753841700564,
+          "radius": 0.9872288585185286
+        },
+        "gain": 0.5001220703125,
+        "provenance": "p2k-heritage"
+      },
+      {
+        "enabled": true,
+        "role": "",
+        "locked": false,
+        "pole": {
+          "kind": "complex",
+          "freq_hz": 2034.813303391119,
+          "radius": 0.9924056646834994
+        },
+        "zero": {
+          "kind": "complex",
+          "freq_hz": 1619.341403514881,
+          "radius": 0.9722835945255858
+        },
+        "gain": 0.5001220703125,
+        "provenance": "p2k-heritage"
+      },
+      {
+        "enabled": true,
+        "role": "",
+        "locked": false,
+        "pole": {
+          "kind": "complex",
+          "freq_hz": 1961.5931055593155,
+          "radius": 0.9143462433533454
+        },
+        "zero": {
+          "kind": "complex",
+          "freq_hz": 2374.4049405159985,
+          "radius": 0.9682576558868996
+        },
+        "gain": 0.5001220703125,
+        "provenance": "p2k-heritage"
+      },
+      {
+        "enabled": true,
+        "role": "",
+        "locked": false,
+        "pole": {
+          "kind": "complex",
+          "freq_hz": 4553.068222790168,
+          "radius": 0.9732874771533813
+        },
+        "zero": {
+          "kind": "complex",
+          "freq_hz": 4947.62602984864,
+          "radius": 0.9877233325136128
+        },
+        "gain": 0.5001220703125,
+        "provenance": "p2k-heritage"
+      },
+      {
+        "enabled": true,
+        "role": "",
+        "locked": false,
+        "pole": {
+          "kind": "complex",
+          "freq_hz": 246.05178060392169,
+          "radius": 0.9901919986001689
+        },
+        "zero": {
+          "kind": "complex",
+          "freq_hz": 839.3686640194616,
+          "radius": 0.9702727133046635
+        },
+        "gain": 0.5001220703125,
+        "provenance": "p2k-heritage"
+      },
+      {
+        "enabled": true,
+        "role": "",
+        "locked": false,
+        "pole": {
+          "kind": "complex",
+          "freq_hz": 6281.067560821869,
+          "radius": 0.5002440810494413
+        },
+        "zero": {
+          "kind": "complex",
+          "freq_hz": 17960.825044314846,
+          "radius": 0.9999981485290077
+        },
+        "gain": 0.5001220703125,
+        "provenance": "p2k-heritage"
+      }
+    ]
+  ],
+  "secondary_degenerate": false,
+  "constructor_history": []
+}

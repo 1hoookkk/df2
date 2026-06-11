@@ -1,0 +1,387 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8"/>
+<meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+<title>df2 forge — main screen</title>
+<link href="https://fonts.googleapis.com/css2?family=Archivo:wght@500;700;800;900&family=DM+Mono:wght@400;500&display=swap" rel="stylesheet"/>
+<style>
+:root{
+  /* LIGHT skin (default) */
+  --bg:#E9E6DD; --panel:#F7F5EF; --panel2:#FCFBF6; --sunk:#E2DECF;
+  --ink:#1A1813; --ink2:#6A6453; --hair:#cfc9b6; --hair2:#ddd8c6;
+  --accent:#FF5A1F; --accentSoft:#ffd8c6;
+  --good:#1F9E5A; --warn:#E0921A; --bad:#E23B2E;
+  --selRing:#1A1813;
+  --shadow:0 1px 0 #fff, 0 2px 6px rgba(40,35,20,.07);
+}
+body.dark{
+  --bg:#0C0E14; --panel:#13161F; --panel2:#171B26; --sunk:#0E1118;
+  --ink:#D5DBE6; --ink2:#6E7790; --hair:#262c3a; --hair2:#1d222e;
+  --accent:#FF6A2C; --accentSoft:#3a2417;
+  --good:#33C07A; --warn:#E7B23E; --bad:#E2566A;
+  --selRing:#9fb4d8;
+  --shadow:none;
+}
+*{box-sizing:border-box;margin:0;padding:0}
+html,body{height:100%}
+body{background:var(--bg);color:var(--ink);font-family:"DM Mono",ui-monospace,monospace;
+  -webkit-font-smoothing:antialiased;padding:14px;overflow:hidden}
+.arch{font-family:"Archivo";font-weight:800}
+.app{height:calc(100vh - 28px);display:grid;
+  grid-template-rows:auto 1fr auto;gap:11px;max-width:1320px;margin:0 auto}
+
+/* ---------- header ---------- */
+.hdr{display:flex;align-items:center;gap:14px}
+.brand{font-family:"Archivo";font-weight:900;font-size:21px;letter-spacing:-.5px}
+.bodyname{font-family:"Archivo";font-weight:700;font-size:15px;padding:5px 11px;background:var(--panel);
+  border:1.5px solid var(--hair);border-radius:6px;display:flex;align-items:center;gap:9px}
+.state{display:flex;align-items:center;gap:6px;font-size:11px;font-weight:500}
+.dot{width:8px;height:8px;border-radius:50%;background:var(--good)}
+.spacer{flex:1}
+.btn{font-family:"Archivo";font-weight:700;font-size:12px;letter-spacing:.3px;cursor:pointer;
+  padding:8px 13px;border-radius:7px;border:1.5px solid var(--hair);background:var(--panel);color:var(--ink);
+  box-shadow:var(--shadow)}
+.btn:hover{border-color:var(--ink2)}
+.btn.accent{background:var(--accent);color:#fff;border-color:var(--accent)}
+.btn.ghost{background:transparent}
+.btn.sm{padding:6px 10px;font-size:11px}
+.tg{display:flex;border:1.5px solid var(--hair);border-radius:7px;overflow:hidden;background:var(--panel)}
+.tg button{font-family:"DM Mono";font-size:11px;padding:6px 11px;border:0;background:transparent;color:var(--ink2);cursor:pointer}
+.tg button.on{background:var(--ink);color:var(--bg)}
+
+/* ---------- main grid ---------- */
+.main{display:grid;grid-template-columns:206px 1fr 282px;gap:11px;min-height:0}
+.col{display:flex;flex-direction:column;gap:11px;min-height:0}
+.card{background:var(--panel);border:1.5px solid var(--hair);border-radius:10px;box-shadow:var(--shadow)}
+.lab{font-size:10px;font-weight:500;letter-spacing:1.2px;color:var(--ink2);text-transform:uppercase}
+
+/* voices (left) */
+.voices{flex:1;display:flex;flex-direction:column;min-height:0}
+.voices .top{display:flex;align-items:center;justify-content:space-between;padding:11px 12px 8px}
+.vlist{flex:1;overflow:auto;padding:2px 8px 8px;display:flex;flex-direction:column;gap:6px}
+.voice{display:flex;align-items:center;gap:9px;padding:7px 8px;border-radius:9px;cursor:pointer;
+  border:1.5px solid transparent;position:relative}
+.voice:hover{background:var(--panel2)}
+.voice.sel{background:var(--panel2);border-color:var(--selRing)}
+.voice.off{opacity:.42}
+.chip{width:30px;height:30px;border-radius:7px;border:2px solid var(--ink);display:flex;align-items:center;
+  justify-content:center;font-family:"Archivo";font-weight:900;font-size:11px;color:var(--ink);flex:none}
+.vmeta{flex:1;min-width:0}
+.vname{font-family:"Archivo";font-weight:800;font-size:12px;line-height:1.1}
+.vsub{font-size:9.5px;color:var(--ink2);margin-top:1px}
+.spark{width:38px;height:22px;flex:none;opacity:.8}
+.pin{position:absolute;top:5px;right:6px;font-size:9px;color:var(--warn)}
+.addrow{display:flex;gap:6px;padding:8px 10px;border-top:1.5px solid var(--hair2)}
+
+/* hero (center) */
+.hero{flex:1;position:relative;min-height:0;overflow:hidden}
+.hero svg{position:absolute;inset:0;width:100%;height:100%}
+.heroTop{position:absolute;top:10px;left:13px;right:13px;display:flex;justify-content:space-between;
+  align-items:flex-start;pointer-events:none;z-index:3}
+.legend{display:flex;gap:13px;font-size:10px;color:var(--ink2)}
+.legend i{font-style:normal;display:inline-flex;align-items:center;gap:5px}
+.swatch{width:14px;height:3px;border-radius:2px;display:inline-block}
+.bandlab{position:absolute;bottom:6px;left:13px;right:13px;display:flex;font-size:9px;color:var(--ink2);
+  letter-spacing:.5px;pointer-events:none;z-index:3}
+.bandlab span{flex:1;text-align:center}
+.vmark{position:absolute;transform:translate(-50%,-50%);z-index:4;pointer-events:none}
+.vmark .tab{width:18px;height:18px;border-radius:5px;border:2px solid var(--ink);display:flex;
+  align-items:center;justify-content:center;font-family:"Archivo";font-weight:900;font-size:9px;color:var(--ink)}
+.callout{position:absolute;transform:translate(-50%,-100%);background:var(--ink);color:var(--bg);
+  font-size:10px;padding:4px 8px;border-radius:6px;white-space:nowrap;z-index:6;line-height:1.3;text-align:center}
+.callout b{color:var(--accent);font-family:"Archivo";font-weight:900}
+.callout:after{content:"";position:absolute;left:50%;top:100%;transform:translateX(-50%);
+  border:5px solid transparent;border-top-color:var(--ink)}
+
+/* corner board (center bottom) */
+.board{display:grid;grid-template-columns:1fr 1fr;gap:8px;padding:9px}
+.corner{background:var(--panel2);border:1.5px solid var(--hair);border-radius:8px;padding:7px 8px;cursor:pointer;position:relative;height:84px}
+.corner.act{border-color:var(--accent);box-shadow:inset 0 0 0 1px var(--accent)}
+.corner .cn{font-family:"Archivo";font-weight:800;font-size:10.5px}
+.corner .cs{font-size:8.5px;color:var(--ink2)}
+.corner svg{position:absolute;left:6px;right:6px;bottom:5px;height:42px;width:calc(100% - 12px)}
+
+/* inspector (right) */
+.insp{flex:none}
+.insp .ihead{display:flex;align-items:center;gap:9px;padding:11px 12px}
+.ibody{padding:2px 12px 12px}
+.field{margin-top:11px}
+.field .fl{display:flex;justify-content:space-between;align-items:baseline;font-size:10px;color:var(--ink2)}
+.field .fv{font-family:"Archivo";font-weight:700;font-size:12px;color:var(--ink)}
+.slide{height:8px;border-radius:5px;background:var(--sunk);margin-top:6px;position:relative;border:1px solid var(--hair2)}
+.slide .fill{position:absolute;left:0;top:0;bottom:0;border-radius:5px;background:var(--accent)}
+.slide .knob{position:absolute;top:50%;width:15px;height:15px;border-radius:50%;background:var(--panel2);
+  border:2px solid var(--accent);transform:translate(-50%,-50%)}
+.assist{margin:11px 12px 0;border-radius:9px;border:1.5px solid var(--hair);overflow:hidden}
+.assist .ah{display:flex;align-items:center;gap:7px;padding:8px 10px;background:var(--panel2);font-size:10px;
+  letter-spacing:1px;color:var(--ink2);text-transform:uppercase}
+.note{display:flex;gap:8px;padding:8px 10px;font-size:11px;line-height:1.35;border-top:1px solid var(--hair2)}
+.note .ic{flex:none;font-family:"Archivo";font-weight:900;width:16px;height:16px;border-radius:4px;
+  display:flex;align-items:center;justify-content:center;font-size:10px;color:#fff}
+.note.warn .ic{background:var(--warn)} .note.bad .ic{background:var(--bad)} .note.ok .ic{background:var(--good)}
+.note .fix{margin-left:auto;align-self:center;color:var(--accent);font-weight:700;cursor:pointer;white-space:nowrap}
+
+/* actions + morph row (bottom) */
+.foot{display:grid;grid-template-columns:206px 1fr 282px;gap:11px}
+.actbar{display:flex;gap:7px;align-items:center;padding:9px 11px;flex-wrap:wrap}
+.act{font-family:"Archivo";font-weight:700;font-size:11px;padding:8px 11px;border-radius:8px;cursor:pointer;
+  border:1.5px solid var(--hair);background:var(--panel2);color:var(--ink);white-space:nowrap}
+.act:hover{border-color:var(--ink2)}
+.act .k{color:var(--ink2);font-weight:500;font-size:9px;display:block;margin-top:1px}
+.morphwrap{padding:9px 12px;display:flex;flex-direction:column;gap:8px;justify-content:center}
+.mrow{display:flex;align-items:center;gap:10px}
+.mrow .ml{font-family:"Archivo";font-weight:800;font-size:11px;width:54px}
+.seg{flex:1;height:13px;display:flex;gap:2px}
+.seg i{flex:1;border-radius:1.5px;background:var(--sunk)}
+.seg i.on{background:var(--accent)}
+.seg i.onq{background:var(--good)}
+.mv{font-family:"Archivo";font-weight:700;font-size:11px;width:34px;text-align:right}
+.transport{display:flex;gap:6px;align-items:center;padding:9px 11px}
+.src{display:flex;border:1.5px solid var(--hair);border-radius:7px;overflow:hidden}
+.src button{font-family:"DM Mono";font-size:10px;padding:6px 9px;border:0;background:transparent;color:var(--ink2);cursor:pointer}
+.src button.on{background:var(--ink);color:var(--bg)}
+.play{width:34px;height:34px;border-radius:50%;border:2px solid var(--ink);background:var(--accent);color:#fff;
+  display:flex;align-items:center;justify-content:center;cursor:pointer;font-size:13px}
+</style>
+</head>
+<body class="">
+<div class="app">
+
+  <!-- HEADER -->
+  <div class="hdr">
+    <div class="brand">df2 / FORGE</div>
+    <div class="bodyname"><span class="arch">808 THROAT KNOCK</span><span style="color:var(--ink2);font-weight:500;font-size:11px">▾</span></div>
+    <div class="state"><span class="dot"></span> READY · bakes to 4×6</div>
+    <div class="spacer"></div>
+    <div class="tg" id="skin"><button class="on" data-s="light">LIGHT</button><button data-s="dark">DARK</button></div>
+    <button class="btn ghost sm">CLEAR</button>
+    <button class="btn sm">EXPORT</button>
+    <button class="btn accent sm">BAKE → SHIP</button>
+  </div>
+
+  <!-- MAIN -->
+  <div class="main">
+    <!-- LEFT: six voices -->
+    <div class="col">
+      <div class="card voices">
+        <div class="top"><span class="lab">Six Voices</span><span class="lab" id="vcount">VOWEL kit</span></div>
+        <div class="vlist" id="vlist"></div>
+        <div class="addrow">
+          <button class="btn ghost sm" style="flex:1">＋ VOICE</button>
+          <button class="btn ghost sm" style="flex:1">KITS ▾</button>
+        </div>
+      </div>
+    </div>
+
+    <!-- CENTER: hero + board -->
+    <div class="col">
+      <div class="card hero" id="hero">
+        <svg id="svg" viewBox="0 0 800 400" preserveAspectRatio="none"></svg>
+        <div class="heroTop">
+          <div class="legend">
+            <i><span class="swatch" style="background:var(--accent)"></span>this body</i>
+            <i><span class="swatch" style="background:var(--ink2);opacity:.5"></span>4 corners</i>
+            <i><span class="swatch" style="background:var(--good)"></span>middle (live)</i>
+          </div>
+          <div class="lab" id="cornerTag">HOME · M0 S0</div>
+        </div>
+        <div class="bandlab"><span>SUB</span><span>LOW</span><span>BODY</span><span>HONK</span><span>PRESENCE</span><span>EDGE</span><span>AIR</span></div>
+      </div>
+      <div class="card board" id="board"></div>
+    </div>
+
+    <!-- RIGHT: inspector + assist -->
+    <div class="col">
+      <div class="card insp" id="insp"></div>
+      <div class="card" style="flex:1;display:flex;flex-direction:column">
+        <div style="padding:11px 12px 4px" class="lab">Counterpoint — the body watching itself</div>
+        <div id="assistList" style="padding:4px 8px 10px;overflow:auto;flex:1"></div>
+      </div>
+    </div>
+  </div>
+
+  <!-- FOOTER -->
+  <div class="foot">
+    <div class="card transport">
+      <div class="play">▶</div>
+      <div class="src" id="src"><button class="on">SAW</button><button>PINK</button><button>808</button></div>
+      <div class="src" style="margin-left:auto"><button class="on">DRIVE</button><button>WIDE</button></div>
+    </div>
+    <div class="card actbar" id="actbar"></div>
+    <div class="card morphwrap" id="morphwrap"></div>
+  </div>
+</div>
+
+<script>
+/* ---------------- model: six voices, two morph frames, secondary = Q tighten ---------- */
+const VOICES=[
+ {id:'P',name:'PRESSURE',role:'sub weight',  col:'#E5352B', homeF:80, awayF:110, g:7,  q:0.9, tight:2.4, on:true,  kind:'pole'},
+ {id:'T',name:'THROAT',  role:'low body',   col:'#F0863A', homeF:320,awayF:470, g:6,  q:1.0, tight:3.0, on:true,  kind:'pole'},
+ {id:'B',name:'BODY',    role:'formant',    col:'#F5C518', homeF:700,awayF:1050,g:8,  q:1.1, tight:3.2, on:true,  kind:'pole'},
+ {id:'N',name:'NASAL',   role:'scoop (zero)',col:'#2FA84F',homeF:1100,awayF:1500,g:7, q:2.0, tight:3.4, on:true,  kind:'zero'},
+ {id:'E',name:'BITE',    role:'presence',   col:'#2D6CDF', homeF:2400,awayF:3400,g:9, q:1.4, tight:3.6, on:true,  kind:'pole'},
+ {id:'A',name:'AIR',     role:'top sheen',  col:'#17A0A0', homeF:9000,awayF:11000,g:5,q:0.7, tight:1.6, on:true,  kind:'pole'},
+];
+let morph=0.5, secondary=0.4, sel=2, activeCorner=0;
+const CORNERS=[['HOME','M0 S0',0,0],['AWAY','M1 S0',1,0],['TIGHT HOME','M0 S1',0,1],['TIGHT AWAY','M1 S1',1,1]];
+
+const F0=20,F1=20000,LO=Math.log10(F0),HI=Math.log10(F1);
+const xN=hz=>(Math.log10(hz)-LO)/(HI-LO);
+const hzAt=x=>Math.pow(10,LO+(HI-LO)*x);
+function voiceAt(v,m,s){ // freq/gain/q at a morph,secondary point
+  const f=v.homeF*Math.pow(v.awayF/v.homeF,m);
+  const q=v.q*(1+s*(v.tight-1));
+  return {f, g:v.g*(v.kind==='zero'?-1:1), q};
+}
+function peak(fc,db,q,hz){const r=Math.log2(hz/fc);const bw=1/Math.max(q,.25);return db*Math.exp(-(r*r)/(2*bw*bw));}
+function magCurve(m,s,N){const arr=[];for(let i=0;i<N;i++){const x=i/(N-1),hz=hzAt(x);let d=0;
+  for(const v of VOICES){if(!v.on)continue;const a=voiceAt(v,m,s);d+=peak(a.f,a.g,a.q,hz);} arr.push(d);}return arr;}
+
+const SVGNS='http://www.w3.org/2000/svg';
+function pathFrom(arr,W,H,pad){let p='';const n=arr.length;const MAX=30,MIN=-10;
+  for(let i=0;i<n;i++){const x=i/(n-1)*W;const v=Math.max(MIN,Math.min(MAX,arr[i]));
+    const y=H-pad-((v-MIN)/(MAX-MIN))*(H-pad*1.4);p+=(i?'L':'M')+x.toFixed(1)+','+y.toFixed(1)+' ';}return p;}
+function yOf(arr,hz,H,pad){const x=xN(hz),i=Math.round(x*(arr.length-1));const MAX=30,MIN=-10;
+  const v=Math.max(MIN,Math.min(MAX,arr[i]||0));return H-pad-((v-MIN)/(MAX-MIN))*(H-pad*1.4);}
+
+function renderHero(){
+  const W=800,H=400,pad=30,svg=document.getElementById('svg');
+  const cs=getComputedStyle(document.body);
+  const ink2=cs.getPropertyValue('--ink2'),accent=cs.getPropertyValue('--accent'),good=cs.getPropertyValue('--good'),hair=cs.getPropertyValue('--hair');
+  let g='';
+  // graticule
+  [60,250,700,1200,3000,6000,10000].forEach(f=>{const x=xN(f)*W;g+=`<line x1="${x}" y1="0" x2="${x}" y2="${H}" stroke="${hair}" stroke-width="1" stroke-dasharray="2 6"/>`;});
+  [24,12,0,-12].forEach(db=>{const y=H-pad-((db+10)/40)*(H-pad*1.4);g+=`<line x1="0" y1="${y}" x2="${W}" y2="${y}" stroke="${hair}" stroke-width="1" stroke-dasharray="2 6"/>`;});
+  // 4 corner ghosts
+  CORNERS.forEach(c=>{const a=magCurve(c[2],c[3],200);g+=`<path d="${pathFrom(a,W,H,pad)}" fill="none" stroke="${ink2}" stroke-opacity="0.32" stroke-width="1.3"/>`;});
+  // live MIDDLE
+  const mid=magCurve(0.5,0.5,200);g+=`<path d="${pathFrom(mid,W,H,pad)}" fill="none" stroke="${good}" stroke-width="1.6" stroke-dasharray="5 4"/>`;
+  // THIS body at the active corner — filled hero
+  const cur=magCurve(CORNERS[activeCorner][2],CORNERS[activeCorner][3],200);
+  const dp=pathFrom(cur,W,H,pad);
+  g+=`<path d="${dp} L${W},${H} L0,${H} Z" fill="${accent}" fill-opacity="0.13"/>`;
+  g+=`<path d="${dp}" fill="none" stroke="${accent}" stroke-width="3" stroke-linejoin="round"/>`;
+  svg.innerHTML=g;
+  // voice markers (HTML, over svg)
+  document.querySelectorAll('.vmark,.callout').forEach(e=>e.remove());
+  const hero=document.getElementById('hero');const m=CORNERS[activeCorner][2],s=CORNERS[activeCorner][3];
+  VOICES.forEach((v,i)=>{if(!v.on)return;const a=voiceAt(v,m,s);
+    const xp=xN(a.f)*100;const yp=yOf(cur,a.f,H,pad)/H*100;
+    const el=document.createElement('div');el.className='vmark';el.style.left=xp+'%';el.style.top=yp+'%';
+    el.innerHTML=`<div class="tab" style="background:${v.col}${i===sel?';outline:2px solid var(--selRing);outline-offset:2px':''}">${v.id}</div>`;
+    hero.appendChild(el);});
+  // callout on selected
+  const v=VOICES[sel];if(v.on){const a=voiceAt(v,m,s);const xp=xN(a.f)*100;const yp=yOf(cur,a.f,H,pad)/H*100;
+    const note=hzToNote(a.f);const c=document.createElement('div');c.className='callout';
+    c.style.left=xp+'%';c.style.top=(yp-6)+'%';
+    c.innerHTML=`${v.name} · ${v.role}<br><b>${note} · ${fmtHz(a.f)}</b>`;hero.appendChild(c);}
+}
+function fmtHz(f){return f>=1000?(f/1000).toFixed(2)+'k':Math.round(f)+' Hz';}
+const NOTES=['C','C#','D','D#','E','F','F#','G','G#','A','A#','B'];
+function hzToNote(f){const n=Math.round(12*Math.log2(f/440)+69);return NOTES[((n%12)+12)%12]+(Math.floor(n/12)-1);}
+
+function renderVoices(){
+  const list=document.getElementById('vlist');list.innerHTML='';
+  VOICES.forEach((v,i)=>{
+    const d=document.createElement('div');d.className='voice'+(i===sel?' sel':'')+(v.on?'':' off');
+    const spark=miniSpark(v);
+    d.innerHTML=`<div class="chip" style="background:${v.col}">${v.id}</div>
+      <div class="vmeta"><div class="vname">${v.name}</div><div class="vsub">${v.role} · ${v.kind==='zero'?'scoop':'peak'}</div></div>
+      ${spark}${v.locked?'<div class="pin">PIN</div>':''}`;
+    d.onclick=()=>{sel=i;renderAll();};
+    list.appendChild(d);
+  });
+  document.getElementById('insp').innerHTML=inspector();
+  bindInsp();
+}
+function miniSpark(v){const W=38,H=22,a=[];for(let i=0;i<24;i++){const hz=hzAt(i/23);const x=voiceAt(v,morph,secondary);
+  a.push(peak(x.f,x.g,x.q,hz));}
+  const cs=getComputedStyle(document.body);let p='';const MAX=12,MIN=-12;
+  for(let i=0;i<a.length;i++){const xx=i/(a.length-1)*W;const yy=H-((Math.max(MIN,Math.min(MAX,a[i]))-MIN)/(MAX-MIN))*H;p+=(i?'L':'M')+xx.toFixed(1)+','+yy.toFixed(1)+' ';}
+  return `<svg class="spark" viewBox="0 0 ${W} ${H}"><path d="${p}" fill="none" stroke="${v.col}" stroke-width="1.6"/></svg>`;}
+
+function inspector(){
+  const v=VOICES[sel];const a=voiceAt(v,CORNERS[activeCorner][2],CORNERS[activeCorner][3]);
+  const place=Math.round(xN(a.f)*100);
+  return `<div class="ihead"><div class="chip" style="background:${v.col}">${v.id}</div>
+     <div><div class="vname" style="font-size:14px">${v.name}</div><div class="vsub">${v.role}</div></div>
+     <div style="margin-left:auto" class="lab">${hzToNote(a.f)}</div></div>
+   <div class="ibody">
+     <div class="field"><div class="fl"><span>PLACE</span><span class="fv" id="fvplace">${hzToNote(a.f)} · ${fmtHz(a.f)}</span></div>
+       <div class="slide" id="sPlace"><div class="fill" style="width:${place}%"></div><div class="knob" style="left:${place}%"></div></div></div>
+     <div class="field"><div class="fl"><span>WEIGHT</span><span class="fv">+${v.g.toFixed(0)} dB</span></div>
+       <div class="slide"><div class="fill" style="width:${v.g/14*100}%"></div><div class="knob" style="left:${v.g/14*100}%"></div></div></div>
+     <div class="field"><div class="fl"><span>WIDTH</span><span class="fv">${v.q.toFixed(1)} Q → ${(v.q*v.tight).toFixed(1)} tight</span></div>
+       <div class="slide"><div class="fill" style="width:${Math.min(100,v.q/4*100)}%"></div><div class="knob" style="left:${Math.min(100,v.q/4*100)}%"></div></div></div>
+     <div style="display:flex;gap:7px;margin-top:13px">
+       <button class="btn ghost sm" style="flex:1" onclick="VOICES[${sel}].on=!VOICES[${sel}].on;renderAll()">${v.on?'MUTE':'UNMUTE'}</button>
+       <button class="btn ghost sm" style="flex:1" onclick="VOICES[${sel}].locked=!VOICES[${sel}].locked;renderAll()">${v.locked?'UNPIN':'PIN'}</button>
+       <button class="btn ghost sm" style="flex:1">EDIT ZERO</button>
+     </div>
+   </div>`;
+}
+function bindInsp(){const s=document.getElementById('sPlace');if(!s)return;
+  const drag=e=>{const r=s.getBoundingClientRect();const x=Math.max(0,Math.min(1,(e.clientX-r.left)/r.width));
+    const hz=hzAt(x);VOICES[sel].homeF=hz;VOICES[sel].awayF=hz*(VOICES[sel].awayF/VOICES[sel].homeF||1.4);renderAll();};
+  s.onmousedown=e=>{drag(e);const mv=ev=>drag(ev);const up=()=>{removeEventListener('mousemove',mv);removeEventListener('mouseup',up);};
+    addEventListener('mousemove',mv);addEventListener('mouseup',up);};}
+
+function renderBoard(){const b=document.getElementById('board');b.innerHTML='';
+  CORNERS.forEach((c,i)=>{const a=magCurve(c[2],c[3],120);const cs=getComputedStyle(document.body);
+    const col=i===activeCorner?cs.getPropertyValue('--accent'):cs.getPropertyValue('--ink2');
+    const d=document.createElement('div');d.className='corner'+(i===activeCorner?' act':'');
+    d.innerHTML=`<div class="cn">${c[0]}</div><div class="cs">${c[1]}</div>
+      <svg viewBox="0 0 200 50" preserveAspectRatio="none"><path d="${pathFrom(a,200,50,8)}" fill="none" stroke="${col}" stroke-width="${i===activeCorner?2:1.3}"/></svg>`;
+    d.onclick=()=>{activeCorner=i;renderAll();};b.appendChild(d);});}
+
+/* smart-assist: counterpoint warnings computed from voice spacing/stability */
+function assist(){
+  const out=[];const m=CORNERS[activeCorner][2],s=CORNERS[activeCorner][3];
+  const act=VOICES.filter(v=>v.on).map(v=>({v,a:voiceAt(v,m,s)})).sort((x,y)=>x.a.f-y.a.f);
+  // collisions (< minor third apart = mush)
+  for(let i=1;i<act.length;i++){const r=Math.log2(act[i].a.f/act[i-1].a.f);
+    if(r<0.25)out.push(['bad','✕',`<b>${act[i-1].v.name}</b> and <b>${act[i].v.name}</b> are ${(r*12).toFixed(0)} semitones apart — they'll mush.`,'SPREAD']);}
+  // instability: tight + high weight
+  act.forEach(o=>{if(o.a.q*(o.v.tight)>9 && o.v.g>6)out.push(['warn','!',`<b>${o.v.name}</b> goes razor-thin at TIGHT — close to ringing.`,'EASE']);});
+  // sub protection
+  const sub=act.find(o=>o.a.f<90);if(sub && sub.v.g>6)out.push(['warn','!',`<b>${sub.v.name}</b> is loud below 90 Hz — could boom on a club system.`,'SUB SAFE']);
+  // air present?
+  if(!act.some(o=>o.a.f>6000))out.push(['ok','+','No voice up top — body may sound dull. Add AIR for sheen.','ADD AIR']);
+  if(out.length===0)out.push(['ok','✓','Six voices sit cleanly across the spectrum. Good counterpoint.','']);
+  return out.map(n=>`<div class="note ${n[0]}"><div class="ic">${n[1]}</div><div>${n[2]}</div>${n[3]?`<div class="fix">${n[3]}</div>`:''}</div>`).join('');
+}
+
+function renderActions(){
+  const acts=[['MAKE WORK','fix all'],['Q DOES Q','make tight bite'],['ADD TEAR','rip a notch'],['ADD AIR','open top'],['SUB SAFE','tame lows'],['MOUNTAIN','+more ▾']];
+  document.getElementById('actbar').innerHTML=acts.map(a=>`<div class="act">${a[0]}<span class="k">${a[1]}</span></div>`).join('');
+}
+function renderMorph(){
+  const seg=(val,cls)=>{let s='';for(let i=0;i<26;i++)s+=`<i class="${i<Math.round(val*26)?cls:''}"></i>`;return s;};
+  document.getElementById('morphwrap').innerHTML=
+    `<div class="mrow"><div class="ml">MORPH</div><div class="seg">${seg(morph,'on')}</div><div class="mv">${(morph*100).toFixed(0)}</div></div>
+     <div class="mrow"><div class="ml">SECOND</div><div class="seg">${seg(secondary,'onq')}</div><div class="mv">${(secondary*100).toFixed(0)}</div></div>`;
+  bindSeg();
+}
+function bindSeg(){const rows=document.querySelectorAll('#morphwrap .seg');
+  rows.forEach((row,ri)=>{const set=e=>{const r=row.getBoundingClientRect();const x=Math.max(0,Math.min(1,(e.clientX-r.left)/r.width));
+    if(ri===0)morph=x;else secondary=x;renderMorph();renderVoices();renderHero();renderAssist();};
+    row.onmousedown=e=>{set(e);const mv=ev=>set(ev);const up=()=>{removeEventListener('mousemove',mv);removeEventListener('mouseup',up);};
+      addEventListener('mousemove',mv);addEventListener('mouseup',up);};});}
+function renderAssist(){document.getElementById('assistList').innerHTML=assist();}
+
+function renderAll(){
+  document.getElementById('cornerTag').textContent=CORNERS[activeCorner][0]+' · '+CORNERS[activeCorner][1];
+  renderVoices();renderHero();renderBoard();renderActions();renderMorph();renderAssist();
+}
+/* skin toggle */
+document.getElementById('skin').onclick=e=>{const b=e.target.closest('button');if(!b)return;
+  document.querySelectorAll('#skin button').forEach(x=>x.classList.remove('on'));b.classList.add('on');
+  document.body.classList.toggle('dark',b.dataset.s==='dark');renderAll();};
+document.querySelectorAll('.src').forEach(g=>g.onclick=e=>{const b=e.target.closest('button');if(!b)return;
+  g.querySelectorAll('button').forEach(x=>x.classList.remove('on'));b.classList.add('on');});
+renderAll();
+addEventListener('resize',renderHero);
+</script>
+</body>
+</html>

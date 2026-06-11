@@ -1,0 +1,88 @@
+{
+  "format": "forge-source-inventory-app-v1",
+  "source": "dev/tmp/forge_source_snap_inventory/source_inventory.report.json",
+  "categories": [
+    {
+      "id": "peak_shelf_morph",
+      "label": "Peak/Shelf Morph",
+      "tier": "editable_template",
+      "actions": [
+        "START",
+        "SNAP"
+      ],
+      "rows": [
+        "low-pass -> mid/high shelf two-frame morph"
+      ]
+    },
+    {
+      "id": "verified_editable",
+      "label": "Verified Editable",
+      "tier": "front",
+      "actions": [
+        "START",
+        "SNAP",
+        "OVERLAY"
+      ],
+      "groups": [
+        "law_author"
+      ]
+    },
+    {
+      "id": "verified_previews",
+      "label": "Verified Previews",
+      "tier": "front",
+      "actions": [
+        "PREVIEW",
+        "SNAP",
+        "OVERLAY"
+      ],
+      "groups": [
+        "physical_mountains",
+        "klatt_ouiii_to_eh"
+      ]
+    },
+    {
+      "id": "verified_exact",
+      "label": "Verified Exact",
+      "tier": "start_only",
+      "actions": [
+        "START"
+      ],
+      "groups": [
+        "exact_skeletons"
+      ]
+    },
+    {
+      "id": "experimental_verified",
+      "label": "Experimental Verified",
+      "tier": "details",
+      "actions": [
+        "START_EXPERIMENTAL",
+        "OVERLAY"
+      ],
+      "groups": [
+        "forge_auto",
+        "prove_iconic_method",
+        "lpc_corners",
+        "null_grammar",
+        "vowel_table"
+      ]
+    },
+    {
+      "id": "study_overlay",
+      "label": "Study Overlay",
+      "tier": "details",
+      "actions": [
+        "OVERLAY",
+        "FIT_PRIOR"
+      ],
+      "groups": [
+        "corner_library",
+        "synthetic_voice_capture_pack",
+        "arma_source_pack",
+        "capture_fit_bench",
+        "screamer_test"
+      ]
+    }
+  ]
+}

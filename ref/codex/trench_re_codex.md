@@ -84,9 +84,16 @@ These must not be conflated:
 
 ## Talking Hedz
 
-Talking Hedz is a sealed factory preset. It is P2K skin index 13 (hardware code 144). Its name string lives at RVA 0x1FF5DA8 in the DLL resource table (type=6, id=51, lang=1033). It cannot be opened in the Morph Designer. Its 36-byte stage descriptor is embedded somewhere in the binary — the exact static memory location has not yet been found.
+Talking Hedz is a sealed P2K factory preset. It is P2K skin index 13 (hardware
+code 144). Its name string lives at RVA 0x1FF5DA8 in the DLL resource table
+(type=6, id=51, lang=1033). It cannot be opened in the Morph Designer, and it is
+not produced by the Q-collapsed Morph Designer writer family.
 
-The caller chain feeding the descriptor into the compiler was traced: FUN_1802a6770 then FUN_1802a75a0 then FUN_1802ce160 then FUN_1802c0150. FUN_1802c0150 writes the preset pointer to param_1+0x20. The origin of that pointer (which static data address it references) is the missing link.
+The provenance-bearing word set is identified: `ref/presets/P2k_013_talking_hedz.bin`
+is the 240-byte packed ROM bank for skin 13, variant 0, `dat_index = 52`. It is
+extracted from `DAT_1806d762e + (skin_index * 4 + variant) * 0xf0` and
+transposed by the observed `FUN_1802d3ce0` layout. That file byte-matches the
+old Cheat Engine live `CPhantomRTFilter` dump at `object + 0x2c0`.
 
 What is known from runtime observation:
 - The Morph Designer screenshot showed Stage 1 as Off — Talking Hedz uses 5 active stages. [UNVERIFIED — coefficient data shows all 6 stages non-trivial at all 4 corners. "Off" may be a UI label, not a coefficient state.]
@@ -132,14 +139,9 @@ The DSP core achieved 0.990 to 0.9998 correlation across all reference compariso
 
 ## The Open Question: Stage 0 Type Byte
 
-The single highest-priority unknown is: what is Stage 0's type byte in the Talking Hedz preset?
-
-If Type 2 (shelf): standard algebraic scaling applies to Stage 0.
-If Type 3 (special/vocal): the split-code frequency compression hack applies to Stage 0, meaning the body stage of Talking Hedz is subject to the same Nyquist-area anchoring as the vocal formant stages.
-
-Two paths to resolve this:
-1. Trace FUN_1802c0150 or FUN_1802a3A80 in Ghidra to find the static data address storing the Talking Hedz 36-byte descriptor. Read byte 0 directly.
-2. Implement both Type 2 and Type 3 for Stage 0 in the TRENCH engine, run RMS error against existing runtime capture data, and let the audio discriminate.
+The old "find the stage descriptor" priority is obsolete for the P2K Hedz
+target. Use the packed ROM body as the study oracle and validate derived bodies
+against the packed-runtime path.
 
 Path 2 is cheaper. Path 1 is definitive.
 

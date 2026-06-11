@@ -14,6 +14,7 @@ extern "C"
     void trench_engine_set_spatial_mode (void* engine, int mode);         // 0=QSound, 1=Trench, 2=Off
     void trench_engine_set_qsound_fallback_pan (void* engine, float pan); // -1=left, 0=mono centre, +1=right
     void trench_engine_set_agc_enabled (void* engine, int enabled);
+    void trench_engine_set_saturation_enabled (void* engine, int enabled);
     void trench_engine_set_agc_drive (void* engine, float drive);
     void trench_engine_process_block (void* engine, float* left, float* right, int numSamples, double morph, double q);
     void trench_engine_get_coeffs (void* engine, float* outCoeffs, float* outBoost);
@@ -47,6 +48,7 @@ public:
         {
             trench_engine_prepare (engine, sampleRate);
             trench_engine_set_agc_enabled (engine, 1);
+            trench_engine_set_saturation_enabled (engine, 0);
             trench_engine_set_agc_drive (engine, musicalAgcDrive);
         }
     }

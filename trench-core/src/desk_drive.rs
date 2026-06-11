@@ -1,9 +1,10 @@
 pub const SUPPORTED_MODEL: &str = "desk_slam_v1";
+const TWENTY_BIT_SIGNED_SCALE: f32 = 524_287.0;
 
 /// Pre-cascade authored drive.
 ///
-/// This is intentionally honest about what it is: a generic ugly desk-style
-/// saturator for hostile gain staging. It does not claim hardware identity.
+/// Mackie-ish desk input damage for hostile gain staging, emitted on a
+/// signed 20-bit grid before the packed cascade and AGC.
 #[derive(Debug, Clone)]
 pub struct DeskDrive {
     enabled: bool,
@@ -129,7 +130,7 @@ impl DeskDrive {
         self.slew_state += delta;
 
         let rolled = self.lowpass(self.slew_state);
-        rolled * self.output_trim
+        quantize_20_bit(rolled * self.output_trim)
     }
 
     #[inline(always)]
@@ -156,6 +157,11 @@ fn db_to_linear(db: f32) -> f32 {
 fn one_pole_alpha(fc: f32, sample_rate: f32) -> f32 {
     let omega = 2.0 * std::f32::consts::PI * fc / sample_rate;
     (1.0 - (-omega).exp()).clamp(0.0, 1.0)
+}
+
+#[inline(always)]
+fn quantize_20_bit(sample: f32) -> f32 {
+    (sample.clamp(-1.0, 1.0) * TWENTY_BIT_SIGNED_SCALE).round() / TWENTY_BIT_SIGNED_SCALE
 }
 
 #[inline(always)]

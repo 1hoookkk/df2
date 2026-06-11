@@ -1,0 +1,75 @@
+{
+    "id":  "resp_0418e643336ddedb006a1d729003d08190a94b15062ddbffd0",
+    "object":  "response",
+    "created_at":  1780314768,
+    "status":  "incomplete",
+    "background":  true,
+    "billing":  {
+                    "payer":  "developer"
+                },
+    "completed_at":  null,
+    "error":  null,
+    "frequency_penalty":  0.0,
+    "incomplete_details":  {
+                               "reason":  "max_output_tokens"
+                           },
+    "instructions":  null,
+    "max_output_tokens":  1800,
+    "max_tool_calls":  null,
+    "model":  "gpt-5.5-pro-2026-04-23",
+    "moderation":  null,
+    "output":  [
+                   {
+                       "id":  "rs_0418e643336ddedb006a1d72b3234c8190bd2dd75d2afcfad3",
+                       "type":  "reasoning",
+                       "summary":  [
+                                       {
+                                           "type":  "summary_text",
+                                           "text":  "**Considering architecture limitations**\n\nThe user indicated there shouldn’t be new architecture included, so I wonder if there\u0027s a pre-existing 240-byte structure in the report. I think I can rely on saved reasoning to guide me. If I include a “packed body,” there’s a risk that an exact byte can fail if it isn’t expected from previous answers. I need to figure this out! \n\nAlso, I’m examining what “DF2 Forge” could refer to, possibly involving six rows and four corners?"
+                                       }
+                                   ]
+                   }
+               ],
+    "parallel_tool_calls":  true,
+    "presence_penalty":  0.0,
+    "previous_response_id":  null,
+    "prompt_cache_key":  null,
+    "prompt_cache_retention":  "24h",
+    "reasoning":  {
+                      "context":  "current_turn",
+                      "effort":  "medium",
+                      "summary":  "detailed"
+                  },
+    "safety_identifier":  null,
+    "service_tier":  "default",
+    "store":  true,
+    "temperature":  1.0,
+    "text":  {
+                 "format":  {
+                                "type":  "text"
+                            },
+                 "verbosity":  "medium"
+             },
+    "tool_choice":  "auto",
+    "tools":  [
+
+              ],
+    "top_logprobs":  0,
+    "top_p":  0.98,
+    "truncation":  "disabled",
+    "usage":  {
+                  "input_tokens":  3446,
+                  "input_tokens_details":  {
+                                               "cached_tokens":  0
+                                           },
+                  "output_tokens":  1800,
+                  "output_tokens_details":  {
+                                                "reasoning_tokens":  1800
+                                            },
+                  "total_tokens":  5246
+              },
+    "user":  null,
+    "metadata":  {
+
+                 }
+}

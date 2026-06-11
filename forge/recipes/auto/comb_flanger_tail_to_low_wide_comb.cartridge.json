@@ -1,0 +1,340 @@
+{
+  "format": "forge-cartridge-v1",
+  "keyframes": [
+    {
+      "boost": 1.0,
+      "label": "M0_Q0",
+      "packedWords": [
+        [
+          46298,
+          62586,
+          30285,
+          38623,
+          41244
+        ],
+        [
+          33974,
+          51445,
+          33544,
+          38623,
+          53291
+        ],
+        [
+          41128,
+          51445,
+          41158,
+          38623,
+          53688
+        ],
+        [
+          47394,
+          62586,
+          45369,
+          38623,
+          54765
+        ],
+        [
+          50448,
+          51445,
+          50658,
+          38623,
+          53832
+        ],
+        [
+          59100,
+          51445,
+          59363,
+          38623,
+          53859
+        ]
+      ]
+    },
+    {
+      "boost": 1.0,
+      "label": "M100_Q0",
+      "packedWords": [
+        [
+          46259,
+          62586,
+          27253,
+          38623,
+          38002
+        ],
+        [
+          32193,
+          51445,
+          31194,
+          38623,
+          52884
+        ],
+        [
+          40308,
+          51445,
+          40322,
+          38623,
+          53665
+        ],
+        [
+          47105,
+          62586,
+          43551,
+          38623,
+          53609
+        ],
+        [
+          49108,
+          51445,
+          49277,
+          38623,
+          53820
+        ],
+        [
+          57691,
+          51445,
+          57888,
+          38623,
+          53856
+        ]
+      ]
+    },
+    {
+      "boost": 1.0,
+      "label": "M0_Q100",
+      "packedWords": [
+        [
+          46298,
+          62586,
+          30294,
+          30443,
+          41251
+        ],
+        [
+          33974,
+          51445,
+          33557,
+          30443,
+          53302
+        ],
+        [
+          41128,
+          51445,
+          41174,
+          30443,
+          53705
+        ],
+        [
+          47394,
+          62586,
+          45387,
+          30443,
+          54787
+        ],
+        [
+          50448,
+          51445,
+          50681,
+          30443,
+          53851
+        ],
+        [
+          59100,
+          51445,
+          59389,
+          30443,
+          53879
+        ]
+      ]
+    },
+    {
+      "boost": 1.0,
+      "label": "M100_Q100",
+      "packedWords": [
+        [
+          46259,
+          62586,
+          27250,
+          30443,
+          38001
+        ],
+        [
+          32193,
+          51445,
+          31206,
+          30443,
+          52899
+        ],
+        [
+          40308,
+          51445,
+          40350,
+          30443,
+          53681
+        ],
+        [
+          47105,
+          62586,
+          43578,
+          30443,
+          53626
+        ],
+        [
+          49108,
+          51445,
+          49295,
+          30443,
+          53840
+        ],
+        [
+          57691,
+          51445,
+          57907,
+          30443,
+          53876
+        ]
+      ]
+    }
+  ],
+  "meta": {
+    "family": "comb",
+    "note": "flanger tail -> low body, wide-spaced teeth",
+    "source": "tables/ physical models"
+  },
+  "name": "comb_flanger_tail_to_low_wide_comb",
+  "recipe": {
+    "axes": {
+      "morph": {
+        "high": "AWAY",
+        "low": "HOME",
+        "scale": "log",
+        "slide_semitones": 0.0
+      },
+      "secondary": {
+        "amount": 0.25,
+        "high": "TIGHT",
+        "low": "OPEN",
+        "mode": "q_crank"
+      }
+    },
+    "constraints": {
+      "headroom_db": 18.0,
+      "max_radius": 0.999,
+      "on_unstable": "reject",
+      "unity_dc": true
+    },
+    "lanes": [
+      {
+        "anatomy": {
+          "away_hz": 500.0,
+          "pole_hz": 650.0,
+          "sharp": 0.9944
+        },
+        "articulation": {
+          "cut": "hug"
+        },
+        "id": 0,
+        "label": "peak_low",
+        "role": "peak_low",
+        "survival": {
+          "gain": 1.0
+        }
+      },
+      {
+        "anatomy": {
+          "away_hz": 700.0,
+          "pole_hz": 850.0,
+          "sharp": 0.9944
+        },
+        "articulation": {
+          "cut": "custom",
+          "zero": {
+            "depth": 0.95,
+            "ratio": 1.0
+          }
+        },
+        "id": 1,
+        "label": "notch_1",
+        "role": "notch_1",
+        "survival": {
+          "gain": 0.55
+        }
+      },
+      {
+        "anatomy": {
+          "away_hz": 1500.0,
+          "pole_hz": 1600.0,
+          "sharp": 0.9944
+        },
+        "articulation": {
+          "cut": "custom",
+          "zero": {
+            "depth": 0.95,
+            "ratio": 1.0
+          }
+        },
+        "id": 2,
+        "label": "notch_2",
+        "role": "notch_2",
+        "survival": {
+          "gain": 0.55
+        }
+      },
+      {
+        "anatomy": {
+          "away_hz": 2000.0,
+          "pole_hz": 2300.0,
+          "sharp": 0.9944
+        },
+        "articulation": {
+          "cut": "hug"
+        },
+        "id": 3,
+        "label": "peak_high",
+        "role": "peak_high",
+        "survival": {
+          "gain": 1.0
+        }
+      },
+      {
+        "anatomy": {
+          "away_hz": 3200.0,
+          "pole_hz": 3700.0,
+          "sharp": 0.9944
+        },
+        "articulation": {
+          "cut": "custom",
+          "zero": {
+            "depth": 0.95,
+            "ratio": 1.0
+          }
+        },
+        "id": 4,
+        "label": "notch_3",
+        "role": "notch_3",
+        "survival": {
+          "gain": 0.55
+        }
+      },
+      {
+        "anatomy": {
+          "away_hz": 7000.0,
+          "pole_hz": 8200.0,
+          "sharp": 0.9944
+        },
+        "articulation": {
+          "cut": "custom",
+          "zero": {
+            "depth": 0.95,
+            "ratio": 1.0
+          }
+        },
+        "id": 5,
+        "label": "notch_4",
+        "role": "notch_4",
+        "survival": {
+          "gain": 0.55
+        }
+      }
+    ]
+  },
+  "sampleRate": 39062.5
+}

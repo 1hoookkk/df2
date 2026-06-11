@@ -1,0 +1,948 @@
+{
+  "source_dll": "C:\\Program Files\\Common Files\\VST3\\EmulatorX.dll",
+  "source_dll_sha256": "32b08c9bbe19c97cdbf11493576fc09231b1ebb9770d85330f5fa9948db7bf07",
+  "image_base": "0x180000000",
+  "scope": "X3 menu filters from No Filter through Morph Designer",
+  "corners": [
+    "M0_Q0",
+    "M100_Q0",
+    "M0_Q100",
+    "M100_Q100"
+  ],
+  "sample_rates": [
+    44100,
+    48000,
+    96000,
+    192000
+  ],
+  "fixed_point_decode_status": "intentionally unclassified; raw i16 words preserved exactly",
+  "rom_tables": {
+    "lp": {
+      "name": "lp",
+      "base": "0x1806d65e0",
+      "bytes": 160,
+      "sha256": "a76008b1c222e97822f422fc6bcfd99d32d637d3c882a347bd5f7c2f51e03767",
+      "file": "ref/x3_menu/raw_tables/lp.raw",
+      "sample_rate_stride_bytes": 40,
+      "sample_rates": [
+        44100,
+        48000,
+        96000,
+        192000
+      ],
+      "source_stages": 1
+    },
+    "hp": {
+      "name": "hp",
+      "base": "0x1806d6680",
+      "bytes": 160,
+      "sha256": "407968a51e83743a506f510df30d3f36f08d96618acf79e5e0605f8e9cd8b438",
+      "file": "ref/x3_menu/raw_tables/hp.raw",
+      "sample_rate_stride_bytes": 40,
+      "sample_rates": [
+        44100,
+        48000,
+        96000,
+        192000
+      ],
+      "source_stages": 1
+    },
+    "swept_eq_1": {
+      "name": "swept_eq_1",
+      "base": "0x1806d6720",
+      "bytes": 160,
+      "sha256": "8a507bcef7144f95c31ac2e4c094406de180e1d81c6ba43b93cc01376041c48a",
+      "file": "ref/x3_menu/raw_tables/swept_eq_1.raw",
+      "sample_rate_stride_bytes": 40,
+      "sample_rates": [
+        44100,
+        48000,
+        96000,
+        192000
+      ],
+      "source_stages": 1
+    },
+    "swept_eq_2": {
+      "name": "swept_eq_2",
+      "base": "0x1806d67c0",
+      "bytes": 160,
+      "sha256": "49f7ab14d648943f2477628b42f18034f86c6561a7fb896cd929350eeb863f18",
+      "file": "ref/x3_menu/raw_tables/swept_eq_2.raw",
+      "sample_rate_stride_bytes": 40,
+      "sample_rates": [
+        44100,
+        48000,
+        96000,
+        192000
+      ],
+      "source_stages": 1
+    },
+    "swept_eq_3": {
+      "name": "swept_eq_3",
+      "base": "0x1806d6860",
+      "bytes": 160,
+      "sha256": "6a0254154ac4a5d67fabf851f4b018af1ef4836769b5d123ec5aa0a11e0edec6",
+      "file": "ref/x3_menu/raw_tables/swept_eq_3.raw",
+      "sample_rate_stride_bytes": 40,
+      "sample_rates": [
+        44100,
+        48000,
+        96000,
+        192000
+      ],
+      "source_stages": 1
+    },
+    "bandpass": {
+      "name": "bandpass",
+      "base": "0x1806d6900",
+      "bytes": 160,
+      "sha256": "3f61a099ea53c774b629dfc1f3d3815524612e2a79a1c9750873ee55f0daac82",
+      "file": "ref/x3_menu/raw_tables/bandpass.raw",
+      "sample_rate_stride_bytes": 40,
+      "sample_rates": [
+        44100,
+        48000,
+        96000,
+        192000
+      ],
+      "source_stages": 1
+    },
+    "contrary_bandpass": {
+      "name": "contrary_bandpass",
+      "base": "0x1806d69a0",
+      "bytes": 160,
+      "sha256": "fb3a21da7b40d0064a683cb622ec0eb3d0863fae5cffc96f538d2f0107aadf4d",
+      "file": "ref/x3_menu/raw_tables/contrary_bandpass.raw",
+      "sample_rate_stride_bytes": 40,
+      "sample_rates": [
+        44100,
+        48000,
+        96000,
+        192000
+      ],
+      "source_stages": 1
+    },
+    "phaser_1": {
+      "name": "phaser_1",
+      "base": "0x1806d6a40",
+      "bytes": 320,
+      "sha256": "c4e19bb9b8fcd650ad1f6d81fe1a7defdc3b5e047ae2f5d4d4fdc1c6b7adf983",
+      "file": "ref/x3_menu/raw_tables/phaser_1.raw",
+      "sample_rate_stride_bytes": 80,
+      "sample_rates": [
+        44100,
+        48000,
+        96000,
+        192000
+      ],
+      "source_stages": 2
+    },
+    "phaser_2": {
+      "name": "phaser_2",
+      "base": "0x1806d6b80",
+      "bytes": 320,
+      "sha256": "49ee8cffc9d8d87b634171e000afab095894f28ad28b5e6112796c865cbb1759",
+      "file": "ref/x3_menu/raw_tables/phaser_2.raw",
+      "sample_rate_stride_bytes": 80,
+      "sample_rates": [
+        44100,
+        48000,
+        96000,
+        192000
+      ],
+      "source_stages": 2
+    },
+    "bat_phaser": {
+      "name": "bat_phaser",
+      "base": "0x1806d6cc0",
+      "bytes": 320,
+      "sha256": "ce0d753abcb60af805533cb0cb28a7c78a2dc30370a9128c62754af0e96c66e0",
+      "file": "ref/x3_menu/raw_tables/bat_phaser.raw",
+      "sample_rate_stride_bytes": 80,
+      "sample_rates": [
+        44100,
+        48000,
+        96000,
+        192000
+      ],
+      "source_stages": 2
+    },
+    "flanger_lite": {
+      "name": "flanger_lite",
+      "base": "0x1806d6e00",
+      "bytes": 480,
+      "sha256": "91af4d66458c0780cfa1fb36833176742678b38169f268f273797d961e43240a",
+      "file": "ref/x3_menu/raw_tables/flanger_lite.raw",
+      "sample_rate_stride_bytes": 120,
+      "sample_rates": [
+        44100,
+        48000,
+        96000,
+        192000
+      ],
+      "source_stages": 3
+    },
+    "vocal_ah_ay_ee": {
+      "name": "vocal_ah_ay_ee",
+      "base": "0x1806d6fe0",
+      "bytes": 480,
+      "sha256": "1287cf0c6e41d859f958d7c3cf2fc088d99f0d8c936d2102d62b70a50ee1901f",
+      "file": "ref/x3_menu/raw_tables/vocal_ah_ay_ee.raw",
+      "sample_rate_stride_bytes": 120,
+      "sample_rates": [
+        44100,
+        48000,
+        96000,
+        192000
+      ],
+      "source_stages": 3
+    },
+    "vocal_oo_ah": {
+      "name": "vocal_oo_ah",
+      "base": "0x1806d71c0",
+      "bytes": 480,
+      "sha256": "d17a91130db17fda919b1fb15e4b1b3092d829ff78840f919140bcb3cb9925dc",
+      "file": "ref/x3_menu/raw_tables/vocal_oo_ah.raw",
+      "sample_rate_stride_bytes": 120,
+      "sample_rates": [
+        44100,
+        48000,
+        96000,
+        192000
+      ],
+      "source_stages": 3
+    }
+  },
+  "generated_tables": {
+    "morph_shared_base": {
+      "name": "morph_shared_base",
+      "base": "0x1806d73a0",
+      "bytes": 16,
+      "sha256": "ea7ea1aed0381d033fe47e71c28b18db081ad4199a5da4f5ad2008d9aa6669f9",
+      "file": "ref/x3_menu/raw_tables/morph_shared_base.raw"
+    },
+    "morph_shared_scale": {
+      "name": "morph_shared_scale",
+      "base": "0x1806d73b0",
+      "bytes": 16,
+      "sha256": "ca926c765248dfd67d87e48448db810ecdd2ad6fbc5b777d01955bf31db8864f",
+      "file": "ref/x3_menu/raw_tables/morph_shared_scale.raw"
+    },
+    "dual_eq_lp_profiles": {
+      "name": "dual_eq_lp_profiles",
+      "base": "0x1806d73c0",
+      "bytes": 192,
+      "sha256": "986caa9a69dea1a82034c099cb5373c1bcb6deab19961f29c1abeb04380132e3",
+      "file": "ref/x3_menu/raw_tables/dual_eq_lp_profiles.raw"
+    },
+    "dual_eq_expression_profiles": {
+      "name": "dual_eq_expression_profiles",
+      "base": "0x1806d7480",
+      "bytes": 96,
+      "sha256": "15ffde6d50d1dc42e8a30b3b569b91b2e52bae8d384a89e4320cab59c7a7f4a8",
+      "file": "ref/x3_menu/raw_tables/dual_eq_expression_profiles.raw"
+    },
+    "peak_shelf_base": {
+      "name": "peak_shelf_base",
+      "base": "0x1806d74e0",
+      "bytes": 16,
+      "sha256": "8eafb7f34b24513325af4e32cc2bdd299418926a8607f68f8e801cb3af2caea1",
+      "file": "ref/x3_menu/raw_tables/peak_shelf_base.raw"
+    },
+    "peak_shelf_scale": {
+      "name": "peak_shelf_scale",
+      "base": "0x1806d74f0",
+      "bytes": 16,
+      "sha256": "75354651718d62239c6dac3eb2abf157c8a6d983aa173c09c708b10891f9a2d8",
+      "file": "ref/x3_menu/raw_tables/peak_shelf_scale.raw"
+    },
+    "morph_designer_bypass": {
+      "name": "morph_designer_bypass",
+      "base": "0x1806d7500",
+      "bytes": 10,
+      "sha256": "0d09a9b4378fc6c369b5bce3c0e3e6ad9e67224438c6de2cb01ef114d09226ca",
+      "file": "ref/x3_menu/raw_tables/morph_designer_bypass.raw"
+    },
+    "morph_designer_base": {
+      "name": "morph_designer_base",
+      "base": "0x1806d7510",
+      "bytes": 16,
+      "sha256": "8eafb7f34b24513325af4e32cc2bdd299418926a8607f68f8e801cb3af2caea1",
+      "file": "ref/x3_menu/raw_tables/morph_designer_base.raw"
+    },
+    "morph_designer_scale": {
+      "name": "morph_designer_scale",
+      "base": "0x1806d7520",
+      "bytes": 16,
+      "sha256": "75354651718d62239c6dac3eb2abf157c8a6d983aa173c09c708b10891f9a2d8",
+      "file": "ref/x3_menu/raw_tables/morph_designer_scale.raw"
+    }
+  },
+  "menu": [
+    {
+      "name": "No Filter",
+      "kind": "bypass",
+      "note": "Menu bypass selection; no coefficient writer."
+    },
+    {
+      "name": "2 Pole Lowpass",
+      "kind": "rom_table_class",
+      "class": "CPhantomLP2Pole",
+      "writer": "FUN_1802c4b80",
+      "vtable": "0x1806d5e50",
+      "rom_table": "lp",
+      "output_stages": 1,
+      "runtime_snapshots": [
+        {
+          "sample_rate": 44100,
+          "file": "ref/x3_menu/runtime_blocks/2_pole_lowpass_44100.raw",
+          "bytes": 40,
+          "sha256": "05a84107e86063fe364ac6bb60759dc30e23de60b44b3d5c935a0ccb734be25b"
+        },
+        {
+          "sample_rate": 48000,
+          "file": "ref/x3_menu/runtime_blocks/2_pole_lowpass_48000.raw",
+          "bytes": 40,
+          "sha256": "69f53af5a24ec2c7425f2fa408f1e90512969193d57b008dd0d6ee7ea6bfd785"
+        },
+        {
+          "sample_rate": 96000,
+          "file": "ref/x3_menu/runtime_blocks/2_pole_lowpass_96000.raw",
+          "bytes": 40,
+          "sha256": "5c25fc8e0ed65bdc6b3cd1ff6745b504b6903a94e4ab12ca2d7fa958df30ac91"
+        },
+        {
+          "sample_rate": 192000,
+          "file": "ref/x3_menu/runtime_blocks/2_pole_lowpass_192000.raw",
+          "bytes": 40,
+          "sha256": "1349d0186a5921630af0224b3deb34bbd936610c0f1eeb89fe3ed75115b97bfb"
+        }
+      ]
+    },
+    {
+      "name": "4 Pole Lowpass",
+      "kind": "rom_table_class",
+      "class": "CPhantomLP4Pole",
+      "writer": "FUN_1802c4c40",
+      "vtable": "0x1806d5e78",
+      "rom_table": "lp",
+      "output_stages": 2,
+      "runtime_snapshots": [
+        {
+          "sample_rate": 44100,
+          "file": "ref/x3_menu/runtime_blocks/4_pole_lowpass_44100.raw",
+          "bytes": 80,
+          "sha256": "68a549dbaf8133fe1e43d6ba08c435d2500cb5a88205b3d948f4690635e0800b"
+        },
+        {
+          "sample_rate": 48000,
+          "file": "ref/x3_menu/runtime_blocks/4_pole_lowpass_48000.raw",
+          "bytes": 80,
+          "sha256": "d37f97e72443b8a05bc505067c34536dccd5fcf10654c5653d0e4c14d0e81f07"
+        },
+        {
+          "sample_rate": 96000,
+          "file": "ref/x3_menu/runtime_blocks/4_pole_lowpass_96000.raw",
+          "bytes": 80,
+          "sha256": "586d3f060abe14a08f77e902a581563a4c4f9a9337383bc923d4f608d9e76e98"
+        },
+        {
+          "sample_rate": 192000,
+          "file": "ref/x3_menu/runtime_blocks/4_pole_lowpass_192000.raw",
+          "bytes": 80,
+          "sha256": "eba85642a92d861e5384181980747b074ee7ef3ec607fc23490887f6c6389be0"
+        }
+      ]
+    },
+    {
+      "name": "6 Pole Lowpass",
+      "kind": "rom_table_class",
+      "class": "CPhantomLP6Pole",
+      "writer": "FUN_1802c4d20",
+      "vtable": "0x1806d5ea0",
+      "rom_table": "lp",
+      "output_stages": 3,
+      "runtime_snapshots": [
+        {
+          "sample_rate": 44100,
+          "file": "ref/x3_menu/runtime_blocks/6_pole_lowpass_44100.raw",
+          "bytes": 120,
+          "sha256": "4d01439ccdb9f46077a949fa5c3ae8ec7aaca0cce9cf052d08f609f8ede4b72f"
+        },
+        {
+          "sample_rate": 48000,
+          "file": "ref/x3_menu/runtime_blocks/6_pole_lowpass_48000.raw",
+          "bytes": 120,
+          "sha256": "fa10d87ca395ac9099065167cde4949e5e8fb987a0225b2e42d78ff2fb1324ff"
+        },
+        {
+          "sample_rate": 96000,
+          "file": "ref/x3_menu/runtime_blocks/6_pole_lowpass_96000.raw",
+          "bytes": 120,
+          "sha256": "198e079ca095f1b79c866012cdcb5167ba2a1c7c1faf5e69a2e765fe03fb3725"
+        },
+        {
+          "sample_rate": 192000,
+          "file": "ref/x3_menu/runtime_blocks/6_pole_lowpass_192000.raw",
+          "bytes": 120,
+          "sha256": "7db3396495d3e48d03a737fcaba94863ffc92abbb87353651e41ee8769916d91"
+        }
+      ]
+    },
+    {
+      "name": "2 Pole Highpass",
+      "kind": "rom_table_class",
+      "class": "CPhantomHP2Pole",
+      "writer": "FUN_1802c4e00",
+      "vtable": "0x1806d5ec8",
+      "rom_table": "hp",
+      "output_stages": 1,
+      "runtime_snapshots": [
+        {
+          "sample_rate": 44100,
+          "file": "ref/x3_menu/runtime_blocks/2_pole_highpass_44100.raw",
+          "bytes": 40,
+          "sha256": "1ddcce519ce5c41c09e40fac3fd14837b4a73988b6328843f84c7a6dae92fbbc"
+        },
+        {
+          "sample_rate": 48000,
+          "file": "ref/x3_menu/runtime_blocks/2_pole_highpass_48000.raw",
+          "bytes": 40,
+          "sha256": "8ff18173f649f6ce2223439550df92317528bf8a5a3944c9ab61186569c74e29"
+        },
+        {
+          "sample_rate": 96000,
+          "file": "ref/x3_menu/runtime_blocks/2_pole_highpass_96000.raw",
+          "bytes": 40,
+          "sha256": "7b3b00c0f96e6bf97234f465e4fc22ef746aead707366c092b8b7a3b84fbbb0c"
+        },
+        {
+          "sample_rate": 192000,
+          "file": "ref/x3_menu/runtime_blocks/2_pole_highpass_192000.raw",
+          "bytes": 40,
+          "sha256": "1eeb9048c260a0f0cd8f89308bb7f20403cd93260849351c98a7e0e9db3b49c4"
+        }
+      ]
+    },
+    {
+      "name": "4 Pole Highpass",
+      "kind": "rom_table_class",
+      "class": "CPhantomHP4Pole",
+      "writer": "FUN_1802c4ec0",
+      "vtable": "0x1806d5ef0",
+      "rom_table": "hp",
+      "output_stages": 2,
+      "runtime_snapshots": [
+        {
+          "sample_rate": 44100,
+          "file": "ref/x3_menu/runtime_blocks/4_pole_highpass_44100.raw",
+          "bytes": 80,
+          "sha256": "f8323a39a1fc9a747d355f625bbe715233df5e5392bfc036a62b0648e141a65f"
+        },
+        {
+          "sample_rate": 48000,
+          "file": "ref/x3_menu/runtime_blocks/4_pole_highpass_48000.raw",
+          "bytes": 80,
+          "sha256": "d3506e9c1e1b7f47c63f5891cb9138ff43c8d0aa3d9e076a3855dcfc2e21795b"
+        },
+        {
+          "sample_rate": 96000,
+          "file": "ref/x3_menu/runtime_blocks/4_pole_highpass_96000.raw",
+          "bytes": 80,
+          "sha256": "a84159bdfec87e4c49c5f2040828f40ba2615c86f85cdd10a99986c2b95982c0"
+        },
+        {
+          "sample_rate": 192000,
+          "file": "ref/x3_menu/runtime_blocks/4_pole_highpass_192000.raw",
+          "bytes": 80,
+          "sha256": "0809ba0445a517ca97f7adc45724908aa5c9d333ff3457aa6634bc7b06b243d4"
+        }
+      ]
+    },
+    {
+      "name": "2 Pole Bandpass",
+      "kind": "rom_table_class",
+      "class": "CPhantomBP2Pole",
+      "writer": "FUN_1802c51e0",
+      "vtable": "0x1806d5f78",
+      "rom_table": "bandpass",
+      "output_stages": 1,
+      "runtime_snapshots": [
+        {
+          "sample_rate": 44100,
+          "file": "ref/x3_menu/runtime_blocks/2_pole_bandpass_44100.raw",
+          "bytes": 40,
+          "sha256": "b7d3be48157e72925b3aaf15c58d658e452ae2f5be938738dea95b9edabcb95a"
+        },
+        {
+          "sample_rate": 48000,
+          "file": "ref/x3_menu/runtime_blocks/2_pole_bandpass_48000.raw",
+          "bytes": 40,
+          "sha256": "ba94ced84d4848a306f2e4f2f3b53136efd951a78647d0d2c25cd3860e4f82f4"
+        },
+        {
+          "sample_rate": 96000,
+          "file": "ref/x3_menu/runtime_blocks/2_pole_bandpass_96000.raw",
+          "bytes": 40,
+          "sha256": "5d5a18ad9a299ea817807c1f31a88b823e1010acfcf7ad9f0d6feaf84ed7235b"
+        },
+        {
+          "sample_rate": 192000,
+          "file": "ref/x3_menu/runtime_blocks/2_pole_bandpass_192000.raw",
+          "bytes": 40,
+          "sha256": "69b83b5879c6d4b928623f88551ddbbd2743d3e449735905e02e14bc1384b0c4"
+        }
+      ]
+    },
+    {
+      "name": "4 Pole Bandpass",
+      "kind": "rom_table_class",
+      "class": "CPhantomBP4Pole",
+      "writer": "FUN_1802c52a0",
+      "vtable": "0x1806d5f98",
+      "rom_table": "bandpass",
+      "output_stages": 2,
+      "runtime_snapshots": [
+        {
+          "sample_rate": 44100,
+          "file": "ref/x3_menu/runtime_blocks/4_pole_bandpass_44100.raw",
+          "bytes": 80,
+          "sha256": "c7cf90e039cd7a93b1156c76108e3eba495958b63cd82ffc1b780ee7f9ea623e"
+        },
+        {
+          "sample_rate": 48000,
+          "file": "ref/x3_menu/runtime_blocks/4_pole_bandpass_48000.raw",
+          "bytes": 80,
+          "sha256": "d69cada064d945f437a963eedc0a00221e2c3670fddc78a22223abe02c9c4e9d"
+        },
+        {
+          "sample_rate": 96000,
+          "file": "ref/x3_menu/runtime_blocks/4_pole_bandpass_96000.raw",
+          "bytes": 80,
+          "sha256": "faa45766474ee9e421539e24652e6008f675d74db8f2328338bebb87cae430d9"
+        },
+        {
+          "sample_rate": 192000,
+          "file": "ref/x3_menu/runtime_blocks/4_pole_bandpass_192000.raw",
+          "bytes": 80,
+          "sha256": "e98875cc5edc809558bc7e01829925cb9a28ea3a03d646e3a4fe3fc98175b5a5"
+        }
+      ]
+    },
+    {
+      "name": "Contrary Bandpass",
+      "kind": "rom_table_class",
+      "class": "CPhantomContraryBandpass",
+      "writer": "FUN_1802c5380",
+      "vtable": "0x1806d5fb8",
+      "rom_table": "contrary_bandpass",
+      "output_stages": 1,
+      "runtime_snapshots": [
+        {
+          "sample_rate": 44100,
+          "file": "ref/x3_menu/runtime_blocks/contrary_bandpass_44100.raw",
+          "bytes": 40,
+          "sha256": "668fe8c608ac952e770a2322c7ef0c160a704bf96de42dbe6cb4a23d035c4709"
+        },
+        {
+          "sample_rate": 48000,
+          "file": "ref/x3_menu/runtime_blocks/contrary_bandpass_48000.raw",
+          "bytes": 40,
+          "sha256": "85bae1b645d9fac88b109421106648b9f62b38c37ee3f3bbaf940c3d5cae3259"
+        },
+        {
+          "sample_rate": 96000,
+          "file": "ref/x3_menu/runtime_blocks/contrary_bandpass_96000.raw",
+          "bytes": 40,
+          "sha256": "a706a55a25ce024ab43002aa1b22af7f515fee69788bf321a6ed0061d96ae85a"
+        },
+        {
+          "sample_rate": 192000,
+          "file": "ref/x3_menu/runtime_blocks/contrary_bandpass_192000.raw",
+          "bytes": 40,
+          "sha256": "2af74a575a67f5a5fb3f23d20452c593602dffad32ee562f5b86af6142b3e91f"
+        }
+      ]
+    },
+    {
+      "name": "Swept EQ 1 Octave",
+      "kind": "rom_table_class",
+      "class": "CPhantomSweptEq1",
+      "writer": "FUN_1802c4fa0",
+      "vtable": "0x1806d5f18",
+      "rom_table": "swept_eq_1",
+      "output_stages": 1,
+      "runtime_snapshots": [
+        {
+          "sample_rate": 44100,
+          "file": "ref/x3_menu/runtime_blocks/swept_eq_1_octave_44100.raw",
+          "bytes": 40,
+          "sha256": "333f604b532ec9966bda903d52ecff18692c47f8c44b0c14b0d452538e29cf73"
+        },
+        {
+          "sample_rate": 48000,
+          "file": "ref/x3_menu/runtime_blocks/swept_eq_1_octave_48000.raw",
+          "bytes": 40,
+          "sha256": "eedaec68ffb9cad1906dbaa49e6b467c3c701bc33ec0113095a200d3bd4030ef"
+        },
+        {
+          "sample_rate": 96000,
+          "file": "ref/x3_menu/runtime_blocks/swept_eq_1_octave_96000.raw",
+          "bytes": 40,
+          "sha256": "2b4d92d7b502f982fd3ebdaba230ef696988b5167c967100e1632267e0a26740"
+        },
+        {
+          "sample_rate": 192000,
+          "file": "ref/x3_menu/runtime_blocks/swept_eq_1_octave_192000.raw",
+          "bytes": 40,
+          "sha256": "ac6c8a4299a37910d35549e298eb8e6aa982cc45cdcc7257a0a17d6a104c6583"
+        }
+      ]
+    },
+    {
+      "name": "Swept EQ 2/1 Octave",
+      "kind": "rom_table_class",
+      "class": "CPhantomSweptEq2",
+      "writer": "FUN_1802c5060",
+      "vtable": "0x1806d5f38",
+      "rom_table": "swept_eq_2",
+      "output_stages": 1,
+      "runtime_snapshots": [
+        {
+          "sample_rate": 44100,
+          "file": "ref/x3_menu/runtime_blocks/swept_eq_2_1_octave_44100.raw",
+          "bytes": 40,
+          "sha256": "7e951e1139802917eba1bf5eef4c20e9580ac49969c97c32ebccc9d6f4d0f6ec"
+        },
+        {
+          "sample_rate": 48000,
+          "file": "ref/x3_menu/runtime_blocks/swept_eq_2_1_octave_48000.raw",
+          "bytes": 40,
+          "sha256": "b6b8dc8de802e913ccaeeebc39cd42cf1c84d20c783e7b473b036ecd1d4902ca"
+        },
+        {
+          "sample_rate": 96000,
+          "file": "ref/x3_menu/runtime_blocks/swept_eq_2_1_octave_96000.raw",
+          "bytes": 40,
+          "sha256": "d2e62209a3e99f7f16a744fefa3d8e67598c897e345af5214e488132ea032478"
+        },
+        {
+          "sample_rate": 192000,
+          "file": "ref/x3_menu/runtime_blocks/swept_eq_2_1_octave_192000.raw",
+          "bytes": 40,
+          "sha256": "52d7f1d489accc8325778470d093a4de702d301277140049217c84ab31b2fb5e"
+        }
+      ]
+    },
+    {
+      "name": "Swept EQ 3/1 Octave",
+      "kind": "rom_table_class",
+      "class": "CPhantomSweptEq3",
+      "writer": "FUN_1802c5120",
+      "vtable": "0x1806d5f58",
+      "rom_table": "swept_eq_3",
+      "output_stages": 1,
+      "runtime_snapshots": [
+        {
+          "sample_rate": 44100,
+          "file": "ref/x3_menu/runtime_blocks/swept_eq_3_1_octave_44100.raw",
+          "bytes": 40,
+          "sha256": "34776ae9e0799dcd1587f90822de1a8448f426889794787957de63c51643a54b"
+        },
+        {
+          "sample_rate": 48000,
+          "file": "ref/x3_menu/runtime_blocks/swept_eq_3_1_octave_48000.raw",
+          "bytes": 40,
+          "sha256": "c7420ea22388252929543484ee9f5bf574d13b525e1258f90c3842c4e275bd77"
+        },
+        {
+          "sample_rate": 96000,
+          "file": "ref/x3_menu/runtime_blocks/swept_eq_3_1_octave_96000.raw",
+          "bytes": 40,
+          "sha256": "9e4b39931e65af459e63a518e567d5bf9ebabc19555ce1a3b9d51ef2db277d45"
+        },
+        {
+          "sample_rate": 192000,
+          "file": "ref/x3_menu/runtime_blocks/swept_eq_3_1_octave_192000.raw",
+          "bytes": 40,
+          "sha256": "3c14b7d43558391fbf54e71e288d015e5f61c64d824ddc3b18cb7396d4c1826c"
+        }
+      ]
+    },
+    {
+      "name": "Phaser 1",
+      "kind": "rom_table_class",
+      "class": "CPhantomPhaser1",
+      "writer": "FUN_1802c5440",
+      "vtable": "0x1806d5fe0",
+      "rom_table": "phaser_1",
+      "output_stages": 2,
+      "runtime_snapshots": [
+        {
+          "sample_rate": 44100,
+          "file": "ref/x3_menu/runtime_blocks/phaser_1_44100.raw",
+          "bytes": 80,
+          "sha256": "40574fa5ce71b6f8ad7c00037b1efb73bec257ebd8f5d8eafe90eb2dabb081f3"
+        },
+        {
+          "sample_rate": 48000,
+          "file": "ref/x3_menu/runtime_blocks/phaser_1_48000.raw",
+          "bytes": 80,
+          "sha256": "092fab1c3fc37902a1c3a1d16744618e6a107f61a23b0677169052f2494fb344"
+        },
+        {
+          "sample_rate": 96000,
+          "file": "ref/x3_menu/runtime_blocks/phaser_1_96000.raw",
+          "bytes": 80,
+          "sha256": "6e810891d0a13ddf8869fedef54ba0a4584e8c9e9b54c2672aad23c5fabb0463"
+        },
+        {
+          "sample_rate": 192000,
+          "file": "ref/x3_menu/runtime_blocks/phaser_1_192000.raw",
+          "bytes": 80,
+          "sha256": "42543049b9da7526c02a1d559372878398ecc0e0290717ad2bb991adff04e908"
+        }
+      ]
+    },
+    {
+      "name": "Phaser 2",
+      "kind": "rom_table_class",
+      "class": "CPhantomPhaser2",
+      "writer": "FUN_1802c5530",
+      "vtable": "0x1806d6008",
+      "rom_table": "phaser_2",
+      "output_stages": 2,
+      "runtime_snapshots": [
+        {
+          "sample_rate": 44100,
+          "file": "ref/x3_menu/runtime_blocks/phaser_2_44100.raw",
+          "bytes": 80,
+          "sha256": "180f05dce9f721fb5d964e3bba76d9ad4f24a037dd76857bef9b9757cec05c53"
+        },
+        {
+          "sample_rate": 48000,
+          "file": "ref/x3_menu/runtime_blocks/phaser_2_48000.raw",
+          "bytes": 80,
+          "sha256": "631bddefa4181e202774df90de2829ddb49a9942d75260c4b2e5c589513d3114"
+        },
+        {
+          "sample_rate": 96000,
+          "file": "ref/x3_menu/runtime_blocks/phaser_2_96000.raw",
+          "bytes": 80,
+          "sha256": "837948e5f80198b6b4a4cca87b6486b950b75d681edc825b32bb20172dbadd25"
+        },
+        {
+          "sample_rate": 192000,
+          "file": "ref/x3_menu/runtime_blocks/phaser_2_192000.raw",
+          "bytes": 80,
+          "sha256": "74574be606fb9979e77e01d71dde006a57735cd496cd0bac0037c14daa6cc36f"
+        }
+      ]
+    },
+    {
+      "name": "Bat Phaser",
+      "kind": "rom_table_class",
+      "class": "CPhantomBatman",
+      "writer": "FUN_1802c5620",
+      "vtable": "0x1806d6030",
+      "rom_table": "bat_phaser",
+      "output_stages": 2,
+      "runtime_snapshots": [
+        {
+          "sample_rate": 44100,
+          "file": "ref/x3_menu/runtime_blocks/bat_phaser_44100.raw",
+          "bytes": 80,
+          "sha256": "4425194670ac733f229ea8c8c8330eb4d30d3a943daa925b4991d8be94e62735"
+        },
+        {
+          "sample_rate": 48000,
+          "file": "ref/x3_menu/runtime_blocks/bat_phaser_48000.raw",
+          "bytes": 80,
+          "sha256": "800bfba364d4a7a8d24a334b077eb8f61839aabe0ca4c96fe356ef7af3cabac5"
+        },
+        {
+          "sample_rate": 96000,
+          "file": "ref/x3_menu/runtime_blocks/bat_phaser_96000.raw",
+          "bytes": 80,
+          "sha256": "a3f888c09a73644b28f9611d88da7411ff85dd7825c61d3f907d4237cf57e72a"
+        },
+        {
+          "sample_rate": 192000,
+          "file": "ref/x3_menu/runtime_blocks/bat_phaser_192000.raw",
+          "bytes": 80,
+          "sha256": "79d8ef2d04e42e7a2b53a60f2c1f31988d2c098b6811096509228985388f1f48"
+        }
+      ],
+      "filter_id": "0x42"
+    },
+    {
+      "name": "Flanger Lite",
+      "kind": "rom_table_class",
+      "class": "CPhantomFlanger1",
+      "writer": "FUN_1802c5710",
+      "vtable": "0x1806d6058",
+      "rom_table": "flanger_lite",
+      "output_stages": 3,
+      "runtime_snapshots": [
+        {
+          "sample_rate": 44100,
+          "file": "ref/x3_menu/runtime_blocks/flanger_lite_44100.raw",
+          "bytes": 120,
+          "sha256": "c59a76e5d319ab4109d09626d97b52d731a39db7bb1d12893dcf24336f58bf58"
+        },
+        {
+          "sample_rate": 48000,
+          "file": "ref/x3_menu/runtime_blocks/flanger_lite_48000.raw",
+          "bytes": 120,
+          "sha256": "b1ae97f6e15c33cfa5ea55ae4eed6ddbc5682f080ad9b3f90e6ea35916b8d3f4"
+        },
+        {
+          "sample_rate": 96000,
+          "file": "ref/x3_menu/runtime_blocks/flanger_lite_96000.raw",
+          "bytes": 120,
+          "sha256": "fc94723d9fedccb2423f75d20ed405dc64094b02468877b7fe56ceafa369b884"
+        },
+        {
+          "sample_rate": 192000,
+          "file": "ref/x3_menu/runtime_blocks/flanger_lite_192000.raw",
+          "bytes": 120,
+          "sha256": "470438a6975748ad707a395da5acb4112f44e1cca1758eeb1ea667a33aa5398a"
+        }
+      ],
+      "filter_id": "0x48"
+    },
+    {
+      "name": "Vocal Ah-Ay-Ee",
+      "kind": "rom_table_class",
+      "class": "CPhantomVocal1",
+      "writer": "FUN_1802c57f0",
+      "vtable": "0x1806d6078",
+      "rom_table": "vocal_ah_ay_ee",
+      "output_stages": 3,
+      "runtime_snapshots": [
+        {
+          "sample_rate": 44100,
+          "file": "ref/x3_menu/runtime_blocks/vocal_ah_ay_ee_44100.raw",
+          "bytes": 120,
+          "sha256": "dfbd875ca996f6824483886eb736cc7e4da1d47e5f1b3a9caec6d1bc7fa04fce"
+        },
+        {
+          "sample_rate": 48000,
+          "file": "ref/x3_menu/runtime_blocks/vocal_ah_ay_ee_48000.raw",
+          "bytes": 120,
+          "sha256": "a0b4f90b2cb55bc61fc61de7b254702e54eda80d5fae912f4d023978d9b2866e"
+        },
+        {
+          "sample_rate": 96000,
+          "file": "ref/x3_menu/runtime_blocks/vocal_ah_ay_ee_96000.raw",
+          "bytes": 120,
+          "sha256": "dbfa1b146752f51547b7f8f00d4ea17d676d88dc44353616df606515fc1074fb"
+        },
+        {
+          "sample_rate": 192000,
+          "file": "ref/x3_menu/runtime_blocks/vocal_ah_ay_ee_192000.raw",
+          "bytes": 120,
+          "sha256": "7f42a89d5ca01f36653ae3eb12ed6c4ff1d37124675a8752dd449faa74c45d92"
+        }
+      ],
+      "filter_id": "0x50"
+    },
+    {
+      "name": "Vocal Oo-Ah",
+      "kind": "rom_table_class",
+      "class": "CPhantomVocal2",
+      "writer": "FUN_1802c58d0",
+      "vtable": "0x1806d6098",
+      "rom_table": "vocal_oo_ah",
+      "output_stages": 3,
+      "runtime_snapshots": [
+        {
+          "sample_rate": 44100,
+          "file": "ref/x3_menu/runtime_blocks/vocal_oo_ah_44100.raw",
+          "bytes": 120,
+          "sha256": "aba545c09717d2435be3f5ae47854267e6e7d423c4727bbcb8cda398538d8fde"
+        },
+        {
+          "sample_rate": 48000,
+          "file": "ref/x3_menu/runtime_blocks/vocal_oo_ah_48000.raw",
+          "bytes": 120,
+          "sha256": "f13b64545a5355d615274cf40aa03a0d5858cc8a07b0909c93df375b1cf18e3a"
+        },
+        {
+          "sample_rate": 96000,
+          "file": "ref/x3_menu/runtime_blocks/vocal_oo_ah_96000.raw",
+          "bytes": 120,
+          "sha256": "abb6adb96a2f63470b8923ba01d97a0bffe038ac868890930968feb8b50b5546"
+        },
+        {
+          "sample_rate": 192000,
+          "file": "ref/x3_menu/runtime_blocks/vocal_oo_ah_192000.raw",
+          "bytes": 120,
+          "sha256": "ff902605c25ca5286db2c317529fd09dc6a7554509e8362c90c6e282c1dd4aae"
+        }
+      ],
+      "filter_id": "0x51"
+    },
+    {
+      "name": "Dual EQ Morph",
+      "kind": "generated_class",
+      "class": "CPhantomMorph1",
+      "writer": "FUN_1802c5d60",
+      "helper": "FUN_1802c59b0",
+      "vtable": "0x1806d60b8",
+      "filter_id": "0x60",
+      "support_tables": [
+        "morph_shared_base",
+        "morph_shared_scale"
+      ]
+    },
+    {
+      "name": "Dual EQ + LP Morph",
+      "kind": "generated_class",
+      "class": "CPhantomMorphLP",
+      "writer": "FUN_1802c5e40",
+      "vtable": "0x1806d60d8",
+      "filter_id": "0x61",
+      "support_tables": [
+        "dual_eq_lp_profiles"
+      ]
+    },
+    {
+      "name": "Dual EQ Morph/Expression",
+      "kind": "generated_class",
+      "class": "CPhantomMorphLPX",
+      "writer": "FUN_1802c5f10",
+      "vtable": "0x1806d60f8",
+      "filter_id": "0x62",
+      "support_tables": [
+        "dual_eq_expression_profiles"
+      ]
+    },
+    {
+      "name": "Peak/Shelf Morph",
+      "kind": "generated_class",
+      "class": "CPhantomMorph2",
+      "writer": "FUN_1802c6020",
+      "vtable": "0x1806d6118",
+      "filter_id": "0x68",
+      "support_tables": [
+        "peak_shelf_base",
+        "peak_shelf_scale"
+      ]
+    },
+    {
+      "name": "Morph Designer",
+      "kind": "designer_compiler",
+      "class": "CPhantomMorphDesigner",
+      "writer": "FUN_1802c6590",
+      "vtable": "0x1806d6138",
+      "filter_id": "0x6c",
+      "support_tables": [
+        "morph_designer_bypass",
+        "morph_designer_base",
+        "morph_designer_scale"
+      ],
+      "grammar_notes": "ref/ghidra_extracts/morphdesigner_types.md"
+    }
+  ]
+}

@@ -1,0 +1,74 @@
+{
+  "testModules": [
+    {
+      "moduleId": "tools/test_capture_compiler.py",
+      "tests": [
+        {
+          "name": "test_confidence_downweights_low_coherence_and_weak_excitation",
+          "fullName": "tools/test_capture_compiler.py::test_confidence_downweights_low_coherence_and_weak_excitation",
+          "state": "passed"
+        },
+        {
+          "name": "test_repeatability_variance_downweights_disagreeing_bin",
+          "fullName": "tools/test_capture_compiler.py::test_repeatability_variance_downweights_disagreeing_bin",
+          "state": "passed"
+        },
+        {
+          "name": "test_bounded_complex_residual_limits_outlier_influence",
+          "fullName": "tools/test_capture_compiler.py::test_bounded_complex_residual_limits_outlier_influence",
+          "state": "passed"
+        },
+        {
+          "name": "test_zero_treatment_classifier_covers_three_primitives_and_neutral",
+          "fullName": "tools/test_capture_compiler.py::test_zero_treatment_classifier_covers_three_primitives_and_neutral",
+          "state": "passed"
+        },
+        {
+          "name": "test_lane_matching_uses_zero_aware_geometry_not_input_rank",
+          "fullName": "tools/test_capture_compiler.py::test_lane_matching_uses_zero_aware_geometry_not_input_rank",
+          "state": "passed"
+        },
+        {
+          "name": "test_latent_lane_detection_marks_passthrough",
+          "fullName": "tools/test_capture_compiler.py::test_latent_lane_detection_marks_passthrough",
+          "state": "passed"
+        },
+        {
+          "name": "test_whole_body_gesture_classifier_reports_counterweighted_sweep",
+          "fullName": "tools/test_capture_compiler.py::test_whole_body_gesture_classifier_reports_counterweighted_sweep",
+          "state": "passed"
+        },
+        {
+          "name": "test_packed_17x17_stability_audit_uses_shipped_core",
+          "fullName": "tools/test_capture_compiler.py::test_packed_17x17_stability_audit_uses_shipped_core",
+          "state": "passed"
+        },
+        {
+          "name": "test_manifest_parsing_accepts_repeated_corner_captures",
+          "fullName": "tools/test_capture_compiler.py::test_manifest_parsing_accepts_repeated_corner_captures",
+          "state": "passed"
+        },
+        {
+          "name": "test_direct_cli_capture_inputs_preserve_original_four_wet_interface",
+          "fullName": "tools/test_capture_compiler.py::test_direct_cli_capture_inputs_preserve_original_four_wet_interface",
+          "state": "passed"
+        },
+        {
+          "name": "test_manifest_actor_kernel_priors_are_explicit_six_row_inputs",
+          "fullName": "tools/test_capture_compiler.py::test_manifest_actor_kernel_priors_are_explicit_six_row_inputs",
+          "state": "passed"
+        }
+      ]
+    },
+    {
+      "moduleId": "tools/test_forge_author_server.py",
+      "tests": [
+        {
+          "name": "test_bake_publishes_plugin_audition_slot",
+          "fullName": "tools/test_forge_author_server.py::test_bake_publishes_plugin_audition_slot",
+          "state": "passed"
+        }
+      ]
+    }
+  ]
+}

@@ -3,10 +3,12 @@
 
 namespace
 {
-constexpr int kEditorWidth = 540;
-constexpr int kEditorHeight = 839;
+constexpr int kEditorWidth = 360;
+constexpr int kEditorHeight = 560;
 constexpr float kPanelSourceWidth = 1024.0f;
 constexpr float kPanelSourceHeight = 1591.0f;
+constexpr int kThumbwheelRuntimeFrameWidth = 149;
+constexpr int kThumbwheelRuntimeFrameHeight = 40;
 
 juce::Rectangle<float> sourceRectToEditor (juce::Rectangle<float> sourceRect)
 {
@@ -17,19 +19,80 @@ juce::Rectangle<float> sourceRectToEditor (juce::Rectangle<float> sourceRect)
         sourceRect.getHeight() * kEditorHeight / kPanelSourceHeight
     };
 }
+
+juce::Rectangle<float> thumbwheelBodyBounds (juce::Rectangle<float> well)
+{
+    const auto bounds = well.withSizeKeepingCentre ((float) kThumbwheelRuntimeFrameWidth,
+                                                    (float) kThumbwheelRuntimeFrameHeight);
+    const auto r = bounds.toNearestInt();
+    return { (float) r.getX(),
+             (float) r.getY(),
+             (float) r.getWidth(),
+             (float) r.getHeight() };
+}
+
+juce::Rectangle<int> thumbwheelSliderBounds (juce::Rectangle<float> well)
+{
+    return thumbwheelBodyBounds (well).toNearestInt();
+}
+
+juce::Rectangle<float> morphWheelWell()
+{
+    return sourceRectToEditor ({ 127.0f, 694.0f, 423.0f, 101.0f });
+}
+
+juce::Rectangle<float> qWheelWell()
+{
+    return sourceRectToEditor ({ 127.0f, 871.0f, 423.0f, 101.0f });
+}
 }
 
 PluginEditor::PluginEditor (PluginProcessor& p)
-    : AudioProcessorEditor (&p)
+    : AudioProcessorEditor (&p),
+      processor (p)
 {
     panelImage = juce::ImageCache::getFromMemory (BinaryData::df2_panel_shadow_png,
                                                   BinaryData::df2_panel_shadow_pngSize);
+    thumbwheelStrip = juce::ImageCache::getFromMemory (BinaryData::thumbwheel_runtime_strip_129_149x40_png,
+                                                       BinaryData::thumbwheel_runtime_strip_129_149x40_pngSize);
+
+    const auto setupSlider = [this] (juce::Slider& slider)
+    {
+        slider.setSliderStyle (juce::Slider::LinearHorizontal);
+        slider.setTextBoxStyle (juce::Slider::NoTextBox, false, 0, 0);
+        slider.setRange (0.0, 1.0, 0.001);
+        slider.setAlpha (0.0f);
+        slider.setOpaque (false);
+        slider.setInterceptsMouseClicks (false, false);
+        slider.onValueChange = [this] { repaint(); };
+        addAndMakeVisible (slider);
+    };
+
+    setupSlider (morphSlider);
+    setupSlider (qSlider);
+
+    morphHitTarget.setInterceptsMouseClicks (true, false);
+    qHitTarget.setInterceptsMouseClicks (true, false);
+    morphHitTarget.setAlwaysOnTop (true);
+    qHitTarget.setAlwaysOnTop (true);
+    morphHitTarget.addMouseListener (this, false);
+    qHitTarget.addMouseListener (this, false);
+    addAndMakeVisible (morphHitTarget);
+    addAndMakeVisible (qHitTarget);
+
+    morphSliderAttachment = std::make_unique<juce::AudioProcessorValueTreeState::SliderAttachment> (processor.apvts, ParamID::morph, morphSlider);
+    qSliderAttachment = std::make_unique<juce::AudioProcessorValueTreeState::SliderAttachment> (processor.apvts, ParamID::q, qSlider);
+
     setOpaque (true);
     setResizable (false, false);
     setSize (kEditorWidth, kEditorHeight);
 }
 
-PluginEditor::~PluginEditor() = default;
+PluginEditor::~PluginEditor()
+{
+    morphHitTarget.removeMouseListener (this);
+    qHitTarget.removeMouseListener (this);
+}
 
 void PluginEditor::paint (juce::Graphics& g)
 {
@@ -38,113 +101,104 @@ void PluginEditor::paint (juce::Graphics& g)
     if (panelImage.isValid())
         g.drawImage (panelImage, getLocalBounds().toFloat());
 
-    drawFrequencyCurve (g);
+    drawThumbwheels (g);
 }
 
 void PluginEditor::resized()
 {
+    morphSlider.setBounds (thumbwheelSliderBounds (morphWheelWell()));
+    qSlider.setBounds (thumbwheelSliderBounds (qWheelWell()));
+    morphHitTarget.setBounds (thumbwheelSliderBounds (morphWheelWell()).expanded (2, 3));
+    qHitTarget.setBounds (thumbwheelSliderBounds (qWheelWell()).expanded (2, 3));
+    morphHitTarget.toFront (false);
+    qHitTarget.toFront (false);
 }
 
-void PluginEditor::drawFrequencyCurve (juce::Graphics& g)
+void PluginEditor::mouseDown (const juce::MouseEvent& event)
 {
-    const auto display = sourceRectToEditor ({ 128.0f, 258.0f, 776.0f, 363.0f }).reduced (7.0f, 9.0f);
+    const auto position = event.getEventRelativeTo (this).position;
+    const auto morphBody = thumbwheelBodyBounds (morphWheelWell()).expanded (1.0f, 2.0f);
+    const auto qBody = thumbwheelBodyBounds (qWheelWell()).expanded (1.0f, 2.0f);
+
+    if (morphBody.contains (position))
+        activeThumbwheelParameter = ParamID::morph;
+    else if (qBody.contains (position))
+        activeThumbwheelParameter = ParamID::q;
+    else
+        activeThumbwheelParameter = nullptr;
+
+    if (activeThumbwheelParameter != nullptr)
+    {
+        if (auto* parameter = processor.apvts.getParameter (activeThumbwheelParameter))
+            parameter->beginChangeGesture();
+
+        mouseDrag (event);
+    }
+}
+
+void PluginEditor::mouseDrag (const juce::MouseEvent& event)
+{
+    if (activeThumbwheelParameter == nullptr)
+        return;
+
+    const auto position = event.getEventRelativeTo (this).position;
+    const auto body = thumbwheelBodyBounds (activeThumbwheelParameter == ParamID::morph ? morphWheelWell() : qWheelWell());
+    const auto normalised = juce::jlimit (0.0f, 1.0f, (position.x - body.getX()) / juce::jmax (1.0f, body.getWidth()));
+    auto& targetSlider = activeThumbwheelParameter == ParamID::morph ? morphSlider : qSlider;
+
+    targetSlider.setValue (normalised, juce::dontSendNotification);
+
+    if (auto* parameter = processor.apvts.getParameter (activeThumbwheelParameter))
+        parameter->setValueNotifyingHost (normalised);
+
+    repaint();
+}
+
+void PluginEditor::mouseUp (const juce::MouseEvent&)
+{
+    if (activeThumbwheelParameter != nullptr)
+        if (auto* parameter = processor.apvts.getParameter (activeThumbwheelParameter))
+            parameter->endChangeGesture();
+
+    activeThumbwheelParameter = nullptr;
+}
+
+void PluginEditor::drawThumbwheels (juce::Graphics& g)
+{
+    const auto readNormalised = [this] (const char* parameterID)
+    {
+        if (auto* value = processor.apvts.getRawParameterValue (parameterID))
+            return juce::jlimit (0.0f, 1.0f, value->load());
+
+        return 0.0f;
+    };
+
+    drawThumbwheelFrame (g, morphWheelWell(), readNormalised (ParamID::morph));
+    drawThumbwheelFrame (g, qWheelWell(), readNormalised (ParamID::q));
+}
+
+void PluginEditor::drawThumbwheelFrame (juce::Graphics& g, juce::Rectangle<float> well, float normalisedValue)
+{
+    if (! thumbwheelStrip.isValid())
+        return;
+
+    constexpr int numFrames = 129;
+    constexpr int lastPlayableFrame = numFrames - 1;
+    const auto frameWidth = thumbwheelStrip.getWidth() / numFrames;
+    const auto frameHeight = thumbwheelStrip.getHeight();
+
+    if (frameWidth <= 0 || frameHeight <= 0)
+        return;
+
+    const auto frame = juce::jlimit (0, lastPlayableFrame, juce::roundToInt (normalisedValue * static_cast<float> (lastPlayableFrame)));
+    const auto srcX = frame * frameWidth;
+    const auto dst = thumbwheelBodyBounds (well).toNearestInt();
 
     juce::Graphics::ScopedSaveState saveState (g);
-    g.reduceClipRegion (display.toNearestInt());
-
-    const auto area = display.toNearestInt().reduced (5, 7);
-    const auto left = area.getX();
-    const auto top = area.getY();
-    const auto width = area.getWidth();
-    const auto height = area.getHeight();
-
-    struct PointSpec
-    {
-        float x;
-        float y;
-    };
-
-    // Hand-pinned to the FL/E-mu visual reference: crude frequency trace,
-    // long flat floor, abrupt aliased peaks, steep dropouts, and hard tails.
-    constexpr PointSpec points[] {
-        { 0.000f, 0.610f }, { 0.075f, 0.610f }, { 0.155f, 0.610f },
-        { 0.245f, 0.608f }, { 0.305f, 0.596f }, { 0.365f, 0.565f },
-        { 0.420f, 0.505f }, { 0.455f, 0.410f }, { 0.482f, 0.245f },
-        { 0.500f, 0.115f }, { 0.515f, 0.305f }, { 0.535f, 0.505f },
-        { 0.565f, 0.602f }, { 0.605f, 0.630f }, { 0.650f, 0.560f },
-        { 0.676f, 0.230f }, { 0.688f, 0.480f }, { 0.705f, 0.605f },
-        { 0.725f, 0.615f }, { 0.742f, 0.300f }, { 0.755f, 0.470f },
-        { 0.770f, 0.265f }, { 0.787f, 0.735f }, { 0.805f, 0.900f },
-        { 0.842f, 0.900f }, { 0.872f, 0.800f }, { 0.895f, 0.650f },
-        { 0.910f, 0.400f }, { 0.922f, 0.900f }, { 1.000f, 0.900f }
-    };
-
-    auto toPixel = [&] (PointSpec p)
-    {
-        return juce::Point<int> {
-            left + juce::roundToInt (p.x * static_cast<float> (width - 1)),
-            top + juce::roundToInt (p.y * static_cast<float> (height - 1))
-        };
-    };
-
-    auto plot = [&] (int x, int y, juce::Colour colour)
-    {
-        g.setColour (colour);
-        g.fillRect (x, y, 1, 1);
-    };
-
-    auto drawAliasedLine = [&] (juce::Point<int> a, juce::Point<int> b, juce::Colour colour)
-    {
-        auto x0 = a.x;
-        auto y0 = a.y;
-        const auto x1 = b.x;
-        const auto y1 = b.y;
-        const auto dx = std::abs (x1 - x0);
-        const auto sx = x0 < x1 ? 1 : -1;
-        const auto dy = -std::abs (y1 - y0);
-        const auto sy = y0 < y1 ? 1 : -1;
-        auto err = dx + dy;
-
-        for (;;)
-        {
-            plot (x0, y0, colour);
-            if (x0 == x1 && y0 == y1)
-                break;
-
-            const auto e2 = 2 * err;
-            if (e2 >= dy)
-            {
-                err += dy;
-                x0 += sx;
-            }
-            if (e2 <= dx)
-            {
-                err += dx;
-                y0 += sy;
-            }
-        }
-    };
-
-    const auto dark = juce::Colour (0xff0b85a0);
-    const auto core = juce::Colour (0xff65d8f5);
-    const auto hot = juce::Colour (0xffd7fbff);
-
-    constexpr auto numPoints = static_cast<int> (sizeof (points) / sizeof (points[0]));
-    for (int i = 1; i < numPoints; ++i)
-    {
-        const auto a = toPixel (points[i - 1]);
-        const auto b = toPixel (points[i]);
-        drawAliasedLine ({ a.x, a.y + 1 }, { b.x, b.y + 1 }, dark);
-        drawAliasedLine (a, b, core);
-    }
-
-    // A few crude bright pixels on high resonances, matching the reference's
-    // old raster UI sparkle without adding separate marker glyphs.
-    for (const auto peak : { points[9], points[15], points[19], points[21], points[27] })
-    {
-        const auto p = toPixel (peak);
-        plot (p.x, p.y, hot);
-        plot (p.x + 1, p.y, hot);
-        plot (p.x, p.y - 1, hot);
-    }
+    g.reduceClipRegion (dst);
+    g.setImageResamplingQuality (juce::Graphics::lowResamplingQuality);
+    g.setOpacity (1.0f);
+    g.drawImage (thumbwheelStrip,
+                 dst.getX(), dst.getY(), dst.getWidth(), dst.getHeight(),
+                 srcX, 0, frameWidth, frameHeight);
 }

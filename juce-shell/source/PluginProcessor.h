@@ -60,6 +60,8 @@ public:
     int  getLoadedBodyIndex() const noexcept { return loadedBodyIndex.load (std::memory_order_relaxed); }
     bool getLastLoadOk()      const noexcept { return lastLoadOk.load (std::memory_order_relaxed); }
     bool isCleanGroundTruthAudio() const noexcept { return trench::clean_audio::kEnabled(); }
+    float mapMorphForLoadedBody (float morph) const noexcept;
+    float mapSecondaryForLoadedBody (float q) const noexcept;
 
 private:
     // juce::AudioProcessorValueTreeState::Listener — body switching. May be
@@ -72,17 +74,24 @@ private:
     void timerCallback() override;
     void forceCleanAudioUiState();
     void setParameterDenormalized (const char* parameterID, float value);
+    bool loadedSecondaryDrivesSlam() const noexcept;
+    void storeLoadedBodyBehavior (int bodyIndex, const juce::String& cartridgeJson);
 
     trench::FixedRateTrenchIsland fixedRateIsland;
     trench::TeleportEngine        teleportEngine;
 
     std::atomic<int>  pendingBodyIndex { 0 };
     std::atomic<int>  loadedBodyIndex { 0 };
+    std::atomic<int>  loadedSecondaryTarget { 0 };
+    std::atomic<int>  loadedMorphTaper { 0 };
     std::atomic<bool> lastLoadOk { true };
     juce::Time        auditionSlotMtime;
 
     // Final user makeup gain (dB param -> linear), ramped to avoid zipper noise.
     juce::LinearSmoothedValue<float> outputGain { 1.0f };
+    float smoothedMorph = 0.0f;
+    float smoothedQ = 0.0f;
+    bool controlSmoothersPrimed = false;
     std::atomic<float> inputMeterL { 0.0f };
     std::atomic<float> inputMeterR { 0.0f };
 
