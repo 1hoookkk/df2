@@ -12,6 +12,8 @@ Thumbs.db
 
 # --- build artifacts / vendored deps / scratch (forge-recovery lock-in) ---
 target_vst_static/
+# stray Cargo target variants (e.g. target_alt_*) — build output, never commit
+target_alt*/
 juce-shell/JUCE/
 juce-shell/modules/
 .playwright-mcp/
