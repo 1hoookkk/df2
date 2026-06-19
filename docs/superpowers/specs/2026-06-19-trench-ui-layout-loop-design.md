@@ -242,9 +242,54 @@ Ctrl+Shift+L). When active:
 - Edit mode is dev/author-facing and off by default in shipped builds (gated by
   a build flag or hidden chord) — end users get the fixed, designed layout.
 
-Internally this mutates the same in-memory layout the wells read, then
-serializes it. (A `ValueTree`+`UndoManager` model for undo/redo is a later
-upgrade; v1 of edit mode can serialize directly and rely on git/file history.)
+Internally this mutates a `ValueTree` model under a `UndoManager` (so undo/redo
+is real — see UX below), then serializes the tree to `ui_layout.json`.
+
+### 4a. Figma-grade interaction vocabulary
+
+The edit mode targets the direct-manipulation feel users already know from
+Figma. Adopt the patterns that fit a fixed 360×560 panel of ~5 elements; drop
+the ones that don't.
+
+**Core (must feel like Figma):**
+
+- **Selection** — click to select, click empty space to deselect, **shift-click
+  to add/remove** from a multi-selection, **marquee drag** (rubber-band) to
+  select within a region.
+- **Move** — drag to move; **arrow** nudges 1 px, **shift+arrow** 10 px; **hold
+  shift while dragging constrains to one axis** (pure horizontal/vertical).
+- **Resize** — 8 handles (4 corners + 4 edges); **shift = preserve aspect
+  ratio**; **alt = resize from center**.
+- **Smart guides + snapping** — red alignment lines when an edge/center lines up
+  with a sibling or the panel center; snap to those lines; **hold a modifier
+  (alt) to suppress snapping** for exact by-eye placement.
+- **Measure on hover** — hold a key and hover/select to show **px distance
+  badges** to neighboring elements and panel edges. This is the feature that
+  turns "feels slightly off" into an exact number.
+- **Properties inspector** — a small panel showing the selection's **X / Y / W /
+  H (source space), typeable** for pixel-exact entry; also font size / text
+  colour for readouts.
+- **Align & distribute** — with a multi-selection: align left/right/top/bottom/
+  centers, match width/height, distribute spacing. These map onto the `rules`
+  vocabulary (`sameX`, `sameWidth`, `centerY`, …) — one click writes a rule's
+  effect.
+- **Undo / redo** — Cmd/Ctrl+Z, Cmd/Ctrl+Shift+Z, backed by `UndoManager`.
+- **Lock** — lock an element so it can't be selected/moved (protect a placed
+  control while nudging others).
+
+**Nice-to-have (add if cheap, not gating):**
+
+- Zoom/magnify for pixel work (scroll-zoom, fit, zoom-to-selection) — useful but
+  the panel is small and fixed, so secondary.
+- Copy/paste of a position; nudge-repeat.
+- A faint pixel grid toggle.
+
+**Explicitly out (Figma features that don't apply here):**
+
+- Adding/removing/duplicating elements (v1 edits the fixed set).
+- Components/variants, auto-layout, vector/pen editing, multiple pages/frames,
+  comments, real-time multiplayer cursors.
+- Restyling curated panel artwork.
 
 ### Data flow
 
@@ -297,9 +342,13 @@ ui_layout.json (shared truth) ◄───────────────�
 1. **Layout file + hot-reload.** Seed `ui_layout.json`; plugin reads layout on
    construct; wells return override-or-default; timer mtime reload. (The
    foundation manual edits and Claude edits both write to.)
-2. **Manual edit mode (the headline).** In-plugin toggle: select, drag, resize
-   handles, arrow-nudge, snap guides, live coords, auto-write JSON. This is the
-   thing the user actually wanted — hands-on control.
+2. **Manual edit mode (the headline), Figma-grade.** In-plugin toggle with the
+   Figma interaction vocabulary: marquee + shift multi-select, drag (shift =
+   axis lock), 8 resize handles (shift = aspect, alt = from center), arrow/
+   shift-arrow nudge, smart guides + snapping (alt suppresses), measure-on-hover
+   distance badges, typeable X/Y/W/H inspector, align/distribute, undo/redo,
+   lock. `ValueTree`+`UndoManager` model, auto-writes JSON. This is the thing
+   the user actually wanted — hands-on control that feels like Figma.
 3. **Render + scene + validator (assist/verify).** `clean.png`, `overlay.png`,
    `scene.json`, `validation.json`; rule resolver. Powers snap geometry/hints
    for edit mode and lets Claude see and verify.
@@ -319,7 +368,7 @@ what is actually missing. Building these first is premature abstraction:
 - candidate generation: N variants scored + contact sheet
 - operation log with actor/reason, blame, replay, "back to last good"
 - full multi-state render matrix (hover/drag/open/disabled/long-text)
-- `ValueTree` + `UndoManager` as the internal authoring model (undo/redo)
+- zoom/magnify, pixel-grid toggle, copy/paste position (edit-mode nice-to-haves)
 
 ## Definition of done (v1 = phases 1–2: layout file + manual edit mode)
 
@@ -330,12 +379,19 @@ what is actually missing. Building these first is premature abstraction:
 - [ ] Well functions return override-or-default
 - [ ] Hot-reload via timer mtime check
 - [ ] In-plugin edit-mode toggle (dev/author-gated; off in shipped builds)
-- [ ] Select + drag + resize handles + arrow/shift-arrow nudge
-- [ ] Snap guides against siblings; modifier disables snapping
-- [ ] Selected element shows live source + editor rect
+- [ ] Selection: click, click-empty deselect, shift multi-select, marquee
+- [ ] Move: drag, shift axis-lock, arrow 1px / shift-arrow 10px
+- [ ] Resize: 8 handles, shift aspect-lock, alt from-center
+- [ ] Smart guides + snapping to siblings/panel center; alt suppresses snapping
+- [ ] Measure-on-hover distance badges
+- [ ] Properties inspector: typeable X/Y/W/H + readout font/colour
+- [ ] Align/distribute on multi-selection (maps to rule effects)
+- [ ] Undo/redo via `ValueTree`+`UndoManager`
+- [ ] Lock an element
 - [ ] Every committed move auto-writes `ui_layout.json` (debounced)
 - [ ] Audio/wheels keep running while edit mode is active
-- [ ] Tests: parse, well lookup, seed round-trip, hot-reload, edit-mode write
+- [ ] Tests: parse, well lookup, seed round-trip, hot-reload, edit-mode write,
+      undo/redo round-trip
 - [ ] Quitting/reopening restores the edited layout
 
 ## Definition of done (phase 3: render + scene + validator)
