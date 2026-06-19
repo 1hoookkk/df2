@@ -35,6 +35,25 @@ Close the loop between editing UI layout and seeing the result:
 The render-to-PNG loop is built **first** — it is the capability that has been
 missing.
 
+## Design principle: ultra-efficient collab surface
+
+This is a collaboration tool between the user and Claude, not a one-way editor.
+Every design choice is judged by how tight it makes the user↔Claude loop:
+
+- **One shared document.** A single `ui_layout.json` is the source of truth,
+  read *and* written by both sides. The user drags → Claude reads the result
+  and refines; Claude edits numbers → the user sees them in-plugin. One file,
+  two editors — like a single Figma file, not edits thrown over a wall.
+- **One shared picture with shared names.** The render carries a labeled
+  overlay (each control's `id` + rect drawn on it) so both sides use the exact
+  same vocabulary — `morphReadout`, not "the bottom-right box." Zero ambiguity
+  per turn.
+- **One-turn iterations.** A nudge in plain words → Claude edits JSON →
+  renders → shows the PNG, all in a single reply. The loop is gated by a
+  sub-second offscreen render, never a rebuild.
+- **Visible diffs.** The render tool keeps the prior PNG so a change reads as a
+  before/after, not a guess.
+
 ## Non-goals (v1)
 
 - Adding brand-new controls or removing existing ones.
@@ -106,6 +125,11 @@ after any layout change.
   layout.
 - Output: a deterministic PNG at the true editor size (360×560) that Claude
   inspects with the Read tool to verify placement.
+- **Labeled overlay mode** (flag): renders a second PNG with each element's
+  `id` and rect drawn on a faint outline of its bounds. This is the shared
+  vocabulary surface for the collab loop — both sides reference controls by id.
+- **Before/after**: the tool preserves the previous render (e.g.
+  `last.png`) so a change can be shown as a visible diff.
 - Preferred form: an offscreen render (construct editor, `paintEntireComponent`
   into an `Image`, write PNG) so no DAW/standalone window is needed. If
   offscreen proves impractical in JUCE, fall back to launching
@@ -174,5 +198,6 @@ plugin Timer sees mtime change┘                                         │
 - [ ] Well functions return override-or-default
 - [ ] Hot-reload via timer mtime check
 - [ ] Render tool emits a 360×560 PNG from the live layout
+- [ ] Render tool has a labeled-overlay mode (id + rect per control)
 - [ ] Tests: parse, well lookup, seed round-trip, hot-reload, render output
 - [ ] Claude can run the render tool and read the PNG to verify placement
