@@ -21,24 +21,34 @@ self-corrected, and (2) make moving a control cheap (no recompile).
 
 ## Goal
 
-Close the loop between editing UI layout and seeing the result:
+Give the user **direct manual control** of UI layout, live in the running
+plugin — and back it with an engine that lets Claude see and verify the same
+layout. The user drives; Claude assists.
 
-1. **Render-to-PNG** — render the actual plugin editor to an image Claude can
-   look at after every change, and verify placement against intent.
+1. **Manual edit mode (the headline)** — a key flips the running plugin into
+   layout-edit mode. Every control is outlined and grabbable: drag to move,
+   handles to resize, arrow keys nudge 1 px (shift+arrow 10 px). Snap guides
+   appear against sibling controls; a held modifier ignores snapping for exact
+   by-eye placement. Live and audible — the plugin keeps running in the DAW
+   while it is rearranged. Every move auto-writes `ui_layout.json`.
 2. **Hot-reloaded layout** — positions/sizes (and a small set of style props)
-   of the existing controls live in a `ui_layout.json` that the plugin reads
-   at runtime and reloads when it changes. Moving a control = edit a number +
-   reload, no rebuild.
-3. **Drag-correct (phase 2)** — the user grabs the one control that's still
-   slightly off and nudges it; the nudge writes back to the same JSON.
+   of the existing controls live in `ui_layout.json`, read at runtime and
+   reloaded when it changes. So edits — by hand, by Claude, or by file — apply
+   without a rebuild.
+3. **Render + scene + validator (the engine, serving the surface)** — render
+   the actual editor to a PNG plus structured `scene.json`/`validation.json`.
+   This powers the snap guides and alignment hints under the user's hands, and
+   lets Claude *see* and verify the same layout when asked to help.
 
-The render-to-PNG loop is built **first** — it is the capability that has been
-missing.
+The primary surface is **manual, in-plugin, live**. The render/scene/validator
+engine is built to serve that surface (and Claude's verification), not to be the
+star. Claude assists; the user controls.
 
 ## Design principle: ultra-efficient collab surface
 
-This is a collaboration tool between the user and Claude, not a one-way editor.
-Every design choice is judged by how tight it makes the user↔Claude loop:
+The user's hands are the primary editor; Claude is an assistant on the same
+state, not the driver. Every design choice is judged by how tight it makes the
+loop and how directly the user can control placement:
 
 - **One shared document.** A single `ui_layout.json` is the source of truth,
   read *and* written by both sides. The user drags → Claude reads the result
@@ -63,7 +73,11 @@ Every design choice is judged by how tight it makes the user↔Claude loop:
   the user to accept/reject; it never rewrites curated art.
 - A browser drag-and-drop canvas. Rejected because a browser is a second
   renderer that drifts from JUCE; the plugin's own renderer must be the source
-  of truth. Drag-correct, when built, lives in-plugin.
+  of truth. Manual editing lives **in the plugin** — that is the headline
+  surface, not a deferred extra.
+- A separate standalone design window (assumed not wanted). Manual control is
+  in the running plugin, live in the DAW. Revisit only if the user prefers a
+  dedicated window.
 
 ## Architecture
 
@@ -208,18 +222,47 @@ write path in the tool, invoked explicitly — never as a side effect of render.
 - Style overrides (`fontSize`, `textColor`) applied where readouts/selector
   text are drawn.
 
+### 4. In-plugin manual edit mode (the headline surface)
+
+A layout-edit mode inside `PluginEditor`, toggled by a key chord (e.g.
+Ctrl+Shift+L). When active:
+
+- Every known element draws a selectable outline with its `id`.
+- Click to select; drag to move; corner/edge handles to resize; arrow keys
+  nudge 1 source px, shift+arrow 10.
+- **Snap guides** against sibling edges/centers (driven by the same `rules`/
+  `scene` geometry the validator uses). A held modifier (e.g. Alt) disables
+  snapping for exact by-eye placement.
+- Selected element shows its live source-space and editor-space rect.
+- Normal plugin behavior (DSP, sound, parameter motion) keeps running — edit
+  mode overlays, it does not stop the audio or the wheels.
+- Every committed move writes `ui_layout.json` (debounced), so the change
+  persists and Claude can read it immediately. Exiting edit mode is just a
+  toggle; the layout is already saved.
+- Edit mode is dev/author-facing and off by default in shipped builds (gated by
+  a build flag or hidden chord) — end users get the fixed, designed layout.
+
+Internally this mutates the same in-memory layout the wells read, then
+serializes it. (A `ValueTree`+`UndoManager` model for undo/redo is a later
+upgrade; v1 of edit mode can serialize directly and rely on git/file history.)
+
 ### Data flow
 
 ```
-Claude/user edits ui_layout.json ─┐
-                                  ├─► render tool ─► clean.png + overlay.png
-plugin Timer sees mtime change ───┘        + scene.json + validation.json
-   │                                              │
-   │                                    Claude reads pixels + structure,
-   │                                    runs validator, optionally calls
-   │                                    resolver (writes layout) ─► (loop)
-   └─► re-reads layout ─► wells return new rects ─► repaint
-(phase 3) user drag-corrects in-plugin ─► writes ui_layout.json ─► same loop
+USER (primary): edit mode in running plugin ─► drag/resize/nudge/snap
+                                              ─► auto-writes ui_layout.json
+                                                       │
+ui_layout.json (shared truth) ◄────────────────────────┘
+   │
+   ├─► plugin Timer sees mtime change ─► wells return new rects ─► repaint
+   │       (so file/Claude edits also apply live, no rebuild)
+   │
+   └─► render tool (assist/verify) ─► clean.png + overlay.png
+                                      + scene.json + validation.json
+                                              │
+                                    Claude reads pixels + structure,
+                                    runs validator, may call resolver
+                                    (writes layout) when asked to help
 ```
 
 ## Error handling
@@ -251,15 +294,21 @@ plugin Timer sees mtime change ───┘        + scene.json + validation.jso
 
 ## Phasing
 
-1. **Render bundle + plugin reads layout.** Seed `ui_layout.json`; plugin reads
-   layout on construct; render tool emits `clean.png` + `overlay.png` +
-   `scene.json`. (The missing capability — Claude can see *and* reason.)
-2. **Validator + hot-reload.** `validation.json` (overlap/off-canvas/text-clip/
-   art-hash/rules); rule resolver; timer mtime reload.
-3. **Minimal drag-correct.** In-plugin: select element, arrow-nudge, write back
-   to the same JSON. (Pulled earlier — cheap, changes the feel.)
+1. **Layout file + hot-reload.** Seed `ui_layout.json`; plugin reads layout on
+   construct; wells return override-or-default; timer mtime reload. (The
+   foundation manual edits and Claude edits both write to.)
+2. **Manual edit mode (the headline).** In-plugin toggle: select, drag, resize
+   handles, arrow-nudge, snap guides, live coords, auto-write JSON. This is the
+   thing the user actually wanted — hands-on control.
+3. **Render + scene + validator (assist/verify).** `clean.png`, `overlay.png`,
+   `scene.json`, `validation.json`; rule resolver. Powers snap geometry/hints
+   for edit mode and lets Claude see and verify.
 4. **AI layout *suggestions*.** Propose rects/rule-fixes, gated by user accept —
    never auto-restyle curated art.
+
+(Note: a thin render-to-PNG can be built alongside phase 1 if Claude needs to
+verify the layout before edit mode exists; the full scene/validator engine is
+phase 3.)
 
 ### Later (earns its place after the spine renders)
 
@@ -270,10 +319,9 @@ what is actually missing. Building these first is premature abstraction:
 - candidate generation: N variants scored + contact sheet
 - operation log with actor/reason, blame, replay, "back to last good"
 - full multi-state render matrix (hover/drag/open/disabled/long-text)
-- `ValueTree` + `UndoManager` as the internal authoring model
-- full GUI authoring (resize handles, snap guides, undo) in edit mode
+- `ValueTree` + `UndoManager` as the internal authoring model (undo/redo)
 
-## Definition of done (v1 = phases 1–2)
+## Definition of done (v1 = phases 1–2: layout file + manual edit mode)
 
 - [ ] `ui_layout.json` schema (elements + optional groups/rules) + seed matching
       current hardcoded defaults
@@ -281,12 +329,24 @@ what is actually missing. Building these first is premature abstraction:
 - [ ] Plugin runtime ignores groups/rules (reads rect + style only)
 - [ ] Well functions return override-or-default
 - [ ] Hot-reload via timer mtime check
+- [ ] In-plugin edit-mode toggle (dev/author-gated; off in shipped builds)
+- [ ] Select + drag + resize handles + arrow/shift-arrow nudge
+- [ ] Snap guides against siblings; modifier disables snapping
+- [ ] Selected element shows live source + editor rect
+- [ ] Every committed move auto-writes `ui_layout.json` (debounced)
+- [ ] Audio/wheels keep running while edit mode is active
+- [ ] Tests: parse, well lookup, seed round-trip, hot-reload, edit-mode write
+- [ ] Quitting/reopening restores the edited layout
+
+## Definition of done (phase 3: render + scene + validator)
+
 - [ ] `getUiDebugTree()` accessor on the editor
 - [ ] Render tool emits `clean.png`, `overlay.png`, `scene.json`,
       `validation.json`, `last.png`
 - [ ] Validator catches overlap, off-canvas, missing/malformed rect, text clip,
       curated-art-hash change, and rule violations
 - [ ] Rule resolver applies a rule and writes a still-valid layout
+- [ ] Snap guides in edit mode use the same geometry as the validator
 - [ ] Before/after diff = image diff + semantic rect diff
 - [ ] Tests: parse, well lookup, seed round-trip, scene output, validator,
       resolver, hot-reload
