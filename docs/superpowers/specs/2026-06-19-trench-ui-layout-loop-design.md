@@ -245,51 +245,66 @@ Ctrl+Shift+L). When active:
 Internally this mutates a `ValueTree` model under a `UndoManager` (so undo/redo
 is real — see UX below), then serializes the tree to `ui_layout.json`.
 
-### 4a. Figma-grade interaction vocabulary
+### 4a. UX doctrine — hide complexity behind simple interactions (the iPhone test)
 
-The edit mode targets the direct-manipulation feel users already know from
-Figma. Adopt the patterns that fit a fixed 360×560 panel of ~5 elements; drop
-the ones that don't.
+Figma-grade describes the *capability*. This doctrine governs the *surface*. The
+test: someone who has never seen it should be able to fix their layout in ten
+seconds without instruction. All the machinery (snapping geometry, rules,
+validator, `ValueTree`, JSON) stays invisible.
 
-**Core (must feel like Figma):**
+Rules of the surface:
 
-- **Selection** — click to select, click empty space to deselect, **shift-click
-  to add/remove** from a multi-selection, **marquee drag** (rubber-band) to
-  select within a region.
-- **Move** — drag to move; **arrow** nudges 1 px, **shift+arrow** 10 px; **hold
-  shift while dragging constrains to one axis** (pure horizontal/vertical).
-- **Resize** — 8 handles (4 corners + 4 edges); **shift = preserve aspect
-  ratio**; **alt = resize from center**.
-- **Smart guides + snapping** — red alignment lines when an edge/center lines up
-  with a sibling or the panel center; snap to those lines; **hold a modifier
-  (alt) to suppress snapping** for exact by-eye placement.
-- **Measure on hover** — hold a key and hover/select to show **px distance
-  badges** to neighboring elements and panel edges. This is the feature that
-  turns "feels slightly off" into an exact number.
-- **Properties inspector** — a small panel showing the selection's **X / Y / W /
-  H (source space), typeable** for pixel-exact entry; also font size / text
-  colour for readouts.
-- **Align & distribute** — with a multi-selection: align left/right/top/bottom/
-  centers, match width/height, distribute spacing. These map onto the `rules`
-  vocabulary (`sameX`, `sameWidth`, `centerY`, …) — one click writes a rule's
-  effect.
-- **Undo / redo** — Cmd/Ctrl+Z, Cmd/Ctrl+Shift+Z, backed by `UndoManager`.
-- **Lock** — lock an element so it can't be selected/moved (protect a placed
-  control while nudging others).
+- **One gesture in, no manual out.** Entering edit mode is a single chord; the
+  panel gently lifts to show that things are grabbable. There is no Save button,
+  ever — it is always saved.
+- **The whole tutorial is "drag."** Default interaction is grab-and-move. That
+  is all a first-time user must know. Everything else is discovered, not taught.
+- **It aligns *for* you.** No align/distribute toolbar. Snapping is on by
+  default and is the star: drag near alignment and it clicks into place with a
+  guide line. You never push an "align" button — the thing *wants* to be tidy.
+  (The `rules` engine drives this automatically; it is never shown as UI.)
+- **Numbers on touch, then gone.** No permanent inspector panel. The X/Y/W/H and
+  the distance-to-neighbor badges **float next to the element only while you are
+  dragging/holding it**, then disappear. Want an exact value? Tap the floating
+  number to type it. Progressive disclosure — clutter appears only on demand.
+- **Affordances only on the selected thing.** Resize handles show on the
+  selected element only, subtle; nothing is always-on chrome.
+- **Forgiving and unbreakable.** Undo is silent insurance (Cmd/Ctrl+Z), no
+  visible chrome. You cannot corrupt the layout; bad states fall back to last
+  good.
+- **Quiet defaults, depth on reach.** Power (multi-select, lock, type-exact,
+  match-size) exists but never crowds the surface — it surfaces when the user
+  reaches toward it (e.g. shift-click reveals multi-select; long-press reveals
+  lock), not as buttons competing for attention.
 
-**Nice-to-have (add if cheap, not gating):**
+### 4b. The engine the simple gestures ride on
 
-- Zoom/magnify for pixel work (scroll-zoom, fit, zoom-to-selection) — useful but
-  the panel is small and fixed, so secondary.
-- Copy/paste of a position; nudge-repeat.
-- A faint pixel grid toggle.
+These are the full-capability behaviors. Each is exposed through a simple gesture
+above, not its own control. Adopt the ones that fit a fixed 360×560 panel of ~5
+elements; drop the ones that don't.
 
-**Explicitly out (Figma features that don't apply here):**
+- **Selection** — click select, click-empty deselect, shift-click multi-select,
+  marquee drag. (Surface: just click and drag.)
+- **Move** — drag; arrow 1 px, shift+arrow 10 px; shift-drag axis-lock.
+- **Resize** — 8 handles; shift aspect-lock; alt from-center. (Surface: handles
+  appear only when selected.)
+- **Smart guides + snapping** — alignment lines vs siblings/panel center; snap;
+  alt suppresses for by-eye. (Surface: automatic; this *is* "align for you.")
+- **Measure** — px distance badges to neighbors/edges. (Surface: float on
+  drag/hold, then vanish.)
+- **Type-exact** — source-space X/Y/W/H + readout font/colour. (Surface: tap a
+  floating number to edit; no standing panel.)
+- **Align/distribute** — maps to `rules` (`sameX`, `sameWidth`, `centerY`, …).
+  (Surface: happens via snapping; an explicit "tidy these" only on reach.)
+- **Undo/redo** — `UndoManager`. (Surface: invisible, Cmd/Ctrl+Z.)
+- **Lock** — protect a placed element. (Surface: on reach, e.g. long-press.)
 
-- Adding/removing/duplicating elements (v1 edits the fixed set).
-- Components/variants, auto-layout, vector/pen editing, multiple pages/frames,
-  comments, real-time multiplayer cursors.
-- Restyling curated panel artwork.
+**Nice-to-have (if cheap, not gating):** zoom/magnify, copy/paste position,
+faint pixel-grid toggle.
+
+**Explicitly out (don't apply here):** adding/removing/duplicating elements;
+components/variants, auto-layout, vector editing, pages, comments, multiplayer;
+restyling curated panel artwork.
 
 ### Data flow
 
@@ -342,13 +357,14 @@ ui_layout.json (shared truth) ◄───────────────�
 1. **Layout file + hot-reload.** Seed `ui_layout.json`; plugin reads layout on
    construct; wells return override-or-default; timer mtime reload. (The
    foundation manual edits and Claude edits both write to.)
-2. **Manual edit mode (the headline), Figma-grade.** In-plugin toggle with the
-   Figma interaction vocabulary: marquee + shift multi-select, drag (shift =
-   axis lock), 8 resize handles (shift = aspect, alt = from center), arrow/
-   shift-arrow nudge, smart guides + snapping (alt suppresses), measure-on-hover
-   distance badges, typeable X/Y/W/H inspector, align/distribute, undo/redo,
-   lock. `ValueTree`+`UndoManager` model, auto-writes JSON. This is the thing
-   the user actually wanted — hands-on control that feels like Figma.
+2. **Manual edit mode (the headline) — simple surface, Figma engine.** One chord
+   in, no save button. The whole tutorial is "drag"; it snaps itself into
+   alignment; numbers float on touch and vanish; handles show only on the
+   selected element; undo is silent. Underneath: marquee/shift multi-select,
+   axis-lock drag, 8-handle resize (aspect/from-center), nudge, smart guides +
+   snapping, measure badges, type-exact, align via rules, lock, all on a
+   `ValueTree`+`UndoManager` model auto-writing JSON. Hands-on control that
+   feels obvious (iPhone test) with Figma power on reach.
 3. **Render + scene + validator (assist/verify).** `clean.png`, `overlay.png`,
    `scene.json`, `validation.json`; rule resolver. Powers snap geometry/hints
    for edit mode and lets Claude see and verify.
@@ -378,17 +394,17 @@ what is actually missing. Building these first is premature abstraction:
 - [ ] Plugin runtime ignores groups/rules (reads rect + style only)
 - [ ] Well functions return override-or-default
 - [ ] Hot-reload via timer mtime check
-- [ ] In-plugin edit-mode toggle (dev/author-gated; off in shipped builds)
-- [ ] Selection: click, click-empty deselect, shift multi-select, marquee
-- [ ] Move: drag, shift axis-lock, arrow 1px / shift-arrow 10px
-- [ ] Resize: 8 handles, shift aspect-lock, alt from-center
-- [ ] Smart guides + snapping to siblings/panel center; alt suppresses snapping
-- [ ] Measure-on-hover distance badges
-- [ ] Properties inspector: typeable X/Y/W/H + readout font/colour
-- [ ] Align/distribute on multi-selection (maps to rule effects)
-- [ ] Undo/redo via `ValueTree`+`UndoManager`
-- [ ] Lock an element
-- [ ] Every committed move auto-writes `ui_layout.json` (debounced)
+- [ ] In-plugin edit-mode toggle (one chord; dev/author-gated; off in shipped)
+- [ ] No save button — every committed move auto-writes `ui_layout.json`
+- [ ] iPhone test: drag-and-it-snaps works with zero instruction
+- [ ] Snapping on by default; clicks into sibling/panel-center alignment with a
+      guide line (this is "align for you" — no align toolbar); alt suppresses
+- [ ] Numbers (X/Y/W/H + distance badges) float on drag/hold, vanish on release
+- [ ] Tap a floating number to type an exact value (no standing inspector panel)
+- [ ] Resize handles appear only on the selected element
+- [ ] Underneath: shift multi-select + marquee, axis-lock drag, 8-handle resize
+      (aspect/from-center), arrow 1px / shift-arrow 10px, lock on reach
+- [ ] Undo/redo silent via `ValueTree`+`UndoManager` (Cmd/Ctrl+Z)
 - [ ] Audio/wheels keep running while edit mode is active
 - [ ] Tests: parse, well lookup, seed round-trip, hot-reload, edit-mode write,
       undo/redo round-trip
