@@ -1,7 +1,12 @@
-# TRENCH UI Layout Loop — design
+# See Your Plugin — TRENCH UI layout loop + signal schematic — design
 
 Date: 2026-06-19
 Status: approved (brainstorming)
+
+Two views of one transparent environment: a **Play/arrange** view (in-plugin,
+iPhone-simple manual layout editing — the headline v1) and an **Inspect** view
+(a live, transparent node-based signal schematic). Both ride on values and
+rendering that already exist (see Reuse ledger), per the engineering doctrine.
 
 ## Problem
 
@@ -325,6 +330,91 @@ ui_layout.json (shared truth) ◄───────────────�
                                     (writes layout) when asked to help
 ```
 
+## Engineering doctrine (lazy senior engineer + Rossum verbatim)
+
+- **Reuse before build.** The best code is the code not written. Find the
+  canonical owner and call it; extend what exists before authoring anew.
+- **Verbatim, not re-derived (Rossum).** Do not recompute what the engine already
+  computes. Read live values; prefer cheap closed-form math (quadratic pole
+  roots, closed-form biquad magnitude) over pulling in machinery.
+- **Never duplicate the packed math.** The packed-16 decode / `lerp_u16` /
+  morph-first interpolation is the documented "can of worms" with a single
+  canonical owner (`trench-core`). The schematic and tools call it
+  (`trench_engine_get_coeffs`, `trench_packed_probe`, forge-web `packed.js`) and
+  never reimplement it. See memory `find-duplicate-functions`.
+- **Minimal but complete.** Write only what the task needs — and never cut
+  validation, error handling, security, or accessibility. The code is small
+  because it is necessary, not because it is golfed.
+
+## Reuse ledger (what already exists — verified by exploration)
+
+Live DSP values, read verbatim (no recompute):
+
+| Need | Call / read | Where |
+|------|-------------|-------|
+| 6 stages' live DF2T coeffs + output gain, per frame, lock-free | `TrenchDspBridge::getSmoothedCoeffsForUI` → `trench_engine_get_coeffs` | `juce-shell/source/dsp/TrenchDspBridge.h:100`; `trench-core/src/ffi.rs:465` |
+| stability margin ρ per stage | `pole_radius(a1,a2)` (8-line closed form) or `trench_packed_probe` | `trench-core/src/minifloat.rs:309`; `ffi.rs:255` |
+| per-stage / cascade magnitude curve | closed-form biquad magnitude from the live coeffs | math of `trench-core/src/response.rs:229` (reimplement only the cheap formula, not the packed path) |
+| live Morph / Secondary | `PluginProcessor::smoothedMorph` / `smoothedQ` | `juce-shell/source/PluginProcessor.h:118` |
+| interpolated corners (authoring/tools only) | `trench_packed_interpolate` | `trench-core/src/ffi.rs:213` |
+
+Rendering primitives, reuse (web / forge-web):
+
+| Need | Reuse | Where |
+|------|-------|-------|
+| dB-vs-log-Hz response curve | `drawResp` / `drawResponsePath` | `forge-web/build_bench.py` (bench.html); `forge-web/js/forge.js:591` |
+| z-plane poles/zeros, stability rings | `drawZ` | bench.html template |
+| Morph×Q heatmap / grid | `drawField` / `drawGrid` | `forge-web/js/forge.js:614`; bench.html |
+| freq↔pixel mapping, dB↔pixel | `fx/fy/xToF/yToDb` | `forge-web/js/forge.js:41` |
+| packed body → dB codec (WASM, same trench-core) | `packed.js` + `forge-web/wasm` | `forge-web/js/packed.js` |
+| stage / corner color identity | existing palettes | `forge.js`; `forge-gpu-painter/src/painter/theme.rs` |
+| play a body through the real engine | `forge-worklet.js` | `forge-web/js/forge-worklet.js` |
+
+New code, genuinely (nothing to reuse): the **node-graph / signal-flow layout
+layer** itself, and the **in-plugin layout edit mode**.
+
+## Inspect view — live signal schematic
+
+The second view of "See Your Plugin": a node-based diagram of the actual TRENCH
+signal chain, governed by the transparency doctrine (entirely transparent, no
+black boxes; cleverly abstracted, not dumbed down).
+
+Nodes (the real chain): `[Morph]` + `[Secondary/Q]` → `[packed interp over 4
+corners C0..C3]` → `Stage 1 … Stage 6` (serial DF2T biquads) → `out`; audio in
+feeds Stage 1.
+
+Behavior:
+
+- **Read-only over verbatim values.** It displays the live coeffs / ρ / curves
+  from the reuse ledger. It does not author or recompute the packed math.
+- **Transparent on demand.** Click a stage → its real poles/zeros (z-plane via
+  reused `drawZ`), its live `b0 b1 b2 a1 a2`, its own magnitude curve (reused
+  curve renderer), its ρ stability margin. Click the interp node → the 4 corners
+  and how (Morph, Secondary) blend them. Numbers hidden by default, one click
+  away, never removed.
+- **Track the signal.** Tap along the chain → magnitude after each stage, so
+  "this stage eats the low mids" is visible, not inferred.
+
+Home: **extend `forge-web/bench`** (reuses every rendering primitive above and
+runs the same trench-core via WASM = verbatim-accurate). Only the node-graph
+layer is new. Porting the proven view in-plugin (for live-in-DAW) is a later
+step, using the same FFI values already mapped — not paid for until the cheap
+version proves the design. Unified "See Your Plugin" is the north star, not a v1
+constraint.
+
+This view is **separate from the layout-designer v1** and gets its own
+phase/plan; it is specified here so the two views share one doctrine and one
+reuse ledger.
+
+## Accessibility (not cut — applies to both views)
+
+- Edit mode fully **keyboard-operable**: select, nudge (arrows/shift-arrows),
+  type-exact entry, undo — not mouse-only.
+- **Color is never the only signal**: stages/corners carry text labels and shape,
+  not just hue (color-blind safe); selection shown by outline, not color alone.
+- Readable contrast for floating numbers/badges; focus is visible.
+- Screen-reader names for controls where JUCE accessibility supports it.
+
 ## Error handling
 
 - Missing file → defaults, silent (the common shipped case).
@@ -406,6 +496,9 @@ what is actually missing. Building these first is premature abstraction:
       (aspect/from-center), arrow 1px / shift-arrow 10px, lock on reach
 - [ ] Undo/redo silent via `ValueTree`+`UndoManager` (Cmd/Ctrl+Z)
 - [ ] Audio/wheels keep running while edit mode is active
+- [ ] Edit mode fully keyboard-operable; color never the sole signal
+- [ ] Malformed/partial layout writes never corrupt state (atomic write +
+      last-good fallback)
 - [ ] Tests: parse, well lookup, seed round-trip, hot-reload, edit-mode write,
       undo/redo round-trip
 - [ ] Quitting/reopening restores the edited layout
@@ -424,3 +517,15 @@ what is actually missing. Building these first is premature abstraction:
       resolver, hot-reload
 - [ ] Claude can patch → render → read PNG + scene.json + validation.json →
       state whether the change passed
+
+## Definition of done (Inspect view — live signal schematic, own plan)
+
+- [ ] Node graph of the real chain (Morph/Q → interp(4 corners) → 6 stages → out)
+- [ ] Built by extending `forge-web/bench`; reuses curve/z-plane/heatmap/codec
+- [ ] Reads live coeffs/ρ verbatim; reimplements no packed math (calls canonical)
+- [ ] Click a stage → real poles/zeros + `b0..b2,a1,a2` + stage curve + ρ
+- [ ] Click interp node → 4 corners + (Morph,Secondary) blend shown
+- [ ] Track-the-signal: magnitude after each stage
+- [ ] Numbers hidden by default, one click away (transparent, not dumbed down)
+- [ ] Keyboard-operable; color never the sole signal
+- [ ] Handles malformed/short body bytes without throwing (validate to 240)
