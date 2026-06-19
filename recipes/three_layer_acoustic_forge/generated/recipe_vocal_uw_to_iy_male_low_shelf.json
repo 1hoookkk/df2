@@ -24,7 +24,7 @@
     "to": "iy",
     "voice": "male",
     "foundation": "low_shelf",
-    "f0_hz": 92.0,
+    "f0_hz": null,
     "home_shape": "two low bumps, close \u2014 dark/rounded",
     "away_shape": "low bump + high bump, far apart"
   },
@@ -134,7 +134,7 @@
         "mode": "air-canyon",
         "zero_home_ratio": 2.345455,
         "zero_away_ratio": 0.985091,
-        "zero_radius_q0": 1.02,
+        "zero_radius_q0": 0.995,
         "zero_radius_q100": 0.993,
         "depth": 0.86,
         "note": "clean-room zero relation generated from table endpoints"
@@ -144,7 +144,7 @@
         "mode": "ceiling-canyon",
         "zero_home_ratio": 0.337333,
         "zero_away_ratio": 0.78,
-        "zero_radius_q0": 1.02,
+        "zero_radius_q0": 0.995,
         "zero_radius_q100": 0.993,
         "depth": 0.86,
         "note": "clean-room zero relation generated from table endpoints"

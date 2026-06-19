@@ -15,6 +15,30 @@ and runs the real engine. No plugin/UI/feature work until the presets exist — 
 the comfortable-tractable trap that has kept this project's preset bank EMPTY after
 months. The presets ARE the product. Nothing else matters right now.
 
+## RESOLVED KEY FAILURE: GLOW CONTRACT
+
+> [!NOTE]
+> **RESOLVED (2026-06-12)**: The moving signal trail has been successfully corrected.
+> - **Centering Fix**: Aligned the vertical center of the glow to `y = 21.5` in the scaled `152x40` frame (the physically measured center of the tilted 3D cylinder slot).
+> - **Warping Fix**: Modified `assemble_strip.py` and `texture_glow.py` to ensure the glow is applied *after* the final wheel seating/scale into the `152x40` frame, preventing any interpolation/downscale warping.
+> - **Visual Excellence**: Replaced the flat neon stripe with an elliptical bead (hot white core + soft cyan halo) and a tapering signal trail that decays exponentially to the left, using screen-blend overlay to preserve slot textures.
+> - **Contract Verification**: Frame `0` is glowless; frames `1..126` move smoothly; frame `127` is glowless; frame `128` is a byte-copy of frame `0`.
+
+Expected glow contract:
+- frame `0`: no glow
+- frames `1..126`: glow moves left to right
+- frame `127`: no glow
+- frame `128`: byte-copy of frame `0`
+- glow should be visibly teal/cyan inside the dark center slot
+- trail should be readable but not a flat neon stripe
+- glow must stay aligned with the wheel slot after assembly scaling
+
+Most likely place to fix:
+- `dev/tmp/thumbwheel_blender/texture_glow.py`
+- `dev/tmp/thumbwheel_blender/assemble_strip.py`
+
+Important: glow should be applied **after** the final wheel seating/scale into the `152x40` frame, otherwise the glow alignment gets warped or misplaced.
+
 ## THE DEAL — who does what (the core realization, do not forget)
 
 **Claude is a deaf maker. Tyson is the ear.** Proven this session: every body Claude

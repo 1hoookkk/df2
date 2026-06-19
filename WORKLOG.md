@@ -6,6 +6,17 @@ got decided, and the next move. This is a **thread-keeper, not authority**:
 and the Forge model. Nothing here overrides them or becomes doctrine. Append one
 entry per session; newest on top; keep it tight.
 
+## 2026-06-12 — Thumbwheel glow alignment and visual contract resolved
+
+**Started:** Fix the key failure where the thumbwheel glow was warped, misplaced, or rendered as a flat neon stripe.
+
+**Resolved:**
+- **Alignment & Centering**: Physically centered the glow path to `y = 21.5` in the scaled `152x40` frame (matching the physical slot of the 3D wheel).
+- **Smooth Tapering Trail**: Replaced the flat neon stripe with an elliptical bead (hot white core + soft cyan halo) and a tapering signal trail that narrows and decays exponentially to the left (`sigma_y` dynamically scales based on horizontal distance).
+- **Detail Integration**: Switched from a binary luma gate to soft screen-blend overlay, ensuring that underlying textures and tooth shadows remain visible rather than being overwritten.
+- **Contract Adhered**: Frame `0` is glowless; frames `1..126` move smoothly; frame `127` is glowless; frame `128` is a byte-copy of frame `0`.
+- **Handoff Updated**: Documented the solved state in `HANDOFF.md`.
+
 ---
 
 ## 2026-06-02 — Vocal bodies cracked: real-voice LPC skeleton

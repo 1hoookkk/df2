@@ -238,6 +238,26 @@
       "gates": {"low_rolloff_min_db": 0, "peak_max_db": 8, "morph_motion_min_hz": 80, "morph_chaos_max": 1.1, "q_center_shift_max_hz": 900, "packed_residual_max_db": 20}
     },
     {
+      "name": "metal_comb_wide_morph",
+      "label": "metal comb wide morph",
+      "listening_goal": "A comb/grate body where Morph makes an obvious spectral relocation, not a polite tooth slide. All six features are allowed to travel; Q only makes the teeth audible.",
+      "family": "comb_fracture",
+      "floor_db": -12,
+      "features": [
+        {"kind": "peak", "freq_hz": [320, 780], "gain_db": [5, 12], "bw_oct": [0.28, 0.62]},
+        {"kind": "notch", "freq_hz": [620, 1350], "gain_db": [12, 24], "bw_oct": [0.08, 0.22]},
+        {"kind": "peak", "freq_hz": [1100, 2600], "gain_db": [5, 12], "bw_oct": [0.24, 0.56]},
+        {"kind": "notch", "freq_hz": [1450, 3200], "gain_db": [12, 25], "bw_oct": [0.08, 0.22]},
+        {"kind": "notch", "freq_hz": [3000, 6100], "gain_db": [10, 22], "bw_oct": [0.09, 0.24]},
+        {"kind": "notch", "freq_hz": [5600, 9800], "gain_db": [8, 18], "bw_oct": [0.10, 0.28]}
+      ],
+      "morph_axis_rule": {"type": "glide", "factor": [0.55, 2.20]},
+      "q_axis_rule": {"type": "deepen", "notch_extra_db": [6.0, 13.0], "bw_scale": [0.30, 0.56]},
+      "level_guidance_db": -3,
+      "failure_modes": ["barely moves", "same response with deeper teeth", "static buzz instead of a morphing grate"],
+      "gates": {"low_rolloff_min_db": 0, "peak_max_db": 10, "morph_motion_min_hz": 800, "morph_chaos_max": 3.0, "q_center_shift_max_hz": 2200, "packed_residual_max_db": 28}
+    },
+    {
       "name": "ported_cabinet_tear",
       "label": "ported cabinet tear",
       "listening_goal": "Ported box pressure plus broken cone edge: bass weight, port antiresonance, mid knock, and an upper tear that moves without losing the low body.",

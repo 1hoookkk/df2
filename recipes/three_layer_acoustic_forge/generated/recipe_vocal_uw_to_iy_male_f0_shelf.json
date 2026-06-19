@@ -23,8 +23,8 @@
     "from": "uw",
     "to": "iy",
     "voice": "male",
-    "foundation": "f0_shelf",
-    "f0_hz": 92.0,
+    "foundation": "low_shelf",
+    "f0_hz": null,
     "home_shape": "two low bumps, close \u2014 dark/rounded",
     "away_shape": "low bump + high bump, far apart"
   },
@@ -68,7 +68,7 @@
       },
       {
         "lane": 4,
-        "role": "F4 peak shelf",
+        "role": "F4 air",
         "pole_hz": 3300.0,
         "pole_radius_q0": 0.980094589,
         "pole_radius_q100": 0.995586406,
@@ -77,7 +77,7 @@
       },
       {
         "lane": 5,
-        "role": "air peak shelf",
+        "role": "ceiling",
         "pole_hz": 9391.485505,
         "pole_radius_q0": 0.985627821,
         "pole_radius_q100": 0.997189091,
@@ -131,20 +131,20 @@
       },
       {
         "lane": 4,
-        "mode": "peak-shelf-canyon",
+        "mode": "air-canyon",
         "zero_home_ratio": 2.345455,
         "zero_away_ratio": 0.985091,
-        "zero_radius_q0": 1.02,
+        "zero_radius_q0": 0.995,
         "zero_radius_q100": 0.993,
         "depth": 0.86,
         "note": "clean-room zero relation generated from table endpoints"
       },
       {
         "lane": 5,
-        "mode": "air-shelf-canyon",
+        "mode": "ceiling-canyon",
         "zero_home_ratio": 0.337333,
         "zero_away_ratio": 0.78,
-        "zero_radius_q0": 1.02,
+        "zero_radius_q0": 0.995,
         "zero_radius_q100": 0.993,
         "depth": 0.86,
         "note": "clean-room zero relation generated from table endpoints"

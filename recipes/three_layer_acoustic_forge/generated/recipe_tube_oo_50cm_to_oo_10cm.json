@@ -127,7 +127,7 @@
         "mode": "length-canyon",
         "zero_home_ratio": 1.032,
         "zero_away_ratio": 0.864,
-        "zero_radius_q0": 1.02,
+        "zero_radius_q0": 0.995,
         "zero_radius_q100": 0.993,
         "depth": 0.55,
         "note": "clean-room zero relation generated from table endpoints"
@@ -137,7 +137,7 @@
         "mode": "odd-hollow-canyon",
         "zero_home_ratio": 0.766667,
         "zero_away_ratio": 0.78,
-        "zero_radius_q0": 1.02,
+        "zero_radius_q0": 0.995,
         "zero_radius_q100": 0.993,
         "depth": 0.55,
         "note": "clean-room zero relation generated from table endpoints"

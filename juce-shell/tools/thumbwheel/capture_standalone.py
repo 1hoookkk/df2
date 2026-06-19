@@ -97,6 +97,11 @@ def main():
     print(f"PrintWindow ok={ok} size={size} -> {out}")
     if not keep_open:
         proc.terminate()
+    else:
+        try:
+            proc.wait()
+        except KeyboardInterrupt:
+            proc.terminate()
 
 
 if __name__ == "__main__":

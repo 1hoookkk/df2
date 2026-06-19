@@ -117,8 +117,8 @@ def make_zeros(home: list[float], away: list[float], modes: list[str], *, depth:
             "mode": modes[lane] if lane < len(modes) else mode,
             "zero_home_ratio": round(max(0.12, min(8.0, zh / h)), 6),
             "zero_away_ratio": round(max(0.12, min(8.0, za / a)), 6),
-            "zero_radius_q0": round(0.84 + 0.045 * min(lane, 4), 6),
-            "zero_radius_q100": round(0.965 + 0.007 * min(lane, 4), 6),
+            "zero_radius_q0": round(min(0.995, 0.84 + 0.045 * min(lane, 4)), 6),
+            "zero_radius_q100": round(min(0.9985, 0.965 + 0.007 * min(lane, 4)), 6),
             "depth": round(max(0.1, min(1.0, depth)), 6),
             "note": "clean-room zero relation generated from table endpoints",
         })

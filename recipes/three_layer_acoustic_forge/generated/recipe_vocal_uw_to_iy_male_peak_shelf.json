@@ -134,7 +134,7 @@
         "mode": "peak-shelf-canyon",
         "zero_home_ratio": 1.248387,
         "zero_away_ratio": 0.468947,
-        "zero_radius_q0": 1.02,
+        "zero_radius_q0": 0.995,
         "zero_radius_q100": 0.993,
         "depth": 0.86,
         "note": "clean-room zero relation generated from table endpoints"
@@ -144,7 +144,7 @@
         "mode": "ceiling-shelf-canyon",
         "zero_home_ratio": 0.633778,
         "zero_away_ratio": 0.78,
-        "zero_radius_q0": 1.02,
+        "zero_radius_q0": 0.995,
         "zero_radius_q100": 0.993,
         "depth": 0.86,
         "note": "clean-room zero relation generated from table endpoints"

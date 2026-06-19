@@ -1,0 +1,77 @@
+{
+  "format": "df2-pristine-preset-stack-v1",
+  "authority": {
+    "source_truth": [
+      "recipes/laws",
+      "recipes/three_layer_acoustic_forge/cleanroom_three_layer_acoustic_recipe.json"
+    ],
+    "supporting_evidence": [
+      "tables",
+      "ref",
+      "dev/tmp/p2k_full_vocabulary",
+      "dev/tmp/p2k_reference_grammar",
+      "dev/tmp/x3_p2k_family_browser",
+      "dev/tmp/morph_designer_template_study",
+      "dev/tmp/physical_mountains"
+    ],
+    "output_or_candidate": [
+      "recipes/three_layer_acoustic_forge/generated",
+      "dev/tmp/law_author",
+      "dev/tmp/source_truth_verify",
+      "desk/bank/v1/staging"
+    ],
+    "final_bank": "desk/bank/v1/BANK.md"
+  },
+  "approved_seed_laws": [
+    "recipes/laws/bass_sharpener.json",
+    "recipes/laws/family_bandpass_swept_eq.json",
+    "recipes/laws/family_morph_special.json",
+    "recipes/laws/family_phaser_comb.json",
+    "recipes/laws/family_slope_ladder.json",
+    "recipes/laws/family_vocal_formant.json",
+    "recipes/laws/hedz_like_anchor_canyons.json"
+  ],
+  "repair_before_seed": [],
+  "mathematical_primitives": [
+    "tables/morph_designer_type_primitives.json",
+    "tables/exact_skeletons.json",
+    "tables/q_radius_table.json",
+    "tables/tube_resonances.json",
+    "tables/vowel_formants.json",
+    "tables/klatt_1980_formants.json",
+    "tables/klatt_1980_bandwidths.json",
+    "tables/metallic_modes.json",
+    "tables/family_intents.json"
+  ],
+  "move_policy": [
+    "Move a file into recipes/laws only when it is a compact clean-room law, has explicit provenance, emits exactly six runtime lanes, and passes packed trench_core audit before any keeper claim.",
+    "Move a file into recipes/three_layer_acoustic_forge only when it is an anatomy/articulation/survival recipe with six pole lanes, six zero lanes, clean-room notes, and no copied protected bytes or endpoint tables.",
+    "Move distilled numeric rails into tables only when they are formulas, aggregate ranges, physical models, or validated public tables. Do not put rendered bodies, plots, auditions, or raw preset bytes there.",
+    "Keep ref as evidence only. Reference bodies, raw tables, XML, ROM extracts, patents, and preset bins may teach laws but do not become product seeds.",
+    "Keep generated bodies, plots, WAVs, HTML workbenches, and packed audit outputs in dev/tmp or desk/bank staging until Tyson promotes them."
+  ],
+  "quality_gate": {
+    "required_shape": "4 corners x 6 lanes x 5 packed u16 words = 240 bytes",
+    "required_motion": "two authored Morph frames plus derived Secondary/Q pressure",
+    "mountain_canyon_requirements": [
+      "protected low/body foundation",
+      "one or two obvious moving actors",
+      "first-class zeros with local tears, remote counterweights, or rim canyons",
+      "Secondary/Q pressure changes radii/depth/gain without frequency drift",
+      "M50/Q50 remains musically meaningful",
+      "packed runtime audit reports zero unstable and zero nonfinite rows"
+    ],
+    "final_keeper_gate": "Tyson keep verdict plus BANK.md row"
+  },
+  "forbidden_in_source_truth": [
+    "__pycache__",
+    "*.body240",
+    "*.wav",
+    "*.png",
+    "*.html",
+    "copied protected bytes",
+    "copied coefficient rows",
+    "copied preset tables",
+    "random pole-zero clouds"
+  ]
+}
