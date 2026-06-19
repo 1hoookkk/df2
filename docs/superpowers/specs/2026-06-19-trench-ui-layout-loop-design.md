@@ -95,6 +95,18 @@ Schema (v1):
 {
   "version": 1,
   "sourceSpace": [1024, 1591],
+  "groups": {
+    "wheels":   ["morphWheel", "qWheel"],
+    "readouts": ["morphReadout", "qReadout"]
+  },
+  "rules": [
+    { "type": "sameX",     "elements": ["morphWheel", "qWheel"] },
+    { "type": "sameWidth", "elements": ["morphWheel", "qWheel"] },
+    { "type": "sameX",     "elements": ["morphReadout", "qReadout"] },
+    { "type": "sameWidth", "elements": ["morphReadout", "qReadout"] },
+    { "type": "centerY",   "a": "morphReadout", "b": "morphWheel" },
+    { "type": "centerY",   "a": "qReadout",     "b": "qWheel" }
+  ],
   "elements": {
     "morphWheel":   { "rect": [127, 694, 423, 101] },
     "qWheel":       { "rect": [127, 871, 423, 101] },
@@ -108,6 +120,17 @@ Schema (v1):
 - `rect` is required per element. `fontSize` / `textColor` are optional style
   overrides (v1 limits style to readout/selector text; the rest of the styling
   stays in C++ to keep scope tight).
+- `groups` name sets of elements so Claude/user can reason at the group level
+  ("the readouts") instead of per element.
+- `rules` are **named relationships**, not a general constraint solver. The same
+  declaration serves two cheap jobs: the **validator checks** whether a rule
+  holds (within tolerance) and reports violations, and a one-shot **resolver**
+  can snap rects to satisfy a rule on request. This buys ~90% of "stop thinking
+  in raw x,y,w,h" without an optimizer. Supported v1 rule types: `sameX`,
+  `sameY`, `sameWidth`, `sameHeight`, `centerY` (a vs b), `centerX` (a vs b).
+- `groups` and `rules` are optional. Absent → plain rect behavior. The plugin
+  runtime ignores them entirely; they are consumed only by the render tool's
+  validator/resolver. The plugin reads `elements[*].rect` and style only.
 - Unknown ids are ignored. Missing ids fall back to the C++ default.
 - A missing or malformed file means the plugin uses **today's hardcoded values
   exactly** — shipped behavior is unchanged until the user opts in.
@@ -118,23 +141,57 @@ designer/render tool and the plugin agree on pixel one.
 ### 2. Render tool (built first)
 
 A small harness that constructs `PluginProcessor` + `PluginEditor`, renders the
-editor into a `juce::Image`, and writes a PNG. Driven by a script Claude can run
-after any layout change.
+editor into a `juce::Image`, and emits a **render bundle** Claude can read after
+any layout change. The PNG is necessary but not sufficient — the structured
+outputs are what let Claude *reason* instead of inferring everything from pixels.
 
-- Reads the same `ui_layout.json` the plugin reads, so the PNG reflects the live
-  layout.
-- Output: a deterministic PNG at the true editor size (360×560) that Claude
-  inspects with the Read tool to verify placement.
-- **Labeled overlay mode** (flag): renders a second PNG with each element's
-  `id` and rect drawn on a faint outline of its bounds. This is the shared
-  vocabulary surface for the collab loop — both sides reference controls by id.
-- **Before/after**: the tool preserves the previous render (e.g.
-  `last.png`) so a change can be shown as a visible diff.
-- Preferred form: an offscreen render (construct editor, `paintEntireComponent`
-  into an `Image`, write PNG) so no DAW/standalone window is needed. If
-  offscreen proves impractical in JUCE, fall back to launching
-  `TrenchStandaloneApp` and screenshotting — but offscreen is the target.
-- Behavior is read-only: it never writes the layout, only renders it.
+Reads the same `ui_layout.json` the plugin reads, so every output reflects the
+live layout. Behavior is read-only: it renders/validates, it never writes the
+layout (the resolver, see below, is an explicit separate command).
+
+Outputs per render:
+
+- `clean.png` — deterministic, true editor size (360×560).
+- `overlay.png` — each element's `id` + rect drawn on a faint outline of its
+  bounds. Shared-vocabulary surface for the collab loop.
+- `scene.json` — structured truth, sourced from the editor itself via a
+  `getUiDebugTree()` accessor so the overlay is a *view of truth*, not
+  reconstructed. Per element: `id`, `sourceRect`, `editorRect`, `visible`,
+  `zIndex`, `acceptsMouse`, `text`, `fontSize`, `textColour`.
+- `validation.json` — output of the validator (below).
+- `last.png` — the prior `clean.png`, preserved so a change reads as a
+  before/after diff.
+
+Render form: offscreen (construct editor, `paintEntireComponent` /
+`createComponentSnapshot` into an `Image`, write PNG) so no DAW/standalone
+window is needed. If offscreen proves impractical in JUCE, fall back to
+launching `TrenchStandaloneApp` and screenshotting — but offscreen is the
+target.
+
+### 2a. Validator + resolver
+
+The validator reads `scene.json` + the layout's `rules`/`groups` and emits a
+blunt pass/fail with reasons. v1 checks:
+
+- overlap between non-ancestor elements (e.g. `morphReadout` vs `morphWheel`)
+- any rect off the source-space canvas
+- missing / malformed rect
+- unknown element id referenced by a rule
+- text clipping (readout text at its longest expected value)
+- curated-art hash unchanged (panel pixels must not move)
+- each declared `rule` holds within tolerance
+
+Output shape:
+
+```txt
+FAIL
+- qReadout is 1 source px wider than morphReadout (rule sameWidth)
+- morphReadout centerY is 3.4 source px above morphWheel centerY (rule centerY)
+```
+
+The **resolver** is the inverse: given a rule (or "apply all rules"), it mutates
+the rects to satisfy it and writes the updated `ui_layout.json`. This is the only
+write path in the tool, invoked explicitly — never as a side effect of render.
 
 ### 3. Plugin runtime (layout-driven wells)
 
@@ -154,11 +211,15 @@ after any layout change.
 ### Data flow
 
 ```
-Claude edits ui_layout.json  ─┐
-                              ├─► render tool ─► PNG ─► Claude verifies ─► (loop)
-plugin Timer sees mtime change┘                                         │
-   └─► re-reads layout ─► wells return new rects ─► repaint ◄───────────┘
-(phase 2) user drag-corrects in-plugin ─► writes ui_layout.json ─► same loop
+Claude/user edits ui_layout.json ─┐
+                                  ├─► render tool ─► clean.png + overlay.png
+plugin Timer sees mtime change ───┘        + scene.json + validation.json
+   │                                              │
+   │                                    Claude reads pixels + structure,
+   │                                    runs validator, optionally calls
+   │                                    resolver (writes layout) ─► (loop)
+   └─► re-reads layout ─► wells return new rects ─► repaint
+(phase 3) user drag-corrects in-plugin ─► writes ui_layout.json ─► same loop
 ```
 
 ## Error handling
@@ -180,24 +241,54 @@ plugin Timer sees mtime change┘                                         │
   changes nothing until a value is edited).
 - **Render tool**: produces a 360×560 PNG; re-rendering the seed matches the
   current shipped layout within tolerance.
+- **Scene output**: `scene.json` element rects match what the editor's well
+  functions return for the same layout.
+- **Validator**: a layout with a known overlap / off-canvas / broken rule is
+  reported FAIL with the right reason; the seed layout reports PASS.
+- **Resolver**: applying a `sameWidth` rule to mismatched rects makes them equal
+  and leaves a still-valid layout.
 - **Hot-reload**: editing the file changes the rendered rect on next timer tick.
 
 ## Phasing
 
-1. **Render-to-PNG** + seed `ui_layout.json` + plugin reads layout on
-   construct. (The missing capability — Claude can see and self-correct.)
-2. **Hot-reload** on timer mtime check.
-3. **Drag-correct** in-plugin edit mode writing back to the JSON.
-4. (Later, optional) AI layout *suggestions*, gated by user accept — never
-   auto-restyle.
+1. **Render bundle + plugin reads layout.** Seed `ui_layout.json`; plugin reads
+   layout on construct; render tool emits `clean.png` + `overlay.png` +
+   `scene.json`. (The missing capability — Claude can see *and* reason.)
+2. **Validator + hot-reload.** `validation.json` (overlap/off-canvas/text-clip/
+   art-hash/rules); rule resolver; timer mtime reload.
+3. **Minimal drag-correct.** In-plugin: select element, arrow-nudge, write back
+   to the same JSON. (Pulled earlier — cheap, changes the feel.)
+4. **AI layout *suggestions*.** Propose rects/rule-fixes, gated by user accept —
+   never auto-restyle curated art.
+
+### Later (earns its place after the spine renders)
+
+Not rejected — deferred until the render→scene→validate loop exists and reveals
+what is actually missing. Building these first is premature abstraction:
+
+- persistent render daemon (vs per-call harness)
+- candidate generation: N variants scored + contact sheet
+- operation log with actor/reason, blame, replay, "back to last good"
+- full multi-state render matrix (hover/drag/open/disabled/long-text)
+- `ValueTree` + `UndoManager` as the internal authoring model
+- full GUI authoring (resize handles, snap guides, undo) in edit mode
 
 ## Definition of done (v1 = phases 1–2)
 
-- [ ] `ui_layout.json` schema + seed file matching current hardcoded defaults
+- [ ] `ui_layout.json` schema (elements + optional groups/rules) + seed matching
+      current hardcoded defaults
 - [ ] Plugin reads layout; absent/malformed → exact current behavior
+- [ ] Plugin runtime ignores groups/rules (reads rect + style only)
 - [ ] Well functions return override-or-default
 - [ ] Hot-reload via timer mtime check
-- [ ] Render tool emits a 360×560 PNG from the live layout
-- [ ] Render tool has a labeled-overlay mode (id + rect per control)
-- [ ] Tests: parse, well lookup, seed round-trip, hot-reload, render output
-- [ ] Claude can run the render tool and read the PNG to verify placement
+- [ ] `getUiDebugTree()` accessor on the editor
+- [ ] Render tool emits `clean.png`, `overlay.png`, `scene.json`,
+      `validation.json`, `last.png`
+- [ ] Validator catches overlap, off-canvas, missing/malformed rect, text clip,
+      curated-art-hash change, and rule violations
+- [ ] Rule resolver applies a rule and writes a still-valid layout
+- [ ] Before/after diff = image diff + semantic rect diff
+- [ ] Tests: parse, well lookup, seed round-trip, scene output, validator,
+      resolver, hot-reload
+- [ ] Claude can patch → render → read PNG + scene.json + validation.json →
+      state whether the change passed
