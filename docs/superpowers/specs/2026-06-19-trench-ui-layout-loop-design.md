@@ -22,6 +22,31 @@ Three modes of one environment:
 Both authored views ride on values and rendering that already exist (see Reuse
 ledger), per the engineering doctrine.
 
+### Surfaces: an HTML app AND the in-plugin editor (both), one shared document
+
+Decided 2026-06-19 (supersedes the earlier "in-plugin only / browser rejected"
+call). There are two front-ends, not a choice between them:
+
+- **HTML "See Your Plugin" app** — the primary *visual* surface, holding both
+  **Arrange** (drag layout over the real panel PNG) and **Inspect** (the DSP
+  backend made visual). This is where design happens fast and — critically —
+  **where Claude can SEE the work**: Claude renders the page in a headless
+  browser and screenshots it, so the collab loop finally has shared sight.
+- **In-plugin edit mode** — the live-in-DAW, pixel-true face for final fidelity.
+
+They are reconciled by the **shared `ui_layout.json`**: the HTML app exports it,
+the plugin hot-reloads it (Phase 1 bridge), and the in-plugin editor writes the
+same file. The plugin remains the source of truth for *behavior* and final
+appearance; the HTML is faithful enough for *placement* because it composites
+the real panel PNG and the real control assets, and the plugin reading the JSON
+is the last WYSIWYG check. "Make the backend visual" is satisfied by Inspect
+living in this same app.
+
+Why this reverses the earlier rejection of a browser canvas: the decisive factor
+is that an HTML surface is one Claude can actually see and verify each iteration
+— which is the entire point of the tool — and the drift concern is small for
+*placement* over the real artwork.
+
 ## Problem
 
 When Claude builds the TRENCH plugin UI, control placement is done **blind**.
@@ -90,13 +115,11 @@ loop and how directly the user can control placement:
   procedurally; see memory `ui-changes-additive-keep-assets`).
 - AI auto-restyle of the look. Any future AI assist only *proposes* layout for
   the user to accept/reject; it never rewrites curated art.
-- A browser drag-and-drop canvas. Rejected because a browser is a second
-  renderer that drifts from JUCE; the plugin's own renderer must be the source
-  of truth. Manual editing lives **in the plugin** — that is the headline
-  surface, not a deferred extra.
-- A separate standalone design window (assumed not wanted). Manual control is
-  in the running plugin, live in the DAW. Revisit only if the user prefers a
-  dedicated window.
+- (Reversed 2026-06-19) A browser canvas is no longer rejected — it is a
+  co-equal front-end (see "Surfaces" above). The earlier drift objection is
+  outweighed by Claude being able to see/verify HTML; placement over the real
+  panel PNG is faithful, and the plugin reading the exported JSON is the final
+  WYSIWYG check.
 - A node *editor* / freeform DSP patcher. Inspect is a fixed-structure
   schematic of the real chain; it never lets the user rewire the DSP or imply a
   wiring that isn't real. (This is not Max/MSP.)

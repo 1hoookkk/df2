@@ -1,0 +1,146 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<title>See Your Plugin — Arrange (prototype)</title>
+<style>
+  :root { --bg:#15161a; --ink:#cfe9ef; --cyan:#5fd6e6; --mag:#e85ad0; }
+  html,body { margin:0; background:var(--bg); color:var(--ink);
+              font:13px/1.4 -apple-system,Segoe UI,Roboto,sans-serif; }
+  .wrap { display:flex; gap:18px; padding:18px; align-items:flex-start; }
+  canvas { background:#000; border:1px solid #2a2c33; image-rendering:auto; }
+  .panel { min-width:280px; }
+  h1 { font-size:14px; margin:0 0 8px; color:var(--cyan); letter-spacing:.04em; }
+  .hint { color:#7f8a90; margin:0 0 12px; }
+  .sel { color:var(--cyan); }
+  button { background:#23252c; color:var(--ink); border:1px solid #3a3d46;
+           border-radius:5px; padding:6px 10px; cursor:pointer; }
+  button:hover { border-color:var(--cyan); }
+  textarea { width:100%; height:300px; background:#0e0f12; color:#9fe6c9;
+             border:1px solid #2a2c33; border-radius:5px; font:11px/1.35 monospace; }
+  .row { margin:10px 0; }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <div>
+    <h1>SEE YOUR PLUGIN — Arrange (prototype)</h1>
+    <canvas id="c" width="720" height="1120"></canvas>
+  </div>
+  <div class="panel">
+    <p class="hint">Drag a box over the real panel. It snaps to siblings.<br>
+      Selected: <span id="sel" class="sel">none</span></p>
+    <div class="row"><button id="export">Export ui_layout.json</button></div>
+    <textarea id="out" readonly></textarea>
+  </div>
+</div>
+<script>
+// --- spaces ---------------------------------------------------------------
+const SRC_W = 1024, SRC_H = 1591;     // authored source space
+const ED_W = 360,  ED_H = 560;        // plugin editor space
+const DISP = 2;                       // on-screen zoom
+const c = document.getElementById('c'), g = c.getContext('2d');
+
+// Defaults = the five wells (source space), mirrors UiLayout::defaults().
+const layout = {
+  morphWheel:   [127, 694, 423, 101],
+  qWheel:       [127, 871, 423, 101],
+  typeSelector: [230, 142, 672, 73],
+  morphReadout: [603, 712, 168, 77],
+  qReadout:     [602, 889, 169, 79],
+};
+const ids = Object.keys(layout);
+
+// source -> display px
+const sx = x => x * ED_W / SRC_W * DISP;
+const sy = y => y * ED_H / SRC_H * DISP;
+// display delta -> source delta
+const dsx = d => d / DISP * SRC_W / ED_W;
+const dsy = d => d / DISP * SRC_H / ED_H;
+
+let selected = null, dragging = false, startMouse = null, startRect = null;
+let guideX = null, guideY = null;
+
+const panel = new Image();
+panel.onload = draw;
+panel.src = '../juce-shell/assets/ui/df2_panel_shadow.png';
+
+function dispRect(id){ const [x,y,w,h] = layout[id]; return [sx(x), sy(y), sx(w), sy(h)]; }
+
+function draw(){
+  g.clearRect(0,0,c.width,c.height);
+  if (panel.complete && panel.naturalWidth) g.drawImage(panel, 0,0, c.width, c.height);
+  else { g.fillStyle='#000'; g.fillRect(0,0,c.width,c.height); }
+
+  for (const id of ids){
+    const [x,y,w,h] = dispRect(id);
+    const on = id === selected;
+    g.strokeStyle = on ? '#5fd6e6' : 'rgba(95,214,230,.45)';
+    g.lineWidth = on ? 2 : 1;
+    g.strokeRect(x,y,w,h);
+    // label
+    g.fillStyle = on ? '#5fd6e6' : 'rgba(95,214,230,.7)';
+    g.font = '11px monospace';
+    g.fillText(id, x+3, y-3 < 10 ? y+12 : y-3);
+    if (on){
+      const [rx,ry,rw,rh] = layout[id].map(Math.round);
+      g.fillStyle = 'rgba(0,0,0,.65)'; g.fillRect(x, y+h+2, 150, 14);
+      g.fillStyle = '#5fd6e6';
+      g.fillText(`${rx},${ry}  ${rw}x${rh}`, x+3, y+h+13);
+    }
+  }
+  g.strokeStyle = 'rgba(232,90,208,.9)'; g.lineWidth = 1;
+  if (guideX !== null){ const px = sx(guideX); g.beginPath(); g.moveTo(px,0); g.lineTo(px,c.height); g.stroke(); }
+  if (guideY !== null){ const py = sy(guideY); g.beginPath(); g.moveTo(0,py); g.lineTo(c.width,py); g.stroke(); }
+}
+
+function hit(mx,my){
+  for (let i = ids.length-1; i>=0; i--){
+    const [x,y,w,h] = dispRect(ids[i]);
+    if (mx>=x && mx<=x+w && my>=y && my<=y+h) return ids[i];
+  }
+  return null;
+}
+
+// snap candidate [x,y,w,h] (source) to other rects' edges/centers within thr.
+function snap(r){
+  const others = ids.filter(i=>i!==selected).map(i=>layout[i]);
+  const cx=[r[0], r[0]+r[2]/2, r[0]+r[2]], cy=[r[1], r[1]+r[3]/2, r[1]+r[3]];
+  let bdx=8, ox=0, gx=null, bdy=8, oy=0, gy=null;
+  for (const o of others){
+    const oX=[o[0], o[0]+o[2]/2, o[0]+o[2]], oY=[o[1], o[1]+o[3]/2, o[1]+o[3]];
+    for (const a of cx) for (const b of oX){ const d=Math.abs(a-b); if (d<=bdx){bdx=d; ox=b-a; gx=b;} }
+    for (const a of cy) for (const b of oY){ const d=Math.abs(a-b); if (d<=bdy){bdy=d; oy=b-a; gy=b;} }
+  }
+  guideX = gx; guideY = gy;
+  return [r[0]+ox, r[1]+oy, r[2], r[3]];
+}
+
+c.addEventListener('mousedown', e=>{
+  const b=c.getBoundingClientRect(), mx=e.clientX-b.left, my=e.clientY-b.top;
+  selected = hit(mx,my); dragging = !!selected;
+  document.getElementById('sel').textContent = selected || 'none';
+  if (selected){ startMouse=[mx,my]; startRect=layout[selected].slice(); }
+  guideX=guideY=null; draw();
+});
+window.addEventListener('mousemove', e=>{
+  if (!dragging) return;
+  const b=c.getBoundingClientRect(), mx=e.clientX-b.left, my=e.clientY-b.top;
+  const moved = [ startRect[0]+dsx(mx-startMouse[0]), startRect[1]+dsy(my-startMouse[1]), startRect[2], startRect[3] ];
+  layout[selected] = snap(moved); draw();
+});
+window.addEventListener('mouseup', ()=>{ if(dragging){ dragging=false; guideX=guideY=null; draw(); refreshJson(); } });
+
+function refreshJson(){
+  const elements={}; for (const id of ids){ elements[id]={rect: layout[id].map(v=>Math.round(v))}; }
+  document.getElementById('out').value = JSON.stringify({version:1, sourceSpace:[SRC_W,SRC_H], elements}, null, 2);
+}
+document.getElementById('export').onclick = ()=>{
+  refreshJson();
+  const blob = new Blob([document.getElementById('out').value], {type:'application/json'});
+  const a = document.createElement('a'); a.href = URL.createObjectURL(blob); a.download = 'ui_layout.json'; a.click();
+};
+refreshJson();
+</script>
+</body>
+</html>
