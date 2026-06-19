@@ -3,10 +3,24 @@
 Date: 2026-06-19
 Status: approved (brainstorming)
 
-Two views of one transparent environment: a **Play/arrange** view (in-plugin,
-iPhone-simple manual layout editing — the headline v1) and an **Inspect** view
-(a live, transparent node-based signal schematic). Both ride on values and
-rendering that already exist (see Reuse ledger), per the engineering doctrine.
+North star:
+
+> **See Your Plugin makes TRENCH transparent: Arrange shows where the interface
+> lives; Inspect shows where the sound goes. Both are live, exact, and editable
+> only where editing is truthful.**
+
+The doctrine under it is not "AI edits the plugin" — it is **the plugin exposes
+itself**, so Claude operates on visible, structured truth instead of guessing.
+Three modes of one environment:
+
+- **Play** — normal use: move Morph/Q, hear it.
+- **Arrange** — dev/author mode: grab UI elements in the real plugin, fix layout
+  by hand, no rebuild. The headline v1.
+- **Inspect** — a live, transparent signal *schematic* (not a node editor): see
+  the actual DSP path stage by stage, with drill-down to the real values.
+
+Both authored views ride on values and rendering that already exist (see Reuse
+ledger), per the engineering doctrine.
 
 ## Problem
 
@@ -83,6 +97,9 @@ loop and how directly the user can control placement:
 - A separate standalone design window (assumed not wanted). Manual control is
   in the running plugin, live in the DAW. Revisit only if the user prefers a
   dedicated window.
+- A node *editor* / freeform DSP patcher. Inspect is a fixed-structure
+  schematic of the real chain; it never lets the user rewire the DSP or imply a
+  wiring that isn't real. (This is not Max/MSP.)
 
 ## Architecture
 
@@ -383,17 +400,46 @@ Nodes (the real chain): `[Morph]` + `[Secondary/Q]` → `[packed interp over 4
 corners C0..C3]` → `Stage 1 … Stage 6` (serial DF2T biquads) → `out`; audio in
 feeds Stage 1.
 
+**It is a schematic, not a node editor.** Fixed structure first: it shows the
+real, mostly-fixed chain — "here is the signal chain you are hearing" — never
+"build/rewire your own." No freeform draggable nodes, no implying the DSP is
+wired differently than it is. (Visual rearrangement of an unchanged graph is a
+possible far-later nicety; rewiring DSP is out, full stop.)
+
 Behavior:
 
 - **Read-only over verbatim values.** It displays the live coeffs / ρ / curves
   from the reuse ledger. It does not author or recompute the packed math.
-- **Transparent on demand.** Click a stage → its real poles/zeros (z-plane via
-  reused `drawZ`), its live `b0 b1 b2 a1 a2`, its own magnitude curve (reused
-  curve renderer), its ρ stability margin. Click the interp node → the 4 corners
-  and how (Morph, Secondary) blend them. Numbers hidden by default, one click
-  away, never removed.
-- **Track the signal.** Tap along the chain → magnitude after each stage, so
-  "this stage eats the low mids" is visible, not inferred.
+- **Progressive technical transparency.** Three depths, truth staged not removed:
+  1. plain language from measured values — e.g. "Stage 3 boosts ~2.4 kHz by
+     ~6 dB vs the previous stage" (the Hz/dB come from the actual curve, never
+     invented).
+  2. one click → that stage's response curve (before/after contribution),
+     poles/zeros on the z-plane (reused `drawZ`), ρ stability margin.
+  3. one click deeper → raw `b0 b1 b2 a1 a2`.
+  The non-technical user is never blocked by coefficients; the coefficients are
+  never removed.
+- **Track the signal (cumulative).** Tap input → incoming signal; tap Stage 1 →
+  the result *after* Stage 1; Stage 2 → cumulative after Stage 2; … output →
+  final. A final curve says *what* happened; this says **where** it happened.
+- **Live.** The graph moves as the plugin moves: changing Morph/Secondary updates
+  the corner blend, stage curves, and output — "looking inside the instrument
+  while you play it."
+- **Evidence first, language second (CLAUDE.md contract).** Every visual is
+  source-backed; Claude may *translate* ("that ~2.4 kHz bump is the bite you
+  hear") but never asserts unmeasured claims. OBSERVED before INFERRED; no
+  invented Hz/dB.
+
+Truth-source map (no visual invents a value):
+
+| Visual | Truth source (canonical, verbatim) |
+|--------|-----------------------------------|
+| stage coefficients | live engine coeffs (`trench_engine_get_coeffs`) |
+| Morph / Secondary | live smoothed params |
+| corner blend | canonical packed interpolation |
+| stability ρ | canonical pole-radius / probe |
+| stage response curve | closed-form biquad magnitude from live coeffs |
+| cascade response | product of the actual stage responses |
 
 Home: **extend `forge-web/bench`** (reuses every rendering primitive above and
 runs the same trench-core via WASM = verbatim-accurate). Only the node-graph
