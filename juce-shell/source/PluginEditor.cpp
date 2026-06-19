@@ -37,31 +37,6 @@ juce::Rectangle<int> thumbwheelSliderBounds (juce::Rectangle<float> well)
     return thumbwheelBodyBounds (well).toNearestInt();
 }
 
-juce::Rectangle<float> morphWheelWell()
-{
-    return sourceRectToEditor ({ 127.0f, 694.0f, 423.0f, 101.0f });
-}
-
-juce::Rectangle<float> qWheelWell()
-{
-    return sourceRectToEditor ({ 127.0f, 871.0f, 423.0f, 101.0f });
-}
-
-juce::Rectangle<float> typeSelectorWell()
-{
-    return sourceRectToEditor ({ 230.0f, 142.0f, 672.0f, 73.0f });
-}
-
-juce::Rectangle<float> morphReadoutWell()
-{
-    return sourceRectToEditor ({ 603.0f, 712.0f, 168.0f, 77.0f });
-}
-
-juce::Rectangle<float> qReadoutWell()
-{
-    return sourceRectToEditor ({ 602.0f, 889.0f, 169.0f, 79.0f });
-}
-
 juce::Font displayFont (float height, bool bold = false)
 {
     return juce::Font (juce::FontOptions (juce::Font::getDefaultSansSerifFontName(), height,
@@ -73,6 +48,13 @@ PluginEditor::PluginEditor (PluginProcessor& p)
     : AudioProcessorEditor (&p),
       processor (p)
 {
+    trench::ensureUiLayoutFileExists (trench::uiLayoutFile());
+    currentLayout = trench::loadUiLayoutOrDefaults();
+    {
+        const auto f = trench::uiLayoutFile();
+        layoutFileModTime = f.existsAsFile() ? f.getLastModificationTime().toMilliseconds() : 0;
+    }
+
     panelImage = juce::ImageCache::getFromMemory (BinaryData::df2_panel_shadow_png,
                                                   BinaryData::df2_panel_shadow_pngSize);
     thumbwheelStrip = juce::ImageCache::getFromMemory (BinaryData::thumbwheel_runtime_strip_129_149x40_png,
@@ -142,6 +124,31 @@ PluginEditor::~PluginEditor()
 {
     morphHitTarget.removeMouseListener (this);
     qHitTarget.removeMouseListener (this);
+}
+
+juce::Rectangle<float> PluginEditor::morphWheelWell() const
+{
+    return sourceRectToEditor (currentLayout.sourceRectFor ("morphWheel"));
+}
+
+juce::Rectangle<float> PluginEditor::qWheelWell() const
+{
+    return sourceRectToEditor (currentLayout.sourceRectFor ("qWheel"));
+}
+
+juce::Rectangle<float> PluginEditor::typeSelectorWell() const
+{
+    return sourceRectToEditor (currentLayout.sourceRectFor ("typeSelector"));
+}
+
+juce::Rectangle<float> PluginEditor::morphReadoutWell() const
+{
+    return sourceRectToEditor (currentLayout.sourceRectFor ("morphReadout"));
+}
+
+juce::Rectangle<float> PluginEditor::qReadoutWell() const
+{
+    return sourceRectToEditor (currentLayout.sourceRectFor ("qReadout"));
 }
 
 void PluginEditor::paint (juce::Graphics& g)
@@ -324,8 +331,8 @@ void PluginEditor::drawSelectorAndReadouts (juce::Graphics& g)
         return 0.0f;
     };
 
-    drawReadout (g, morphReadoutWell(), "MORPH", readParameter (ParamID::morph));
-    drawReadout (g, qReadoutWell(), "Q", readParameter (ParamID::q));
+    drawReadout (g, morphReadoutWell(), "morphReadout", readParameter (ParamID::morph));
+    drawReadout (g, qReadoutWell(), "qReadout", readParameter (ParamID::q));
 }
 
 void PluginEditor::drawDisplayWell (juce::Graphics& g, juce::Rectangle<float> bounds)
@@ -373,16 +380,17 @@ void PluginEditor::drawDisplayWell (juce::Graphics& g, juce::Rectangle<float> bo
     g.drawRoundedRectangle (r.reduced (1.0f), radius - 0.5f, 1.0f);
 }
 
-void PluginEditor::drawReadout (juce::Graphics& g, juce::Rectangle<float> bounds, const juce::String&, float value)
+void PluginEditor::drawReadout (juce::Graphics& g, juce::Rectangle<float> bounds, const juce::String& elementId, float value)
 {
     drawDisplayWell (g, bounds);
 
     const auto pct = juce::jlimit (0.0f, 1.0f, value) * 100.0f;
     const auto numeric = juce::String (pct, 1);
+    const auto fontSize = currentLayout.fontSizeFor (elementId).value_or (13.0f);
+    const auto colour = currentLayout.textColourFor (elementId).value_or (juce::Colours::black);
 
-    // Regular weight (non-bold) for clean typography
-    g.setFont (displayFont (13.0f, false));
-    g.setColour (juce::Colours::black);
+    g.setFont (displayFont (fontSize, false));
+    g.setColour (colour);
     g.drawFittedText (numeric, bounds.toNearestInt(), juce::Justification::centred, 1);
 }
 
@@ -406,8 +414,22 @@ void PluginEditor::syncBodySelectorToParameter()
     }
 }
 
+void PluginEditor::reloadLayoutIfChanged()
+{
+    const auto file = trench::uiLayoutFile();
+    const auto mod = file.existsAsFile() ? file.getLastModificationTime().toMilliseconds() : 0;
+    if (mod == layoutFileModTime)
+        return;
+
+    layoutFileModTime = mod;
+    currentLayout = trench::loadUiLayoutOrDefaults();
+    resized();
+    repaint();
+}
+
 void PluginEditor::timerCallback()
 {
+    reloadLayoutIfChanged();
     syncBodySelectorToParameter();
     repaint();
 }

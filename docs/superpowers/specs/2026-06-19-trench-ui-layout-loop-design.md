@@ -168,8 +168,12 @@ Schema (v1):
   runtime ignores them entirely; they are consumed only by the render tool's
   validator/resolver. The plugin reads `elements[*].rect` and style only.
 - Unknown ids are ignored. Missing ids fall back to the C++ default.
-- A missing or malformed file means the plugin uses **today's hardcoded values
-  exactly** — shipped behavior is unchanged until the user opts in.
+- A malformed file means the plugin uses **today's hardcoded values exactly**.
+- **Auto-create on first open:** if the file is missing, the plugin writes the
+  defaults to it (best-effort; a failed write falls back to in-memory defaults
+  and never crashes). The created file equals the defaults, so the visual layout
+  is unchanged — but the user always has a file ready to edit. The file is never
+  overwritten once it exists (user edits are preserved).
 
 A seed `ui_layout.json` containing the current defaults is generated so the
 designer/render tool and the plugin agree on pixel one.
@@ -463,7 +467,8 @@ reuse ledger.
 
 ## Error handling
 
-- Missing file → defaults, silent (the common shipped case).
+- Missing file → defaults, and best-effort auto-create the file with defaults
+  (write failure tolerated silently → in-memory defaults).
 - Malformed JSON / missing `version` / bad rect → keep last good layout (or
   defaults), do not throw into the audio/UI path.
 - Out-of-range rect → applied as-is (designer's responsibility); render tool
