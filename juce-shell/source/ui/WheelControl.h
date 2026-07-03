@@ -137,15 +137,18 @@ public:
         // shadow on the drum's crown lets the well's top edge overhang it.
         measureContentBox (fw, fh);
         const auto well = getLocalBounds().toFloat();
-        constexpr float kSeat   = 0.95f;   // rounded caps float INSIDE the opening with a
-                                           // visible gap (per Tyson's reference shots), not flush
-        constexpr float kSeatCY = 0.50f;   // rects are the TRUE inner openings now, so
-                                           // centre-in-rect IS centre-in-opening
+        constexpr float kSeat   = 0.97f;   // edges out a touch (Tyson 2026-07-03) — near-flush,
+                                           // the baked end-dissolve carries the roll-off
+        constexpr float kSeatCY = 0.52f;   // a touch low in the opening (Tyson 2026-07-03)
+        // Decoupled axes: width stays flush in the opening, but HEIGHT maps to
+        // each well at the same fixed overfill — the two wells have different
+        // aspect ratios (98 vs 106 tall), and a width-driven height showed a
+        // different slice of the drum in each ("they sit differently").
+        constexpr float kOverfillY = 1.10f;   // same visible drum band in every well
         const float scaleX = kSeat * well.getWidth() / (float) contentW;
-        const float scale = scaleX;
-        const float drawW = scale * (float) fw;
-        const float drawH = scale * (float) fh;
-        const float cx = well.getCentreX() - scale * ((float) contentX0 + (float) contentW * 0.5f);
+        const float drawW = scaleX * (float) fw;
+        const float drawH = kOverfillY * well.getHeight();
+        const float cx = well.getCentreX() - scaleX * ((float) contentX0 + (float) contentW * 0.5f);
         const auto dst = juce::Rectangle<float> (cx, well.getY() + well.getHeight() * kSeatCY - drawH * 0.5f,
                                                  drawW, drawH).toNearestInt();
 
