@@ -137,9 +137,9 @@ public:
         // shadow on the drum's crown lets the well's top edge overhang it.
         measureContentBox (fw, fh);
         const auto well = getLocalBounds().toFloat();
-        constexpr float kSeat   = 0.97f;   // edges out a touch (Tyson 2026-07-03) — near-flush,
-                                           // the baked end-dissolve carries the roll-off
-        constexpr float kSeatCY = 0.52f;   // a touch low in the opening (Tyson 2026-07-03)
+        constexpr float kSeat   = 1.00f;   // the approved wine-wheel seat (flush in the
+                                           // measured inner openings)
+        constexpr float kSeatCY = 0.50f;   // centre — rects are the true inner openings
         // Decoupled axes: width stays flush in the opening, but HEIGHT maps to
         // each well at the same fixed overfill — the two wells have different
         // aspect ratios (98 vs 106 tall), and a width-driven height showed a
