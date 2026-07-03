@@ -65,6 +65,7 @@ public:
         layout.elements["spectrumGrid"] = { { 118.0f, 222.0f, 790.0f, 389.0f }, {}, {} }; // the wine shell's glass opening (overlay-verified)
         layout.elements["slotPad"]      = { { 780.0f, 234.0f, 112.0f, 26.0f }, {}, {} }; // thin 1/2 selector tucked flush into the display's top-right
         layout.elements["modulateTag"]  = { { 150.0f, 452.0f, 430.0f, 56.0f }, {}, {} }; // clickable word on the glass; hit-test is the visible "Modulation" text only
+        layout.elements["fiveDTag"]     = { { 150.0f, 508.0f, 430.0f, 52.0f }, {}, {} }; // 5D (QSound Space) switch, seated directly below Modulation
         layout.elements["filterLabel"]  = { { 135.0f, 44.0f, 220.0f, 72.0f },  11.5f, juce::Colour (0xffe2e9f2) };
         layout.elements["filterLabel"].text = "TRENCH";
         layout.elements["typeLabel"]    = { { 108.0f, 129.0f, 148.0f, 67.0f },  11.5f, juce::Colour (0xffe2e9f2) };

@@ -2,434 +2,347 @@
 #include "BinaryData.h"
 #include "TrenchBodyRoster.h"
 
-namespace
-{
-constexpr int kEditorWidth = 360;
-constexpr int kEditorHeight = 560;
-constexpr float kPanelSourceWidth = 1024.0f;
-constexpr float kPanelSourceHeight = 1591.0f;
-constexpr int kThumbwheelRuntimeFrameWidth = 149;
-constexpr int kThumbwheelRuntimeFrameHeight = 40;
+using namespace trench::ui;
 
-juce::Rectangle<float> sourceRectToEditor (juce::Rectangle<float> sourceRect)
-{
-    return {
-        sourceRect.getX() * kEditorWidth / kPanelSourceWidth,
-        sourceRect.getY() * kEditorHeight / kPanelSourceHeight,
-        sourceRect.getWidth() * kEditorWidth / kPanelSourceWidth,
-        sourceRect.getHeight() * kEditorHeight / kPanelSourceHeight
-    };
-}
-
-juce::Rectangle<float> thumbwheelBodyBounds (juce::Rectangle<float> well)
-{
-    const auto bounds = well.withSizeKeepingCentre ((float) kThumbwheelRuntimeFrameWidth,
-                                                    (float) kThumbwheelRuntimeFrameHeight);
-    const auto r = bounds.toNearestInt();
-    return { (float) r.getX(),
-             (float) r.getY(),
-             (float) r.getWidth(),
-             (float) r.getHeight() };
-}
-
-juce::Rectangle<int> thumbwheelSliderBounds (juce::Rectangle<float> well)
-{
-    return thumbwheelBodyBounds (well).toNearestInt();
-}
-
-juce::Font displayFont (float height, bool bold = false)
-{
-    return juce::Font (juce::FontOptions (juce::Font::getDefaultSansSerifFontName(), height,
-                                          bold ? juce::Font::bold : juce::Font::plain));
-}
-}
+// FORGE drawer width: opening the Forge EXTENDS the window to the right by this much
+// (a side drawer), instead of overlaying the plugin. Window width is kEditorWidth, or
+// kEditorWidth + kForgeWidth while the Forge is open.
+static constexpr int kForgeWidth = 372;
 
 PluginEditor::PluginEditor (PluginProcessor& p)
     : AudioProcessorEditor (&p),
       processor (p)
 {
-    trench::ensureUiLayoutFileExists (trench::uiLayoutFile());
-    currentLayout = trench::loadUiLayoutOrDefaults();
-    {
-        const auto f = trench::uiLayoutFile();
-        layoutFileModTime = f.existsAsFile() ? f.getLastModificationTime().toMilliseconds() : 0;
-    }
+    // Lay-it-out-by-hand: overlay any hand-edited ui_layout.json (and drop a starter
+    // file with the current layout if none exists) before building the views.
+    reloadLayoutFromDisk();
 
-    panelImage = juce::ImageCache::getFromMemory (BinaryData::df2_panel_shadow_png,
+    auto panel = juce::ImageCache::getFromMemory (BinaryData::df2_panel_shadow_png,
                                                   BinaryData::df2_panel_shadow_pngSize);
-    thumbwheelStrip = juce::ImageCache::getFromMemory (BinaryData::thumbwheel_runtime_strip_129_149x40_png,
-                                                       BinaryData::thumbwheel_runtime_strip_129_149x40_pngSize);
+    auto strip = juce::ImageCache::getFromMemory (BinaryData::thumbwheel_runtime_strip_129_149x40_png,
+                                                  BinaryData::thumbwheel_runtime_strip_129_149x40_pngSize);
+    auto grid  = juce::ImageCache::getFromMemory (BinaryData::display_log_grid_png,
+                                                  BinaryData::display_log_grid_pngSize);
 
-    const auto setupSlider = [this] (juce::Slider& slider)
+    faceplate    = std::make_unique<FaceplateView> (panel, theme);
+    graph        = std::make_unique<GraphDisplay> (grid, theme, processor.apvts, ParamID::slamDrive);
+    slotPad      = std::make_unique<SlotPad> (theme);
+    modulateTag  = std::make_unique<ModulateTag> (processor.apvts, theme);
+    fiveDTag     = std::make_unique<FiveDTag> (processor.apvts, theme);
+    takeView     = std::make_unique<TakeView> (theme);
+    moveView     = std::make_unique<MoveView> (processor, theme, grid);
+    // ROUTE matrix editor is shelved for V1 (RouteView.h kept on disk) — PLAY only until
+    // the default gestures sound good. The 4x4 matrix uses factory defaults in state.
+
+    // Pages: SlotPad 1 = Player curve, 2 = Versions tray. Pressing 2 rerolls a fresh
+    // tray of versions of the sound that just played.
+    slotPad->onSelect = [this] (int p)
     {
-        slider.setSliderStyle (juce::Slider::LinearHorizontal);
-        slider.setTextBoxStyle (juce::Slider::NoTextBox, false, 0, 0);
-        slider.setRange (0.0, 1.0, 0.001);
-        slider.setAlpha (0.0f);
-        slider.setOpaque (false);
-        slider.setInterceptsMouseClicks (false, false);
-        slider.onValueChange = [this] { repaint(); };
-        addAndMakeVisible (slider);
+        setPage (p == 1 ? 1 : 0);
     };
-
-    setupSlider (morphSlider);
-    setupSlider (qSlider);
-
-    bodySelector.setWantsKeyboardFocus (true);
-    bodySelector.setColour (juce::ComboBox::backgroundColourId, juce::Colours::transparentBlack);
-    bodySelector.setColour (juce::ComboBox::outlineColourId, juce::Colours::transparentBlack);
-    bodySelector.setColour (juce::ComboBox::buttonColourId, juce::Colours::transparentBlack);
-    bodySelector.setColour (juce::ComboBox::arrowColourId, juce::Colours::transparentBlack);
-    bodySelector.setColour (juce::ComboBox::textColourId, juce::Colours::transparentBlack);
-    bodySelector.setTextWhenNothingSelected ({});
-    populateBodySelector();
-    bodySelector.onChange = [this]
+    // Press a version -> audition it live: install its body AND adopt its Morph/Q point
+    // so what you hear (and the wheels) match the take. Persists.
+    takeView->onAudition = [this] (int idx)
     {
-        if (syncingBodySelector)
+        if (idx < 0 || idx >= (int) tray.size())
             return;
-
-        const auto selectedIndex = bodySelector.getSelectedId() - 1;
-        if (selectedIndex < 0)
-            return;
-
-        if (auto* parameter = processor.apvts.getParameter (ParamID::body))
+        const auto& v = tray[(size_t) idx];
+        processor.installBodyBytes (v.bytes.data(), 240);
+        const auto setNorm = [this] (const char* id, float norm)
         {
-            parameter->beginChangeGesture();
-            parameter->setValueNotifyingHost (parameter->convertTo0to1 ((float) selectedIndex));
-            parameter->endChangeGesture();
-        }
+            if (auto* p = processor.apvts.getParameter (id))
+                p->setValueNotifyingHost (juce::jlimit (0.0f, 1.0f, norm));
+        };
+        setNorm (ParamID::morph, v.morph);
+        setNorm (ParamID::q, v.q);
+        setNorm (ParamID::slamDrive, v.slam);
+        setNorm (ParamID::fiveD, v.qsound ? 1.0f : 0.0f);
     };
-    addAndMakeVisible (bodySelector);
-    syncBodySelectorToParameter();
+    // Page 2 is a real page: selecting a slot auditions it, but stays on Page 2
+    // until the user presses 1.
+    takeView->onConfirm = [] (int) {};
+    // Drag a version -> keep it: capture the rolling WET buffer (what you actually
+    // heard auditioning) and hand it to the OS so it drops straight into FL. No offline
+    // render — the take is the real heard output.
+    takeView->onKeep = [this] (int, juce::Component* source)
+    {
+        const auto f = processor.captureSmartTake();
+        if (f.existsAsFile())
+            juce::DragAndDropContainer::performExternalDragDropOfFiles (
+                { f.getFullPathName() }, false, source, nullptr);
+    };
+    typeSelector = std::make_unique<TypeSelectorView> (processor.apvts, theme);
+    typeSelector->onSeed       = [this] { processor.seedCurrentBody(); };
+    typeSelector->onExportBody = [this] { processor.exportCurrentBody(); };
+    // SOUND rails: upper aperture = MORPH, lower aperture = Q. SLAM is no longer a
+    // rail — it is driven by dragging the screen canvas (see GraphDisplay), so the
+    // old Q/SLAM label toggle is retired.
+    morphWheel   = std::make_unique<WheelControl> (processor.apvts, ParamID::morph, strip, theme);
+    secondaryWheel = std::make_unique<WheelControl> (processor.apvts, ParamID::q, strip, theme);
+    morphReadout = std::make_unique<ValueReadout> ("morphReadout", theme);
+    secondaryReadout = std::make_unique<ValueReadout> ("qReadout", theme);
+    labels       = std::make_unique<LabelsLayer> (theme);
+    decalsLayer  = std::make_unique<DecalsLayer> (theme);
 
-    morphHitTarget.setInterceptsMouseClicks (true, false);
-    qHitTarget.setInterceptsMouseClicks (true, false);
-    morphHitTarget.setAlwaysOnTop (true);
-    qHitTarget.setAlwaysOnTop (true);
-    morphHitTarget.addMouseListener (this, false);
-    qHitTarget.addMouseListener (this, false);
-    addAndMakeVisible (morphHitTarget);
-    addAndMakeVisible (qHitTarget);
+    // z-order: faceplate (back) -> screen -> controls -> labels -> decals
+    addAndMakeVisible (*faceplate);
+    addAndMakeVisible (*graph);
+    addAndMakeVisible (*takeView);     // page 2 overlay; visibility toggled by setPage
+    addChildComponent (*moveView);     // page 2 (MOVE/PLAY) screen; shown by setPage
+    addChildComponent (*slotPad);      // pager RETIRED everywhere (Tyson: no pages)
+    addAndMakeVisible (*modulateTag);  // faded "Modulation" tag + LED, low-left on the glass
+    addAndMakeVisible (*fiveDTag);     // 5D (QSound Space) switch, seated below Modulation
+    addAndMakeVisible (*typeSelector);
+    addAndMakeVisible (*morphWheel);
+    addAndMakeVisible (*secondaryWheel);
+    addAndMakeVisible (*morphReadout);
+    addAndMakeVisible (*secondaryReadout);
+    addAndMakeVisible (*labels);
+    addAndMakeVisible (*decalsLayer);   // front-most: free text/boxes/lines
 
-    morphSliderAttachment = std::make_unique<juce::AudioProcessorValueTreeState::SliderAttachment> (processor.apvts, ParamID::morph, morphSlider);
-    qSliderAttachment = std::make_unique<juce::AudioProcessorValueTreeState::SliderAttachment> (processor.apvts, ParamID::q, qSlider);
+   #ifdef TRENCH_FORGE
+    // FORGE: in-plugin filter builder — DEV-ONLY (TRENCH_FORGE flag, OFF by default so it
+    // NEVER ships). Toggled by the FORGE button; compiles 6 typed table-gated lanes via the
+    // typed compiler and auditions live.
+    forge = std::make_unique<ForgeView>();
+    forge->onAudition = [this] (std::vector<double> cards) { processor.forgeAuditionTyped (cards); };
+    forge->onSave     = [this] (juce::String name) { processor.forgeSaveBody (name); };
+    forge->onClose    = [this] { if (forge) { forge->setVisible (false); setSize (kEditorWidth, kEditorHeight); } };
+    addChildComponent (*forge);   // hidden until toggled
 
-    setOpaque (true);
+    forgeBtn = std::make_unique<juce::TextButton> ("FORGE");
+    forgeBtn->onClick = [this]
+    {
+        if (forge == nullptr) return;
+        const bool open = ! forge->isVisible();
+        forge->setVisible (open);
+        setSize (open ? kEditorWidth + kForgeWidth : kEditorWidth, kEditorHeight);  // extend the window to the side
+    };
+    addAndMakeVisible (*forgeBtn);
+   #endif
+
     setResizable (false, false);
     setSize (kEditorWidth, kEditorHeight);
-    startTimerHz (24);
+
+    // Live data (curve + readouts) on the display refresh. No timer and no
+    // whole-editor repaint — each view repaints itself only when its input
+    // changes, so an idle editor does no work.
+    vblank = std::make_unique<juce::VBlankAttachment> (this, [this] { onFrame(); });
+
+    setPage (0);   // start on the Player curve; hides the variant bank
+
+   #ifdef TRENCH_PLAYER_DIAGNOSTICS
+    startTimer (350);   // hand-edit hot-reload poll (dev builds only — release never ticks)
+    rigPanel = std::make_unique<trench::ui::RigPanel> (processor, theme);
+    addAndMakeVisible (*rigPanel);   // voicing rig — pick SPACE/PAN by ear, write the numbers down
+    authorView = std::make_unique<trench::ui::AuthorView> (processor, theme);
+    // The lab lives in its OWN floating window (separate panel), toggled by the
+    // rig's LAB button. authorView is the window's content; not a child here.
+    rigPanel->onToggleLab = [this]
+    {
+        if (labWindow == nullptr)
+            labWindow = std::make_unique<trench::ui::LabWindow> (authorView.get());
+        labWindow->setVisible (! labWindow->isVisible());
+        if (labWindow->isVisible()) labWindow->toFront (true);
+    };
+    resized();   // rigPanel is built after setSize — lay it out now
+   #endif
 }
 
 PluginEditor::~PluginEditor()
 {
-    morphHitTarget.removeMouseListener (this);
-    qHitTarget.removeMouseListener (this);
+   #ifdef TRENCH_PLAYER_DIAGNOSTICS
+    labWindow.reset();   // close the lab window before its content (authorView) frees
+   #endif
 }
 
-juce::Rectangle<float> PluginEditor::morphWheelWell() const
+void PluginEditor::reloadLayoutFromDisk()
 {
-    return sourceRectToEditor (currentLayout.sourceRectFor ("morphWheel"));
-}
-
-juce::Rectangle<float> PluginEditor::qWheelWell() const
-{
-    return sourceRectToEditor (currentLayout.sourceRectFor ("qWheel"));
-}
-
-juce::Rectangle<float> PluginEditor::typeSelectorWell() const
-{
-    return sourceRectToEditor (currentLayout.sourceRectFor ("typeSelector"));
-}
-
-juce::Rectangle<float> PluginEditor::morphReadoutWell() const
-{
-    return sourceRectToEditor (currentLayout.sourceRectFor ("morphReadout"));
-}
-
-juce::Rectangle<float> PluginEditor::qReadoutWell() const
-{
-    return sourceRectToEditor (currentLayout.sourceRectFor ("qReadout"));
-}
-
-void PluginEditor::paint (juce::Graphics& g)
-{
-    g.fillAll (juce::Colours::black);
-
-    if (panelImage.isValid())
-        g.drawImage (panelImage, getLocalBounds().toFloat());
-
-    drawSelectorAndReadouts (g);
-    drawThumbwheels (g);
-}
-
-void PluginEditor::resized()
-{
-    auto selectorBounds = typeSelectorWell();
-    const float labelWidth = 32.0f;
-    selectorBounds.removeFromLeft (labelWidth);
-
-    bodySelector.setBounds (selectorBounds.toNearestInt().reduced (1));
-    morphSlider.setBounds (thumbwheelSliderBounds (morphWheelWell()));
-    qSlider.setBounds (thumbwheelSliderBounds (qWheelWell()));
-    morphHitTarget.setBounds (thumbwheelSliderBounds (morphWheelWell()).expanded (2, 3));
-    qHitTarget.setBounds (thumbwheelSliderBounds (qWheelWell()).expanded (2, 3));
-    morphHitTarget.toFront (false);
-    qHitTarget.toFront (false);
-}
-
-void PluginEditor::mouseDown (const juce::MouseEvent& event)
-{
-    const auto position = event.getEventRelativeTo (this).position;
-    const auto morphBody = thumbwheelBodyBounds (morphWheelWell()).expanded (1.0f, 2.0f);
-    const auto qBody = thumbwheelBodyBounds (qWheelWell()).expanded (1.0f, 2.0f);
-
-    if (morphBody.contains (position))
-        activeThumbwheelParameter = ParamID::morph;
-    else if (qBody.contains (position))
-        activeThumbwheelParameter = ParamID::q;
+   #ifdef TRENCH_PLAYER_DIAGNOSTICS
+    auto f = trench::uiLayoutFile();
+    if (f.existsAsFile())
+    {
+        currentLayout = trench::UiLayout::fromJson (f.loadFileAsString());
+    }
     else
-        activeThumbwheelParameter = nullptr;
-
-    if (activeThumbwheelParameter != nullptr)
     {
-        if (auto* parameter = processor.apvts.getParameter (activeThumbwheelParameter))
-            parameter->beginChangeGesture();
-
-        mouseDrag (event);
+        f.getParentDirectory().createDirectory();
+        f.replaceWithText (currentLayout.toJson());   // starter = the current layout
     }
-}
-
-void PluginEditor::mouseDrag (const juce::MouseEvent& event)
-{
-    if (activeThumbwheelParameter == nullptr)
-        return;
-
-    const auto position = event.getEventRelativeTo (this).position;
-    const auto body = thumbwheelBodyBounds (activeThumbwheelParameter == ParamID::morph ? morphWheelWell() : qWheelWell());
-    const auto normalised = juce::jlimit (0.0f, 1.0f, (position.x - body.getX()) / juce::jmax (1.0f, body.getWidth()));
-    auto& targetSlider = activeThumbwheelParameter == ParamID::morph ? morphSlider : qSlider;
-
-    targetSlider.setValue (normalised, juce::dontSendNotification);
-
-    if (auto* parameter = processor.apvts.getParameter (activeThumbwheelParameter))
-        parameter->setValueNotifyingHost (normalised);
-
-    repaint();
-}
-
-void PluginEditor::mouseUp (const juce::MouseEvent&)
-{
-    if (activeThumbwheelParameter != nullptr)
-        if (auto* parameter = processor.apvts.getParameter (activeThumbwheelParameter))
-            parameter->endChangeGesture();
-
-    activeThumbwheelParameter = nullptr;
-}
-
-void PluginEditor::drawThumbwheels (juce::Graphics& g)
-{
-    const auto readNormalised = [this] (const char* parameterID)
-    {
-        if (auto* value = processor.apvts.getRawParameterValue (parameterID))
-            return juce::jlimit (0.0f, 1.0f, value->load());
-
-        return 0.0f;
-    };
-
-    drawThumbwheelFrame (g, morphWheelWell(), readNormalised (ParamID::morph));
-    drawThumbwheelFrame (g, qWheelWell(), readNormalised (ParamID::q));
-}
-
-void PluginEditor::drawThumbwheelFrame (juce::Graphics& g, juce::Rectangle<float> well, float normalisedValue)
-{
-    if (! thumbwheelStrip.isValid())
-        return;
-
-    constexpr int numFrames = 129;
-    constexpr int lastPlayableFrame = numFrames - 1;
-    const auto frameWidth = thumbwheelStrip.getWidth() / numFrames;
-    const auto frameHeight = thumbwheelStrip.getHeight();
-
-    if (frameWidth <= 0 || frameHeight <= 0)
-        return;
-
-    const auto frame = juce::jlimit (0, lastPlayableFrame, juce::roundToInt (normalisedValue * static_cast<float> (lastPlayableFrame)));
-    const auto srcX = frame * frameWidth;
-    const auto dst = thumbwheelBodyBounds (well).toNearestInt();
-
-    juce::Graphics::ScopedSaveState saveState (g);
-    g.reduceClipRegion (dst);
-    g.setImageResamplingQuality (juce::Graphics::lowResamplingQuality);
-    g.setOpacity (1.0f);
-    g.drawImage (thumbwheelStrip,
-                 dst.getX(), dst.getY(), dst.getWidth(), dst.getHeight(),
-                 srcX, 0, frameWidth, frameHeight);
-}
-
-void PluginEditor::drawSelectorAndReadouts (juce::Graphics& g)
-{
-    const auto selectorBounds = typeSelectorWell();
-    
-    if (panelImage.isValid())
-    {
-        const float scaleX = panelImage.getWidth() / 360.0f;
-        const float scaleY = panelImage.getHeight() / 560.0f;
-        const float srcX = selectorBounds.getX() * scaleX;
-        const float srcY = selectorBounds.getY() * scaleY;
-        const float srcW = selectorBounds.getWidth() * scaleX;
-        const float srcH = selectorBounds.getHeight() * scaleY;
-        const float cleanSrcY = juce::jmax (0.0f, srcY - srcH - 15.0f);
-        
-        g.drawImage (panelImage,
-                     juce::roundToInt (selectorBounds.getX()), juce::roundToInt (selectorBounds.getY()), 
-                     juce::roundToInt (selectorBounds.getWidth()), juce::roundToInt (selectorBounds.getHeight()),
-                     juce::roundToInt (srcX), juce::roundToInt (cleanSrcY), 
-                     juce::roundToInt (srcW), juce::roundToInt (srcH));
-    }
-
-    auto buttonBounds = selectorBounds;
-    const float labelWidth = 32.0f;
-    auto labelArea = buttonBounds.removeFromLeft (labelWidth);
-
-    g.setFont (displayFont (9.0f, true));
-    g.setColour (juce::Colour (0xff333333));
-    g.drawFittedText ("TYPE", labelArea.toNearestInt(), juce::Justification::centredLeft, 1);
-
-    drawDisplayWell (g, buttonBounds);
-
-    const auto selectedIndex = bodySelector.getSelectedId() - 1;
-    const auto typeText = selectedIndex >= 0 ? trench::bodyDisplayName (selectedIndex)
-                                             : juce::String ("TYPE");
-
-    auto selectorText = buttonBounds.reduced (8.0f, 2.0f);
-    const float arrowBoxWidth = buttonBounds.getHeight();
-    auto arrowBox = selectorText.removeFromRight (arrowBoxWidth);
-
-    // Regular weight (non-bold) for clean typography
-    g.setFont (displayFont (12.0f, false));
-    g.setColour (juce::Colours::black);
-    g.drawFittedText (typeText, selectorText.toNearestInt(), juce::Justification::centredLeft, 1);
-
-    g.setColour (juce::Colour (0xff909090));
-    g.drawVerticalLine (juce::roundToInt (buttonBounds.getX() + buttonBounds.getWidth() - arrowBoxWidth),
-                        buttonBounds.getY() + 1.0f, buttonBounds.getBottom() - 1.0f);
-
-    const auto arrow = arrowBox.withSizeKeepingCentre (6.0f, 4.0f);
-    juce::Path arrowPath;
-    arrowPath.startNewSubPath (arrow.getX(), arrow.getY());
-    arrowPath.lineTo (arrow.getCentreX(), arrow.getBottom());
-    arrowPath.lineTo (arrow.getRight(), arrow.getY());
-    arrowPath.closeSubPath();
-    g.setColour (juce::Colours::black);
-    g.fillPath (arrowPath);
-
-    const auto readParameter = [this] (const char* parameterID)
-    {
-        if (auto* value = processor.apvts.getRawParameterValue (parameterID))
-            return juce::jlimit (0.0f, 1.0f, value->load());
-
-        return 0.0f;
-    };
-
-    drawReadout (g, morphReadoutWell(), "morphReadout", readParameter (ParamID::morph));
-    drawReadout (g, qReadoutWell(), "qReadout", readParameter (ParamID::q));
-}
-
-void PluginEditor::drawDisplayWell (juce::Graphics& g, juce::Rectangle<float> bounds)
-{
-    if (panelImage.isValid())
-    {
-        const float scaleX = panelImage.getWidth() / 360.0f;
-        const float scaleY = panelImage.getHeight() / 560.0f;
-        const float srcX = bounds.getX() * scaleX;
-        const float srcY = bounds.getY() * scaleY;
-        const float srcW = bounds.getWidth() * scaleX;
-        const float srcH = bounds.getHeight() * scaleY;
-        const float cleanSrcY = juce::jmax (0.0f, srcY - srcH - 15.0f);
-        
-        g.drawImage (panelImage,
-                     juce::roundToInt (bounds.getX()), juce::roundToInt (bounds.getY()), 
-                     juce::roundToInt (bounds.getWidth()), juce::roundToInt (bounds.getHeight()),
-                     juce::roundToInt (srcX), juce::roundToInt (cleanSrcY), 
-                     juce::roundToInt (srcW), juce::roundToInt (srcH));
-    }
-
-    const auto r = bounds.reduced (1.0f);
-    const auto radius = 3.0f;
-
-    // Outer drop shadow (thick but small)
-    g.setColour (juce::Colours::black.withAlpha (0.22f));
-    g.fillRoundedRectangle (r.translated (0.0f, 1.5f), radius);
-    g.setColour (juce::Colours::black.withAlpha (0.12f));
-    g.fillRoundedRectangle (r.translated (0.0f, 0.8f), radius);
-
-    // Button gradient background
-    juce::ColourGradient grad (juce::Colour (0xfffafafa), r.getX(), r.getY(),
-                               juce::Colour (0xffcfcfcf), r.getX(), r.getBottom(), false);
-    g.setGradientFill (grad);
-    g.fillRoundedRectangle (r, radius);
-
-    // Outer border
-    g.setColour (juce::Colour (0xff707070));
-    g.drawRoundedRectangle (r, radius, 1.0f);
-
-    // Diagonal gradient bevel inner border
-    juce::ColourGradient bevelGrad (juce::Colours::white.withAlpha (0.9f), r.getX() + 1.0f, r.getY() + 1.0f,
-                                    juce::Colours::black.withAlpha (0.24f), r.getRight() - 1.0f, r.getBottom() - 1.0f, false);
-    g.setGradientFill (bevelGrad);
-    g.drawRoundedRectangle (r.reduced (1.0f), radius - 0.5f, 1.0f);
-}
-
-void PluginEditor::drawReadout (juce::Graphics& g, juce::Rectangle<float> bounds, const juce::String& elementId, float value)
-{
-    drawDisplayWell (g, bounds);
-
-    const auto pct = juce::jlimit (0.0f, 1.0f, value) * 100.0f;
-    const auto numeric = juce::String (pct, 1);
-    const auto fontSize = currentLayout.fontSizeFor (elementId).value_or (13.0f);
-    const auto colour = currentLayout.textColourFor (elementId).value_or (juce::Colours::black);
-
-    g.setFont (displayFont (fontSize, false));
-    g.setColour (colour);
-    g.drawFittedText (numeric, bounds.toNearestInt(), juce::Justification::centred, 1);
-}
-
-void PluginEditor::populateBodySelector()
-{
-    bodySelector.clear (juce::dontSendNotification);
-
-    int count = 0;
-    const auto* entries = trench::bodyRoster (count);
-    for (int i = 0; i < count; ++i)
-        bodySelector.addItem (entries[i].displayName, i + 1);
-}
-
-void PluginEditor::syncBodySelectorToParameter()
-{
-    if (auto* value = processor.apvts.getRawParameterValue (ParamID::body))
-    {
-        syncingBodySelector = true;
-        bodySelector.setSelectedId (juce::roundToInt (value->load()) + 1, juce::dontSendNotification);
-        syncingBodySelector = false;
-    }
-}
-
-void PluginEditor::reloadLayoutIfChanged()
-{
-    const auto file = trench::uiLayoutFile();
-    const auto mod = file.existsAsFile() ? file.getLastModificationTime().toMilliseconds() : 0;
-    if (mod == layoutFileModTime)
-        return;
-
-    layoutFileModTime = mod;
-    currentLayout = trench::loadUiLayoutOrDefaults();
-    resized();
-    repaint();
+    layoutMtime = f.getLastModificationTime();
+   #endif
 }
 
 void PluginEditor::timerCallback()
 {
-    reloadLayoutIfChanged();
-    syncBodySelectorToParameter();
+   #ifdef TRENCH_PLAYER_DIAGNOSTICS
+    auto f = trench::uiLayoutFile();
+    if (! f.existsAsFile())
+        return;
+    const auto t = f.getLastModificationTime();
+    if (t == layoutMtime)
+        return;
+    layoutMtime = t;
+
+    // Re-overlay the hand-edited file and re-lay-out live — no rebuild.
+    currentLayout = trench::UiLayout::fromJson (f.loadFileAsString());
+    layoutComponents();
     repaint();
+   #endif
+}
+
+void PluginEditor::resized()
+{
+    layoutComponents();
+   #ifdef TRENCH_FORGE
+    if (forgeBtn != nullptr)   // toggle sits at the bottom-right of the MAIN UI (the seam)
+        forgeBtn->setBounds (kEditorWidth - 58, kEditorHeight - 22, 54, 18);
+    if (forge != nullptr && forge->isVisible())   // Forge docks in the right-side drawer strip
+        forge->setBounds (kEditorWidth, 0, getWidth() - kEditorWidth, kEditorHeight);
+   #endif
+}
+
+void PluginEditor::layoutComponents()
+{
+    // Whole-UI typeface + weight, hand-editable live from ui_layout.json.
+    trench::ui::uiFontFamily()  = currentLayout.string ("fontFamily", trench::ui::kUiFontName);
+    trench::ui::uiBoldEnabled() = currentLayout.param ("fontBold", 0.0) > 0.5;
+
+    // The main UI stays in its fixed kEditorWidth region (left); the FORGE drawer extends
+    // the window to the right, so these full-bleed layers must NOT follow getLocalBounds()
+    // (that would stretch the faceplate across the drawer).
+    const juce::Rectangle<int> base { 0, 0, kEditorWidth, kEditorHeight };
+    faceplate->setBounds (base);
+    labels->setBounds (base);
+    labels->toFront (false);
+    decalsLayer->toFront (false);
+
+    const auto rectOf = [this] (const char* id) { return theme.rect (id).toNearestInt(); };
+    graph->setBounds (rectOf ("spectrumGrid"));
+    takeView->setBounds (rectOf ("spectrumGrid"));
+    moveView->setBounds (rectOf ("spectrumGrid"));
+    slotPad->setBounds (rectOf ("slotPad"));
+    modulateTag->setBounds (rectOf ("modulateTag"));
+    fiveDTag->setBounds (rectOf ("fiveDTag"));
+    typeSelector->setBounds (rectOf ("typeSelector"));
+    morphWheel->setBounds (rectOf ("morphWheel"));
+    secondaryWheel->setBounds (rectOf ("qWheel"));
+    morphReadout->setBounds (rectOf ("morphReadout"));
+    secondaryReadout->setBounds (rectOf ("qReadout"));
+
+    decalsLayer->setBounds (base);
+   #ifdef TRENCH_PLAYER_DIAGNOSTICS
+    if (rigPanel != nullptr)
+        rigPanel->setBounds (40, 652, 440, 78);   // bare lower third, dev builds only
+    // authorView is content of the floating LabWindow — not laid out here.
+   #endif
+
+    // Per-element opacity (layout "opacity" field) — fade any control.
+    const auto fade = [this] (juce::Component* c, const char* id) { if (c) c->setAlpha (theme.opacity (id)); };
+    fade (graph.get(),        "spectrumGrid");
+    fade (typeSelector.get(), "typeSelector");
+    fade (morphWheel.get(),   "morphWheel");
+    fade (secondaryWheel.get(), "qWheel");
+    fade (morphReadout.get(), "morphReadout");
+    fade (secondaryReadout.get(), "qReadout");
+}
+
+void PluginEditor::onFrame()
+{
+    // Per display refresh: push live engine state into the views. Each view
+    // no-ops when its input is unchanged, so an idle UI does no repainting.
+    //
+    // Read the lock-free snapshot the audio thread publishes — never the live
+    // engine. On a rare torn read we keep the previous frame's curve.
+    float coeffs[30] = {};
+    float boost = 1.0f;
+    if (processor.dspBridge.readUiSnapshot (coeffs, boost))
+    {
+        const double sr = processor.getSampleRate() > 0.0 ? processor.getSampleRate() : 48000.0;
+        graph->updateFromCoeffs (coeffs, boost, sr);
+        moveView->updateFromCoeffs (coeffs, boost, sr);
+    }
+    graph->setSlamMeter (processor.dspBridge.slamOutClipFrac());
+
+    const auto read = [this] (const char* paramID)
+    {
+        if (auto* v = processor.apvts.getRawParameterValue (paramID))
+            return juce::jlimit (0.0f, 1.0f, v->load());
+        return 0.0f;
+    };
+    const bool motionOn = read (ParamID::motionOn) > 0.5f;
+    const auto typeBehavior = processor.getModulationBehaviorForUi();
+    graph->setMotionState (motionOn,
+                           processor.getMotionStepForUi(),
+                           (typeBehavior == trench::TypeBehavior::Dynamic) ? 1.0f
+                                                                           : read (ParamID::motionAmount));
+
+    if (currentPage == 1)
+    {
+        // MOVE: upper rail = MOVE, lower rail = TIME (FREE or synced value text).
+        const float moveAmount = read (ParamID::moveTension);
+        morphWheel->setDisplayOverride (false, moveAmount);
+        morphReadout->setNormalised (moveAmount);
+
+        if (auto* tp = processor.apvts.getParameter (ParamID::moveTime))
+            secondaryWheel->setDisplayOverride (false, tp->getValue());
+        const int timeIdx = (int) processor.apvts.getRawParameterValue (ParamID::moveTime)->load();
+        secondaryReadout->setText (trench::gestureTimeName (
+            (trench::GestureTime) juce::jlimit (0, trench::kNumGestureTimes - 1, timeIdx)));
+        moveView->refresh();
+    }
+    else
+    {
+        // SOUND: upper rail = MORPH, lower rail = Q. SLAM is driven by the canvas.
+        const bool moveOn = read (ParamID::moveOn) > 0.5f;
+        const bool moving = (motionOn || moveOn) && processor.isMorphModulatedForUi();
+        const float morphValue = moving ? processor.getEffectiveMorphForUi() : read (ParamID::morph);
+        morphWheel->setDisplayOverride (moving, morphValue);
+        morphReadout->setNormalised (morphValue);
+
+        const bool qMoving = (motionOn || moveOn) && processor.isQModulatedForUi();
+        const float qValue = qMoving ? processor.getEffectiveQForUi() : read (ParamID::q);
+        secondaryWheel->setDisplayOverride (qMoving, qValue);
+        secondaryReadout->setNormalised (qValue);
+    }
+
+    const bool morphActive = morphWheel->isMouseOverOrDragging (true) || morphReadout->isMouseOverOrDragging (true);
+    const bool secondaryActive = secondaryWheel->isMouseOverOrDragging (true) || secondaryReadout->isMouseOverOrDragging (true);
+    morphReadout->setActive (morphActive);
+    secondaryReadout->setActive (secondaryActive);
+}
+
+void PluginEditor::setPage (int page)
+{
+    currentPage = juce::jlimit (0, 1, page);
+    const bool move = (currentPage == 1);   // pages retired; path kept for compat
+
+    graph->setVisible (! move);
+    moveView->setVisible (move);            // V1: MOVE = PLAY only (ROUTE shelved)
+    takeView->setVisible (false);           // Take/variant tray is not a V1 page
+    modulateTag->setVisible (true);
+    fiveDTag->setVisible (true);
+    slotPad->setActive (currentPage);
+
+    // Page-specific rails + labels: SOUND = MORPH + Q/SLAM, MOVE = MOVE/TIME.
+    morphWheel->setParameter (processor.apvts,
+                              move ? juce::String (ParamID::moveTension) : juce::String (ParamID::morph));
+    if (move)
+    {
+        secondaryWheel->setParameter (processor.apvts, ParamID::moveTime);
+        labels->setRailLabels ("MOVE", "TIME");
+        moveView->refresh();
+    }
+    else
+    {
+        labels->setRailLabels ("MORPH (%)", "Q (%)");   // target refs' wording; SLAM lives on the canvas
+        secondaryWheel->setParameter (processor.apvts, ParamID::q);
+    }
+}
+
+void PluginEditor::refreshTake()
+{
+    tray = processor.buildTakeTray (12);
+    takeView->setSlots (tray);
+    takeView->setSelected (0);   // slot 01 = AS HEARD, selected by default
 }
