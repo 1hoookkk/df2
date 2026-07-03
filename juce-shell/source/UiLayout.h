@@ -53,8 +53,8 @@ public:
         // Re-measured 2026-07-03: lum<70 caught the outer bezel ring, not the slot —
         // these are the INNER dark openings (longest lum<30 run at well mid-height),
         // so the drum seats inside the slot instead of riding the bezel.
-        layout.elements["morphWheel"]   = { { 120.0f, 682.0f, 422.0f, 120.0f }, {}, {} };
-        layout.elements["qWheel"]       = { { 119.0f, 870.0f, 424.0f, 123.0f }, {}, {} };
+        layout.elements["morphWheel"]   = { { 120.0f, 691.0f, 422.0f, 98.0f },  {}, {} };
+        layout.elements["qWheel"]       = { { 119.0f, 873.0f, 424.0f, 106.0f }, {}, {} };
         // FLUSH in the measured wells (Tyson 2026-07-02: "have everything sit flush
         // in the wells with no huge gaps"). Rects = the panel art's cut-out openings,
         // auto-detected from df2_panel_shadow.png (gray<70 floors, scipy label) and

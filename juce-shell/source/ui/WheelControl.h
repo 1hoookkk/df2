@@ -139,7 +139,8 @@ public:
         const auto well = getLocalBounds().toFloat();
         constexpr float kSeat   = 0.95f;   // rounded caps float INSIDE the opening with a
                                            // visible gap (per Tyson's reference shots), not flush
-        constexpr float kSeatCY = 0.50f;   // centered vertically
+        constexpr float kSeatCY = 0.50f;   // rects are the TRUE inner openings now, so
+                                           // centre-in-rect IS centre-in-opening
         const float scaleX = kSeat * well.getWidth() / (float) contentW;
         const float scale = scaleX;
         const float drawW = scale * (float) fw;
