@@ -17,6 +17,20 @@ Last updated: 2026-07-04, end of the sound-probe session.
 - Demo contents: 3 real P2K presets (Meaty Gizmo, Talking Hedz, Lucifers Q),
   5D button (QSound RE, nulls −30 dB vs reference), no dev tools.
 
+## CLEAN THREAD — stage-anatomy study (start FRESH, minimal context)
+Tyson called the prior session's analysis context-poisoned. A fresh session
+does this with ONLY these facts: bodies = 240-byte packed files
+(ref/p2k_variants/<name>/variant_0_*.bin = 4 corners x 6 stages x 5 u16 LE).
+Pipeline (the ONLY legal one): words -> pyruntime.packed_interp.packed_bilinear
+(corner dict keys "A","B","C","D", calls the real trench-core lerp_u16 via FFI)
+-> kernel_to_biquad -> H_i(z), SR 39062.5. Plot convention (approved): six
+thin stage curves + bold cascade product, dB vs log-Hz, white background, at
+M0Q0/M100Q0/M0Q100/M100Q100/M50Q50. Reference script:
+scratchpad stages_clean.py from 2026-07-04 (copy into tools/ if kept).
+Goal of the study: understand the ROM stage grammar (roles, movers, zero
+placement) to inform the 4 ship bodies. Do NOT carry over any other claim
+from the 07-03/07-04 sessions without re-deriving it from packed words.
+
 ## NEXT SESSION — the simplification pass (medium depth, Tyson 2026-07-04)
 Question on the table: "what am I overcomplicating — wrap it minimal, simple
 but complex, modern and mature." The proposed shape, to be circled (not
