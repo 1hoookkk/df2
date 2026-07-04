@@ -21,6 +21,8 @@ use crate::cvsd_input::CvsdInput;
 use crate::desk_drive::{DeskDrive, SUPPORTED_MODEL as DESK_SLAM_MODEL};
 use crate::qsound_spatial::QSoundSpatial;
 use crate::trench_matrix::TrenchMatrix;
+use std::ptr;
+use std::sync::atomic::{AtomicPtr, Ordering};
 
 /// Selects which post-cascade spatial stage runs (or `Off`).
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -73,6 +75,25 @@ pub struct DebugToggles {
     pub dc_block_enabled: bool,
     pub saturation_enabled: bool,
     pub spatial_enabled: bool,
+    /// DEBUG probe knob: scales the AGC adaptation rate in the log-gain domain
+    /// (`gain *= table[idx]^scale` instead of `gain *= table[idx]`).
+    /// 1.0 = stock behavior (bit-identical path, `agc_step_stereo` is called).
+    /// 0.25 = 4x slower attack AND release; 0.05 = 20x slower.
+    pub agc_rate_scale: f32,
+    /// DEBUG probe knob: maximum AGC attenuation depth in dB — the gain state is
+    /// floored at `10^(-agc_max_cut_db/20)`. `f32::INFINITY` = stock (no floor,
+    /// gain may fall to zero). e.g. 6.0 limits the leveler to 6 dB of cut.
+    pub agc_max_cut_db: f32,
+    /// DEBUG probe knob: bypass the AGC curve entirely (gain state untouched)
+    /// and apply `agc_makeup_gain` in its place, through the same `agc_mix`
+    /// blend. false = stock. Only observed when `agc_enabled` is true.
+    pub agc_bypass: bool,
+    /// Linear makeup gain used when `agc_bypass` is set. 1.0 = unity.
+    pub agc_makeup_gain: f32,
+    /// DEBUG probe knob: scales the coefficient ramp length handed to
+    /// `Cascade::set_targets` (`ramp = chunk * scale`, min 1 sample).
+    /// 1.0 = stock (ramp == control chunk).
+    pub coeff_ramp_scale: f32,
 }
 
 impl Default for DebugToggles {
@@ -82,6 +103,11 @@ impl Default for DebugToggles {
             dc_block_enabled: true,
             saturation_enabled: true,
             spatial_enabled: true,
+            agc_rate_scale: 1.0,
+            agc_max_cut_db: f32::INFINITY,
+            agc_bypass: false,
+            agc_makeup_gain: 1.0,
+            coeff_ramp_scale: 1.0,
         }
     }
 }
@@ -111,7 +137,11 @@ fn saturate(x: f32) -> f32 {
 pub struct FilterEngine {
     cascade_l: Cascade,
     cascade_r: Cascade,
-    cartridge: Option<Cartridge>,
+    // Audio-thread-owned. New bodies arrive via `CartridgeMailbox` (a sibling
+    // field of `EngineHandle`, never inside this `&mut`-borrowed struct) and are
+    // installed at a block boundary; the displaced box is handed back to the
+    // message thread to free, so no allocation/free ever runs on the audio thread.
+    cartridge: Option<Box<Cartridge>>,
     sample_rate: f64,
 
     // Output Gain & Ramping
@@ -125,7 +155,7 @@ pub struct FilterEngine {
     target_slam_drive: f32,
     delta_slam_drive: f32,
     input_mode: InputMode,
-    desk_drive_db: f32,
+    desk_drive_configured: bool,
     desk_drive_l: DeskDrive,
     desk_drive_r: DeskDrive,
     cvsd_l: CvsdInput,
@@ -178,7 +208,7 @@ impl FilterEngine {
             target_slam_drive: 0.0,
             delta_slam_drive: 0.0,
             input_mode: InputMode::None,
-            desk_drive_db: -1.0,
+            desk_drive_configured: false,
             desk_drive_l: DeskDrive::new(),
             desk_drive_r: DeskDrive::new(),
             cvsd_l: CvsdInput::new(),
@@ -208,7 +238,7 @@ impl FilterEngine {
         self.target_slam_drive = 0.0;
         self.delta_slam_drive = 0.0;
         self.input_mode = InputMode::None;
-        self.desk_drive_db = -1.0;
+        self.desk_drive_configured = false;
         self.desk_drive_l.prepare(sample_rate as f32);
         self.desk_drive_r.prepare(sample_rate as f32);
         self.cvsd_l.prepare(sample_rate as f32);
@@ -230,17 +260,25 @@ impl FilterEngine {
         self.spatial_mode
     }
 
+    /// Single-threaded / test convenience: install a cartridge immediately and
+    /// drop whatever it displaces on the caller's thread. The runtime audio path
+    /// does NOT use this — it installs from the mailbox via `install_cartridge`.
     pub fn load_cartridge(&mut self, cart: Cartridge) {
-        // Pre-compute fixed pre-drive from dB
+        let _ = self.install_cartridge(Box::new(cart));
+    }
+
+    /// Install a boxed cartridge and return the one it displaces (if any) WITHOUT
+    /// dropping it — the caller decides where the free happens. On the audio
+    /// thread the returned box is routed back to the message thread via the
+    /// mailbox's garbage slot; nothing is deallocated here.
+    ///
+    /// Side effects mirror the old `load_cartridge`: recompute the fixed pre-drive
+    /// and clear any baked spatial profile (5D is a runtime-only toggle). Both are
+    /// allocation-free, so this is safe to call at a block boundary.
+    fn install_cartridge(&mut self, cart: Box<Cartridge>) -> Option<Box<Cartridge>> {
         self.pre_drive_gain = 10.0_f32.powf(cart.drive.input_gain_db / 20.0);
-
-        // 5D is a runtime UI toggle, never body-authored. Ignore cartridge
-        // spatial profiles on engine load so filter bodies cannot bake in
-        // per-preset QSound; the QSound module still supports profiles for
-        // direct study/fixture tests.
         self.spatial.clear_profile();
-
-        self.cartridge = Some(cart);
+        self.cartridge.replace(cart)
     }
 
     pub fn set_space(&mut self, space: f32) {
@@ -280,8 +318,14 @@ impl FilterEngine {
         let corner: CornerData = cart.interpolate(morph, q);
         let boost = cart.interpolate_boost(morph, q) as f32;
 
-        self.cascade_l.set_targets(&corner, chunk_size);
-        self.cascade_r.set_targets(&corner, chunk_size);
+        // DEBUG knob: coeff_ramp_scale == 1.0 passes chunk_size through unchanged.
+        let ramp_samples = if self.debug.coeff_ramp_scale == 1.0 {
+            chunk_size
+        } else {
+            ((chunk_size as f32 * self.debug.coeff_ramp_scale).round() as usize).max(1)
+        };
+        self.cascade_l.set_targets(&corner, ramp_samples);
+        self.cascade_r.set_targets(&corner, ramp_samples);
 
         self.target_output_gain = boost;
         self.delta_output_gain = (boost - self.output_gain) / chunk_size.max(1) as f32;
@@ -293,24 +337,27 @@ impl FilterEngine {
     fn process_input_stage(&mut self, l: f32, r: f32) -> (f32, f32) {
         match self.input_mode {
             InputMode::None => (l, r),
-            InputMode::MackieDeskSlam => {
-                (self.desk_drive_l.process(l), self.desk_drive_r.process(r))
-            }
+            InputMode::MackieDeskSlam => (
+                self.desk_drive_l.process(l, self.slam_drive),
+                self.desk_drive_r.process(r, self.slam_drive),
+            ),
             InputMode::Cvsd => (self.cvsd_l.process(l), self.cvsd_r.process(r)),
         }
     }
 
-    fn configure_desk_drive(&mut self, drive_db: f32) {
-        if (drive_db - self.desk_drive_db).abs() > 0.001 {
-            self.desk_drive_db = drive_db;
-            self.desk_drive_l.configure(drive_db, DESK_SLAM_MODEL);
-            self.desk_drive_r.configure(drive_db, DESK_SLAM_MODEL);
+    fn configure_desk_drive(&mut self) {
+        if !self.desk_drive_configured {
+            self.desk_drive_l.configure(DESK_SLAM_MODEL);
+            self.desk_drive_r.configure(DESK_SLAM_MODEL);
+            self.desk_drive_configured = true;
         }
     }
 
     #[inline]
     fn process_sample_inner(&mut self, l: f32, r: f32) -> (f32, f32) {
         let (mut sl, mut sr) = self.process_input_stage(l, r);
+        self.slam_drive += self.delta_slam_drive;
+
         sl *= self.pre_drive_gain;
         sr *= self.pre_drive_gain;
 
@@ -318,15 +365,46 @@ impl FilterEngine {
         sr = self.cascade_r.tick(sr);
 
         if self.debug.agc_enabled {
-            // Scale into the AGC's integer-magnitude domain, apply the curve,
-            // scale back. `agc_drive == 1.0` is exact identity (null parity).
-            let d = self.agc_drive;
-            let (agc_l, agc_r) =
-                agc_step_stereo(sl * d, sr * d, &mut self.agc_gain, &self.active_agc_table);
-            let agc_l = agc_l / d;
-            let agc_r = agc_r / d;
-            sl += (agc_l - sl) * self.agc_mix;
-            sr += (agc_r - sr) * self.agc_mix;
+            if self.debug.agc_bypass {
+                // DEBUG probe path: skip the curve, apply fixed makeup through
+                // the same mix law. Gain state is left untouched.
+                let mk = self.debug.agc_makeup_gain;
+                sl += (sl * mk - sl) * self.agc_mix;
+                sr += (sr * mk - sr) * self.agc_mix;
+            } else if self.debug.agc_rate_scale == 1.0
+                && self.debug.agc_max_cut_db == f32::INFINITY
+            {
+                // Stock path (bit-identical to pre-knob behavior).
+                // Scale into the AGC's integer-magnitude domain, apply the curve,
+                // scale back. `agc_drive == 1.0` is exact identity (null parity).
+                let d = self.agc_drive;
+                let (agc_l, agc_r) =
+                    agc_step_stereo(sl * d, sr * d, &mut self.agc_gain, &self.active_agc_table);
+                let agc_l = agc_l / d;
+                let agc_r = agc_r / d;
+                sl += (agc_l - sl) * self.agc_mix;
+                sr += (agc_r - sr) * self.agc_mix;
+            } else {
+                // DEBUG probe path: same law with adaptation-rate scale and/or
+                // gain-floor clamp. Index law identical (`(gain·|x|) as int & 0xF`).
+                let d = self.agc_drive;
+                let mag = (sl * d).abs().max((sr * d).abs());
+                let idx = ((self.agc_gain * mag) as u32 & 0xF) as usize;
+                let mut step = self.active_agc_table[idx];
+                if self.debug.agc_rate_scale != 1.0 {
+                    step = step.powf(self.debug.agc_rate_scale);
+                }
+                let floor = if self.debug.agc_max_cut_db == f32::INFINITY {
+                    0.0
+                } else {
+                    10.0_f32.powf(-self.debug.agc_max_cut_db / 20.0)
+                };
+                self.agc_gain = (self.agc_gain * step).clamp(floor, 1.0);
+                let agc_l = sl * self.agc_gain;
+                let agc_r = sr * self.agc_gain;
+                sl += (agc_l - sl) * self.agc_mix;
+                sr += (agc_r - sr) * self.agc_mix;
+            }
         }
 
         // 5. Output Gain
@@ -356,7 +434,7 @@ impl FilterEngine {
         self.slam_drive = self.target_slam_drive;
         self.delta_slam_drive = 0.0;
         if self.input_mode == InputMode::MackieDeskSlam {
-            self.configure_desk_drive(self.slam_drive * 36.0);
+            self.configure_desk_drive();
         }
     }
 
@@ -375,7 +453,7 @@ impl FilterEngine {
 
             self.set_parameters(morph, q, chunk);
             if self.input_mode == InputMode::MackieDeskSlam {
-                self.configure_desk_drive(self.target_slam_drive * 36.0);
+                self.configure_desk_drive();
             }
 
             for i in 0..chunk {
@@ -417,6 +495,132 @@ impl FilterEngine {
             }
         }
         *out_boost = self.output_gain;
+    }
+}
+
+/// Lock-free, single-producer (message thread) / single-consumer (audio thread)
+/// hand-off for body swaps. It lives BESIDE the `FilterEngine` in `EngineHandle`,
+/// never inside it, so the audio thread can hold `&mut FilterEngine` exclusively
+/// while the message thread touches only these atomics — no aliasing UB.
+///
+/// `pending`: producer publishes a new `Box<Cartridge>`; consumer takes it.
+/// `garbage`: consumer hands the displaced cartridge back; producer frees it.
+/// The consumer only takes a pending cartridge when `garbage` is empty, so a box
+/// is never dropped on the audio thread and the single garbage slot is never
+/// overwritten.
+pub struct CartridgeMailbox {
+    pending: AtomicPtr<Cartridge>,
+    garbage: AtomicPtr<Cartridge>,
+}
+
+impl CartridgeMailbox {
+    fn new() -> Self {
+        Self {
+            pending: AtomicPtr::new(ptr::null_mut()),
+            garbage: AtomicPtr::new(ptr::null_mut()),
+        }
+    }
+
+    /// Producer (message thread). Takes ownership of `cart`. Frees any retired
+    /// cartridge first, then publishes; if a previous pending was never consumed
+    /// (rapid re-stage) it is reclaimed here too. Never touches the engine.
+    pub fn stage(&self, cart: Box<Cartridge>) {
+        self.reclaim();
+        let prev = self.pending.swap(Box::into_raw(cart), Ordering::AcqRel);
+        if !prev.is_null() {
+            drop(unsafe { Box::from_raw(prev) });
+        }
+    }
+
+    /// Producer (message thread). Free the cartridge the audio thread retired, if
+    /// any. Safe to call on a timer to release memory promptly between swaps.
+    pub fn reclaim(&self) {
+        let g = self.garbage.swap(ptr::null_mut(), Ordering::AcqRel);
+        if !g.is_null() {
+            drop(unsafe { Box::from_raw(g) });
+        }
+    }
+
+    /// Consumer (audio thread). Returns the staged cartridge to install — but
+    /// only when the garbage slot is free to receive the box it will displace.
+    /// Otherwise returns `None` and leaves the pending cartridge in place
+    /// (install deferred a few blocks until the producer reclaims). This is what
+    /// guarantees the audio thread never frees and never overwrites garbage.
+    fn take(&self) -> Option<Box<Cartridge>> {
+        if !self.garbage.load(Ordering::Acquire).is_null() {
+            return None;
+        }
+        let p = self.pending.swap(ptr::null_mut(), Ordering::AcqRel);
+        if p.is_null() {
+            None
+        } else {
+            Some(unsafe { Box::from_raw(p) })
+        }
+    }
+
+    /// Consumer (audio thread). Hand a displaced cartridge back to the producer.
+    /// Only reached after `take()` confirmed garbage was empty, so the swap-out
+    /// is always null.
+    fn retire(&self, old: Box<Cartridge>) {
+        let prev = self.garbage.swap(Box::into_raw(old), Ordering::AcqRel);
+        debug_assert!(
+            prev.is_null(),
+            "garbage slot overwritten: producer fell behind take()'s guard"
+        );
+        if !prev.is_null() {
+            // Defensive (release builds): reclaim rather than leak.
+            drop(unsafe { Box::from_raw(prev) });
+        }
+    }
+}
+
+impl Drop for CartridgeMailbox {
+    fn drop(&mut self) {
+        // Exclusive access at drop: free anything still parked in either slot.
+        let p = self.pending.swap(ptr::null_mut(), Ordering::AcqRel);
+        if !p.is_null() {
+            drop(unsafe { Box::from_raw(p) });
+        }
+        self.reclaim();
+    }
+}
+
+/// The opaque object behind the FFI `*mut c_void` engine handle.
+///
+/// CRITICAL: the FFI must NEVER form `&EngineHandle` / `&mut EngineHandle`. It
+/// projects to the disjoint fields directly through the raw pointer — the audio
+/// thread borrows `&mut handle.engine`, while any thread may touch
+/// `handle.mailbox` through its atomics. Splitting the borrow this way is what
+/// keeps single-thread ownership of the engine sound.
+pub struct EngineHandle {
+    pub engine: FilterEngine,
+    pub mailbox: CartridgeMailbox,
+}
+
+impl EngineHandle {
+    pub fn new() -> Self {
+        Self {
+            engine: FilterEngine::new(),
+            mailbox: CartridgeMailbox::new(),
+        }
+    }
+}
+
+impl Default for EngineHandle {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
+/// Audio-thread step: install a staged body (if one is ready) at the block
+/// boundary, routing the displaced cartridge back to the message thread to free.
+/// Allocation-free. Takes the engine and mailbox as separate borrows so callers
+/// never have to form a whole-`EngineHandle` reference.
+pub fn install_pending(engine: &mut FilterEngine, mailbox: &CartridgeMailbox) {
+    if let Some(new_cart) = mailbox.take() {
+        if let Some(old) = engine.install_cartridge(new_cart) {
+            mailbox.retire(old);
+        }
     }
 }
 
