@@ -67,12 +67,14 @@ fn audition_p2k_favourites() {
         let mut eng = FilterEngine::new();
         eng.prepare(sr_emu);
         eng.load_cartridge(cart);
-        // Awake chain: AGC is the always-on compression curve at the 4.0 teeth,
-        // plus the Mackie desk-slam character.
+        // L11 voicing (LAWS.md, Tyson's real-material verdict 2026-07-04):
+        // slam 0.15 + AGC cut cap 8 dB. The old awake chain (agc 4.0 +
+        // slam 0.6) was a 24 dB brick-wall leveler — never again.
         eng.debug.agc_enabled = true;
+        eng.debug.agc_max_cut_db = 8.0;
         eng.set_agc_drive(4.0);
         eng.set_input_mode(InputMode::MackieDeskSlam);
-        eng.set_slam_drive(0.6);
+        eng.set_slam_drive(0.15);
 
         // Reese-ish 55 Hz sawtooth — rich harmonics excite formants AND carry bass.
         let mut phase = 0.0f64;
@@ -86,7 +88,9 @@ fn audition_p2k_favourites() {
                     phase = (phase + 55.0 / sr_emu).fract();
                     // short fade at each segment edge to avoid clicks
                     let pos = off + i;
-                    let env = (pos as f32 / 600.0).min(1.0).min((seg_n - pos) as f32 / 600.0);
+                    let env = (pos as f32 / 600.0)
+                        .min(1.0)
+                        .min((seg_n - pos) as f32 / 600.0);
                     *s = ((phase * 2.0 - 1.0) as f32) * 0.5 * env;
                 }
                 let mut r = l.clone();
@@ -138,7 +142,11 @@ fn audition_p2k_favourites() {
     let page = out.join("audition.html");
     std::fs::write(&page, html).expect("write html");
     println!("\nopen: {}", page.display());
-    println!("rendered {}/{} favourites", rendered.len(), FAVOURITES.len());
+    println!(
+        "rendered {}/{} favourites",
+        rendered.len(),
+        FAVOURITES.len()
+    );
 }
 
 fn write_wav(path: &std::path::Path, samples: &[f32], sr: u32) {
