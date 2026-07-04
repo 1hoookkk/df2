@@ -1,0 +1,161 @@
+{
+  "name": "FUZZ_E_SCREAMER",
+  "lanes": [
+    {
+      "what": "input coupling (measured foundation)",
+      "source": "DC unit zero + 15.6Hz pole, exact: ANALYTIC TF tubeScreamer.dsp (circuit_frf.py law): H=HP_in*(1+Zf/Zi), exact z-roots via bilinear @39062.5",
+      "low": {
+        "pole": [
+          30,
+          0.9975
+        ],
+        "zero": [
+          25,
+          1.0
+        ]
+      },
+      "high": {
+        "pole": [
+          30,
+          0.9975
+        ],
+        "zero": [
+          25,
+          1.0
+        ]
+      },
+      "q_tighten": 0.0,
+      "q_zero_tighten": 0.0
+    },
+    {
+      "what": "mid-hump shelf (measured)",
+      "source": "zero 155->230Hz vs pole 720Hz, hump 13.3->15.9dB with drive: ANALYTIC TF tubeScreamer.dsp (circuit_frf.py law): H=HP_in*(1+Zf/Zi), exact z-roots via bilinear @39062.5",
+      "low": {
+        "pole": [
+          720,
+          0.72
+        ],
+        "zero": [
+          155,
+          0.62
+        ]
+      },
+      "high": {
+        "pole": [
+          720,
+          0.78
+        ],
+        "zero": [
+          230,
+          0.62
+        ]
+      },
+      "q_tighten": 0.07,
+      "q_zero_tighten": 0.0
+    },
+    {
+      "what": "THE razor (authored violence on the measured corner)",
+      "source": "rides the hump corner 720Hz -> the closing top corner ~7kHz (drive1 C4 corner): ANALYTIC TF tubeScreamer.dsp (circuit_frf.py law): H=HP_in*(1+Zf/Zi), exact z-roots via bilinear @39062.5; radius authored HOT",
+      "low": {
+        "pole": [
+          720,
+          0.9889
+        ],
+        "zero": [
+          950,
+          0.95
+        ]
+      },
+      "high": {
+        "pole": [
+          7000,
+          0.9889
+        ],
+        "zero": [
+          9200,
+          0.95
+        ]
+      },
+      "q_tighten": 0.01,
+      "q_zero_tighten": 0.045
+    },
+    {
+      "what": "top corner (measured)",
+      "source": "C4 rolloff: near-Nyq pole r.896->.854 (corner descends into band with drive): ANALYTIC TF tubeScreamer.dsp (circuit_frf.py law): H=HP_in*(1+Zf/Zi), exact z-roots via bilinear @39062.5",
+      "low": {
+        "pole": [
+          16000,
+          0.88
+        ],
+        "zero": [
+          18300,
+          0.99
+        ]
+      },
+      "high": {
+        "pole": [
+          12000,
+          0.86
+        ],
+        "zero": [
+          18300,
+          0.99
+        ]
+      },
+      "q_tighten": 0.02,
+      "q_zero_tighten": 0.009
+    },
+    {
+      "what": "bark presence (authored, hot)",
+      "source": "2nd harmonic of the hump corner 1440->3600: centers derived from measured 720Hz corner x2 and razor midpoint: ANALYTIC TF tubeScreamer.dsp (circuit_frf.py law): H=HP_in*(1+Zf/Zi), exact z-roots via bilinear @39062.5",
+      "low": {
+        "pole": [
+          1440,
+          0.985
+        ],
+        "zero": [
+          2050,
+          0.975
+        ]
+      },
+      "high": {
+        "pole": [
+          3600,
+          0.986
+        ],
+        "zero": [
+          5100,
+          0.975
+        ]
+      },
+      "q_tighten": 0.011,
+      "q_zero_tighten": 0.024
+    },
+    {
+      "what": "tone canyon (unit notch walks the razor rail)",
+      "source": "canyon 1100->11000 between measured corners: ANALYTIC TF tubeScreamer.dsp",
+      "low": {
+        "pole": [
+          800,
+          0.92
+        ],
+        "zero": [
+          1100,
+          1.0
+        ]
+      },
+      "high": {
+        "pole": [
+          6000,
+          0.94
+        ],
+        "zero": [
+          11000,
+          1.0
+        ]
+      },
+      "q_tighten": 0.05,
+      "q_zero_tighten": 0.0
+    }
+  ]
+}

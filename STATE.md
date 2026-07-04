@@ -39,6 +39,50 @@ Goal of the study: the full stage-grammar dossier (Meaty, Lucifers, then the
 16) to inform the 4 ship bodies. Do NOT carry over any other claim from the
 07-03/07-04 sessions without re-deriving it from packed words.
 
+MEATY + LUCIFERS dossier (2026-07-04, OBSERVED via plot_stages + the exact
+pole/zero extractor `tools/stage_anatomy.py`, same legal pipeline):
+- FOUNDATION stage-6 is now 3/3 universal: TRUE r=1.0000 unit-circle zero at
+  every corner of every body so far (Meaty 10.9k/11.1k/9.4k/18.0k, Lucifers
+  6.7k/6.9k/18.0k/8.8k), low hot pole + big DC gain bank (Meaty +47.6/+50.6 dB
+  at M100; Lucifers +63.2 dB at M0Q100). Lucifers M0Q0 st6 has REAL poles
+  (+0.753, +0.021) and M100Q100 st2 has REAL zeros — the real-root channel is
+  live in ROM verbatim words (compile_body cannot express it; VERBATIM path).
+- PARKED letters confirmed: Meaty M0Q0 = ONE sub letter (st1 pole 59 Hz,
+  DC +70.8 dB → the lone +12 dB bump at 59 Hz) + four parked near-cancelling
+  pole-zero pads (st2-5, all 10-16 kHz, flat -12..-14 dB) + foundation. A
+  6-lane word can be a 1-letter word; the pads pay the gain ledger.
+- THE Q FINDING (feeds METHOD.md's open Q100 radius law): for BOTH bodies the
+  Q100 corners are NOT center-invariant pressure derivations of Q0. Meaty M0:
+  zeros st2-5 IDENTICAL Q0→Q100 (10566/13401/14391/16287, same radii) but
+  poles RELOCATE and pin to r≈.9996 (10329→2377, 12893→10349, 13615→16822,
+  14670→13482); st1 flips 59 Hz sub → 13.5k razor ("inverts at mid-Q" is
+  literally the Q axis crossfading two different photographs). Lucifers M0:
+  Q100 is a wholly different frame — the violent ascending comb (poles 1377/
+  2282/3250/4139 Hz at r .9867-.9986, each with a zero just below, +25 dB
+  spikes) that doesn't exist at Q0. So in the ROM iconics, Secondary is a
+  SECOND AUTHORED AXIS (zeros largely held, poles re-posed), not a global
+  radius/gain offset. None of the three candidate Q laws (painter 0.35 QLINK /
+  manual global-offset / hybrid) produces these corners. CLAUDE.md §6's
+  "Secondary never moves centers" describes OUR morph_designer contract, not
+  the ROM's observed practice — the contract needs a verdict: keep the safer
+  derived-Q law for ship bodies, or allow authored Q frames (Tyson's call).
+- Middles are alive (the product): Meaty M50Q50 +35 dB crown at 2.2k;
+  Lucifers M50Q50 +39 dB at 1.8k with a chained descent. Sheets in
+  dev/tmp/stage_plots/.
+
+CIRCUIT RAILS CORRECTION (2026-07-04 late, OBSERVED): trench-filters
+out/circuit_rails/circuit_rails.json pole centers are LPC ARTIFACTS — the
+complex "resonant ladder" (3238/4323/5999... Hz) does not exist in the
+circuit. The ANALYTIC tube-screamer TF (circuit_frf.py law, component-verbatim)
+has only real roots: DC unit zero + 15.6Hz pole (input coupling), mid-hump
+zero 155-230Hz vs pole 720Hz (bark 13.3->15.9dB with drive; DIES at hot bias,
+r~.998 pole/zero collapse), near-Nyq C4 corner descending with drive. Circuit
+morphs that are real: DRIVE (bark grows + top closes) and BIAS (voice lives/
+dies). Do not source pole centers from circuit_rails.json; use the analytic
+roots (see sheets/FUZZ_E_SCREAMER.json, FUZZ_F_STARVED.json). Fuzz Q policy:
+hot-at-rest razors can't meet the 5.7dB Qbloom floor (radius cap) — fuzz
+Secondary = tone/canyon motion per the manual, exception documented.
+
 ## NEXT SESSION — the simplification pass (medium depth, Tyson 2026-07-04)
 Question on the table: "what am I overcomplicating — wrap it minimal, simple
 but complex, modern and mature." The proposed shape, to be circled (not

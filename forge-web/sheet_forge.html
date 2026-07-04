@@ -1,0 +1,184 @@
+<!doctype html>
+<meta charset="utf-8">
+<title>SHEET FORGE</title>
+<style>
+ :root{--bg:#0a0c0b;--panel:#0d100e;--line:#1d2320;--ink:#cfe9df;--dim:#5a6a61;
+       --hero:#bfeee0;--pole:#e6a13b;--zero:#5fb8d4;--bad:#e05545;--ok:#56ed70}
+ body{background:var(--bg);color:var(--ink);font:13px/1.45 system-ui;margin:0;padding:14px 18px}
+ h1{font:600 14px system-ui;letter-spacing:.16em;margin:0 0 8px;color:var(--dim)}
+ h1 b{color:var(--ink)}
+ canvas{width:100%;height:460px;display:block;background:var(--panel);
+        border:1px solid var(--line);cursor:crosshair}
+ .bar{display:flex;gap:14px;align-items:center;margin:10px 0;flex-wrap:wrap}
+ .bar label{color:var(--dim);letter-spacing:.1em;font-size:11px}
+ input[type=range]{width:220px;accent-color:#4a7a66}
+ button{background:#15201b;color:var(--ink);border:1px solid #2c3a33;padding:6px 16px;
+        font:600 12px system-ui;cursor:pointer;letter-spacing:.08em}
+ button.on{background:#274238;border-color:#4a7a66}
+ #gate{font:600 12px ui-monospace,Consolas;padding:6px 10px;border:1px solid var(--line)}
+ #gate.pass{color:var(--ok)} #gate.fail{color:var(--bad)}
+ table{border-collapse:collapse;width:100%;margin-top:8px}
+ th{font:600 10px system-ui;letter-spacing:.12em;color:var(--dim);text-align:left;
+    padding:4px 6px;border-bottom:1px solid var(--line)}
+ td{padding:2px 4px;border-bottom:1px solid #12161380}
+ td input[type=number]{width:70px;background:#11161380;border:1px solid #232b26;
+    color:var(--ink);font:12px ui-monospace,Consolas;padding:3px 4px}
+ td input[type=text]{width:98%;background:transparent;border:1px solid transparent;
+    color:var(--dim);font:11px system-ui;padding:3px 4px}
+ td input[type=text]:focus{border-color:#232b26;color:var(--ink)}
+ td.lane{font:600 12px ui-monospace;color:var(--dim);width:26px}
+ tr.parked td{opacity:.35}
+ .pol{color:var(--pole)} .zer{color:var(--zero)}
+ #err{color:var(--bad);font:12px ui-monospace;margin:6px 0;white-space:pre-wrap}
+ #metrics{color:var(--dim);font:11px ui-monospace}
+</style>
+<h1><b>SHEET FORGE</b> — drag the dots, hear the body <span id="sheetname"></span></h1>
+<canvas id="c" width="1560" height="920"></canvas>
+<div class="bar">
+ <label>MORPH</label><input type="range" id="sm" min="0" max="1000" value="500">
+ <label>Q</label><input type="range" id="sq" min="0" max="1000" value="500">
+ <button id="poseL" class="on">EDIT LOW POSE</button>
+ <button id="poseH">EDIT HIGH POSE</button>
+ <button id="sweepM">&#9654; MORPH SWEEP</button>
+ <button id="sweepQ">&#9654; Q SWEEP</button>
+ <span id="gate">—</span>
+</div>
+<div id="err"></div>
+<div id="metrics"></div>
+<table id="lanes"></table>
+<audio id="au"></audio>
+<script>
+const cv=document.getElementById('c'),g=cv.getContext('2d');
+const au=document.getElementById('au');
+let SHEET=null, FREQS=null, CURVES=null, LIVE=null, pose='low', drag=null;
+let m=0.5, q=0.5, curveTimer=null, compileTimer=null;
+
+const lo=Math.log10(40), hi=Math.log10(18000);
+const fx=f=>(Math.log10(Math.max(40,Math.min(18000,f)))-lo)/(hi-lo)*cv.width;
+const xf=x=>Math.pow(10, lo+(x/cv.width)*(hi-lo));
+const yDb=db=>cv.height*(1-(db+45)/90);
+// radius lives on its own vertical band: r=0.80 at bottom, r=1.0 at top
+const yR=r=>cv.height*(1-Math.max(0,Math.min(1,(r-0.80)/0.20)));
+const rY=y=>0.80+ (1-y/cv.height)*0.20;
+
+function grid(){g.fillStyle='#0d100e';g.fillRect(0,0,cv.width,cv.height);
+ g.strokeStyle='#161c19';g.lineWidth=1;g.beginPath();
+ for(const f of[60,100,200,500,1000,2000,5000,10000]){g.moveTo(fx(f),0);g.lineTo(fx(f),cv.height);}
+ for(let db=-40;db<=40;db+=10){g.moveTo(0,yDb(db));g.lineTo(cv.width,yDb(db));}
+ g.stroke();
+ g.strokeStyle='#2a332e';g.beginPath();g.moveTo(0,yDb(0));g.lineTo(cv.width,yDb(0));g.stroke();
+ g.fillStyle='#5a6a61';g.font='19px system-ui';
+ for(const [f,t] of[[100,'100'],[1000,'1k'],[10000,'10k']])g.fillText(t,fx(f)+4,cv.height-8);
+ g.fillText('+20',6,yDb(20)-4);g.fillText('-20',6,yDb(-20)-4);
+ g.fillStyle='#3a4a4230';g.fillRect(0,yR(1.0),cv.width,2);
+ g.fillStyle='#5a6a61';g.fillText('r=1.0',cv.width-70,yR(1.0)+22);
+ g.fillText('r=0.8',cv.width-70,yR(0.8)-8);}
+function curve(row,color,w,dash){if(!row)return;g.strokeStyle=color;g.lineWidth=w;
+ g.setLineDash(dash||[]);g.beginPath();
+ for(let i=0;i<FREQS.length;i++){const y=yDb(Math.max(-45,Math.min(45,row[i])));
+  i?g.lineTo(fx(FREQS[i]),y):g.moveTo(fx(FREQS[i]),y);}g.stroke();g.setLineDash([]);}
+function dots(){if(!SHEET)return;const key=pose==='low'?'low':'high';
+ SHEET.lanes.forEach((ln,li)=>{if(ln.parked)return;
+  const P=ln[key].pole,Z=ln[key].zero;
+  g.fillStyle='#e6a13b';g.beginPath();g.arc(fx(P[0]),yR(P[1]),11,0,7);g.fill();
+  g.fillStyle='#0a0c0b';g.font='600 13px ui-monospace';g.fillText(li+1,fx(P[0])-4,yR(P[1])+5);
+  g.strokeStyle='#5fb8d4';g.lineWidth=3;g.beginPath();g.arc(fx(Z[0]),yR(Z[1]),10,0,7);g.stroke();
+  g.fillStyle='#5fb8d4';g.font='600 12px ui-monospace';g.fillText(li+1,fx(Z[0])-4,yR(Z[1])+4);});}
+function draw(){grid();if(!FREQS)return;
+ curve(CURVES?.LO,'#3a4a42',2);curve(CURVES?.HI,'#3a4a42',2,[6,5]);
+ curve(LIVE,'#bfeee0',5);dots();}
+
+async function fetchCurve(){const r=await fetch(`/api/curve?m=${m}&q=${q}`);
+ const j=await r.json();if(j.ok){LIVE=j.curve;draw();}}
+function queueCurve(){clearTimeout(curveTimer);curveTimer=setTimeout(fetchCurve,60);}
+
+async function compile(){const r=await fetch('/api/compile',{method:'POST',
+  body:JSON.stringify(SHEET)});const j=await r.json();
+ const gate=document.getElementById('gate'),err=document.getElementById('err');
+ if(!j.ok){err.textContent=j.error;gate.textContent='REFUSED';gate.className='fail';return;}
+ err.textContent='';FREQS=j.freqs;CURVES=j.curves;
+ gate.textContent=(j.stable?'STABLE · ':'BROKEN · ')+j.gate;
+ gate.className=j.gate==='PASS'&&j.stable?'pass':'fail';
+ const M=j.metrics;document.getElementById('metrics').textContent=
+  `maxR ${M.max_pole_radius}  span ${M.endpoint_span_db_mean}dB  morph ${M.morph_contrast_rms_db}dB  `+
+  `Qbloom ${M.secondary_contrast_rms_db}dB  peaks ${M.center_response_peaks}  valleys ${M.center_response_valleys}  `+
+  `zeromotion ${M.max_zero_motion_octaves}oct`;
+ fetchCurve();}
+function queueCompile(){clearTimeout(compileTimer);compileTimer=setTimeout(compile,180);}
+
+// --- dragging pole/zero dots -------------------------------------------------
+cv.addEventListener('pointerdown',e=>{if(!SHEET)return;
+ const r=cv.getBoundingClientRect();
+ const x=(e.clientX-r.left)*cv.width/r.width,y=(e.clientY-r.top)*cv.height/r.height;
+ const key=pose==='low'?'low':'high';let best=null,bd=28;
+ SHEET.lanes.forEach((ln,li)=>{if(ln.parked)return;
+  for(const kind of['pole','zero']){const pt=ln[key][kind];
+   const d=Math.hypot(fx(pt[0])-x,yR(pt[1])-y);
+   if(d<bd){bd=d;best={li,kind};}}});
+ if(best){drag=best;cv.setPointerCapture(e.pointerId);}});
+cv.addEventListener('pointermove',e=>{if(!drag||!SHEET)return;
+ const r=cv.getBoundingClientRect();
+ const x=(e.clientX-r.left)*cv.width/r.width,y=(e.clientY-r.top)*cv.height/r.height;
+ const key=pose==='low'?'low':'high';const pt=SHEET.lanes[drag.li][key][drag.kind];
+ pt[0]=Math.round(xf(Math.max(0,Math.min(cv.width,x))));
+ const rmax=drag.kind==='zero'?1.0:0.999;
+ pt[1]=Math.round(Math.max(0.05,Math.min(rmax,rY(y)))*10000)/10000;
+ buildTable();draw();queueCompile();});
+cv.addEventListener('pointerup',()=>{drag=null;});
+
+// --- sliders / pose / sweeps ---------------------------------------------------
+document.getElementById('sm').oninput=e=>{m=e.target.value/1000;queueCurve();};
+document.getElementById('sq').oninput=e=>{q=e.target.value/1000;queueCurve();};
+function setPose(p){pose=p;
+ document.getElementById('poseL').className=p==='low'?'on':'';
+ document.getElementById('poseH').className=p==='high'?'on':'';
+ document.getElementById('sm').value=p==='low'?0:1000;m=p==='low'?0:1;
+ queueCurve();draw();}
+document.getElementById('poseL').onclick=()=>setPose('low');
+document.getElementById('poseH').onclick=()=>setPose('high');
+async function sweep(which){const r=await fetch('/api/sweep',{method:'POST',
+  body:JSON.stringify({name:SHEET.name})});const j=await r.json();
+ if(!j.ok)return;au.src=j.wavs[which]+'?t='+Date.now();au.play();
+ const sl=document.getElementById(which?'sq':'sm');
+ const step=()=>{if(au.paused||!au.duration)return;
+  const t=au.currentTime/au.duration;
+  if(which){q=t;sl.value=t*1000;}else{m=t;sl.value=t*1000;}
+  fetchCurve();requestAnimationFrame(step);};
+ au.onplaying=()=>requestAnimationFrame(step);}
+document.getElementById('sweepM').onclick=()=>sweep(0);
+document.getElementById('sweepQ').onclick=()=>sweep(1);
+
+// --- lane table ----------------------------------------------------------------
+function num(v,step,cb){const i=document.createElement('input');i.type='number';
+ i.value=v;i.step=step;i.onchange=()=>{cb(parseFloat(i.value));buildTable();draw();queueCompile();};
+ return i;}
+function buildTable(){const T=document.getElementById('lanes');T.innerHTML='';
+ const hdr=T.insertRow();
+ for(const h of['','LOW pole Hz','r','LOW zero Hz','r','HIGH pole Hz','r','HIGH zero Hz','r','q+','park','what / source (provenance — required)'])
+  {const th=document.createElement('th');th.textContent=h;hdr.appendChild(th);}
+ SHEET.lanes.forEach((ln,li)=>{const tr=T.insertRow();if(ln.parked)tr.className='parked';
+  tr.insertCell().outerHTML=`<td class="lane">${li+1}</td>`;
+  if(ln.parked){const td=tr.insertCell();td.colSpan=9;td.textContent='parked (flat)';}
+  else{
+   for(const [fk,kind,idx,step] of[['low','pole',0,10],['low','pole',1,0.005],
+     ['low','zero',0,10],['low','zero',1,0.005],['high','pole',0,10],['high','pole',1,0.005],
+     ['high','zero',0,10],['high','zero',1,0.005]]){
+    const td=tr.insertCell();td.className=kind==='pole'?'pol':'zer';
+    td.appendChild(num(ln[fk][kind][idx],step,v=>{ln[fk][kind][idx]=v;}));}
+   const tq=tr.insertCell();tq.appendChild(num(ln.q_tighten||0,0.01,v=>{ln.q_tighten=v;}));}
+  const tp=tr.insertCell();const cb=document.createElement('input');cb.type='checkbox';
+  cb.checked=!!ln.parked;cb.onchange=()=>{if(cb.checked){SHEET.lanes[li]={parked:true};}
+   else{SHEET.lanes[li]={what:'new lane',source:'',
+    low:{pole:[1000,0.97],zero:[2000,0.95]},high:{pole:[2000,0.97],zero:[4000,0.95]},q_tighten:0.02};}
+   buildTable();draw();queueCompile();};tp.appendChild(cb);
+  const ts=tr.insertCell();const si=document.createElement('input');si.type='text';
+  si.value=ln.parked?'':(ln.what||'')+' | '+(ln.source||'');
+  si.onchange=()=>{const parts=si.value.split('|');ln.what=(parts[0]||'').trim();
+   ln.source=(parts[1]||parts[0]||'').trim();queueCompile();};
+  if(!ln.parked)ts.appendChild(si);});}
+
+// --- boot ------------------------------------------------------------------------
+(async()=>{SHEET=await (await fetch('/api/sheet')).json();
+ document.getElementById('sheetname').textContent='— '+SHEET.name;
+ buildTable();draw();compile();})();
+</script>

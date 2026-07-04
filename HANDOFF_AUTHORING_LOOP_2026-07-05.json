@@ -1,0 +1,69 @@
+{
+  "handoff": "AUTHORING LOOP + FIRST SHIP-FILTER BATCH",
+  "date": "2026-07-05",
+  "read_first": [
+    "C:/Users/hooki/trench-filters/METHOD.md  (the authoring model, one page)",
+    "STATE.md  (live state incl. the ROM dossier + circuit-rails correction)",
+    "this file"
+  ],
+  "session_summary": "Built Tyson's pen (sheet -> compile -> see -> hear loop), extended the ROM stage-grammar dossier (Meaty + Lucifers, exact numbers), corrected the circuit evidence base (LPC rails = artifacts; analytic TF is the law), authored the first ship-filter audition batch (6 fuzz + 1 phononic), opened the phononic metamaterial well.",
+
+  "the_pen": {
+    "artifact": "sheets/<name>.json — 6 lanes x LOW/HIGH pose, each pose pole[Hz,r] + zero[Hz,r], q_tighten, source (provenance REQUIRED, empty = refused). Gains bookkept automatically (flat-off-resonance law). Corners derived.",
+    "compile": "python tools/author_sheet.py sheets/<name>.json [--wav] [--no-live]",
+    "outputs": "dev/tmp/author_sheet/: .body240 + gate line + heatmap/curves PNG + ROM-format verdict sheets (per_stage/overlay) + [--wav] morph/Q sweep WAVs + synced audition HTML (curve animates with audio)",
+    "live_ears": "every compile (unless --no-live) writes Documents/TRENCH/authoring_slot.json -> diagnostics TRENCH with '@ Audition (live)' selected hot-reloads it",
+    "browser_editor": "python tools/sheet_forge.py sheets/<name>.json -> localhost:8140 (drag pz dots, sliders, live gate; VERDICT: feels janky -> superseded by the Rust plan below, kept as fallback)",
+    "study_tools": "tools/plot_stages.py <ROM body> (verdict sheets), tools/stage_anatomy.py <ROM body> (exact per-stage pole/zero/DC numbers)"
+  },
+
+  "decisions_made": [
+    "Authoring model manual-confirmed: two frames + derived corners is E-mu's own documented practice ('twenty-four knobs reduced to two controls'); 12-rows framing = our reconstruction of what their compiler emitted (docs/study/EMU_MORPH_DESIGNER_MANUAL.md).",
+    "Effective workflow locked: agent spells candidate sheets from measured rails -> Tyson culls by ear+plot in the real plugin -> one verdict per iteration. Reps/hand-editing = optional side quest, not the road.",
+    "THE PEN MOVES TO RUST (Tyson verdict: browser loop janky, not end-to-end): pz-editor mode in forge/ (egui app; already has live cpal audio through shared trench-core engine + packed-space plot). Port compile_lanes (~40 lines) with a byte-parity fixture vs Python. NON-NEGOTIABLE: one lerp owner — display/audio derive from decode(packed_lerp(bytes)) via trench-core FFI or CI byte-parity; no more 'faithful port' comments as evidence. forge/'s recipe structs (slide_semitones etc.) get replaced by the sheet model.",
+    "Fuzz Q policy exception: hot-at-rest razors cannot meet the 5.7dB Qbloom corridor floor (radius cap). Per manual, FuzziFace Secondary = tone control (canyon/zero motion), not bloom. Documented in STATE.md.",
+    "forge_author_server.py + missing studio.html = dead end (compiles via compile_body which cannot express unit-circle zeros). Do not revive."
+  ],
+
+  "dossier_findings_2026_07_04": {
+    "foundation_universal": "stage-6 TRUE r=1.0000 unit-circle zero at every corner, 3/3 bodies studied (Hedz/Meaty/Lucifers), + low hot pole + DC gain bank (+47..+63dB) paying back the other lanes' pads. Lucifers uses REAL poles/zeros = real-root channel live in ROM (VERBATIM path only).",
+    "parked_letters": "Meaty M0Q0 = a 1-letter word: one 59Hz sub pole (DC +70.8dB) + four parked pads + foundation.",
+    "q_second_axis": "ROM iconics' Q100 corners are NOT center-invariant pressure derivations: Meaty M0 zeros st2-5 bit-identical Q0->Q100 while poles relocate + pin r~.9996; Lucifers Q100 = the violent comb absent at Q0. Secondary = a second AUTHORED axis (zeros largely held, poles re-posed). OPEN VERDICT for ship bodies: safe derived Q / re-posed-poles Q (recommended middle) / fully authored Q frames — Tyson's call.",
+    "circuit_correction": "trench-filters circuit_rails.json pole ladder (3238/4323/5999...Hz) = LPC ARTIFACT. Analytic TS transfer function has only real roots: DC unit zero + 15.6Hz pole, mid-hump zero 155-230Hz vs pole 720Hz (bark 13.3->15.9dB with drive, DIES at hot bias), C4 top corner descends with drive. Real circuit morphs: DRIVE (bark grows + top closes) and BIAS (voice lives/dies). Never source centers from circuit_rails.json."
+  },
+
+  "audition_queue_in_roster": {
+    "where": "Documents/TRENCH/bodies/*.body240 -> diagnostics TRENCH roster (LIBRARY). Plots + synced audition pages in dev/tmp/author_sheet/.",
+    "bodies": [
+      {"name": "FUZZ_A_STARVE",    "gate": "PASS", "copy_risk_db": 17.9, "note": "bias-ladder morph; LPC-era centers (weaker provenance)"},
+      {"name": "FUZZ_B_RAZOR",     "gate": "PASS", "copy_risk_db": 27.9, "note": "one razor walking the rungs; LPC-era centers"},
+      {"name": "FUZZ_C_TONESTACK", "gate": "PASS", "copy_risk_db": 15.7, "note": "Q-as-tone scoop; LPC-era centers"},
+      {"name": "FUZZ_D_BATTERY",   "gate": "PASS", "copy_risk_db": 18.0, "note": "identity flip dc->ts; LPC-era centers"},
+      {"name": "FUZZ_E_SCREAMER",  "gate": "FAIL Qbloom only (policy exception)", "copy_risk_db": 16.7, "note": "EXACT TF, drive morph, hot .9889 razor 720->7k"},
+      {"name": "FUZZ_F_STARVED",   "gate": "FAIL Qbloom only (policy exception)", "copy_risk_db": 15.3, "note": "EXACT TF, bias morph: circuit dies, razor wakes"},
+      {"name": "PHON_SPLITTER",    "gate": "PASS", "copy_risk_db": 18.2, "note": "NEW WELL: measured metamaterial notch walk 1017->2300Hz + mode split at 8717Hz walking onstage"}
+    ],
+    "next_action": "Tyson: kill what deserves it, name the survivor's flaw. Listen with SLAM up (drive = the saturator's job; small-signal poles don't move with drive — measured)."
+  },
+
+  "new_well_phononic": {
+    "extractor": "trench-filters/tools/phononic_rails.py -> out/phononic_rails/{phononic_rails.json, contact_sheet.png}",
+    "data": "Zhang et al. 2023 inverse-design dataset: 20,000 structures, 10 geometry params -> absorption spectra 100-10000Hz (already audio band)",
+    "law": "morph = geometry-chain walk, every waypoint a REAL structure; absorption peak = zero rail (depth from alpha, radius from FWHM)"
+  },
+
+  "next_session_order": [
+    "1. Tyson's ear cull of the 7-body queue (blocks fuzz iteration).",
+    "2. Rust pen: port compile_lanes into forge/ + byte-parity fixture; then pz-handle UI (the session-sized build).",
+    "3. k-wave geometry-morph pipeline (data/simulators/k-wave-python, binaries on disk): simulate real cavities, deform stepwise, extract exact TFs -> replaces textbook modal tables for Lucifers/Meaty rails.",
+    "4. Full pole+ZERO system-ID (vector fitting / arma factorizer) on DVTD/HRTF/modal FRFs — same zeros-dropped sin as the circuit LPC may exist there.",
+    "5. Q100 radius-law verdict (see dossier q_second_axis) — settle by measurement vs X3 Q surfaces, one contact sheet.",
+    "6. Remaining 16-body ROM dossier -> grammar table."
+  ],
+
+  "unresolved_hazards": [
+    "Plugin-chain 13.5dB leveler still UNIDENTIFIED (STATE.md sound investigation) — probe before tuning; auditions judged through that chain.",
+    "source/ui/ still only partially tracked in df2 (fresh clone won't build) + many prior-session untracked tools — provenance unconfirmed, deliberately NOT committed tonight.",
+    "sheet_forge server killed; restart with python tools/sheet_forge.py if the browser editor is wanted."
+  ]
+}

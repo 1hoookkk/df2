@@ -1,0 +1,155 @@
+{
+  "name": "VOWL_aa_to_iy",
+  "lanes": [
+    {
+      "what": "F1 + F1F2 antiresonance",
+      "source": "F1 + F1F2 antiresonance: vowel_formants.json aa->iy (Peterson&Barney 1952)",
+      "low": {
+        "pole": [
+          730,
+          0.987
+        ],
+        "zero": [
+          566,
+          0.8114
+        ]
+      },
+      "high": {
+        "pole": [
+          270,
+          0.987
+        ],
+        "zero": [
+          786.3,
+          0.95
+        ]
+      },
+      "q_tighten": 0.02
+    },
+    {
+      "what": "F2 + F2F3 antiresonance",
+      "source": "F2 + F2F3 antiresonance: vowel_formants.json aa->iy (Peterson&Barney 1952)",
+      "low": {
+        "pole": [
+          1090,
+          0.986
+        ],
+        "zero": [
+          1630.8,
+          0.95
+        ]
+      },
+      "high": {
+        "pole": [
+          2290,
+          0.986
+        ],
+        "zero": [
+          2625.4,
+          0.95
+        ]
+      },
+      "q_tighten": 0.02
+    },
+    {
+      "what": "F3 + upper antiresonance",
+      "source": "F3 + upper antiresonance: vowel_formants.json aa->iy (Peterson&Barney 1952)",
+      "low": {
+        "pole": [
+          2440,
+          0.985
+        ],
+        "zero": [
+          3904,
+          0.93
+        ]
+      },
+      "high": {
+        "pole": [
+          3010,
+          0.985
+        ],
+        "zero": [
+          4816,
+          0.93
+        ]
+      },
+      "q_tighten": 0.02
+    },
+    {
+      "what": "throat mover below F1",
+      "source": "throat mover below F1: vowel_formants.json aa->iy (Peterson&Barney 1952)",
+      "low": {
+        "pole": [
+          165,
+          0.8761
+        ],
+        "zero": [
+          2692,
+          0.9579
+        ]
+      },
+      "high": {
+        "pole": [
+          122.7,
+          0.99
+        ],
+        "zero": [
+          243,
+          0.96
+        ]
+      },
+      "q_tighten": 0.06
+    },
+    {
+      "what": "parked top pole, sub-formant zero rail",
+      "source": "parked top pole, sub-formant zero rail: vowel_formants.json aa->iy (Peterson&Barney 1952)",
+      "low": {
+        "pole": [
+          10631,
+          0.8233
+        ],
+        "zero": [
+          365,
+          0.935
+        ]
+      },
+      "high": {
+        "pole": [
+          8400,
+          0.962
+        ],
+        "zero": [
+          1717.5,
+          0.944
+        ]
+      },
+      "q_tighten": 0.02
+    },
+    {
+      "what": "unit-notch canyon F2F3 valley -> top",
+      "source": "unit-notch canyon F2F3 valley -> top: vowel_formants.json aa->iy (Peterson&Barney 1952)",
+      "low": {
+        "pole": [
+          815.4,
+          0.99
+        ],
+        "zero": [
+          1630.8,
+          1
+        ]
+      },
+      "high": {
+        "pole": [
+          8000,
+          0.995
+        ],
+        "zero": [
+          16000,
+          1
+        ]
+      },
+      "q_tighten": 0
+    }
+  ]
+}
