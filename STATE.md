@@ -25,11 +25,19 @@ Pipeline (the ONLY legal one): words -> pyruntime.packed_interp.packed_bilinear
 (corner dict keys "A","B","C","D", calls the real trench-core lerp_u16 via FFI)
 -> kernel_to_biquad -> H_i(z), SR 39062.5. Plot convention (approved): six
 thin stage curves + bold cascade product, dB vs log-Hz, white background, at
-M0Q0/M100Q0/M0Q100/M100Q100/M50Q50. Reference script:
-scratchpad stages_clean.py from 2026-07-04 (copy into tools/ if kept).
-Goal of the study: understand the ROM stage grammar (roles, movers, zero
-placement) to inform the 4 ship bodies. Do NOT carry over any other claim
-from the 07-03/07-04 sessions without re-deriving it from packed words.
+M0Q0/M100Q0/M0Q100/M100Q100/M50Q50. TOOL (committed): `tools/plot_stages.py
+<body> [--mode per_stage|overlay|both]` -> dev/tmp/stage_plots/.
+First findings (re-derive, don't trust): Talking Hedz grammar = fixed crown
+(st1, ~9.5k) / big mover (st2, 950->200 Hz + 0->+19 dB shelf) / two traveling
+formants (st3, st4=bump-notch) / anchor (st5, ~4.5k) / FOUNDATION (st6:
+DC +54 dB gain bank paying back the others' -5..-6 dB normalization; hot
+source pole 200 Hz->1.8 kHz r.991-.999; TRUE unit-circle zero r=1.000 exactly,
+travelling 6.4k->17.3k; Q tightens poles, zeros untouched). Authorship verdict:
+hand-designed knobs (Morph Designer UI: shapes/freq/gain, two frames, Q law),
+machine-compiled to quantized bytes — same model as our morph_designer path.
+Goal of the study: the full stage-grammar dossier (Meaty, Lucifers, then the
+16) to inform the 4 ship bodies. Do NOT carry over any other claim from the
+07-03/07-04 sessions without re-deriving it from packed words.
 
 ## NEXT SESSION — the simplification pass (medium depth, Tyson 2026-07-04)
 Question on the table: "what am I overcomplicating — wrap it minimal, simple
