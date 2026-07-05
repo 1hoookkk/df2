@@ -32,7 +32,6 @@ SR = 39062.5
 OUT = os.path.join("dev", "tmp", "factory_voices")
 os.makedirs(OUT, exist_ok=True)
 RIM = 0.9985
-CEIL_DB = 34.0  # cascade peak ceiling; the ROM middles hit +35-40, AGC manages it
 FGRID = np.geomspace(30.0, SR * 0.49, 240)
 
 LETTERS = json.load(open(os.path.join("desk", "letters.json"), encoding="utf-8"))["letters"]
@@ -170,21 +169,10 @@ def compose(rng):
     frames = [("home", False), ("away", False), ("home", True), ("away", True)]
     corner_bq = {k: [voice_biquad(voices[s], fr, pr) for s in range(6)]
                  for k, (fr, pr) in zip("ABCD", frames)}
-    # global trim: keep the hottest corner's cascade peak under the ceiling by
-    # trimming the FOUNDATION stage uniformly (a constant dB offset on the body)
-    hottest = -1e9
-    for k in "ABCD":
-        casc = np.zeros_like(FGRID)
-        for bq in corner_bq[k]:
-            casc += _mag_db(bq, FGRID)
-        hottest = max(hottest, float(np.max(casc)))
-    trim = max(0.0, hottest - CEIL_DB)
-    if trim > 0:
-        # spread the trim across all six stages (a neutral output attenuation),
-        # never crush the anchor alone.
-        t = 10 ** (-(trim / 6.0) / 20.0)
-        for k in "ABCD":
-            corner_bq[k] = [[b[0] * t, b[1] * t, b[2] * t, b[3], b[4]] for b in corner_bq[k]]
+    # NO absolute level cap — that is the ENGINE'S AGC job (it engages on hot
+    # filter peaks by design; capping here just makes timid bodies). The
+    # generator owns SHAPE (the coordinated per-voice ledger) and MOTION
+    # (presence); the AGC owns level. (Tyson, 2026-07-05.)
     corners = {k: [_words(bq) for bq in corner_bq[k]] for k in "ABCD"}
     return corners, voices
 
@@ -269,7 +257,7 @@ def plot(kept, path):
         ax = axes[i // 2][i % 2]
         for m, col in ms:
             ax.semilogx(FGRID, resp(cw, m, 0.0), color=col, lw=1.5)
-        ax.set_xlim(40, 19500); ax.set_ylim(-30, 42)
+        ax.set_xlim(40, 19500); ax.set_ylim(-30, 54)
         ax.grid(True, which="both", color="#ececec", lw=0.6)
         ax.set_xticks([100, 1000, 10000]); ax.set_xticklabels(["100", "1k", "10k"])
         letters = " ".join(v["name"][:4] for v in voices)
