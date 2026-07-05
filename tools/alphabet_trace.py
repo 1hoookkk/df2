@@ -14,6 +14,7 @@ import numpy as np
 from tools.stage_features import MUSICAL_33, body_features, load_body
 
 LETTERS = ["FOUNDATION", "PAD", "REALROOT", "RESON", "CANYON", "SCOOP", "AIRCUT", "CROWN"]
+SR_QUARTER = 39062.5 / 4.0  # real-root sign boundary: angle 0 vs pi
 
 
 def _med_zero_ratio_depth(lane):
@@ -62,6 +63,7 @@ def _dist(values):
 
 def trace(out_path: str = os.path.join("desk", "letters.json")) -> dict:
     buckets = {name: {"pole_f": [], "pole_r": [], "zero_f": [], "zero_r": [],
+                      "zero_ratio": [], "real_pole_v": [], "real_zero_v": [],
                       "dc": [], "pole_travel_oct": [], "count": 0,
                       "mover": 0, "bank": 0} for name in LETTERS}
     lanes_total = 0
@@ -78,9 +80,18 @@ def trace(out_path: str = os.path.join("desk", "letters.json")) -> dict:
                 for p in c["poles"]:
                     if not p["real"] and p["f"] > 25:
                         b["pole_f"].append(p["f"]); b["pole_r"].append(p["r"])
+                    elif p["real"] and p["r"] > 0.01:
+                        # signed real-root value: angle 0 -> +r, angle pi -> -r
+                        b["real_pole_v"].append(p["r"] if p["f"] < SR_QUARTER else -p["r"])
                 for z in c["zeros"]:
                     if not z["real"] and z["f"] > 25:
                         b["zero_f"].append(z["f"]); b["zero_r"].append(z["r"])
+                    elif z["real"] and z["r"] > 0.01:
+                        b["real_zero_v"].append(z["r"] if z["f"] < SR_QUARTER else -z["r"])
+                zs_c = [z for z in c["zeros"] if not z["real"]]
+                ps_c = [p for p in c["poles"] if not p["real"]]
+                if zs_c and ps_c and ps_c[0]["f"] > 25:
+                    b["zero_ratio"].append(zs_c[0]["f"] / ps_c[0]["f"])
                 b["dc"].append(c["dc"])
     letters = {}
     for name, b in buckets.items():
@@ -92,6 +103,8 @@ def trace(out_path: str = os.path.join("desk", "letters.json")) -> dict:
             "bank_frac": b["bank"] / b["count"],
             "pole_f": _dist(b["pole_f"]), "pole_r": _dist(b["pole_r"]),
             "zero_f": _dist(b["zero_f"]), "zero_r": _dist(b["zero_r"]),
+            "zero_ratio": _dist(b["zero_ratio"]),
+            "real_pole_v": _dist(b["real_pole_v"]), "real_zero_v": _dist(b["real_zero_v"]),
             "dc": _dist(b["dc"]), "pole_travel_oct": _dist(b["pole_travel_oct"]),
         }
     doc = {"version": 1, "sr": 39062.5,
