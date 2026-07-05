@@ -14,6 +14,8 @@ use cpal::traits::{DeviceTrait, HostTrait, StreamTrait};
 use serde::Deserialize;
 use trench_core::{Cartridge, FilterEngine, InputMode, SpatialMode};
 
+mod letters;
+
 const SR: f64 = 39_062.5;
 const TAU: f64 = std::f64::consts::PI * 2.0;
 
@@ -32,10 +34,7 @@ fn encode(v: f64) -> u16 {
 }
 
 fn lerp_u16(a: u16, b: u16, frac: f32) -> u16 {
-    let product = (b as i32 - a as i32) as f32 * frac;
-    let trunc = product.trunc() as i32;
-    let delta = (trunc + 0x8000).rem_euclid(0x1_0000) - 0x8000;
-    ((a as i32 + delta) & 0xFFFF) as u16
+    trench_core::minifloat::lerp_u16(a, b, frac)
 }
 
 // kernel <-> biquad (faithful)
@@ -166,13 +165,18 @@ enum Cut {
     SubKill,
     AirCap,
     AirKill,
+    /// FOUNDATION null: a TRUE unit-circle zero (r = 1.0 exactly) at its own
+    /// absolute frequency (`Part::zspot`) — the stage-6 letter all three
+    /// studied iconics carry at every corner (STATE.md dossier; observed zero
+    /// travel ~6.4k-18k Hz).
+    Null,
     /// Bake-only: an explicit zero authored relative to the pole.
     /// `absolute` → zero_hz = ratio (Hz); else zero_hz = pole_hz * ratio.
     Custom { ratio: f64, depth: f64, absolute: bool },
 }
 impl Cut {
     // the clean-room per-lane articulation set (one-row zeros). Order = chip order.
-    const ALL: [Cut; 7] = [Cut::None, Cut::Hug, Cut::Tear, Cut::Canyon, Cut::AirCap, Cut::SubKill, Cut::AirKill];
+    const ALL: [Cut; 8] = [Cut::None, Cut::Hug, Cut::Tear, Cut::Canyon, Cut::AirCap, Cut::SubKill, Cut::AirKill, Cut::Null];
     // short chip face — minimal text on screen
     fn chip(self) -> &'static str {
         match self {
@@ -183,6 +187,7 @@ impl Cut {
             Cut::AirCap => "cap",
             Cut::SubKill => "sub",
             Cut::AirKill => "airk",
+            Cut::Null => "null",
             Cut::Custom { .. } => "·",
         }
     }
@@ -195,6 +200,7 @@ struct Part {
     sharp: f64, // how sharp (pole radius 0.5..0.9999)
     loud: f64,  // how loud (section gain mult)
     cut: Cut,   // where it scoops
+    zspot: f64, // absolute zero Hz — read by Cut::Null only
 }
 impl Part {
     fn biquad(&self) -> [f64; 5] {
@@ -217,6 +223,7 @@ impl Part {
             Cut::SubKill => (fp * 0.25, 0.85),
             Cut::AirCap => (fp * 4.0, 0.60),
             Cut::AirKill => (12000.0, 0.70),
+            Cut::Null => (self.zspot, 1.0),
             Cut::Custom { ratio, depth, absolute } => {
                 (if absolute { ratio } else { fp * ratio }, depth)
             }
@@ -229,8 +236,19 @@ impl Part {
         let wz = TAU * fz.clamp(20.0, SR * 0.49) / SR;
         let nb1 = -2.0 * rz * wz.cos();
         let nb2 = rz * rz;
-        // unity-DC gain so cuts shape without exploding level, scaled by loud
-        let g = (1.0 + a1 + a2) / (1.0 + nb1 + nb2).max(1e-9) * self.loud;
+        let g = if self.cut == Cut::Null {
+            // FOUNDATION law: anchor at the geometric mid between pole and zero
+            // (neutral mids). DC weight + top kill then follow from the pole,
+            // as in the measured stage-6 anatomy. DC-normalizing this letter
+            // slides the whole descent down and buries the other lanes
+            // (Tyson-caught 2026-07-05).
+            let fr = (fp * fz.clamp(20.0, SR * 0.49)).sqrt();
+            let mid = 10f64.powf(biquad_mag_db([1.0, nb1, nb2, a1, a2], fr) / 20.0);
+            self.loud / mid.max(1e-9)
+        } else {
+            // unity-DC gain so cuts shape without exploding level, scaled by loud
+            (1.0 + a1 + a2) / (1.0 + nb1 + nb2).max(1e-9) * self.loud
+        };
         [g, g * nb1, g * nb2, a1, a2]
     }
     fn words(&self) -> [u16; 5] {
@@ -252,7 +270,14 @@ enum PresetKind {
 }
 
 fn part(on: bool, spot: f64, sharp: f64, loud: f64, cut: Cut) -> Part {
-    Part { on, spot, sharp, loud, cut }
+    // zspot default sits mid the observed foundation-zero travel band (6.4k-18k)
+    Part { on, spot, sharp, loud, cut, zspot: 8000.0 }
+}
+
+// foundation lane: the stage-6 letter every musical ROM body carries (33/33) —
+// a TRUE unit-circle zero at `zspot`, per-corner so the null travels with morph.
+fn fpart(spot: f64, sharp: f64, loud: f64, zspot: f64) -> Part {
+    Part { on: true, spot, sharp, loud, cut: Cut::Null, zspot }
 }
 
 impl Body {
@@ -271,7 +296,7 @@ impl Body {
                         part(true, 1450.0, 0.9880, 0.86, Cut::Canyon),
                         part(true, 3200.0, 0.9750, 0.58, Cut::Tear),
                         part(true, 7800.0, 0.8800, 0.34, Cut::AirKill),
-                        part(true, 4200.0, 0.7200, 0.62, Cut::Custom { ratio: 650.0, depth: 0.96, absolute: true }),
+                        fpart(4200.0, 0.7200, 0.62, 9000.0),
                     ],
                     [
                         part(true, 260.0, 0.9975, 1.00, Cut::Canyon),
@@ -279,7 +304,7 @@ impl Body {
                         part(true, 2050.0, 0.9900, 0.92, Cut::Canyon),
                         part(true, 4100.0, 0.9820, 0.66, Cut::Tear),
                         part(true, 9200.0, 0.8600, 0.30, Cut::AirKill),
-                        part(true, 5200.0, 0.7400, 0.58, Cut::Custom { ratio: 820.0, depth: 0.97, absolute: true }),
+                        fpart(5200.0, 0.7400, 0.58, 12500.0),
                     ],
                     [
                         part(true, 220.0, 0.9999, 1.18, Cut::Canyon),
@@ -287,7 +312,7 @@ impl Body {
                         part(true, 1450.0, 0.9984, 0.94, Cut::Canyon),
                         part(true, 3200.0, 0.9940, 0.64, Cut::Tear),
                         part(true, 7800.0, 0.9300, 0.30, Cut::AirKill),
-                        part(true, 4200.0, 0.7800, 0.70, Cut::Custom { ratio: 520.0, depth: 0.985, absolute: true }),
+                        fpart(4200.0, 0.7800, 0.70, 9000.0),
                     ],
                     [
                         part(true, 260.0, 0.9999, 1.14, Cut::Canyon),
@@ -295,7 +320,7 @@ impl Body {
                         part(true, 2050.0, 0.9988, 1.02, Cut::Canyon),
                         part(true, 4100.0, 0.9960, 0.70, Cut::Tear),
                         part(true, 9200.0, 0.9300, 0.28, Cut::AirKill),
-                        part(true, 5200.0, 0.8000, 0.68, Cut::Custom { ratio: 760.0, depth: 0.985, absolute: true }),
+                        fpart(5200.0, 0.8000, 0.68, 12500.0),
                     ],
                 ],
             },
@@ -308,7 +333,7 @@ impl Body {
                         part(true, 820.0, 0.9780, 0.74, Cut::Tear),
                         part(true, 1640.0, 0.9820, 0.52, Cut::Canyon),
                         part(true, 3280.0, 0.9860, 0.58, Cut::Tear),
-                        part(true, 6560.0, 0.9800, 0.38, Cut::AirKill),
+                        fpart(6560.0, 0.9800, 0.38, 11000.0),
                     ],
                     [
                         part(true, 240.0, 0.9580, 0.82, Cut::SubKill),
@@ -316,7 +341,7 @@ impl Body {
                         part(true, 1090.0, 0.9840, 0.54, Cut::Canyon),
                         part(true, 2180.0, 0.9890, 0.70, Cut::Tear),
                         part(true, 4360.0, 0.9920, 0.46, Cut::Canyon),
-                        part(true, 8720.0, 0.9820, 0.34, Cut::AirKill),
+                        fpart(8720.0, 0.9820, 0.34, 14500.0),
                     ],
                     [
                         part(true, 180.0, 0.9920, 0.98, Cut::SubKill),
@@ -324,7 +349,7 @@ impl Body {
                         part(true, 820.0, 0.9978, 0.82, Cut::Tear),
                         part(true, 1640.0, 0.9984, 0.58, Cut::Canyon),
                         part(true, 3280.0, 0.9990, 0.64, Cut::Tear),
-                        part(true, 6560.0, 0.9960, 0.36, Cut::AirKill),
+                        fpart(6560.0, 0.9960, 0.36, 11000.0),
                     ],
                     [
                         part(true, 240.0, 0.9920, 0.92, Cut::SubKill),
@@ -332,7 +357,7 @@ impl Body {
                         part(true, 1090.0, 0.9982, 0.58, Cut::Canyon),
                         part(true, 2180.0, 0.9990, 0.76, Cut::Tear),
                         part(true, 4360.0, 0.9995, 0.50, Cut::Canyon),
-                        part(true, 8720.0, 0.9960, 0.32, Cut::AirKill),
+                        fpart(8720.0, 0.9960, 0.32, 14500.0),
                     ],
                 ],
             },
@@ -345,7 +370,7 @@ impl Body {
                         part(true, 780.0, 0.9700, 0.76, Cut::Custom { ratio: 4130.0, depth: 0.96, absolute: true }),
                         part(true, 2220.0, 0.9500, 0.52, Cut::Custom { ratio: 545.0, depth: 0.96, absolute: true }),
                         part(true, 3790.0, 0.9440, 0.44, Cut::Custom { ratio: 9650.0, depth: 0.98, absolute: true }),
-                        part(true, 8250.0, 0.8300, 0.28, Cut::AirKill),
+                        fpart(8250.0, 0.8300, 0.28, 13500.0),
                     ],
                     [
                         part(true, 320.0, 0.9965, 1.00, Cut::Canyon),
@@ -353,7 +378,7 @@ impl Body {
                         part(true, 1090.0, 0.9750, 0.82, Cut::Custom { ratio: 780.0, depth: 0.94, absolute: true }),
                         part(true, 2840.0, 0.9600, 0.50, Cut::Custom { ratio: 8250.0, depth: 0.98, absolute: true }),
                         part(true, 5450.0, 0.9500, 0.40, Cut::Custom { ratio: 8875.0, depth: 0.98, absolute: true }),
-                        part(true, 11200.0, 0.8200, 0.24, Cut::AirKill),
+                        fpart(11200.0, 0.8200, 0.24, 17000.0),
                     ],
                     [
                         part(true, 190.0, 0.9999, 1.20, Cut::Canyon),
@@ -361,7 +386,7 @@ impl Body {
                         part(true, 780.0, 0.9940, 0.84, Cut::Custom { ratio: 4130.0, depth: 0.99, absolute: true }),
                         part(true, 2220.0, 0.9820, 0.56, Cut::Custom { ratio: 545.0, depth: 0.99, absolute: true }),
                         part(true, 3790.0, 0.9780, 0.48, Cut::Custom { ratio: 9650.0, depth: 0.99, absolute: true }),
-                        part(true, 8250.0, 0.8800, 0.24, Cut::AirKill),
+                        fpart(8250.0, 0.8800, 0.24, 13500.0),
                     ],
                     [
                         part(true, 320.0, 0.9999, 1.16, Cut::Canyon),
@@ -369,7 +394,7 @@ impl Body {
                         part(true, 1090.0, 0.9950, 0.90, Cut::Custom { ratio: 780.0, depth: 0.98, absolute: true }),
                         part(true, 2840.0, 0.9860, 0.54, Cut::Custom { ratio: 8250.0, depth: 0.99, absolute: true }),
                         part(true, 5450.0, 0.9820, 0.44, Cut::Custom { ratio: 8875.0, depth: 0.99, absolute: true }),
-                        part(true, 11200.0, 0.8800, 0.22, Cut::AirKill),
+                        fpart(11200.0, 0.8800, 0.22, 17000.0),
                     ],
                 ],
             },
@@ -382,7 +407,7 @@ impl Body {
                         part(true, 1100.0, 0.7800, 0.58, Cut::AirCap),
                         part(true, 2400.0, 0.7200, 0.40, Cut::AirKill),
                         part(true, 5200.0, 0.6800, 0.28, Cut::AirKill),
-                        part(true, 14000.0, 0.6200, 0.20, Cut::AirKill),
+                        fpart(14000.0, 0.6200, 0.20, 17500.0),
                     ],
                     [
                         part(true, 360.0, 0.9960, 1.02, Cut::Canyon),
@@ -390,7 +415,7 @@ impl Body {
                         part(true, 1500.0, 0.8200, 0.48, Cut::AirCap),
                         part(true, 3300.0, 0.7600, 0.36, Cut::AirKill),
                         part(true, 7200.0, 0.7000, 0.24, Cut::AirKill),
-                        part(true, 16000.0, 0.6400, 0.18, Cut::AirKill),
+                        fpart(16000.0, 0.6400, 0.18, 18000.0),
                     ],
                     [
                         part(true, 240.0, 0.9999, 1.22, Cut::Canyon),
@@ -398,7 +423,7 @@ impl Body {
                         part(true, 1100.0, 0.9000, 0.54, Cut::AirCap),
                         part(true, 2400.0, 0.8600, 0.34, Cut::AirKill),
                         part(true, 5200.0, 0.8200, 0.22, Cut::AirKill),
-                        part(true, 14000.0, 0.7600, 0.16, Cut::AirKill),
+                        fpart(14000.0, 0.7600, 0.16, 17500.0),
                     ],
                     [
                         part(true, 360.0, 0.9999, 1.18, Cut::Canyon),
@@ -406,7 +431,7 @@ impl Body {
                         part(true, 1500.0, 0.9200, 0.46, Cut::AirCap),
                         part(true, 3300.0, 0.8800, 0.30, Cut::AirKill),
                         part(true, 7200.0, 0.8400, 0.20, Cut::AirKill),
-                        part(true, 16000.0, 0.7800, 0.14, Cut::AirKill),
+                        fpart(16000.0, 0.7800, 0.14, 18000.0),
                     ],
                 ],
             },
@@ -675,7 +700,9 @@ fn lerp_col(a: Color32, b: Color32, t: f32) -> Color32 {
 
 // horizontal fader; returns Some(new t in 0..1) when the user moved it.
 fn fader(ui: &mut egui::Ui, p: &egui::Painter, rect: Rect, id: &str, t: f32) -> Option<f32> {
-    let resp = ui.interact(rect, egui::Id::new(id), Sense::click_and_drag());
+    // hit target slightly taller than the drawn rail — easier to grab, still
+    // clear of the neighbouring row (rows sit 16px apart).
+    let resp = ui.interact(rect.expand2(egui::vec2(0.0, 2.0)), egui::Id::new(id), Sense::click_and_drag());
     let mut out = None;
     if resp.dragged() || resp.clicked() {
         if let Some(pos) = resp.interact_pointer_pos() {
@@ -955,7 +982,12 @@ impl Forge {
                     let bytes = self.body.pack_240();
                     let path = format!("{}.body240", sanitize(&self.body.name));
                     self.status = match std::fs::write(&path, &bytes) {
-                        Ok(_) => format!("saved {path}"),
+                        Ok(_) => {
+                            let abs = std::fs::canonicalize(&path)
+                                .map(|p| p.display().to_string().trim_start_matches(r"\\?\").to_string())
+                                .unwrap_or_else(|_| path.clone());
+                            format!("saved {abs}")
+                        }
                         Err(e) => format!("save failed: {e}"),
                     };
                 }
@@ -991,15 +1023,18 @@ impl Forge {
         let (db_lo, db_hi) = (-30.0_f64, 36.0_f64);
         let fy = |db: f64| plot.bottom() - ((db.clamp(db_lo, db_hi) - db_lo) / (db_hi - db_lo)) as f32 * plot.height();
 
-        // graticule
-        for f in [100.0, 1000.0, 10000.0] {
+        // graticule — real units, dim, so the schematic reads in Hz and dB
+        for (f, lab) in [(100.0, "100"), (1000.0, "1k"), (10000.0, "10k")] {
             let x = fx(f);
             p.line_segment([Pos2::new(x, plot.top()), Pos2::new(x, plot.bottom())], Stroke::new(1.0, Color32::from_rgb(26, 30, 35)));
+            p.text(Pos2::new(x, plot.bottom() + 3.0), Align2::CENTER_TOP, lab, FontId::monospace(9.0), DIM);
         }
         for db in [24.0, 12.0, 0.0, -12.0, -24.0] {
             let y = fy(db);
             let s = if db == 0.0 { Stroke::new(1.0, Color32::from_rgb(34, 39, 45)) } else { Stroke::new(1.0, Color32::from_rgb(22, 26, 30)) };
             p.line_segment([Pos2::new(plot.left(), y), Pos2::new(plot.right(), y)], s);
+            let lab = if db > 0.0 { format!("+{db:.0}") } else { format!("{db:.0}") };
+            p.text(Pos2::new(plot.left() - 5.0, y), Align2::RIGHT_CENTER, &lab, FontId::monospace(9.0), DIM);
         }
         p.rect_stroke(plot, Rounding::ZERO, Stroke::new(1.0, LINE));
 
@@ -1123,6 +1158,17 @@ impl Forge {
         let yrow = |k: f32| c.top() + 18.0 + k * 16.0;
         let lo = F_LO.log10();
         let hi = f_hi().log10();
+        // FOUNDATION null live: the zero gets its own frequency control,
+        // sat on the identity row beside the pole's Hz.
+        if part.cut == Cut::Null {
+            p.text(Pos2::new(c.right() - 152.0, c.top() + 7.0), Align2::LEFT_CENTER, "z", FontId::monospace(8.0), DIM);
+            let zr = Rect::from_min_size(Pos2::new(c.right() - 142.0, c.top() + 1.0), egui::vec2(96.0, 12.0));
+            let zt = ((part.zspot.log10() - lo) / (hi - lo)) as f32;
+            if let Some(nt) = fader(ui, p, zr, &format!("zsp{}{}", self.corner, i), zt) {
+                part.zspot = 10f64.powf(lo + nt as f64 * (hi - lo));
+            }
+            p.text(Pos2::new(c.right(), c.top() + 7.0), Align2::RIGHT_CENTER, &format!("{}", part.zspot.round()), FontId::monospace(9.0), MID);
+        }
         // bone: Hz wide, then radius | level
         p.text(Pos2::new(c.left(), yrow(0.0) + 6.0), Align2::LEFT_CENTER, "hz", FontId::monospace(8.0), DIM);
         let hzr = Rect::from_min_size(Pos2::new(c.left() + 16.0, yrow(0.0)), egui::vec2(c.width() - 16.0, 12.0));
@@ -1137,10 +1183,14 @@ impl Forge {
         if let Some(nt) = fader(ui, p, radr, &format!("rad{}{}", self.corner, i), st) {
             part.sharp = 0.5 + nt as f64 * (0.9999 - 0.5);
         }
-        let lvlr = Rect::from_min_size(Pos2::new(c.left() + 16.0 + half + 8.0, yrow(1.0)), egui::vec2(half, 12.0));
-        let lt = ((part.loud - 0.3) / (2.5 - 0.3)) as f32;
+        p.text(Pos2::new(c.left() + 16.0 + half + 8.0, yrow(1.0) + 6.0), Align2::LEFT_CENTER, "g", FontId::monospace(8.0), DIM);
+        let lvlr = Rect::from_min_size(Pos2::new(c.left() + 16.0 + half + 20.0, yrow(1.0)), egui::vec2(half - 12.0, 12.0));
+        // the LEDGER fader: authored section level, ±24 dB about the anchor —
+        // the ROM's drama is big opposing per-stage levels (median max +57 dB),
+        // sanity policed by the audit, never by construction.
+        let lt = ((20.0 * part.loud.max(1e-6).log10() + 24.0) / 48.0) as f32;
         if let Some(nt) = fader(ui, p, lvlr, &format!("lvl{}{}", self.corner, i), lt) {
-            part.loud = 0.3 + nt as f64 * (2.5 - 0.3);
+            part.loud = 10f64.powf((nt as f64 * 48.0 - 24.0) / 20.0);
         }
 
         // divider — bone above, zero rule below
@@ -1198,6 +1248,9 @@ impl Forge {
         let kill = Rect::from_min_size(Pos2::new(inner.left() + bw + 8.0, inner.top()), egui::vec2(bw, 40.0));
         if ibutton(ui, p, keep, "keep", "keep", GOOD, GROUND, 15.0) { action = Some("_keep"); }
         if ibutton(ui, p, kill, "kill", "kill", WARN, GROUND, 15.0) { action = Some("_kill"); }
+        // hotkey hints, quiet, in the button corners
+        p.text(Pos2::new(keep.right() - 6.0, keep.bottom() - 4.0), Align2::RIGHT_BOTTOM, "k", FontId::monospace(9.0), lerp_col(GOOD, GROUND, 0.45));
+        p.text(Pos2::new(kill.right() - 6.0, kill.bottom() - 4.0), Align2::RIGHT_BOTTOM, "x", FontId::monospace(9.0), lerp_col(WARN, GROUND, 0.45));
 
         // prev / next + count
         let ny = inner.top() + 48.0;
@@ -1205,7 +1258,8 @@ impl Forge {
         let nx = Rect::from_min_size(Pos2::new(inner.left() + 44.0, ny), egui::vec2(40.0, 22.0));
         if ibutton(ui, p, pv, "prev", "◀", LINE, INK, 12.0) { goto = Some(cull.idx.saturating_sub(1)); }
         if ibutton(ui, p, nx, "next", "▶", LINE, INK, 12.0) { goto = Some((cull.idx + 1).min(last)); }
-        p.text(Pos2::new(inner.right(), ny + 11.0), Align2::RIGHT_CENTER, &format!("{}/{}", (cull.idx + 1).min(cull.entries.len()), cull.entries.len()), FontId::monospace(12.0), MID);
+        let tally = format!("{}/{}  ·  k{} x{}", (cull.idx + 1).min(cull.entries.len()), cull.entries.len(), cull.kept, cull.killed);
+        p.text(Pos2::new(inner.right(), ny + 11.0), Align2::RIGHT_CENTER, &tally, FontId::monospace(11.0), MID);
 
         // the list — hand-drawn rows, wheel-scrolled, clipped
         let list = Rect::from_min_max(Pos2::new(inner.left(), ny + 30.0), inner.max);
@@ -1283,6 +1337,7 @@ impl Forge {
         // --- SURVIVAL: punch made the dominant control ---
         let sx = inner.left() + 334.0;
         p.text(Pos2::new(sx, top), Align2::LEFT_TOP, "PUNCH", FontId::monospace(11.0), ACCENT);
+        p.text(Pos2::new(sx + 168.0, top), Align2::RIGHT_TOP, &format!("{:.0}", self.tame * 100.0), FontId::monospace(9.0), DIM);
         let bigr = Rect::from_min_size(Pos2::new(sx, top + 15.0), egui::vec2(168.0, 18.0));
         // thicker rail so the AGC drive reads as the heavy control
         p.rect_filled(Rect::from_min_max(Pos2::new(bigr.left(), bigr.center().y - 3.0), Pos2::new(bigr.right(), bigr.center().y + 3.0)), Rounding::same(2.0), TRACK);
@@ -1294,15 +1349,21 @@ impl Forge {
         let w = Rect::from_min_size(Pos2::new(sx + sm + 8.0, top + 38.0), egui::vec2(sm, 10.0));
         if let Some(v) = fader(ui, p, g, "grit", self.grit) { self.grit = v; }
         if let Some(v) = fader(ui, p, w, "wide", self.wide) { self.wide = v; }
+        p.text(Pos2::new(g.left(), top + 52.0), Align2::LEFT_TOP, "grit", FontId::monospace(8.0), DIM);
+        p.text(Pos2::new(w.left(), top + 52.0), Align2::LEFT_TOP, "wide", FontId::monospace(8.0), DIM);
 
         // --- BLEND: morph + q ---
         let bx = sx + 196.0;
         p.vline(bx - 14.0, b.y_range(), Stroke::new(1.0, LINE));
         p.text(Pos2::new(bx, top), Align2::LEFT_TOP, "blend", FontId::monospace(10.0), DIM);
-        let m = Rect::from_min_size(Pos2::new(bx, top + 16.0), egui::vec2(168.0, 12.0));
-        let qf = Rect::from_min_size(Pos2::new(bx, top + 33.0), egui::vec2(168.0, 12.0));
+        let m = Rect::from_min_size(Pos2::new(bx + 16.0, top + 16.0), egui::vec2(168.0, 12.0));
+        let qf = Rect::from_min_size(Pos2::new(bx + 16.0, top + 33.0), egui::vec2(168.0, 12.0));
+        p.text(Pos2::new(bx, m.center().y), Align2::LEFT_CENTER, "m", FontId::monospace(8.0), DIM);
+        p.text(Pos2::new(bx, qf.center().y), Align2::LEFT_CENTER, "q", FontId::monospace(8.0), DIM);
         if let Some(v) = fader(ui, p, m, "morph", self.morph) { self.morph = v; }
         if let Some(v) = fader(ui, p, qf, "q", self.q) { self.q = v; }
+        p.text(Pos2::new(m.right() + 8.0, m.center().y), Align2::LEFT_CENTER, &format!("{:.0}", self.morph * 100.0), FontId::monospace(9.0), MID);
+        p.text(Pos2::new(qf.right() + 8.0, qf.center().y), Align2::LEFT_CENTER, &format!("{:.0}", self.q * 100.0), FontId::monospace(9.0), MID);
 
         if !self.status.is_empty() {
             p.text(Pos2::new(inner.right(), inner.bottom()), Align2::RIGHT_BOTTOM, &self.status, FontId::monospace(10.0), MID);
@@ -1510,7 +1571,11 @@ fn named_cut(s: &str) -> Option<Cut> {
     })
 }
 fn lane_cut(a: &Articulation) -> Result<Cut, String> {
-    if a.cut == "custom" {
+    if a.cut == "null" {
+        // foundation null: zero.ratio carries the absolute zero Hz; depth is 1.0 by definition
+        a.zero.ok_or("null cut requires zero {ratio: Hz}")?;
+        Ok(Cut::Null)
+    } else if a.cut == "custom" {
         let z = a.zero.ok_or("custom cut requires zero {ratio,depth}")?;
         Ok(Cut::Custom {
             ratio: z.ratio,
@@ -1527,7 +1592,7 @@ fn bake_recipe(rf: &RecipeFile) -> Result<Body, String> {
     if r.lanes.len() != 6 {
         return Err(format!("need exactly 6 lanes, got {}", r.lanes.len()));
     }
-    let mut base = [Part { on: true, spot: 0.0, sharp: 0.0, loud: 0.0, cut: Cut::None }; 6];
+    let mut base = [Part { on: true, spot: 0.0, sharp: 0.0, loud: 0.0, cut: Cut::None, zspot: 8000.0 }; 6];
     let mut morph_moves = [0.0f64; 6];
     let mut target_hz: [Option<f64>; 6] = [None; 6];
     for (i, l) in r.lanes.iter().enumerate() {
@@ -1537,6 +1602,7 @@ fn bake_recipe(rf: &RecipeFile) -> Result<Body, String> {
             sharp: l.anatomy.sharp,
             loud: l.survival.gain,
             cut: lane_cut(&l.articulation)?,
+            zspot: l.articulation.zero.map(|z| z.ratio).unwrap_or(8000.0),
         };
         morph_moves[i] = l.articulation.morph_move;
         target_hz[i] = l.anatomy.target_hz;
@@ -1738,6 +1804,109 @@ fn write_builtin_presets(out_dir: &str) -> Result<String, String> {
     std::fs::write(&manifest_path, text).map_err(|e| format!("write {}: {e}", manifest_path.display()))?;
 
     Ok(format!("wrote {} presets -> {}", manifest.len(), dir.display()))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn body_bytes_roundtrip() {
+        let body = Body::starter();
+        let bytes = body.pack_240();
+        assert_eq!(bytes.len(), 240);
+        let words = words_from_body_bytes(&bytes).expect("240 bytes parse");
+        assert_eq!(words_to_body_bytes(&words), bytes);
+    }
+
+    #[test]
+    fn lerp_matches_msvc_reference() {
+        // the C formula: (uint16_t)((int16_t)((float)((int)b - (int)a) * frac) + a)
+        let reference = |a: u16, b: u16, frac: f32| -> u16 {
+            let product = (b as i32 - a as i32) as f32 * frac;
+            let trunc = product.trunc() as i32;
+            let delta = (trunc + 0x8000).rem_euclid(0x1_0000) - 0x8000;
+            ((a as i32 + delta) & 0xFFFF) as u16
+        };
+        for &(a, b) in &[(0u16, 0xFFFFu16), (0xFFFF, 0), (0x7FFF, 0x8000), (0x8000, 0x7FFF), (1234, 54321), (65535, 1)] {
+            for i in 0..=16 {
+                let frac = i as f32 / 16.0;
+                assert_eq!(lerp_u16(a, b, frac), reference(a, b, frac), "a={a} b={b} frac={frac}");
+            }
+        }
+    }
+
+    #[test]
+    fn null_cut_survives_packing_exactly_on_unit_circle() {
+        // the FOUNDATION letter: after minifloat pack/unpack the zero must sit
+        // at r = 1.0 EXACTLY (b2 == b0), like every studied ROM iconic.
+        let p = Part { on: true, spot: 220.0, sharp: 0.995, loud: 1.0, cut: Cut::Null, zspot: 8000.0 };
+        let b = words_to_biquad(p.words());
+        assert!(b[0] != 0.0);
+        assert_eq!(b[2], b[0], "zero radius must be exactly 1.0 after packing");
+        // pole side untouched and stable
+        assert!(b[4].max(0.0).sqrt() < 1.0);
+        // a true audible kill lands near the asked Hz (minifloat may shift it slightly)
+        let (mut min_db, mut min_f) = (f64::MAX, 0.0);
+        for i in 0..4000 {
+            let f = 4000.0 + i as f64;
+            let m = biquad_mag_db(b, f);
+            if m < min_db {
+                min_db = m;
+                min_f = f;
+            }
+        }
+        assert!(min_db < -60.0, "null depth {min_db:.1} dB at {min_f} Hz");
+        assert!((min_f - 8000.0).abs() < 800.0, "null landed at {min_f} Hz, asked 8000");
+        // the FOUNDATION level law: neutral mids (anchored at sqrt(fp*fz)),
+        // real weight below, top killed — never DC-normalized.
+        let fr = (220.0f64 * 8000.0).sqrt();
+        let mid = biquad_mag_db(b, fr);
+        assert!(mid.abs() < 1.5, "mid anchor {mid:.1} dB at {fr:.0} Hz, want ~0");
+        let dc = biquad_mag_db(b, F_LO);
+        assert!(dc > 10.0, "foundation weight {dc:.1} dB at DC side, want > +10");
+        let top = biquad_mag_db(b, 15000.0);
+        assert!(top < -20.0, "top {top:.1} dB at 15 kHz, want killed");
+    }
+
+    #[test]
+    fn presets_stable_over_grid() {
+        for kind in [PresetKind::Vowel, PresetKind::Comb, PresetKind::Canyon, PresetKind::Cliff] {
+            let body = Body::preset(kind);
+            assert_eq!(body.pack_240().len(), 240);
+            let wr = worst_radius_grid(&body);
+            assert!(wr < 1.0, "preset {:?} worst pole radius {wr} >= 1", body.name);
+        }
+    }
+
+    #[test]
+    fn ledger_reaches_rom_scale_gestures() {
+        // the flatness ceiling is gone: cranking one lane's ledger must move
+        // the packed cascade by ROM-scale amounts, not ±8 dB.
+        let quiet = Body::preset(PresetKind::Vowel);
+        let mut loud = Body::preset(PresetKind::Vowel);
+        loud.corners[0][1].loud = 10.0; // +20 dB on the 620 Hz lane at C0
+        let mag = |b: &Body, f: f64| {
+            let stages = live_words(&b.words_all(), 0.0, 0.0);
+            stages_mag(&stages, f)
+        };
+        let lift = mag(&loud, 620.0) - mag(&quiet, 620.0);
+        assert!(lift > 15.0, "ledger lift only {lift:.1} dB, want ROM-scale");
+    }
+
+    #[test]
+    fn presets_carry_the_foundation() {
+        // the grammar law (33/33 musical ROM bodies): stage 6 holds a TRUE
+        // unit-circle zero at every corner. Defaults must encode it.
+        for kind in [PresetKind::Vowel, PresetKind::Comb, PresetKind::Canyon, PresetKind::Cliff] {
+            let body = Body::preset(kind);
+            let words = body.words_all();
+            for c in 0..4 {
+                let b = words_to_biquad(words[c][5]);
+                assert!(b[0] != 0.0 && b[2] == b[0], "preset {:?} corner {c} stage 6 must carry the foundation null", body.name);
+            }
+        }
+    }
 }
 
 fn main() -> eframe::Result<()> {
