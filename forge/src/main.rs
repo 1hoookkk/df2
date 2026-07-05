@@ -911,6 +911,7 @@ struct Forge {
     cull_scroll: f32,       // list scroll offset (px) for the hand-drawn body list
     morph: f32,
     q: f32,
+    snap: bool, // rail-snap frequencies to the grounded table
     src: usize,
     tame: f32, // PUNCH: agc compression amount
     grit: f32, // PUNCH: desk slam
@@ -937,6 +938,7 @@ impl Forge {
             cull_scroll: 0.0,
             morph: 0.33,
             q: 0.0,
+            snap: true,
             src: 0,
             tame: 0.5,
             grit: 0.3,
@@ -976,6 +978,10 @@ impl Forge {
                         self.corner = i;
                     }
                     x += 38.0;
+                }
+                let snr = Rect::from_min_size(Pos2::new(x + 6.0, cy - 10.0), egui::vec2(52.0, 20.0));
+                if tab(ui, p, snr, "snaptoggle", "snap", self.snap, 10.0) {
+                    self.snap = !self.snap;
                 }
                 let save = Rect::from_min_size(Pos2::new(b.right() - 56.0, cy - 11.0), egui::vec2(46.0, 22.0));
                 if ibutton(ui, p, save, "save", "save", LINE, INK, 11.0) {
@@ -1037,6 +1043,18 @@ impl Forge {
             p.text(Pos2::new(plot.left() - 5.0, y), Align2::RIGHT_CENTER, &lab, FontId::monospace(9.0), DIM);
         }
         p.rect_stroke(plot, Rounding::ZERO, Stroke::new(1.0, LINE));
+
+        // rail grid — the grounded snap targets, faint verticals so you see
+        // where a pole/null will land when you drag it.
+        if self.snap {
+            for &r in RAILS.iter() {
+                if r >= F_LO && r <= f_hi() {
+                    let x = fx(r);
+                    p.line_segment([Pos2::new(x, plot.top()), Pos2::new(x, plot.bottom())],
+                        Stroke::new(1.0, Color32::from_rgba_premultiplied(46, 34, 14, 40)));
+                }
+            }
+        }
 
         // the body's name — the one label worth showing, sat on the hero
         let name = match self.mode {
@@ -1151,6 +1169,8 @@ impl Forge {
             self.body.corners[self.corner][i].on = !on;
         }
 
+        let snap = self.snap;
+        let snap_hz = |hz: f64| if snap { snap_rail(hz) } else { hz };
         let part = &mut self.body.corners[self.corner][i];
         // identity = the frequency (amber when active, dim when parked)
         p.text(Pos2::new(c.left() + 18.0, c.top()), Align2::LEFT_TOP, &format!("{} Hz", part.spot.round()), FontId::monospace(13.0), if part.on { ACCENT } else { DIM });
@@ -1165,7 +1185,7 @@ impl Forge {
             let zr = Rect::from_min_size(Pos2::new(c.right() - 142.0, c.top() + 1.0), egui::vec2(96.0, 12.0));
             let zt = ((part.zspot.log10() - lo) / (hi - lo)) as f32;
             if let Some(nt) = fader(ui, p, zr, &format!("zsp{}{}", self.corner, i), zt) {
-                part.zspot = 10f64.powf(lo + nt as f64 * (hi - lo));
+                part.zspot = snap_hz(10f64.powf(lo + nt as f64 * (hi - lo)));
             }
             p.text(Pos2::new(c.right(), c.top() + 7.0), Align2::RIGHT_CENTER, &format!("{}", part.zspot.round()), FontId::monospace(9.0), MID);
         }
@@ -1174,7 +1194,7 @@ impl Forge {
         let hzr = Rect::from_min_size(Pos2::new(c.left() + 16.0, yrow(0.0)), egui::vec2(c.width() - 16.0, 12.0));
         let t = ((part.spot.log10() - lo) / (hi - lo)) as f32;
         if let Some(nt) = fader(ui, p, hzr, &format!("hz{}{}", self.corner, i), t) {
-            part.spot = 10f64.powf(lo + nt as f64 * (hi - lo));
+            part.spot = snap_hz(10f64.powf(lo + nt as f64 * (hi - lo)));
         }
         let half = (c.width() - 16.0 - 8.0) / 2.0;
         p.text(Pos2::new(c.left(), yrow(1.0) + 6.0), Align2::LEFT_CENTER, "r", FontId::monospace(8.0), DIM);
@@ -1374,6 +1394,23 @@ impl Forge {
 const F_LO: f64 = 20.0;
 fn f_hi() -> f64 {
     SR * 0.5
+}
+
+// grounded frequency rails from the ROM corpus (docs/study/frequency_rails.csv,
+// top by endpoint presence) — the snap targets that make hands-on placement
+// land on real table frequencies so the pole/null crossings hit clean.
+const RAILS: [f64; 26] = [
+    134.0, 200.0, 320.0, 365.0, 410.0, 430.0, 440.0, 450.0, 545.0, 680.0,
+    780.0, 785.0, 790.0, 1090.0, 2180.0, 2220.0, 2840.0, 3790.0, 4130.0, 4440.0,
+    5450.0, 8250.0, 8875.0, 9650.0, 16500.0, 17950.0,
+];
+
+fn snap_rail(hz: f64) -> f64 {
+    RAILS
+        .iter()
+        .copied()
+        .min_by(|a, b| (a - hz).abs().partial_cmp(&(b - hz).abs()).unwrap())
+        .unwrap_or(hz)
 }
 
 impl eframe::App for Forge {
@@ -1867,6 +1904,15 @@ mod tests {
         assert!(dc > 10.0, "foundation weight {dc:.1} dB at DC side, want > +10");
         let top = biquad_mag_db(b, 15000.0);
         assert!(top < -20.0, "top {top:.1} dB at 15 kHz, want killed");
+    }
+
+    #[test]
+    fn snap_grabs_nearest_rail() {
+        assert_eq!(snap_rail(205.0), 200.0);
+        assert_eq!(snap_rail(800.0), 790.0);   // 790 is the nearest of 780/785/790
+        assert_eq!(snap_rail(4100.0), 4130.0); // pull toward the tear rail, not 3790
+        assert_eq!(snap_rail(10000.0), 9650.0);
+        assert_eq!(snap_rail(30.0), 134.0);    // below all rails -> lowest
     }
 
     #[test]
