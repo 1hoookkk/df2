@@ -334,7 +334,8 @@ PluginProcessor::ModulatedControls PluginProcessor::applyMotion (float morph, fl
     }
 
     if ((typeBehavior == trench::TypeBehavior::AutoQuarter
-         || typeBehavior == trench::TypeBehavior::AutoHalf)
+         || typeBehavior == trench::TypeBehavior::AutoHalf
+         || typeBehavior == trench::TypeBehavior::Wobble)
         && ! transportPlaying)
     {
         motionStepForUi.store (0, std::memory_order_relaxed);
@@ -392,17 +393,22 @@ trench::TypeBehavior PluginProcessor::getModulationBehaviorForUi() const noexcep
     if (! on)
         return trench::TypeBehavior::Static;
 
-    const float react = apvts.getRawParameterValue (ParamID::motionReact)->load();
-    if (react > 0.0005f)
-        return trench::TypeBehavior::Dynamic;
-
-    const auto name = trench::bodyDisplayName (loadedBodyIndex.load (std::memory_order_relaxed)).toLowerCase();
-    return name.contains ("rise") ? trench::TypeBehavior::AutoHalf
-                                  : trench::TypeBehavior::AutoQuarter;
+    const int tile = (int) apvts.getRawParameterValue (ParamID::motionTile)->load();
+    switch (juce::jlimit (0, 3, tile))
+    {
+        case 0: return trench::TypeBehavior::AutoHalf;    // Riser
+        case 1: return trench::TypeBehavior::AutoQuarter; // Breathe
+        case 2: return trench::TypeBehavior::Dynamic;     // Adlib Chop
+        default: return trench::TypeBehavior::Wobble;     // Wobble
+    }
 }
 
+// Called when the grid picks a tile (see GraphDisplay::tileTapped). Arms
+// Motion with that tile for the given body. `behavior` is derived by the
+// caller from the tile index via getModulationBehaviorForUi's mapping.
 void PluginProcessor::applyModulationBehavior (trench::TypeBehavior behavior, int bodyIndex)
 {
+    juce::ignoreUnused (bodyIndex);
     setParameterDenormalized (ParamID::moveOn, 0.0f);
     setParameterDenormalized (ParamID::moveTension, 0.0f);
     setParameterDenormalized (ParamID::motionWarp, 0.0f);
@@ -410,28 +416,19 @@ void PluginProcessor::applyModulationBehavior (trench::TypeBehavior behavior, in
     setParameterDenormalized (ParamID::motionBpm, 1.0f);
     setParameterDenormalized (ParamID::motionSync, 0.0f); // predictable play-start reset.
 
-    switch (behavior)
+    if (behavior == trench::TypeBehavior::Static)
     {
-        case trench::TypeBehavior::Dynamic:
-            setParameterDenormalized (ParamID::motionOn, 1.0f);
-            setParameterDenormalized (ParamID::motionAmount, 1.0f);
-            setParameterDenormalized (ParamID::motionReact, 0.85f);
-            break;
-        case trench::TypeBehavior::AutoQuarter:
-        case trench::TypeBehavior::AutoHalf:
-            if (behavior == trench::TypeBehavior::AutoHalf && ! trench::bodyDisplayName (bodyIndex).toLowerCase().contains ("rise"))
-                behavior = trench::TypeBehavior::AutoQuarter;
-            setParameterDenormalized (ParamID::motionOn, 1.0f);
-            setParameterDenormalized (ParamID::motionAmount, 0.82f);
-            setParameterDenormalized (ParamID::motionReact, 0.0f);
-            break;
-        case trench::TypeBehavior::Static:
-        default:
-            setParameterDenormalized (ParamID::motionOn, 0.0f);
-            setParameterDenormalized (ParamID::motionAmount, 0.0f);
-            setParameterDenormalized (ParamID::motionReact, 0.0f);
-            break;
+        setParameterDenormalized (ParamID::motionOn, 0.0f);
+        return;
     }
+
+    setParameterDenormalized (ParamID::motionOn, 1.0f);
+    // Amount/React stay at the curated defaults baked into SmartMotion's
+    // kTileAmount table; the public Motion Amt knob still scales on top of
+    // that (see applyMotion's `amount` read), matching today's behavior.
+    setParameterDenormalized (ParamID::motionAmount, 1.0f);
+    setParameterDenormalized (ParamID::motionReact,
+                              behavior == trench::TypeBehavior::Dynamic ? 0.85f : 0.0f);
 }
 
 //==============================================================================
@@ -463,6 +460,18 @@ void PluginProcessor::prepareToPlay (double sampleRate, int samplesPerBlock)
 
     captureRing.prepare (sampleRate, kCaptureMaxSeconds);
     dryRing.prepare (sampleRate, kCaptureMaxSeconds);
+
+    // AMOUNT — size the dose buffers to the island latency so the dry can be delayed
+    // to match the wet before crossfading.
+    dryDelayLen = juce::jmax (0, fixedRateIsland.getLatencySamples());
+    doseDry.setSize (2, samplesPerBlock, false, false, true);
+    doseDry.clear();
+    dryDelay.setSize (2, dryDelayLen + samplesPerBlock + 1, false, false, true);
+    dryDelay.clear();
+    dryDelayWrite = 0;
+    amountSmoothed.reset (sampleRate, 0.02); // 20 ms ramp
+    amountSmoothed.setCurrentAndTargetValue (
+        juce::jlimit (0.0f, 1.0f, apvts.getRawParameterValue (ParamID::amount)->load()));
 }
 
 void PluginProcessor::releaseResources()
@@ -655,8 +664,24 @@ void PluginProcessor::processBlock (juce::AudioBuffer<float>& buffer, juce::Midi
     }
 
     // Continuous QSound depth (SPACE). 0 = hard bypass (spatial stage Off).
-    const float space = juce::jlimit (0.0f, 1.0f, apvts.getRawParameterValue (ParamID::fiveD)->load());
+    // When Motion is armed and 5D's own base is nonzero, Space rides the
+    // same morph/Q offset Motion is already producing on this block — the
+    // offset magnitude (mod.morph - smoothedMorph, mod.q - smoothedQ) is a
+    // direct measure of "how much motion is happening right now" that both
+    // the Dynamic (envelope-follower) and Auto*/Wobble (tempo-synced) paths
+    // already populate, so no new plumbing is needed to read it. This reads
+    // the fiveD parameter but never writes it — the base value stays exactly
+    // what the user/preset set; only the per-block effective value sent to
+    // the DSP is offset.
+    const float fiveDBase = juce::jlimit (0.0f, 1.0f, apvts.getRawParameterValue (ParamID::fiveD)->load());
+    float space = fiveDBase;
+    if (fiveDBase > 0.001f && apvts.getRawParameterValue (ParamID::motionOn)->load() > 0.5f)
+    {
+        const float offset = std::abs (mod.morph - smoothedMorph) + std::abs (mod.q - smoothedQ);
+        space = juce::jlimit (0.0f, 1.0f, fiveDBase + offset);
+    }
     params.fiveD = space;
+    lastSpaceSent.store (space, std::memory_order_relaxed);
     dspBridge.setSpatialMode (space > 0.001f ? 0 /*QSound*/ : kSpatialOff);
 
     // Voicing-rig pan pose (the dev rig writes it; the shipping UI never does).
@@ -712,8 +737,71 @@ void PluginProcessor::processBlock (juce::AudioBuffer<float>& buffer, juce::Midi
     }
 #endif // TRENCH_PLAYER_EXTRAS
 
+    const float amountTarget = juce::jlimit (0.0f, 1.0f,
+        apvts.getRawParameterValue (ParamID::amount)->load());
+    amountSmoothed.setTargetValue (amountTarget);
+
     if (! trench::bodyIsNoFilter (loadedBodyIndex.load (std::memory_order_relaxed)))
+    {
+        const int nCh = juce::jmin (2, buffer.getNumChannels());
+        const int nS  = buffer.getNumSamples();
+
+        // AMOUNT — snapshot the dry (pre-filter) input, delayed by the island latency so
+        // it aligns sample-for-sample with the delayed wet output. doseDry <- delayed dry.
+        if (nCh > 0 && nS > 0)
+        {
+            if (dryDelayLen > 0)
+            {
+                const int ringLen = dryDelay.getNumSamples();
+                for (int ch = 0; ch < nCh; ++ch)
+                {
+                    const float* in  = buffer.getReadPointer (ch);
+                    float*       rng = dryDelay.getWritePointer (ch);
+                    float*       out = doseDry.getWritePointer (ch);
+                    int wp = dryDelayWrite;
+                    for (int i = 0; i < nS; ++i)
+                    {
+                        rng[wp] = in[i];
+                        int rp = wp - dryDelayLen;
+                        if (rp < 0) rp += ringLen;
+                        out[i] = rng[rp];
+                        if (++wp >= ringLen) wp = 0;
+                    }
+                }
+                dryDelayWrite += nS;
+                while (dryDelayWrite >= ringLen) dryDelayWrite -= ringLen;
+            }
+            else
+            {
+                for (int ch = 0; ch < nCh; ++ch)
+                    doseDry.copyFrom (ch, 0, buffer, ch, 0, nS);
+            }
+        }
+
         fixedRateIsland.process (buffer, dspBridge, params);
+
+        // Honest dose: crossfade wet <-> latency-matched dry. Linear crossfade of the
+        // correlated dry/wet holds level constant, so AMOUNT reads as dose, not volume.
+        if (nCh > 0 && nS > 0)
+        {
+            float*       wL = buffer.getWritePointer (0);
+            float*       wR = nCh > 1 ? buffer.getWritePointer (1) : nullptr;
+            const float* dL = doseDry.getReadPointer (0);
+            const float* dR = nCh > 1 ? doseDry.getReadPointer (1) : nullptr;
+            for (int i = 0; i < nS; ++i)
+            {
+                const float a = amountSmoothed.getNextValue();
+                wL[i] = wL[i] * a + dL[i] * (1.0f - a);
+                if (wR) wR[i] = wR[i] * a + dR[i] * (1.0f - a);
+            }
+        }
+        else
+            amountSmoothed.skip (nS);
+    }
+    else
+    {
+        amountSmoothed.skip (buffer.getNumSamples());
+    }
 
     // GUARD — MOVE output safety/compensation. The gesture's GUARD lane ducks the wet
     // output (up to kGuardMaxDb) at the gesture's peak so a build/suck/pulse cannot throw

@@ -1,37 +1,42 @@
 #pragma once
 
 #include "Theme.h"
-#include "../SmartMotion.h"
+#include "../TrenchBodyRoster.h"
 #include "../parameters/TrenchParameters.h"
 
 #include <juce_audio_processors/juce_audio_processors.h>
 #include <juce_gui_basics/juce_gui_basics.h>
+#include <functional>
 #include <memory>
 
 namespace trench::ui
 {
 
-// Seated 5D switch on the graph glass, below Modulation — same tag language
-// (lamp dot + italic word, no painted face). One click toggles the real
-// QSound spatial stage (the fiveD/Space parameter) between off and full.
-class FiveDTag : public juce::Component
+// Seated MOTION switch on the graph glass. Clicking it no longer arms a
+// behavior directly (that decision moved to the tile grid on GraphDisplay,
+// via onRequestGrid) — it only reflects the current armed/disarmed state.
+class ModulateTag : public juce::Component
 {
 public:
-    FiveDTag (juce::AudioProcessorValueTreeState& apvts, const Theme& theme)
+    static inline const juce::Colour kQuietInk { 0xffd9bcc4 };
+
+    std::function<void()> onRequestGrid; // set by PluginEditor -> graph->openTileGrid()
+
+    ModulateTag (juce::AudioProcessorValueTreeState& apvts, const Theme& theme)
         : state (apvts), t (theme)
     {
-        param = state.getParameter (ParamID::fiveD);
-        if (param != nullptr)
+        motionOnParam = state.getParameter (ParamID::motionOn);
+        if (motionOnParam != nullptr)
         {
             attachment = std::make_unique<juce::ParameterAttachment> (
-                *param, [this] (float) { repaint(); });
+                *motionOnParam, [this] (float) { repaint(); });
             attachment->sendInitialUpdate();
         }
-        bodyParam = state.getParameter (ParamID::body);
+
         setInterceptsMouseClicks (true, false);
         setMouseCursor (juce::MouseCursor::PointingHandCursor);
-        setTitle ("5D");
-        setHelpText ("Toggle 5D spatial (QSound)");
+        setTitle ("Motion");
+        setHelpText ("Open the Modulation tile grid");
     }
 
     void mouseEnter (const juce::MouseEvent&) override { hover = true; repaint(); }
@@ -44,13 +49,15 @@ public:
 
     void mouseDown (const juce::MouseEvent&) override
     {
-        if (param == nullptr || attachment == nullptr)
-            return;
-        const int bodyIndex = bodyParam != nullptr
-            ? juce::roundToInt (bodyParam->convertFrom0to1 (bodyParam->getValue()))
-            : 0;
-        const float onAmount = trench::fiveDBaseAmountFor (bodyIndex);
-        attachment->setValueAsCompleteGesture (param->convertFrom0to1 (isOn() ? 0.0f : onAmount));
+        down = true;
+        repaint();
+        if (onRequestGrid)
+            onRequestGrid();
+    }
+
+    void mouseUp (const juce::MouseEvent&) override
+    {
+        down = false;
         repaint();
     }
 
@@ -58,41 +65,41 @@ public:
     {
         const bool on = isOn();
         const auto b = getLocalBounds().toFloat();
-        const auto amber = t.amber();
-        const auto dot = lampBounds (b);
+        const auto amberOrange = t.amber();
+        const auto dotRect = lampBounds (b);
 
         if (on)
         {
-            g.setColour (amber.withAlpha (0.22f));
-            g.fillEllipse (dot.expanded (5.5f));
-            g.setColour (amber.withAlpha (0.50f));
-            g.fillEllipse (dot.expanded (2.5f));
-            g.setColour (amber.brighter (0.35f));
-            g.fillEllipse (dot);
+            g.setColour (amberOrange.withAlpha (0.22f));
+            g.fillEllipse (dotRect.expanded (5.5f));
+            g.setColour (amberOrange.withAlpha (0.50f));
+            g.fillEllipse (dotRect.expanded (2.5f));
+            g.setColour (amberOrange.brighter (0.35f));
+            g.fillEllipse (dotRect);
         }
         else
         {
             g.setColour (kQuietInk.withAlpha (0.88f));
-            g.fillEllipse (dot);
+            g.fillEllipse (dotRect);
         }
 
         const auto textRect = wordHitBounds().expanded (0.0f, 3.0f);
         auto font = displayFont (12.5f, false).withStyle (juce::Font::italic);
         g.setFont (font);
+
         if (on)
         {
-            g.setColour (amber.withAlpha (0.35f));
-            g.drawText ("5D", textRect.translated (0.0f, 1.0f), juce::Justification::centredLeft);
+            g.setColour (amberOrange.withAlpha (0.35f));
+            g.drawText ("Modulation", textRect.translated (0.0f, 1.0f), juce::Justification::centredLeft);
             g.setColour (juce::Colour (0xfffbeadd).withAlpha (hover ? 1.0f : 0.96f));
         }
         else
             g.setColour (kQuietInk.withAlpha (hover ? 1.0f : 0.88f));
-        g.drawText ("5D", textRect, juce::Justification::centredLeft);
+
+        g.drawText ("Modulation", textRect, juce::Justification::centredLeft);
     }
 
 private:
-    static inline const juce::Colour kQuietInk { 0xffd9bcc4 };  // same helper ink as Modulation
-
     static juce::Rectangle<float> lampBounds (juce::Rectangle<float> b)
     {
         constexpr float dotSize = 8.0f;
@@ -105,24 +112,21 @@ private:
         const auto b = getLocalBounds().toFloat();
         const auto font = displayFont (12.5f, false).withStyle (juce::Font::italic);
         const auto dot = lampBounds (b);
-        const float w = juce::GlyphArrangement::getStringWidth (font, "5D") + 8.0f;
+        const float w = juce::GlyphArrangement::getStringWidth (font, "Modulation") + 8.0f;
         const float h = juce::jmax (16.0f, font.getHeight() + 4.0f);
         return { dot.getRight() + 4.0f, b.getCentreY() - h * 0.5f, w, h };
     }
 
-    bool isOn() const
-    {
-        return param != nullptr && param->getValue() > 0.5f;
-    }
+    bool isOn() const { return motionOnParam != nullptr && motionOnParam->getValue() > 0.5f; }
 
     juce::AudioProcessorValueTreeState& state;
     Theme t;
-    juce::RangedAudioParameter* param = nullptr;
-    juce::RangedAudioParameter* bodyParam = nullptr;
+    juce::RangedAudioParameter* motionOnParam = nullptr;
     std::unique_ptr<juce::ParameterAttachment> attachment;
     bool hover = false;
+    bool down = false;
 
-    JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR (FiveDTag)
+    JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR (ModulateTag)
 };
 
 } // namespace trench::ui

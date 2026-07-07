@@ -2,6 +2,8 @@
 
 #include "SmartMotion.h"
 #include "TrenchBodyRoster.h"
+#include "PluginProcessor.h"
+#include "parameters/TrenchParameters.h"
 
 #include <cmath>
 
@@ -77,4 +79,20 @@ TEST_CASE ("Amount table scales depth without changing direction/division", "[sm
             anyDistinct = true;
     }
     REQUIRE (anyDistinct);
+}
+
+TEST_CASE ("motionTile parameter exists with 4 choices, default Riser", "[params]")
+{
+    juce::ScopedJuceInitialiser_GUI juce;
+    PluginProcessor processor;
+    auto* param = processor.apvts.getParameter (ParamID::motionTile);
+    REQUIRE (param != nullptr);
+    auto* choice = dynamic_cast<juce::AudioParameterChoice*> (param);
+    REQUIRE (choice != nullptr);
+    REQUIRE (choice->choices.size() == 4);
+    REQUIRE (choice->choices[0] == "Riser");
+    REQUIRE (choice->choices[1] == "Breathe");
+    REQUIRE (choice->choices[2] == "Adlib Chop");
+    REQUIRE (choice->choices[3] == "Wobble");
+    REQUIRE (choice->getIndex() == 0);
 }
