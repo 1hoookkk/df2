@@ -532,6 +532,66 @@ TEST_CASE ("5D rides along with an armed tile only when 5D's own base is nonzero
     REQUIRE (riddenSpace >= 0.0f);
     REQUIRE (riddenSpace <= 1.0f);
 }
+
+TEST_CASE ("motionTile survives full processor save/restore", "[modulation][recall]")
+{
+    juce::ScopedJuceInitialiser_GUI juce;
+
+    PluginProcessor dirty;
+    setParam (dirty, ParamID::motionOn, 1.0f);
+    setChoice (dirty, ParamID::motionTile, 3); // Wobble
+
+    juce::MemoryBlock state;
+    dirty.getStateInformation (state);
+
+    PluginProcessor restored;
+    restored.setStateInformation (state.getData(), (int) state.getSize());
+
+    REQUIRE (restored.getModulationBehaviorForUi() == trench::TypeBehavior::Wobble);
+}
+
+TEST_CASE ("Switching tiles while armed produces finite output with no discontinuity blow-up", "[modulation]")
+{
+    juce::ScopedJuceInitialiser_GUI juce;
+    constexpr double sampleRate = 48000.0;
+    constexpr int blockSize = 512;
+
+    PluginProcessor processor;
+    processor.setRateAndBufferSizeDetails (sampleRate, blockSize);
+    processor.prepareToPlay (sampleRate, blockSize);
+    setParam (processor, ParamID::motionOn, 1.0f);
+    setChoice (processor, ParamID::motionTile, 0); // Riser
+
+    juce::AudioBuffer<float> buffer (2, blockSize);
+    juce::MidiBuffer midi;
+    auto fillSine = [] (juce::AudioBuffer<float>& b)
+    {
+        for (int ch = 0; ch < b.getNumChannels(); ++ch)
+            for (int i = 0; i < b.getNumSamples(); ++i)
+                b.setSample (ch, i, std::sin ((float) (i + 1) * 0.071f) * 0.5f);
+    };
+
+    for (int b = 0; b < 8; ++b) { fillSine (buffer); processor.processBlock (buffer, midi); }
+
+    // Switch tiles mid-stream (Riser -> Adlib Chop -> Wobble), one block each.
+    for (int tile : { 2, 3, 1, 0 })
+    {
+        setChoice (processor, ParamID::motionTile, tile);
+        fillSine (buffer);
+        processor.processBlock (buffer, midi);
+        for (int ch = 0; ch < 2; ++ch)
+        {
+            const auto* d = buffer.getReadPointer (ch);
+            for (int i = 0; i < blockSize; ++i)
+            {
+                REQUIRE (std::isfinite (d[i]));
+                REQUIRE (std::abs (d[i]) < 8.0f);
+            }
+        }
+    }
+
+    processor.releaseResources();
+}
 ```
 
 - [ ] **Step 2: Run tests to verify they fail**

@@ -42,15 +42,19 @@ overlay/radio-button draft of this spec)
      — needs retrigger semantics the other three don't; out of scope for a
      2x2.)
 
-3. **Content is curated per body**, extending the existing per-body switch
-   in `SmartMotion.h` (`smartMotionFor`, currently one curated identity per
-   body via `switch (bodyIndex % 4)`) from one entry to four — one per tile,
-   tuned to that body's character, the same way Talking Hedz/Millennium/
-   Ear Bender/Lucifer's Q already get distinct morph/Q depths and patterns
-   today. The tile *label and position* stay fixed; the *values underneath*
-   are body-specific.
+3. **Content is curated per body.** `SmartMotion.h`'s existing
+   `switch (bodyIndex % 4)` (comment: "Talking Hedz/Millennium/Ear
+   Bender/Lucifer's Q") is stale on two counts, both corrected by this
+   feature: (a) the actual shipping roster (`TrenchBodyRoster.h`
+   `bakedRoster`) has **3** bodies — Meaty Gizmo, Talking Hedz, Lucifers Q —
+   not 4; "Millennium" and "Ear Bender" don't exist in the shipped roster.
+   (b) that switch is currently **unreachable dead code** — every call to
+   `smartMotionFor` passes `Static`/`Dynamic`/`AutoQuarter`/`AutoHalf`, and
+   each of those returns early before the `switch (bodyIndex % 4)` is ever
+   reached. This feature replaces it with a reachable per-body table keyed
+   to the real 3-body roster.
 
-   To keep authoring tractable (16 total: 4 bodies x 4 tiles), each tile is
+   To keep authoring tractable (12 total: 3 bodies x 4 tiles), each tile is
    a **fixed shape** — direction, division, pattern, and a fixed morph:Q
    ratio that is the same for every body (e.g. Riser is always mostly-morph,
    Adlib Chop is always mostly-Q). The only per-body-per-tile authored value
@@ -61,10 +65,9 @@ overlay/radio-button draft of this spec)
 
    ```
                     Riser   Breathe   AdlibChop   Wobble
-   Talking Hedz      ?         ?          ?           ?
-   Millennium        ?         ?          ?           ?
-   Ear Bender        ?         ?          ?           ?
-   Lucifer's Q       ?         ?          ?           ?
+   Meaty Gizmo        ?         ?          ?           ?
+   Talking Hedz       ?         ?          ?           ?
+   Lucifers Q         ?         ?          ?           ?
    ```
 
    Tyson fills this table in by ear once the mechanism is running; the plan
@@ -76,6 +79,13 @@ overlay/radio-button draft of this spec)
    Modulation is armed (any tile) **and** 5D is on, Space (`ParamID::fiveD`)
    rides the same modulation offset as Morph/Q. When 5D is off, Space is
    untouched. This is the entire scope of "5D gets a real job."
+
+   Implementation constraint: this ride-along must NOT write back to the
+   `fiveD` APVTS parameter (that would mutate host automation/undo state
+   from the audio thread based on a live signal — never acceptable). The
+   base `fiveD` value stays exactly what the user/preset set; only the
+   *per-block effective value handed to the DSP engine* for that one block
+   is offset. The parameter itself is read, never written, by this feature.
 
 5. **No separate Rate/Depth sliders.** Each tile already encodes a
    complete, tuned move (direction, division, depths, pattern). The
