@@ -214,15 +214,6 @@ private:
 
     juce::LinearSmoothedValue<float> outputGain { 1.0f };
 
-    // AMOUNT — honest dose. doseDry receives the dry (pre-filter, flat/identity) signal
-    // delayed by the island's SRC latency so it lines up sample-for-sample with the wet
-    // output; a naive undelayed crossfade would comb. dryDelay is that delay ring.
-    juce::AudioBuffer<float> doseDry;
-    juce::AudioBuffer<float> dryDelay;
-    int dryDelayLen = 0;
-    int dryDelayWrite = 0;
-    juce::LinearSmoothedValue<float> amountSmoothed { 1.0f };
-
     float smoothedMorph = 0.0f;
     float smoothedQ = 0.0f;
     float motionInputEnv = 0.0f; // block-rate input envelope for Motion React

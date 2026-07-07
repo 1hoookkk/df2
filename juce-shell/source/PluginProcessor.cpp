@@ -460,18 +460,6 @@ void PluginProcessor::prepareToPlay (double sampleRate, int samplesPerBlock)
 
     captureRing.prepare (sampleRate, kCaptureMaxSeconds);
     dryRing.prepare (sampleRate, kCaptureMaxSeconds);
-
-    // AMOUNT — size the dose buffers to the island latency so the dry can be delayed
-    // to match the wet before crossfading.
-    dryDelayLen = juce::jmax (0, fixedRateIsland.getLatencySamples());
-    doseDry.setSize (2, samplesPerBlock, false, false, true);
-    doseDry.clear();
-    dryDelay.setSize (2, dryDelayLen + samplesPerBlock + 1, false, false, true);
-    dryDelay.clear();
-    dryDelayWrite = 0;
-    amountSmoothed.reset (sampleRate, 0.02); // 20 ms ramp
-    amountSmoothed.setCurrentAndTargetValue (
-        juce::jlimit (0.0f, 1.0f, apvts.getRawParameterValue (ParamID::amount)->load()));
 }
 
 void PluginProcessor::releaseResources()
@@ -737,71 +725,16 @@ void PluginProcessor::processBlock (juce::AudioBuffer<float>& buffer, juce::Midi
     }
 #endif // TRENCH_PLAYER_EXTRAS
 
-    const float amountTarget = juce::jlimit (0.0f, 1.0f,
-        apvts.getRawParameterValue (ParamID::amount)->load());
-    amountSmoothed.setTargetValue (amountTarget);
+    // AMOUNT — honest dose. A coefficient-domain blend toward identity inside
+    // the engine (see trench-core FilterEngine::set_amount), not a post-filter
+    // audio crossfade — so the on-screen curve (read from the same cascade
+    // coefficients) moves with it. Ramped the same way morph/q already are,
+    // via Cascade's own per-block coefficient ramp — no separate JUCE-side
+    // smoothing needed.
+    params.amount = juce::jlimit (0.0f, 1.0f, apvts.getRawParameterValue (ParamID::amount)->load());
 
     if (! trench::bodyIsNoFilter (loadedBodyIndex.load (std::memory_order_relaxed)))
-    {
-        const int nCh = juce::jmin (2, buffer.getNumChannels());
-        const int nS  = buffer.getNumSamples();
-
-        // AMOUNT — snapshot the dry (pre-filter) input, delayed by the island latency so
-        // it aligns sample-for-sample with the delayed wet output. doseDry <- delayed dry.
-        if (nCh > 0 && nS > 0)
-        {
-            if (dryDelayLen > 0)
-            {
-                const int ringLen = dryDelay.getNumSamples();
-                for (int ch = 0; ch < nCh; ++ch)
-                {
-                    const float* in  = buffer.getReadPointer (ch);
-                    float*       rng = dryDelay.getWritePointer (ch);
-                    float*       out = doseDry.getWritePointer (ch);
-                    int wp = dryDelayWrite;
-                    for (int i = 0; i < nS; ++i)
-                    {
-                        rng[wp] = in[i];
-                        int rp = wp - dryDelayLen;
-                        if (rp < 0) rp += ringLen;
-                        out[i] = rng[rp];
-                        if (++wp >= ringLen) wp = 0;
-                    }
-                }
-                dryDelayWrite += nS;
-                while (dryDelayWrite >= ringLen) dryDelayWrite -= ringLen;
-            }
-            else
-            {
-                for (int ch = 0; ch < nCh; ++ch)
-                    doseDry.copyFrom (ch, 0, buffer, ch, 0, nS);
-            }
-        }
-
         fixedRateIsland.process (buffer, dspBridge, params);
-
-        // Honest dose: crossfade wet <-> latency-matched dry. Linear crossfade of the
-        // correlated dry/wet holds level constant, so AMOUNT reads as dose, not volume.
-        if (nCh > 0 && nS > 0)
-        {
-            float*       wL = buffer.getWritePointer (0);
-            float*       wR = nCh > 1 ? buffer.getWritePointer (1) : nullptr;
-            const float* dL = doseDry.getReadPointer (0);
-            const float* dR = nCh > 1 ? doseDry.getReadPointer (1) : nullptr;
-            for (int i = 0; i < nS; ++i)
-            {
-                const float a = amountSmoothed.getNextValue();
-                wL[i] = wL[i] * a + dL[i] * (1.0f - a);
-                if (wR) wR[i] = wR[i] * a + dR[i] * (1.0f - a);
-            }
-        }
-        else
-            amountSmoothed.skip (nS);
-    }
-    else
-    {
-        amountSmoothed.skip (buffer.getNumSamples());
-    }
 
     // GUARD — MOVE output safety/compensation. The gesture's GUARD lane ducks the wet
     // output (up to kGuardMaxDb) at the gesture's peak so a build/suck/pulse cannot throw
@@ -1124,7 +1057,7 @@ bool PluginProcessor::renderRecipe (const unsigned char* body, float morph, floa
     trench_engine_set_saturation_enabled (pe, 1);
     trench_engine_set_agc_drive (pe, 1.0f);                           // hardware-faithful identity pre-scale (matches live path)
     trench_engine_set_spatial_mode (pe, qsound ? 0 /*QSound*/ : 2 /*Off*/);
-    trench_engine_set_parameters (pe, morph, q, 0.0f, qsound ? 1.0f : 0.0f);
+    trench_engine_set_parameters (pe, morph, q, 0.0f, qsound ? 1.0f : 0.0f, 1.0f);
 
     out.setSize (2, got);
     float* L = out.getWritePointer (0);
