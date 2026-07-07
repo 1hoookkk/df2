@@ -16,7 +16,7 @@
 
 use crate::agc::{active_agc_table, agc_step_stereo};
 use crate::cartridge::{Cartridge, CornerData};
-use crate::cascade::{Cascade, BLOCK_SIZE};
+use crate::cascade::{Cascade, BLOCK_SIZE, NUM_COEFFS, PASSTHROUGH_COEFFS};
 use crate::cvsd_input::CvsdInput;
 use crate::desk_drive::{DeskDrive, SUPPORTED_MODEL as DESK_SLAM_MODEL};
 use crate::qsound_spatial::QSoundSpatial;
@@ -183,6 +183,12 @@ pub struct FilterEngine {
     spatial_mode: SpatialMode,
     space: f32,
 
+    /// AMOUNT — the honest dose. 1.0 = full body, 0.0 = flat/identity. Applied
+    /// as a linear per-stage coefficient blend toward `PASSTHROUGH_COEFFS` in
+    /// `set_parameters` (Cascade itself stays frozen/untouched), so the on-
+    /// screen curve (read from the same cascade coefficients) moves with it.
+    amount: f32,
+
     pub debug: DebugToggles,
 }
 
@@ -223,6 +229,7 @@ impl FilterEngine {
             trench_matrix: TrenchMatrix::new(sr as f32),
             spatial_mode: SpatialMode::Off,
             space: 0.0,
+            amount: 1.0,
             debug: DebugToggles::default(),
         }
     }
@@ -293,6 +300,11 @@ impl FilterEngine {
         self.target_slam_drive = drive.clamp(0.0, 1.0);
     }
 
+    /// AMOUNT — honest dose. 1.0 = full body (default), 0.0 = flat/identity.
+    pub fn set_amount(&mut self, amount: f32) {
+        self.amount = amount.clamp(0.0, 1.0);
+    }
+
     /// Pre-AGC scale (≥ 1.0). 1.0 = identity (curve stays asleep in float domain);
     /// higher drives the cascade into the AGC table's teeth so it compresses.
     pub fn set_agc_drive(&mut self, drive: f32) {
@@ -316,7 +328,37 @@ impl FilterEngine {
         };
 
         let corner: CornerData = cart.interpolate(morph, q);
-        let boost = cart.interpolate_boost(morph, q) as f32;
+        let mut boost = cart.interpolate_boost(morph, q) as f32;
+
+        // AMOUNT — honest dose. Linear per-stage blend of the decoded corner
+        // toward PASSTHROUGH_COEFFS (identity). Cascade itself is untouched/
+        // frozen; this only changes what target coefficients it's handed, so
+        // the UI curve (read from these same coefficients) moves with it too.
+        // Stability is free: the direct-form (a1,a2) stability region is the
+        // convex triangle |a2|<1, a1<1+a2, a1>-(1+a2), which contains the
+        // origin (identity) — a linear blend from any stable point toward the
+        // origin stays inside the triangle at every step.
+        let corner = if self.amount < 1.0 {
+            let a = self.amount as f64;
+            let mut blended = corner;
+            for stage in blended.iter_mut() {
+                for i in 0..NUM_COEFFS {
+                    stage[i] = a * stage[i] + (1.0 - a) * PASSTHROUGH_COEFFS[i];
+                }
+            }
+            // Gain compensation: blending the numerator toward [1,0,0] shifts
+            // the cascade's own peak response, so match the blended peak back
+            // to the full-strength (amount=1) peak — Amount tapers character,
+            // not level.
+            let peak_full = compute_cascade_peak(&corner, self.sample_rate);
+            let peak_blended = compute_cascade_peak(&blended, self.sample_rate);
+            if peak_blended > 1.0e-6 {
+                boost *= peak_full / peak_blended;
+            }
+            blended
+        } else {
+            corner
+        };
 
         // DEBUG knob: coeff_ramp_scale == 1.0 passes chunk_size through unchanged.
         let ramp_samples = if self.debug.coeff_ramp_scale == 1.0 {
@@ -767,6 +809,133 @@ mod tests {
 
         engine.prepare(130_000.1);
         assert_eq!(engine.active_agc_table, active_agc_table(130_000.1));
+    }
+
+    fn make_resonant_cartridge() -> Cartridge {
+        // One real resonant stage (from cascade.rs's own stability-region test
+        // fixtures), the other 5 stages passthrough. Same response at all 4
+        // corners so morph/q don't matter — only `amount` is under test.
+        let json = r#"{
+            "format": "compiled-v1",
+            "name": "resonant",
+            "sampleRate": 44100,
+            "keyframes": [
+                {"label": "M0_Q0",     "morph": 0.0, "q": 0.0,   "boost": 1.0,
+                 "stages": [{"c0":0.90,"c1":-0.20,"c2":0.08,"c3":-0.72,"c4":0.20},
+                            {"c0":1,"c1":0,"c2":0,"c3":0,"c4":0},
+                            {"c0":1,"c1":0,"c2":0,"c3":0,"c4":0},
+                            {"c0":1,"c1":0,"c2":0,"c3":0,"c4":0},
+                            {"c0":1,"c1":0,"c2":0,"c3":0,"c4":0},
+                            {"c0":1,"c1":0,"c2":0,"c3":0,"c4":0}]},
+                {"label": "M0_Q100",   "morph": 0.0, "q": 1.0,   "boost": 1.0,
+                 "stages": [{"c0":0.90,"c1":-0.20,"c2":0.08,"c3":-0.72,"c4":0.20},
+                            {"c0":1,"c1":0,"c2":0,"c3":0,"c4":0},
+                            {"c0":1,"c1":0,"c2":0,"c3":0,"c4":0},
+                            {"c0":1,"c1":0,"c2":0,"c3":0,"c4":0},
+                            {"c0":1,"c1":0,"c2":0,"c3":0,"c4":0},
+                            {"c0":1,"c1":0,"c2":0,"c3":0,"c4":0}]},
+                {"label": "M100_Q0",   "morph": 1.0, "q": 0.0,   "boost": 1.0,
+                 "stages": [{"c0":0.90,"c1":-0.20,"c2":0.08,"c3":-0.72,"c4":0.20},
+                            {"c0":1,"c1":0,"c2":0,"c3":0,"c4":0},
+                            {"c0":1,"c1":0,"c2":0,"c3":0,"c4":0},
+                            {"c0":1,"c1":0,"c2":0,"c3":0,"c4":0},
+                            {"c0":1,"c1":0,"c2":0,"c3":0,"c4":0},
+                            {"c0":1,"c1":0,"c2":0,"c3":0,"c4":0}]},
+                {"label": "M100_Q100", "morph": 1.0, "q": 1.0,   "boost": 1.0,
+                 "stages": [{"c0":0.90,"c1":-0.20,"c2":0.08,"c3":-0.72,"c4":0.20},
+                            {"c0":1,"c1":0,"c2":0,"c3":0,"c4":0},
+                            {"c0":1,"c1":0,"c2":0,"c3":0,"c4":0},
+                            {"c0":1,"c1":0,"c2":0,"c3":0,"c4":0},
+                            {"c0":1,"c1":0,"c2":0,"c3":0,"c4":0},
+                            {"c0":1,"c1":0,"c2":0,"c3":0,"c4":0}]}
+            ]
+        }"#;
+        Cartridge::from_json(json).expect("resonant cartridge parses")
+    }
+
+    #[test]
+    fn amount_zero_drives_cascade_targets_to_passthrough() {
+        let mut engine = FilterEngine::new();
+        engine.prepare(44100.0);
+        engine.load_cartridge(make_resonant_cartridge());
+        engine.set_amount(0.0);
+
+        // Ramp is chunk_size-length; process enough samples for it to settle.
+        let mut l = vec![0.0_f32; BLOCK_SIZE * 8];
+        let mut r = vec![0.0_f32; BLOCK_SIZE * 8];
+        engine.process_block(&mut l, &mut r, 0.5, 0.5);
+
+        let mut coeffs = [[0.0_f64; crate::cascade::NUM_COEFFS]; crate::cascade::NUM_STAGES];
+        engine.cascade_l.get_coeffs(&mut coeffs);
+        for stage in coeffs.iter() {
+            for (i, &c) in stage.iter().enumerate() {
+                assert!(
+                    (c - PASSTHROUGH_COEFFS[i]).abs() < 1e-6,
+                    "amount=0 should drive every stage to passthrough, got {stage:?}"
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn amount_one_leaves_cascade_targets_at_full_strength() {
+        let mut engine = FilterEngine::new();
+        engine.prepare(44100.0);
+        engine.load_cartridge(make_resonant_cartridge());
+        engine.set_amount(1.0); // default, but explicit for clarity
+
+        let mut l = vec![0.0_f32; BLOCK_SIZE * 8];
+        let mut r = vec![0.0_f32; BLOCK_SIZE * 8];
+        engine.process_block(&mut l, &mut r, 0.5, 0.5);
+
+        let mut coeffs = [[0.0_f64; crate::cascade::NUM_COEFFS]; crate::cascade::NUM_STAGES];
+        engine.cascade_l.get_coeffs(&mut coeffs);
+        let expected = [0.90, -0.20, 0.08, -0.72, 0.20];
+        for (i, &c) in coeffs[0].iter().enumerate() {
+            assert!(
+                (c - expected[i]).abs() < 1e-6,
+                "amount=1 should leave stage 0 at full strength, got {:?}",
+                coeffs[0]
+            );
+        }
+    }
+
+    #[test]
+    fn amount_actually_changes_the_processed_output() {
+        let mut full = FilterEngine::new();
+        full.prepare(44100.0);
+        full.load_cartridge(make_resonant_cartridge());
+        full.set_amount(1.0);
+
+        let mut flat = FilterEngine::new();
+        flat.prepare(44100.0);
+        flat.load_cartridge(make_resonant_cartridge());
+        flat.set_amount(0.0);
+
+        let make_input = || {
+            let mut l = vec![0.0_f32; BLOCK_SIZE * 16];
+            let mut r = vec![0.0_f32; BLOCK_SIZE * 16];
+            for i in 0..l.len() {
+                l[i] = 0.3 * ((i as f32) * 0.05).sin();
+                r[i] = l[i];
+            }
+            (l, r)
+        };
+
+        let (mut l1, mut r1) = make_input();
+        full.process_block(&mut l1, &mut r1, 0.5, 0.5);
+        let (mut l0, mut r0) = make_input();
+        flat.process_block(&mut l0, &mut r0, 0.5, 0.5);
+
+        let tail = BLOCK_SIZE * 4; // past the coefficient ramp
+        let diff: f32 = l1[tail..]
+            .iter()
+            .zip(l0[tail..].iter())
+            .map(|(a, b)| (a - b).abs())
+            .sum();
+        assert!(diff > 0.5, "amount=1 vs amount=0 output should clearly differ, diff={diff}");
+        assert!(!full.take_instability_flag());
+        assert!(!flat.take_instability_flag());
     }
 
     // NOTE: `gain_ceiling_clamps_runaway_boost` referenced
