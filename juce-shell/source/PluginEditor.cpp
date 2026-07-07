@@ -28,6 +28,7 @@ PluginEditor::PluginEditor (PluginProcessor& p)
     graph        = std::make_unique<GraphDisplay> (grid, theme, processor.apvts, ParamID::slamDrive);
     slotPad      = std::make_unique<SlotPad> (theme);
     modulateTag  = std::make_unique<ModulateTag> (processor.apvts, theme);
+    modulateTag->onRequestGrid = [this] { graph->openTileGrid(); };
     fiveDTag     = std::make_unique<FiveDTag> (processor.apvts, theme);
     takeView     = std::make_unique<TakeView> (theme);
     moveView     = std::make_unique<MoveView> (processor, theme, grid);
@@ -81,6 +82,7 @@ PluginEditor::PluginEditor (PluginProcessor& p)
     secondaryWheel = std::make_unique<WheelControl> (processor.apvts, ParamID::q, strip, theme);
     morphReadout = std::make_unique<ValueReadout> ("morphReadout", theme);
     secondaryReadout = std::make_unique<ValueReadout> ("qReadout", theme);
+    amountFader  = std::make_unique<AmountFader> (processor.apvts, theme);
     labels       = std::make_unique<LabelsLayer> (theme);
     decalsLayer  = std::make_unique<DecalsLayer> (theme);
 
@@ -97,6 +99,7 @@ PluginEditor::PluginEditor (PluginProcessor& p)
     addAndMakeVisible (*secondaryWheel);
     addAndMakeVisible (*morphReadout);
     addAndMakeVisible (*secondaryReadout);
+    addAndMakeVisible (*amountFader);
     addAndMakeVisible (*labels);
     addAndMakeVisible (*decalsLayer);   // front-most: free text/boxes/lines
 
@@ -229,6 +232,18 @@ void PluginEditor::layoutComponents()
     secondaryWheel->setBounds (rectOf ("qWheel"));
     morphReadout->setBounds (rectOf ("morphReadout"));
     secondaryReadout->setBounds (rectOf ("qReadout"));
+    // AMOUNT fader — the right utility column. Left edge aligned to the readout boxes'
+    // right edge; below the display; above the lower-right cutout; fully inside the panel.
+    {
+        const auto mr  = rectOf ("morphReadout");
+        const auto qr  = rectOf ("qReadout");
+        const auto scr = rectOf ("spectrumGrid");
+        const int fx   = mr.getRight() + 26;
+        const int fw   = 44;
+        const int fTop = scr.getBottom() + 18;   // air below the display
+        const int fBot = qr.getBottom() + 34;    // tall — run down toward (above) the cutout
+        amountFader->setBounds (fx, fTop, fw, juce::jmax (120, fBot - fTop));
+    }
 
     decalsLayer->setBounds (base);
    #ifdef TRENCH_PLAYER_DIAGNOSTICS

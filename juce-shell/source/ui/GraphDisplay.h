@@ -2,6 +2,8 @@
 
 #include "Theme.h"
 #include "../dsp/SlamStage.h"
+#include "../parameters/TrenchParameters.h"
+#include "../SmartMotion.h"
 
 #include <juce_audio_processors/juce_audio_processors.h>
 
@@ -41,9 +43,22 @@ public:
             canvasDefault = canvasParam->getDefaultValue();
             setMouseCursor (juce::MouseCursor::UpDownResizeCursor);
         }
+        motionOnParamForTiles = apvts.getParameter (ParamID::motionOn);
+        motionTileParamForTiles = apvts.getParameter (ParamID::motionTile);
         // The screen takes mouse input to drive SLAM (children like the [1][2]
         // pad and MOD tag sit on top and still get their own clicks).
         setInterceptsMouseClicks (canvasParam != nullptr, false);
+    }
+
+    // Called by ModulateTag::onRequestGrid. Starts the CRT-collapse; the
+    // grid itself appears once the collapse finishes (see timerCallback).
+    void openTileGrid()
+    {
+        if (screenMode != ScreenMode::Curve)
+            return;
+        screenMode = ScreenMode::Collapsing;
+        transitionProgress = 0.0f;
+        startTimer (16); // ~60 fps
     }
 
     void setMotionState (bool active, int step, float amount) noexcept
@@ -156,6 +171,13 @@ public:
     // --- SLAM: vertical drag + wheel drive input-clip/SLAM (up = harder) ------
     void mouseDown (const juce::MouseEvent& e) override
     {
+        if (screenMode == ScreenMode::Grid)
+        {
+            tileTapped (tileIndexAt (e.position));
+            return;
+        }
+        if (screenMode != ScreenMode::Curve)
+            return; // mid-transition: ignore input
         if (canvasParam == nullptr) return;
         pressing = true;
         stopTimer();
@@ -169,6 +191,7 @@ public:
 
     void mouseDrag (const juce::MouseEvent& e) override
     {
+        if (screenMode != ScreenMode::Curve) return;
         if (canvasParam == nullptr || canvasAtt == nullptr) return;
         dragPos = e.position;
         const float h = juce::jmax (1.0f, (float) getHeight());
@@ -181,6 +204,7 @@ public:
 
     void mouseUp (const juce::MouseEvent&) override
     {
+        if (screenMode != ScreenMode::Curve) return;
         if (canvasParam == nullptr) return;
         pressing = false;
         if (canvasAtt != nullptr) canvasAtt->endGesture();
@@ -190,11 +214,13 @@ public:
 
     void mouseDoubleClick (const juce::MouseEvent&) override
     {
+        if (screenMode != ScreenMode::Curve) return;
         if (canvasAtt != nullptr) canvasAtt->setValueAsCompleteGesture (canvasDefault);
     }
 
     void mouseWheelMove (const juce::MouseEvent&, const juce::MouseWheelDetails& w) override
     {
+        if (screenMode != ScreenMode::Curve) return;
         if (canvasParam == nullptr || canvasAtt == nullptr) return;
         const float next = juce::jlimit (0.0f, 1.0f, canvasParam->getValue() + w.deltaY * 0.08f);
         canvasAtt->setValueAsCompleteGesture (canvasParam->convertFrom0to1 (next));
@@ -217,18 +243,146 @@ public:
                     ? juce::jlimit (0.0f, 1.0f, (canvasParam->getValue() - 0.15f) / 0.60f)
                     : 0.0f;
 
-        drawResponseTrace (g);
+        if (screenMode == ScreenMode::Curve)
+        {
+            drawResponseTrace (g);
+            // Motion status bar/LED RETIRED (Tyson: "what is that stupid bar and
+            // dot") — the lit Modulation tag is the ON indicator; the glass stays quiet.
+            drawSlamReadout (g, screen);
+            // No drawn edge either — the art's own bezel carries the seating.
+            return;
+        }
 
-        // Motion status bar/LED RETIRED (Tyson: "what is that stupid bar and
-        // dot") — the lit Modulation tag is the ON indicator; the glass stays quiet.
+        // Collapsing/Expanding: vertical squeeze toward a bright horizontal
+        // line (classic CRT power-off/-on), then blank at zero height.
+        const float collapse = (screenMode == ScreenMode::Collapsing)
+            ? transitionProgress : (1.0f - transitionProgress);
+        const float lineHeight = juce::jmax (1.0f, screen.getHeight() * (1.0f - collapse));
+        const auto squeezed = screen.withSizeKeepingCentre (screen.getWidth(), lineHeight);
 
-        drawSlamReadout (g, screen);
+        juce::Graphics::ScopedSaveState squeezeSave (g);
+        g.reduceClipRegion (squeezed.toNearestInt());
 
-        // No drawn edge either — the art's own bezel carries the seating.
+        if (screenMode == ScreenMode::Grid || collapse < 0.98f)
+        {
+            if (screenMode == ScreenMode::Grid)
+                drawTileGrid (g, screen);
+            else
+                drawResponseTrace (g); // curve visible through the still-open slit
+        }
+
+        // Hot phosphor line at the collapsing edge.
+        g.setColour (juce::Colour (0xfffff7fa).withAlpha (juce::jlimit (0.0f, 1.0f, collapse) * 0.9f));
+        g.fillRect (squeezed.withHeight (juce::jmin (2.0f, squeezed.getHeight())).withCentre (squeezed.getCentre()));
     }
 
 private:
     juce::Rectangle<float> plotBounds() const { return getLocalBounds().toFloat().reduced (6.0f, 5.0f); }
+
+    // 2x2 grid: 0=Riser (top-left), 1=Breathe (top-right),
+    //           2=Adlib Chop (bottom-left), 3=Wobble (bottom-right).
+    int tileIndexAt (juce::Point<float> p) const
+    {
+        const auto plot = plotBounds();
+        if (! plot.contains (p))
+            return -1;
+        const int col = (p.x < plot.getCentreX()) ? 0 : 1;
+        const int row = (p.y < plot.getCentreY()) ? 0 : 1;
+        return row * 2 + col;
+    }
+
+    juce::Rectangle<float> tileBounds (int index) const
+    {
+        const auto plot = plotBounds();
+        const float w = plot.getWidth() * 0.5f;
+        const float h = plot.getHeight() * 0.5f;
+        const int col = index % 2;
+        const int row = index / 2;
+        return { plot.getX() + col * w, plot.getY() + row * h, w, h };
+    }
+
+    void tileTapped (int index)
+    {
+        if (index < 0 || index > 3 || motionOnParamForTiles == nullptr || motionTileParamForTiles == nullptr)
+        {
+            screenMode = ScreenMode::Expanding;
+            transitionProgress = 0.0f;
+            startTimer (16);
+            return;
+        }
+
+        const bool alreadyArmed = motionOnParamForTiles->getValue() > 0.5f;
+        const int currentTile = juce::roundToInt (motionTileParamForTiles->convertFrom0to1 (motionTileParamForTiles->getValue()));
+
+        if (alreadyArmed && currentTile == index)
+        {
+            motionOnParamForTiles->setValueNotifyingHost (0.0f); // off
+        }
+        else
+        {
+            motionTileParamForTiles->setValueNotifyingHost (motionTileParamForTiles->convertTo0to1 ((float) index));
+            motionOnParamForTiles->setValueNotifyingHost (1.0f); // on
+        }
+
+        screenMode = ScreenMode::Expanding;
+        transitionProgress = 0.0f;
+        startTimer (16);
+    }
+
+    // Crude pictogram + label per tile — deliberately simple line-glyphs,
+    // matching the faceplate's "quiet, utilitarian" line language rather
+    // than full icon artwork.
+    void drawTileGrid (juce::Graphics& g, juce::Rectangle<float> screen) const
+    {
+        juce::ignoreUnused (screen);
+        static constexpr const char* kNames[4] = { "Riser", "Breathe", "Adlib Chop", "Wobble" };
+        const int activeTile = (motionOnParamForTiles != nullptr && motionOnParamForTiles->getValue() > 0.5f
+                                 && motionTileParamForTiles != nullptr)
+            ? juce::roundToInt (motionTileParamForTiles->convertFrom0to1 (motionTileParamForTiles->getValue()))
+            : -1;
+
+        for (int i = 0; i < 4; ++i)
+        {
+            const auto r = tileBounds (i).reduced (6.0f);
+            const bool lit = (i == activeTile);
+
+            g.setColour (t.curveColour().withAlpha (lit ? 0.16f : 0.06f));
+            g.fillRoundedRectangle (r, 4.0f);
+
+            const auto glyph = r.reduced (r.getWidth() * 0.28f, r.getHeight() * 0.34f);
+            g.setColour (t.curveColour().withAlpha (lit ? 0.95f : 0.55f));
+            juce::Path p;
+            switch (i)
+            {
+                case 0: // Riser: ascending line
+                    p.startNewSubPath (glyph.getBottomLeft());
+                    p.lineTo (glyph.getTopRight());
+                    break;
+                case 1: // Breathe: single hump
+                    p.startNewSubPath (glyph.getBottomLeft());
+                    p.quadraticTo (glyph.getCentreX(), glyph.getY(), glyph.getBottomRight().x, glyph.getBottomRight().y);
+                    break;
+                case 2: // Adlib Chop: jagged pulse
+                    p.startNewSubPath (glyph.getX(), glyph.getBottom());
+                    p.lineTo (glyph.getX() + glyph.getWidth() * 0.25f, glyph.getY());
+                    p.lineTo (glyph.getX() + glyph.getWidth() * 0.5f, glyph.getBottom());
+                    p.lineTo (glyph.getX() + glyph.getWidth() * 0.75f, glyph.getY());
+                    p.lineTo (glyph.getRight(), glyph.getBottom());
+                    break;
+                default: // Wobble: random zigzag
+                    p.startNewSubPath (glyph.getX(), glyph.getCentreY());
+                    p.lineTo (glyph.getX() + glyph.getWidth() * 0.3f, glyph.getY());
+                    p.lineTo (glyph.getX() + glyph.getWidth() * 0.6f, glyph.getBottom());
+                    p.lineTo (glyph.getRight(), glyph.getCentreY() - glyph.getHeight() * 0.2f);
+                    break;
+            }
+            g.strokePath (p, { 1.4f, juce::PathStrokeType::curved, juce::PathStrokeType::rounded });
+
+            g.setFont (displayFont (10.0f, false));
+            g.setColour (t.curveColour().withAlpha (lit ? 0.95f : 0.6f));
+            g.drawText (kNames[i], r.withTop (r.getBottom() - 14.0f), juce::Justification::centred, false);
+        }
+    }
 
     float slamVisualAmount() const noexcept
     {
@@ -407,8 +561,37 @@ private:
     juce::RangedAudioParameter* canvasParam = nullptr;
     std::unique_ptr<juce::ParameterAttachment> canvasAtt;
     float canvasDefault = 0.0f;
+
+    enum class ScreenMode { Curve, Collapsing, Grid, Expanding };
+    ScreenMode screenMode = ScreenMode::Curve;
+    float transitionProgress = 0.0f; // 0..1 within the current Collapsing/Expanding phase
+    static constexpr float kTransitionSeconds = 0.18f;
+
+    juce::RangedAudioParameter* motionOnParamForTiles = nullptr;
+    juce::RangedAudioParameter* motionTileParamForTiles = nullptr;
+
     void timerCallback() override
     {
+        if (screenMode == ScreenMode::Collapsing || screenMode == ScreenMode::Expanding)
+        {
+            transitionProgress += (float) (16.0 / 1000.0) / kTransitionSeconds;
+            if (transitionProgress >= 1.0f)
+            {
+                transitionProgress = 1.0f;
+                if (screenMode == ScreenMode::Collapsing)
+                {
+                    screenMode = ScreenMode::Grid;
+                }
+                else // Expanding finished
+                {
+                    screenMode = ScreenMode::Curve;
+                    stopTimer();
+                }
+            }
+            repaint();
+            return;
+        }
+
         meterAlpha = juce::jmax (0.0f, meterAlpha - 0.05f);
         if (meterAlpha <= 0.01f) stopTimer();
         repaint();
