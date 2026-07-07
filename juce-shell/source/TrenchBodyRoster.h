@@ -27,9 +27,10 @@ struct BodyEntry
 enum class TypeBehavior : int
 {
     Static = 0,
-    Dynamic,
-    AutoQuarter,
-    AutoHalf,
+    Dynamic,     // Adlib Chop — envelope-follower reactive
+    AutoQuarter, // Breathe — pendulum, tempo-synced
+    AutoHalf,    // Riser — forward, tempo-synced
+    Wobble,      // Random/Brownian step, tempo-synced
 };
 
 enum class SecondaryTarget : int
