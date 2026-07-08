@@ -29,6 +29,13 @@ PluginEditor::PluginEditor (PluginProcessor& p)
     slotPad      = std::make_unique<SlotPad> (theme);
     modulateTag  = std::make_unique<ModulateTag> (processor.apvts, theme);
     modulateTag->onRequestGrid = [this] { graph->openTileGrid(); };
+    // The tag/lamp components sit on top of the graph in z-order and would
+    // otherwise render directly over the tile grid — hide them while it's open.
+    graph->onScreenModeChanged = [this] (bool gridOpen)
+    {
+        modulateTag->setVisible (! gridOpen);
+        fiveDTag->setVisible (! gridOpen);
+    };
     fiveDTag     = std::make_unique<FiveDTag> (processor.apvts, theme);
     takeView     = std::make_unique<TakeView> (theme);
     moveView     = std::make_unique<MoveView> (processor, theme, grid);

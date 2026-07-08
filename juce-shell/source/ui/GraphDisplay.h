@@ -9,6 +9,7 @@
 
 #include <cmath>
 #include <complex>
+#include <functional>
 #include <memory>
 #include <vector>
 
@@ -50,6 +51,11 @@ public:
         setInterceptsMouseClicks (canvasParam != nullptr, false);
     }
 
+    // Set by PluginEditor: fires (true) the moment the screen leaves Curve
+    // (so ModulateTag/FiveDTag can hide — they'd otherwise sit visually on
+    // top of the grid) and (false) once it's back to Curve.
+    std::function<void (bool)> onScreenModeChanged;
+
     // Called by ModulateTag::onRequestGrid. Starts the CRT-collapse; the
     // grid itself appears once the collapse finishes (see timerCallback).
     void openTileGrid()
@@ -59,6 +65,7 @@ public:
         screenMode = ScreenMode::Collapsing;
         transitionProgress = 0.0f;
         startTimer (16); // ~60 fps
+        if (onScreenModeChanged) onScreenModeChanged (true);
     }
 
     void setMotionState (bool active, int step, float amount) noexcept
@@ -329,58 +336,99 @@ private:
         startTimer (16);
     }
 
-    // Crude pictogram + label per tile — deliberately simple line-glyphs,
-    // matching the faceplate's "quiet, utilitarian" line language rather
-    // than full icon artwork.
+    // One glyph path per tile, drawn compact/centered so every trace has the
+    // same visual mass regardless of shape.
+    static juce::Path glyphPathFor (int index, juce::Rectangle<float> glyph)
+    {
+        juce::Path p;
+        switch (index)
+        {
+            case 0: // Riser: ascending line
+                p.startNewSubPath (glyph.getBottomLeft());
+                p.lineTo (glyph.getTopRight());
+                break;
+            case 1: // Breathe: single hump
+                p.startNewSubPath (glyph.getBottomLeft());
+                p.quadraticTo (glyph.getCentreX(), glyph.getY(), glyph.getBottomRight().x, glyph.getBottomRight().y);
+                break;
+            case 2: // Adlib Chop: jagged pulse
+                p.startNewSubPath (glyph.getX(), glyph.getBottom());
+                p.lineTo (glyph.getX() + glyph.getWidth() * 0.25f, glyph.getY());
+                p.lineTo (glyph.getX() + glyph.getWidth() * 0.5f, glyph.getBottom());
+                p.lineTo (glyph.getX() + glyph.getWidth() * 0.75f, glyph.getY());
+                p.lineTo (glyph.getRight(), glyph.getBottom());
+                break;
+            default: // Wobble: random zigzag
+                p.startNewSubPath (glyph.getX(), glyph.getCentreY());
+                p.lineTo (glyph.getX() + glyph.getWidth() * 0.3f, glyph.getY());
+                p.lineTo (glyph.getX() + glyph.getWidth() * 0.6f, glyph.getBottom());
+                p.lineTo (glyph.getRight(), glyph.getCentreY() - glyph.getHeight() * 0.2f);
+                break;
+        }
+        return p;
+    }
+
+    // Four engraved traces on quiet glass — same phosphor family as the main
+    // response curve (drawResponseTrace), not painted cards. A thin crosshair
+    // divides the quadrants instead of four separate tile "boxes", so the
+    // grid reads as one etched surface rather than stacked UI panels. The
+    // selected tile switches to the same amber the Modulation lamp uses when
+    // lit — one unmistakable "this is armed" cue instead of an alpha bump.
     void drawTileGrid (juce::Graphics& g, juce::Rectangle<float> screen) const
     {
         juce::ignoreUnused (screen);
-        static constexpr const char* kNames[4] = { "Riser", "Breathe", "Adlib Chop", "Wobble" };
+        static constexpr const char* kNames[4] = { "RISER", "BREATHE", "ADLIB CHOP", "WOBBLE" };
         const int activeTile = (motionOnParamForTiles != nullptr && motionOnParamForTiles->getValue() > 0.5f
                                  && motionTileParamForTiles != nullptr)
             ? juce::roundToInt (motionTileParamForTiles->convertFrom0to1 (motionTileParamForTiles->getValue()))
             : -1;
 
+        const auto plot = plotBounds();
+        constexpr auto joint = juce::PathStrokeType::curved;
+        constexpr auto cap   = juce::PathStrokeType::rounded;
+
+        // Crosshair graticule — quiet divider, not a set of cards.
+        g.setColour (kInk.withAlpha (0.55f));
+        g.drawLine (plot.getCentreX(), plot.getY() + 4.0f, plot.getCentreX(), plot.getBottom() - 4.0f, 1.0f);
+        g.drawLine (plot.getX() + 4.0f, plot.getCentreY(), plot.getRight() - 4.0f, plot.getCentreY(), 1.0f);
+        g.setColour (t.curveColour().withAlpha (0.12f));
+        g.drawLine (plot.getCentreX(), plot.getY() + 4.0f, plot.getCentreX(), plot.getBottom() - 4.0f, 0.6f);
+        g.drawLine (plot.getX() + 4.0f, plot.getCentreY(), plot.getRight() - 4.0f, plot.getCentreY(), 0.6f);
+
         for (int i = 0; i < 4; ++i)
         {
-            const auto r = tileBounds (i).reduced (6.0f);
+            const auto r = tileBounds (i).reduced (10.0f);
             const bool lit = (i == activeTile);
 
-            g.setColour (t.curveColour().withAlpha (lit ? 0.16f : 0.06f));
-            g.fillRoundedRectangle (r, 4.0f);
+            const auto glyphArea = r.withTrimmedBottom (18.0f)
+                                    .reduced (r.getWidth() * 0.24f, r.getHeight() * 0.20f);
+            const auto p = glyphPathFor (i, glyphArea);
 
-            const auto glyph = r.reduced (r.getWidth() * 0.28f, r.getHeight() * 0.34f);
-            g.setColour (t.curveColour().withAlpha (lit ? 0.95f : 0.55f));
-            juce::Path p;
-            switch (i)
+            const auto phos = lit ? t.amber() : t.curveColour();
+            const float glow = lit ? 1.0f : 0.4f;
+
+            // Same multi-pass phosphor build as the main curve: outer glow,
+            // inner glow, dark bed, hot line, hot centre — this is what makes
+            // it read as an engraved trace instead of an SVG stroke.
+            g.setColour (phos.withAlpha (0.10f * glow));
+            g.strokePath (p, { 6.0f, joint, cap });
+            g.setColour (phos.withAlpha (0.22f * glow));
+            g.strokePath (p, { 3.2f, joint, cap });
+            g.setColour (kInk.withAlpha (0.45f));
+            g.strokePath (p, { 2.2f, joint, cap });
+            g.setColour (phos.withAlpha (lit ? 0.98f : 0.62f));
+            g.strokePath (p, { 1.7f, joint, cap });
+            if (lit)
             {
-                case 0: // Riser: ascending line
-                    p.startNewSubPath (glyph.getBottomLeft());
-                    p.lineTo (glyph.getTopRight());
-                    break;
-                case 1: // Breathe: single hump
-                    p.startNewSubPath (glyph.getBottomLeft());
-                    p.quadraticTo (glyph.getCentreX(), glyph.getY(), glyph.getBottomRight().x, glyph.getBottomRight().y);
-                    break;
-                case 2: // Adlib Chop: jagged pulse
-                    p.startNewSubPath (glyph.getX(), glyph.getBottom());
-                    p.lineTo (glyph.getX() + glyph.getWidth() * 0.25f, glyph.getY());
-                    p.lineTo (glyph.getX() + glyph.getWidth() * 0.5f, glyph.getBottom());
-                    p.lineTo (glyph.getX() + glyph.getWidth() * 0.75f, glyph.getY());
-                    p.lineTo (glyph.getRight(), glyph.getBottom());
-                    break;
-                default: // Wobble: random zigzag
-                    p.startNewSubPath (glyph.getX(), glyph.getCentreY());
-                    p.lineTo (glyph.getX() + glyph.getWidth() * 0.3f, glyph.getY());
-                    p.lineTo (glyph.getX() + glyph.getWidth() * 0.6f, glyph.getBottom());
-                    p.lineTo (glyph.getRight(), glyph.getCentreY() - glyph.getHeight() * 0.2f);
-                    break;
+                g.setColour (juce::Colour (0xfffff2d9).withAlpha (0.55f));
+                g.strokePath (p, { 0.6f, joint, cap });
             }
-            g.strokePath (p, { 1.4f, juce::PathStrokeType::curved, juce::PathStrokeType::rounded });
 
-            g.setFont (displayFont (10.0f, false));
-            g.setColour (t.curveColour().withAlpha (lit ? 0.95f : 0.6f));
-            g.drawText (kNames[i], r.withTop (r.getBottom() - 14.0f), juce::Justification::centred, false);
+            const auto labelArea = r.withTop (r.getBottom() - 15.0f);
+            drawEngravedTrackedText (g, kNames[i], labelArea,
+                                     displayFont (9.0f, false),
+                                     lit ? t.amber().brighter (0.2f) : t.labelInk().withAlpha (0.6f),
+                                     1.1f, lit ? 0.55f : 0.3f);
         }
     }
 
@@ -586,6 +634,7 @@ private:
                 {
                     screenMode = ScreenMode::Curve;
                     stopTimer();
+                    if (onScreenModeChanged) onScreenModeChanged (false);
                 }
             }
             repaint();
