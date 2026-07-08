@@ -12,13 +12,17 @@ namespace trench::ui
 // strength/certification all happens in PluginProcessor::seedCurrentBody ->
 // trench-core's seed_legal (shared cross-corner theme + jitter, gated by
 // certify_pass). This button is the verb, not a knob.
+//
+// A small dark recessed well (drawWell — the same material the MORPH/Q
+// value readouts use) with cream text, not a full-width cream bar: it has
+// to read as a small hardware button, not compete with the readouts.
 class SeedButton : public juce::Component,
                    private juce::Timer
 {
 public:
     std::function<void()> onSeed;
 
-    SeedButton()
+    SeedButton (const Theme& theme) : t (theme)
     {
         setInterceptsMouseClicks (true, false);
         setMouseCursor (juce::MouseCursor::PointingHandCursor);
@@ -46,15 +50,16 @@ public:
     void paint (juce::Graphics& g) override
     {
         const auto b = getLocalBounds().toFloat();
-        const auto ink = juce::Colour (0xffe9dfc6);
-        const float base = down ? 0.7f : (hover ? 0.95f : 0.8f);
-        g.setFont (displayFont (11.5f, false));
-        g.setColour (ink.withAlpha (juce::jmax (base, flashAlpha)));
+        drawWell (g, b, t);
+
+        g.setFont (displayFont (10.0f, false));
+        g.setColour (juce::Colour (0xffe9dfc6).withAlpha (down ? 0.75f : (hover ? 1.0f : 0.9f)));
         g.drawText ("SEED", b, juce::Justification::centred, false);
+
         if (flashAlpha > 0.01f)
         {
-            g.setColour (juce::Colour (0xffefa63c).withAlpha (flashAlpha * 0.5f));
-            g.drawRect (b.reduced (1.0f), 1.0f);
+            g.setColour (juce::Colour (0xffefa63c).withAlpha (flashAlpha * 0.6f));
+            g.drawRoundedRectangle (b.reduced (0.5f), juce::jmax (3.0f, t.wellRadius() - 4.0f), 1.4f);
         }
     }
 
@@ -67,6 +72,7 @@ private:
             stopTimer();
     }
 
+    Theme t;
     bool hover = false;
     bool down = false;
     float flashAlpha = 0.0f;

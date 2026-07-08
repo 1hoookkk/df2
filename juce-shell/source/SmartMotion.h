@@ -123,22 +123,6 @@ inline constexpr float kTileAmount[3][4] = {
 
 inline constexpr int kNumTileAmountBodies = 3;
 
-// Per-body baked 5D (Space) base amount — what FiveDTag snaps to on click,
-// instead of a hardcoded 1.0. PLACEHOLDER values; tune by ear with the
-// existing dev RigPanel slider (RigPanel.h, wired straight to ParamID::fiveD)
-// and write the result back here.
-inline constexpr float kFiveDBaseAmount[3] = {
-    /* Meaty Gizmo */  0.60f,
-    /* Talking Hedz */ 0.75f,
-    /* Lucifers Q   */ 0.50f,
-};
-
-inline float fiveDBaseAmountFor (int bodyIndex) noexcept
-{
-    const int row = (bodyIndex >= 0 && bodyIndex < kNumTileAmountBodies) ? bodyIndex : 0;
-    return kFiveDBaseAmount[row];
-}
-
 // Pure + deterministic, allocation-free -> safe to call on the audio thread.
 // `bodyIndex` is the roster index; out-of-range indices (diagnostics-only
 // bodies) fall back to row 0 rather than guessing.

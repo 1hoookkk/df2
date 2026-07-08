@@ -27,9 +27,7 @@ PluginEditor::PluginEditor (PluginProcessor& p)
     faceplate    = std::make_unique<FaceplateView> (panel, theme);
     graph        = std::make_unique<GraphDisplay> (grid, theme, processor.apvts, ParamID::slamDrive);
     slotPad      = std::make_unique<SlotPad> (theme);
-    motionSelector = std::make_unique<MotionSelector> (processor.apvts, theme);
-    timeSelector   = std::make_unique<TimeSelector> (processor.apvts, theme);
-    fiveDTag     = std::make_unique<FiveDTag> (processor.apvts, theme);
+    motionTimeRow = std::make_unique<MotionTimeRow> (processor.apvts, theme);
     takeView     = std::make_unique<TakeView> (theme);
     moveView     = std::make_unique<MoveView> (processor, theme, grid);
     // ROUTE matrix editor is shelved for V1 (RouteView.h kept on disk) — PLAY only until
@@ -83,9 +81,9 @@ PluginEditor::PluginEditor (PluginProcessor& p)
     morphReadout = std::make_unique<ValueReadout> ("morphReadout", theme);
     secondaryReadout = std::make_unique<ValueReadout> ("qReadout", theme);
     amountFader  = std::make_unique<AmountFader> (processor.apvts, theme);
-    seedButton   = std::make_unique<SeedButton>();
+    seedButton   = std::make_unique<SeedButton> (theme);
     seedButton->onSeed = [this] { processor.seedCurrentBody(); };
-    takeButton   = std::make_unique<TakeButton>();
+    takeButton   = std::make_unique<TakeButton> (theme);
     // Same real-heard-audio drag pattern as takeView->onKeep above -- no
     // offline render, the take is what you actually just heard.
     takeButton->onDragTake = [this] (juce::Component* source)
@@ -104,9 +102,7 @@ PluginEditor::PluginEditor (PluginProcessor& p)
     addAndMakeVisible (*takeView);     // page 2 overlay; visibility toggled by setPage
     addChildComponent (*moveView);     // page 2 (MOVE/PLAY) screen; shown by setPage
     addChildComponent (*slotPad);      // pager RETIRED everywhere (Tyson: no pages)
-    addAndMakeVisible (*motionSelector); // MOTION: Off/Riser/Breathe/Adlib Chop/Wobble
-    addAndMakeVisible (*timeSelector);   // TIME: musical division, shares the old Modulation row
-    addAndMakeVisible (*fiveDTag);       // 5D (QSound Space) switch, seated below Motion/Time
+    addAndMakeVisible (*motionTimeRow); // "RISER · 1/16" or "OFF" — one compact clickable row
     addAndMakeVisible (*typeSelector);
     addAndMakeVisible (*morphWheel);
     addAndMakeVisible (*secondaryWheel);
@@ -240,15 +236,14 @@ void PluginEditor::layoutComponents()
     takeView->setBounds (rectOf ("spectrumGrid"));
     moveView->setBounds (rectOf ("spectrumGrid"));
     slotPad->setBounds (rectOf ("slotPad"));
-    // MOTION + TIME share the old single-row "modulateTag" slot, side by side —
-    // no new panel real estate, matching the "panel stays simple" law.
+    // One compact row directly BELOW the screen — the old "modulateTag" rect
+    // actually overlapped the bottom of the screen glass (spectrumGrid spans
+    // y 220-601, modulateTag sat at y 442-498, panel-source coords), which is
+    // exactly the "text inside the display" problem being fixed here.
     {
-        const auto row = rectOf ("modulateTag");
-        const int half = row.getWidth() / 2;
-        motionSelector->setBounds (row.withWidth (half));
-        timeSelector->setBounds (row.withX (row.getX() + half).withWidth (row.getWidth() - half));
+        const auto scr = rectOf ("spectrumGrid");
+        motionTimeRow->setBounds (scr.getX(), scr.getBottom() + 6, scr.getWidth(), 22);
     }
-    fiveDTag->setBounds (rectOf ("fiveDTag"));
     typeSelector->setBounds (rectOf ("typeSelector"));
     morphWheel->setBounds (rectOf ("morphWheel"));
     secondaryWheel->setBounds (rectOf ("qWheel"));
@@ -266,18 +261,16 @@ void PluginEditor::layoutComponents()
         const int fBot = qr.getBottom() + 34;    // tall — run down toward (above) the cutout
         amountFader->setBounds (fx, fTop, fw, juce::jmax (120, fBot - fTop));
     }
-    // SEED + TAKE — one row below the Q wheel, spanning the same column the
-    // wheels occupy. Small permanent action buttons, not a toolbar: the
-    // verbs, not a control surface.
+    // SEED + TAKE — small hardware buttons (<=70px each), right-aligned under
+    // the Q readout so they read as two small controls, not a toolbar bar
+    // competing with the MORPH/Q readouts above them.
     {
-        const auto qw = rectOf ("qWheel");
         const auto qr = rectOf ("qReadout");
+        constexpr int w = 64, h = 20, gap = 6;
         const int y = qr.getBottom() + 14;
-        const int left = qw.getX();
         const int right = qr.getRight();
-        const int half = (right - left) / 2;
-        seedButton->setBounds (left, y, half, 26);
-        takeButton->setBounds (left + half, y, right - left - half, 26);
+        takeButton->setBounds (right - w, y, w, h);
+        seedButton->setBounds (right - w - gap - w, y, w, h);
     }
 
     decalsLayer->setBounds (base);
@@ -367,9 +360,7 @@ void PluginEditor::setPage (int page)
     graph->setVisible (! move);
     moveView->setVisible (move);            // V1: MOVE = PLAY only (ROUTE shelved)
     takeView->setVisible (false);           // Take/variant tray is not a V1 page
-    motionSelector->setVisible (true);
-    timeSelector->setVisible (true);
-    fiveDTag->setVisible (true);
+    motionTimeRow->setVisible (true);
     slotPad->setActive (currentPage);
 
     // Page-specific rails + labels: SOUND = MORPH + Q/SLAM, MOVE = MOVE/TIME.

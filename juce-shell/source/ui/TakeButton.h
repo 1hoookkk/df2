@@ -12,10 +12,13 @@ namespace trench::ui
 // real heard wet output (PluginProcessor::captureSmartTake), no offline
 // render, no tray. Same drag-distance-threshold pattern as TakeView's
 // existing per-cell drag, just for a single always-current take.
+//
+// A small dark recessed well (drawWell), matching SeedButton — a small
+// pressable/draggable hardware button, not a floating label.
 class TakeButton : public juce::Component
 {
 public:
-    TakeButton()
+    explicit TakeButton (const Theme& theme) : t (theme)
     {
         setInterceptsMouseClicks (true, false);
         setMouseCursor (juce::MouseCursor::PointingHandCursor);
@@ -54,10 +57,10 @@ public:
     void paint (juce::Graphics& g) override
     {
         const auto b = getLocalBounds().toFloat();
-        const auto ink = juce::Colour (0xffe9dfc6);
-        const float a = down ? 0.7f : (hover ? 0.95f : 0.8f);
-        g.setFont (displayFont (11.5f, false));
-        g.setColour (ink.withAlpha (a));
+        drawWell (g, b, t);
+
+        g.setFont (displayFont (10.0f, false));
+        g.setColour (juce::Colour (0xffe9dfc6).withAlpha (down ? 0.75f : (hover ? 1.0f : 0.9f)));
         g.drawText ("TAKE", b, juce::Justification::centred, false);
     }
 
@@ -66,6 +69,7 @@ public:
     std::function<void (juce::Component*)> onDragTake;
 
 private:
+    Theme t;
     bool hover = false;
     bool down = false;
     bool armedForDrag = false;

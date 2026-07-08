@@ -2,7 +2,6 @@
 
 #include "Theme.h"
 #include "../dsp/SlamStage.h"
-#include "../parameters/TrenchParameters.h"
 
 #include <juce_audio_processors/juce_audio_processors.h>
 
@@ -23,9 +22,9 @@ namespace trench::ui
 // (or the mouse wheel over the graph) drives SLAM/input-clip, with a transient
 // "SLAM xx.x" overlay. Up = push harder into it. Default is the parameter's own.
 //
-// The curve is also the motion preview: MOTION/TIME are picked elsewhere (the
-// MOTION/TIME selectors), this view only shows what they're doing — a quiet
-// readout, never an editable modulation editor.
+// Preview-only: curve, nothing else. MOTION/TIME are picked and shown in
+// their own compact row below the screen (MotionTimeRow) — this view never
+// draws text of its own for them.
 class GraphDisplay : public juce::Component,
                      private juce::Timer
 {
@@ -46,9 +45,6 @@ public:
             canvasDefault = canvasParam->getDefaultValue();
             setMouseCursor (juce::MouseCursor::UpDownResizeCursor);
         }
-        motionOnParam   = apvts.getParameter (ParamID::motionOn);
-        motionTileParam = apvts.getParameter (ParamID::motionTile);
-        motionDivParam  = apvts.getParameter (ParamID::motionDiv);
         // The screen takes mouse input to drive SLAM (children like the [1][2]
         // pad and MOD tag sit on top and still get their own clicks).
         setInterceptsMouseClicks (canvasParam != nullptr, false);
@@ -216,7 +212,6 @@ public:
                     : 0.0f;
 
         drawResponseTrace (g);
-        drawMotionReadout (g, screen);
         drawSlamReadout (g, screen);
         // No drawn edge either — the art's own bezel carries the seating.
     }
@@ -331,40 +326,6 @@ private:
         g.strokePath (path, { 0.55f, joint, cap });
     }
 
-    // Quiet MOTION/TIME status, top-left — a preview readout of what the
-    // MOTION/TIME selectors are set to, not a control surface of its own.
-    // Mirrors the SLAM readout's language (plain text on glass, no boxes).
-    void drawMotionReadout (juce::Graphics& g, juce::Rectangle<float> screen) const
-    {
-        static constexpr const char* kTileNames[4] = { "RISER", "BREATHE", "ADLIB CHOP", "WOBBLE" };
-        static constexpr const char* kDivNames[6]   = { "1/4", "1/8", "1/8T", "1/16", "1/16T", "1/32" };
-
-        const bool on = motionOnParam != nullptr && motionOnParam->getValue() > 0.5f;
-        const int tile = motionTileParam != nullptr
-            ? juce::jlimit (0, 3, juce::roundToInt (motionTileParam->convertFrom0to1 (motionTileParam->getValue())))
-            : 0;
-        const int div = motionDivParam != nullptr
-            ? juce::jlimit (0, 5, juce::roundToInt (motionDivParam->convertFrom0to1 (motionDivParam->getValue())))
-            : 3;
-
-        const auto line1 = juce::String ("MOTION ") + (on ? kTileNames[tile] : "OFF");
-        // TIME only means something for the tempo-synced gestures (not Adlib Chop).
-        const bool showTime = on && tile != 2;
-
-        auto r = juce::Rectangle<float> (screen.getX() + 8.0f, screen.getY() + 8.0f, 160.0f, 30.0f);
-
-        g.setFont (displayFont (11.0f, false));
-        g.setColour ((on ? t.amber() : t.curveColour()).withAlpha (on ? 0.92f : 0.5f));
-        g.drawText (line1, r.removeFromTop (15.0f), juce::Justification::centredLeft, false);
-
-        if (showTime)
-        {
-            g.setFont (displayFont (8.8f, false));
-            g.setColour (t.curveColour().withAlpha (0.75f));
-            g.drawText (juce::String ("TIME ") + kDivNames[div], r, juce::Justification::centredLeft, false);
-        }
-    }
-
     void drawSlamReadout (juce::Graphics& g, juce::Rectangle<float> screen) const
     {
         if (canvasParam == nullptr)
@@ -419,12 +380,6 @@ private:
     juce::RangedAudioParameter* canvasParam = nullptr;
     std::unique_ptr<juce::ParameterAttachment> canvasAtt;
     float canvasDefault = 0.0f;
-
-    // Read live for the MOTION/TIME readout only — the actual controls live
-    // in the MOTION/TIME selectors, this view never writes these.
-    juce::RangedAudioParameter* motionOnParam = nullptr;
-    juce::RangedAudioParameter* motionTileParam = nullptr;
-    juce::RangedAudioParameter* motionDivParam = nullptr;
 
     void timerCallback() override
     {
