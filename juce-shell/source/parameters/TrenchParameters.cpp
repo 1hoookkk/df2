@@ -92,8 +92,9 @@ juce::AudioProcessorValueTreeState::ParameterLayout createParameterLayout()
     layout.add (std::make_unique<juce::AudioParameterChoice> (
         juce::ParameterID { ParamID::motionTile, 1 },
         "Motion Tile",
-        juce::StringArray { "Riser", "Breathe", "Chop", "Wobble" },
-        0));  // default = Riser.
+        juce::StringArray { "Riser", "Breathe", "Chop", "Wobble", "User" },
+        0));  // default = Riser. "User" (index 4) is the alt-drag-recorded
+              // custom motion -- silent/flat until a recording exists.
 
     // The one public Motion lever. Scales the Morph sweep from still (0) to full
     // (1). amount=0 nulls even when armed.

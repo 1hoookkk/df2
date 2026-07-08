@@ -266,6 +266,57 @@ void PluginProcessor::refreshPatternSnapshotFromState()
     patternSnapshot = p;
 }
 
+void PluginProcessor::beginUserMotionRecording()
+{
+    userRecordingBuffer.clear();
+    userRecordingStartMs = juce::Time::getMillisecondCounterHiRes();
+    userRecordingStartMorph = juce::jlimit (0.0f, 1.0f, apvts.getRawParameterValue (ParamID::morph)->load());
+}
+
+void PluginProcessor::addUserMotionSample (float morphValue)
+{
+    if (userRecordingStartMs < 0.0)
+        return;
+    const double elapsedMs = juce::Time::getMillisecondCounterHiRes() - userRecordingStartMs;
+    userRecordingBuffer.push_back ({ elapsedMs, morphValue - userRecordingStartMorph });
+}
+
+void PluginProcessor::endUserMotionRecording()
+{
+    // Too short/thin to be a real taught gesture -- leave the previous
+    // recording (if any) in place rather than overwrite it with noise.
+    constexpr double kMinDurationMs = 60.0;
+    if (userRecordingBuffer.size() < 2 || userRecordingBuffer.back().first < kMinDurationMs)
+    {
+        userRecordingBuffer.clear();
+        userRecordingStartMs = -1.0;
+        return;
+    }
+
+    const double totalMs = userRecordingBuffer.back().first;
+    trench::MotionPattern p;
+    constexpr int N = trench::MotionEngine::kSteps;
+    size_t cursor = 1;
+    for (int i = 0; i < N; ++i)
+    {
+        const double targetMs = totalMs * (double) i / (double) (N - 1);
+        while (cursor < userRecordingBuffer.size() - 1 && userRecordingBuffer[cursor].first < targetMs)
+            ++cursor;
+        const auto& a = userRecordingBuffer[cursor - 1];
+        const auto& b = userRecordingBuffer[cursor];
+        const double span = juce::jmax (1.0e-6, b.first - a.first);
+        const double frac = juce::jlimit (0.0, 1.0, (targetMs - a.first) / span);
+        const float v = (float) (a.second + (b.second - a.second) * frac);
+        // Same bipolar-offset convention as the curated tiles' patterns
+        // (sineValues/wobbleValues in SmartMotion.h): [-1,1] -> [-64,64].
+        p.values[(size_t) i] = (juce::int8) juce::jlimit (-64, 64, (int) std::lround ((double) v * 64.0));
+    }
+
+    setMotionPattern (p);
+    userRecordingBuffer.clear();
+    userRecordingStartMs = -1.0;
+}
+
 PluginProcessor::ModulatedControls PluginProcessor::applyMotion (float morph, float q, float drive, float inputEnv, int numSamples) noexcept
 {
     const bool on = apvts.getRawParameterValue (ParamID::motionOn)->load() > 0.5f;
@@ -283,7 +334,17 @@ PluginProcessor::ModulatedControls PluginProcessor::applyMotion (float morph, fl
     // nothing). Recompute only when the body changes — audio-thread only, no lock.
     const int bodyIdx = loadedBodyIndex.load (std::memory_order_relaxed);
     const auto typeBehavior = getModulationBehaviorForUi();
-    if (bodyIdx != cachedSmartIndex || (int) typeBehavior != cachedSmartBehavior)
+    if (typeBehavior == trench::TypeBehavior::User)
+    {
+        // Not table-driven -- the recorded pattern can change (a new
+        // recording) without bodyIdx/behavior changing, so this always
+        // re-snapshots rather than relying on the cache-invalidation check
+        // below. getMotionPattern() is a cheap SpinLock + 72-byte copy.
+        cachedSmart = trench::smartMotionForUser (getMotionPattern());
+        cachedSmartIndex = bodyIdx;
+        cachedSmartBehavior = (int) typeBehavior;
+    }
+    else if (bodyIdx != cachedSmartIndex || (int) typeBehavior != cachedSmartBehavior)
     {
         cachedSmart      = trench::smartMotionFor (bodyIdx, typeBehavior);
         cachedSmartIndex = bodyIdx;
@@ -293,9 +354,9 @@ PluginProcessor::ModulatedControls PluginProcessor::applyMotion (float morph, fl
     const bool   bpmSync   = apvts.getRawParameterValue (ParamID::motionBpm)->load() > 0.5f;
     const float  rateHz    = apvts.getRawParameterValue (ParamID::motionRate)->load();
     const int    sync      = (int) apvts.getRawParameterValue (ParamID::motionSync)->load();
-    // TIME: the live division selector (1/4..1/32), seeded from the tile's
-    // curated default on arm (applyModulationBehavior) but user-adjustable
-    // from there — the same "seed on arm, then live" pattern Depth uses.
+    // TIME: no free matrix -- motionDiv is written atomically alongside
+    // motionOn/motionTile by MoveChip's curated 9-item list (MOVE_STATES in
+    // MotionTimeRow.h), never independently adjustable.
     const int    divIdx    = (int) apvts.getRawParameterValue (ParamID::motionDiv)->load();
     const bool   smooth    = cachedSmart.smooth;       // glide vs stepped
     const int    direction = cachedSmart.direction;    // Fwd / Pendulum / ...
@@ -341,7 +402,8 @@ PluginProcessor::ModulatedControls PluginProcessor::applyMotion (float morph, fl
 
     if ((typeBehavior == trench::TypeBehavior::AutoQuarter
          || typeBehavior == trench::TypeBehavior::AutoHalf
-         || typeBehavior == trench::TypeBehavior::Wobble)
+         || typeBehavior == trench::TypeBehavior::Wobble
+         || typeBehavior == trench::TypeBehavior::User)
         && ! transportPlaying)
     {
         motionStepForUi.store (0, std::memory_order_relaxed);
@@ -400,12 +462,13 @@ trench::TypeBehavior PluginProcessor::getModulationBehaviorForUi() const noexcep
         return trench::TypeBehavior::Static;
 
     const int tile = (int) apvts.getRawParameterValue (ParamID::motionTile)->load();
-    switch (juce::jlimit (0, 3, tile))
+    switch (juce::jlimit (0, 4, tile))
     {
         case 0: return trench::TypeBehavior::AutoHalf;    // Riser
         case 1: return trench::TypeBehavior::AutoQuarter; // Breathe
-        case 2: return trench::TypeBehavior::Dynamic;     // Adlib Chop
-        default: return trench::TypeBehavior::Wobble;     // Wobble
+        case 2: return trench::TypeBehavior::Dynamic;     // Chop
+        case 3: return trench::TypeBehavior::Wobble;      // Wobble
+        default: return trench::TypeBehavior::User;       // User
     }
 }
 

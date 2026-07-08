@@ -6,7 +6,7 @@
 #include "ui/FaceplateView.h"
 #include "ui/GraphDisplay.h"
 #include "ui/SlotPad.h"
-#include "ui/MotionTimeRow.h"
+#include "ui/MoveChip.h"
 #include "ui/TakeView.h"
 #include "ui/MoveView.h"
 // RouteView.h is shelved for V1 (ROUTE matrix editor not wired) — kept on disk for later.
@@ -57,7 +57,7 @@ private:
     std::unique_ptr<trench::ui::FaceplateView>    faceplate;
     std::unique_ptr<trench::ui::GraphDisplay>     graph;
     std::unique_ptr<trench::ui::SlotPad>          slotPad;
-    std::unique_ptr<trench::ui::MotionTimeRow>    motionTimeRow; // "RISER · 1/16" or "OFF", one compact clickable row
+    std::unique_ptr<trench::ui::MoveChip>         moveChip; // curated MOVE status chip, inside the screen
     std::unique_ptr<trench::ui::TakeView>         takeView;
     std::unique_ptr<trench::ui::MoveView>         moveView;   // Page 2 — MOVE / PLAY (V1)
    #ifdef TRENCH_PLAYER_DIAGNOSTICS

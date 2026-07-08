@@ -24,7 +24,7 @@ void requireFiniteAndBounded (const SmartMotion& m)
     REQUIRE (m.qDepth >= 0.0f);
     REQUIRE (m.qDepth <= 1.0f);
     REQUIRE (m.divIdx >= 0);
-    REQUIRE (m.divIdx <= 5);
+    REQUIRE (m.divIdx <= 9); // 10 divisions as of the bar-length TIME extension
     REQUIRE (m.direction >= 0);
     REQUIRE (m.direction <= 5);
     REQUIRE (m.length >= 1);
@@ -81,7 +81,7 @@ TEST_CASE ("Amount table scales depth without changing direction/division", "[sm
     REQUIRE (anyDistinct);
 }
 
-TEST_CASE ("motionTile parameter exists with 4 choices, default Riser", "[params]")
+TEST_CASE ("motionTile parameter exists with 5 choices, default Riser", "[params]")
 {
     juce::ScopedJuceInitialiser_GUI juce;
     PluginProcessor processor;
@@ -89,10 +89,39 @@ TEST_CASE ("motionTile parameter exists with 4 choices, default Riser", "[params
     REQUIRE (param != nullptr);
     auto* choice = dynamic_cast<juce::AudioParameterChoice*> (param);
     REQUIRE (choice != nullptr);
-    REQUIRE (choice->choices.size() == 4);
+    REQUIRE (choice->choices.size() == 5);
     REQUIRE (choice->choices[0] == "Riser");
     REQUIRE (choice->choices[1] == "Breathe");
     REQUIRE (choice->choices[2] == "Chop");
     REQUIRE (choice->choices[3] == "Wobble");
+    REQUIRE (choice->choices[4] == "User");
     REQUIRE (choice->getIndex() == 0);
+}
+
+TEST_CASE ("USER motion is silent/flat before any recording exists", "[motion][user]")
+{
+    // An unrecorded MotionPattern is all zeros -- buildUserMotion must not
+    // fabricate motion from that; every step should decode to zero offset.
+    const trench::MotionPattern unrecorded;
+    const auto m = trench::smartMotionForUser (unrecorded);
+    requireFiniteAndBounded (m);
+    REQUIRE (m.qDepth == 0.0f);
+    for (auto v : m.pattern.values)
+        REQUIRE (v == 0);
+}
+
+TEST_CASE ("USER motion plays back a real recorded shape, forward then reverse", "[motion][user]")
+{
+    trench::MotionPattern recorded;
+    for (int i = 0; i < trench::MotionEngine::kSteps; ++i)
+        recorded.values[(size_t) i] = (juce::int8) (i - trench::MotionEngine::kSteps / 2);
+    const auto m = trench::smartMotionForUser (recorded);
+    requireFiniteAndBounded (m);
+    REQUIRE (m.direction == 2); // Pendulum: forward then reverse
+    REQUIRE (m.morphDepth > 0.0f);
+    REQUIRE (m.qDepth == 0.0f); // recording only ever drives Morph, never Q
+    bool anyNonZero = false;
+    for (auto v : m.pattern.values)
+        if (v != 0) anyNonZero = true;
+    REQUIRE (anyNonZero);
 }

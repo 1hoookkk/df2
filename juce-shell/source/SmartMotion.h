@@ -107,6 +107,24 @@ namespace smart_detail
         gateEvery    (m.pattern, 16, 3, 1);
         return m;
     }
+
+    // USER — the alt-drag-recorded custom motion (PluginProcessor::
+    // beginUserMotionRecording/addUserMotionSample/endUserMotionRecording).
+    // Not a curated per-body table entry: `recorded` is whatever the user
+    // taught by dragging Morph, already resampled to 64 steps and already
+    // in the pattern's -64..64 bipolar-offset convention. Morph only (no Q);
+    // "plays forward then reverse" = Pendulum direction. Silent/flat until a
+    // recording exists, since an unrecorded MotionPattern is all zeros.
+    inline SmartMotion buildUserMotion (const MotionPattern& recorded) noexcept
+    {
+        SmartMotion m;
+        m.pattern = recorded;
+        m.morphDepth = 1.0f;
+        m.qDepth = 0.0f;
+        m.divIdx = 7; // 1 BAR default; the live motionDiv param drives actual timing
+        m.direction = 2 /*Pend*/; m.length = MotionEngine::kSteps; m.smooth = true;
+        return m;
+    }
 }
 
 // Per-body-per-tile Amount (0..1). PLACEHOLDER starting values, seeded from
@@ -143,6 +161,14 @@ inline SmartMotion smartMotionFor (int bodyIndex, TypeBehavior behavior) noexcep
         case TypeBehavior::Wobble:      return buildWobble     (kTileAmount[row][3]);
         default:                        return {};
     }
+}
+
+// USER motion is not part of the curated per-body table (smartMotionFor) --
+// it is whatever the user actually recorded. Separate entry point so
+// smartMotionFor's "pure, table-driven" contract stays unchanged.
+inline SmartMotion smartMotionForUser (const MotionPattern& recorded) noexcept
+{
+    return smart_detail::buildUserMotion (recorded);
 }
 
 } // namespace trench

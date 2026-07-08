@@ -69,6 +69,14 @@ public:
     void setMotionPattern (const trench::MotionPattern& p);
     int  getMotionStepForUi() const noexcept { return motionStepForUi.load (std::memory_order_relaxed); }
 
+    // USER motion: alt-drag Morph to teach a custom gesture. Message-thread
+    // only (called from WheelControl's alt-drag callbacks); the recorded
+    // shape lands in the same patternSnapshot/setMotionPattern the audio
+    // thread already reads. See MOVE chip's "USER" state.
+    void beginUserMotionRecording();
+    void addUserMotionSample (float morphValue);
+    void endUserMotionRecording();
+
     // Status readout for the FX pane: which body is loaded and whether the last
     // load (body switch or authoring-slot hot-reload) parsed cleanly.
     int  getLoadedBodyIndex() const noexcept { return loadedBodyIndex.load (std::memory_order_relaxed); }
@@ -237,6 +245,12 @@ private:
     std::atomic<bool> motionResetRequested { false };
     std::atomic<int> motionStepForUi { 0 };
     void refreshPatternSnapshotFromState();
+
+    // USER motion recording scratch state (message thread only -- mouse
+    // events, never touched by the audio thread).
+    std::vector<std::pair<double, float>> userRecordingBuffer; // (elapsed ms, morph delta)
+    double userRecordingStartMs = -1.0;
+    float  userRecordingStartMorph = 0.0f;
 
     // Smart Motion: the per-body curated motion the Modulation button plays. Cached
     // on the audio thread, recomputed only when the loaded body changes (no lock).

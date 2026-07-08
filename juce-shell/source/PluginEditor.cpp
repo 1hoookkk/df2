@@ -27,7 +27,7 @@ PluginEditor::PluginEditor (PluginProcessor& p)
     faceplate    = std::make_unique<FaceplateView> (panel, theme);
     graph        = std::make_unique<GraphDisplay> (grid, theme, processor.apvts, ParamID::slamDrive);
     slotPad      = std::make_unique<SlotPad> (theme);
-    motionTimeRow = std::make_unique<MotionTimeRow> (processor.apvts, theme);
+    moveChip = std::make_unique<MoveChip> (processor.apvts, theme);
     takeView     = std::make_unique<TakeView> (theme);
     moveView     = std::make_unique<MoveView> (processor, theme, grid);
     // ROUTE matrix editor is shelved for V1 (RouteView.h kept on disk) — PLAY only until
@@ -77,6 +77,11 @@ PluginEditor::PluginEditor (PluginProcessor& p)
     // rail — it is driven by dragging the screen canvas (see GraphDisplay), so the
     // old Q/SLAM label toggle is retired.
     morphWheel   = std::make_unique<WheelControl> (processor.apvts, ParamID::morph, strip, theme);
+    // Alt-drag Morph teaches a USER motion (MOVE chip's "USER · 1 BAR"). The
+    // wheel still moves/plays normally under Alt -- this just also records it.
+    morphWheel->onAltDragStart  = [this] { processor.beginUserMotionRecording(); };
+    morphWheel->onAltDragSample = [this] (float v) { processor.addUserMotionSample (v); };
+    morphWheel->onAltDragEnd    = [this] { processor.endUserMotionRecording(); };
     secondaryWheel = std::make_unique<WheelControl> (processor.apvts, ParamID::q, strip, theme);
     morphReadout = std::make_unique<ValueReadout> ("morphReadout", theme);
     secondaryReadout = std::make_unique<ValueReadout> ("qReadout", theme);
@@ -102,7 +107,7 @@ PluginEditor::PluginEditor (PluginProcessor& p)
     addAndMakeVisible (*takeView);     // page 2 overlay; visibility toggled by setPage
     addChildComponent (*moveView);     // page 2 (MOVE/PLAY) screen; shown by setPage
     addChildComponent (*slotPad);      // pager RETIRED everywhere (Tyson: no pages)
-    addAndMakeVisible (*motionTimeRow); // "RISER · 1/16" or "OFF" — one compact clickable row
+    addAndMakeVisible (*moveChip); // curated MOVE status chip -- added after graph, paints on top
     addAndMakeVisible (*typeSelector);
     addAndMakeVisible (*morphWheel);
     addAndMakeVisible (*secondaryWheel);
@@ -241,7 +246,7 @@ void PluginEditor::layoutComponents()
     // separate component layered on top (added after graph -> paints front).
     {
         const auto scr = rectOf ("spectrumGrid");
-        motionTimeRow->setBounds (scr.getX() + 8, scr.getY() + 8, 170, 20);
+        moveChip->setBounds (scr.getX() + 8, scr.getY() + 8, 190, 20);
     }
     typeSelector->setBounds (rectOf ("typeSelector"));
     morphWheel->setBounds (rectOf ("morphWheel"));
@@ -359,7 +364,7 @@ void PluginEditor::setPage (int page)
     graph->setVisible (! move);
     moveView->setVisible (move);            // V1: MOVE = PLAY only (ROUTE shelved)
     takeView->setVisible (false);           // Take/variant tray is not a V1 page
-    motionTimeRow->setVisible (true);
+    moveChip->setVisible (true);
     slotPad->setActive (currentPage);
 
     // Page-specific rails + labels: SOUND = MORPH + Q/SLAM, MOVE = MOVE/TIME.

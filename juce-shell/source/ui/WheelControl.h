@@ -3,6 +3,7 @@
 #include "Theme.h"
 
 #include <juce_audio_processors/juce_audio_processors.h>
+#include <functional>
 #include <memory>
 
 namespace trench::ui
@@ -85,19 +86,42 @@ public:
     void mouseEnter (const juce::MouseEvent&) override { hovering = true;  repaint(); }
     void mouseExit  (const juce::MouseEvent&) override { hovering = false; repaint(); }
 
+    // Alt-drag recording (Morph only, wired externally -- see PluginEditor):
+    // the wheel still moves/plays normally under Alt, this just additionally
+    // reports the live value so a caller can teach a USER motion from it.
+    std::function<void()> onAltDragStart;
+    std::function<void (float)> onAltDragSample;
+    std::function<void()> onAltDragEnd;
+
     void mouseDown (const juce::MouseEvent& e) override
     {
         pressing = true;
+        altRecording = e.mods.isAltDown() && onAltDragSample != nullptr;
         if (attachment != nullptr)
             attachment->beginGesture();
         dragAbsolute (e);
+        if (altRecording)
+        {
+            if (onAltDragStart != nullptr) onAltDragStart();
+            onAltDragSample (currentNormalised());
+        }
     }
-    void mouseDrag (const juce::MouseEvent& e) override { dragAbsolute (e); }
+    void mouseDrag (const juce::MouseEvent& e) override
+    {
+        dragAbsolute (e);
+        if (altRecording && onAltDragSample != nullptr)
+            onAltDragSample (currentNormalised());
+    }
     void mouseUp (const juce::MouseEvent&) override
     {
         pressing = false;
         if (attachment != nullptr)
             attachment->endGesture();
+        if (altRecording)
+        {
+            altRecording = false;
+            if (onAltDragEnd != nullptr) onAltDragEnd();
+        }
         repaint();
     }
 
@@ -235,6 +259,7 @@ private:
     Theme t;
     bool hovering = false;
     bool pressing = false;
+    bool altRecording = false;
     bool isQControl = false;
     bool displayOverrideActive = false;
     float displayOverrideValue = 0.0f;
