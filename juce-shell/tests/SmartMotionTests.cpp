@@ -92,7 +92,7 @@ TEST_CASE ("motionTile parameter exists with 4 choices, default Riser", "[params
     REQUIRE (choice->choices.size() == 4);
     REQUIRE (choice->choices[0] == "Riser");
     REQUIRE (choice->choices[1] == "Breathe");
-    REQUIRE (choice->choices[2] == "Adlib Chop");
+    REQUIRE (choice->choices[2] == "Chop");
     REQUIRE (choice->choices[3] == "Wobble");
     REQUIRE (choice->getIndex() == 0);
 }

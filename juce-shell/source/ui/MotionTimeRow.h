@@ -41,7 +41,7 @@ public:
         motionCombo.addItem ("Off", 1);
         motionCombo.addItem ("Riser", 2);
         motionCombo.addItem ("Breathe", 3);
-        motionCombo.addItem ("Adlib Chop", 4);
+        motionCombo.addItem ("Chop", 4);
         motionCombo.addItem ("Wobble", 5);
         // "User" (an alt-drag-recorded custom motion) is not added here yet --
         // there is no recording mechanism behind it. Add it as item 6 once

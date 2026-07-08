@@ -92,7 +92,7 @@ juce::AudioProcessorValueTreeState::ParameterLayout createParameterLayout()
     layout.add (std::make_unique<juce::AudioParameterChoice> (
         juce::ParameterID { ParamID::motionTile, 1 },
         "Motion Tile",
-        juce::StringArray { "Riser", "Breathe", "Adlib Chop", "Wobble" },
+        juce::StringArray { "Riser", "Breathe", "Chop", "Wobble" },
         0));  // default = Riser.
 
     // The one public Motion lever. Scales the Morph sweep from still (0) to full
