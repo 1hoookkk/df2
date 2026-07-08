@@ -157,9 +157,11 @@ set(SourceFiles
     source/ui/GraphDisplay.h
     source/ui/DecalsLayer.h
     source/ui/LabelsLayer.h
-    source/ui/MotionSelector.h
-    source/ui/TimeSelector.h
+    source/ui/MoveChip.h
     source/ui/SelectorLookAndFeel.h
+    source/ui/AmountFader.h
+    source/ui/SeedButton.h
+    source/ui/TakeButton.h
     source/ui/ResponseCurve.h
     source/ui/SlotPad.h
     source/ui/Theme.h
