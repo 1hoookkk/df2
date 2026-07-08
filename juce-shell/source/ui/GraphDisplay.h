@@ -30,6 +30,22 @@ class GraphDisplay : public juce::Component,
                      private juce::Timer
 {
 public:
+    // SEED's on-screen feedback: a controlled sibling-mutation pulse, not a
+    // randomize/loading animation. Compress -> brief static tear -> redraw
+    // into the new (post-seed) curve. No seed numbers, no spinner, no
+    // warning colour -- see playSeedPulse().
+    void playSeedPulse()
+    {
+        if (traceXs.empty() || traceDbs.size() != traceXs.size())
+            return; // no curve to animate from yet
+        pulseOldDbs = traceDbs;
+        pulsePhase = PulseCompress;
+        pulseElapsedMs = 0.0;
+        startTimer (30);
+        repaint();
+    }
+
+
     GraphDisplay (juce::Image grid, const Theme& theme,
                   juce::AudioProcessorValueTreeState& apvts, const juce::String& canvasParamId)
         : gridImage (std::move (grid)), t (theme)
@@ -299,6 +315,12 @@ private:
     // only screen wetness; the curve itself stays thin and physical.
     void drawResponseTrace (juce::Graphics& g) const
     {
+        if (pulsePhase != PulseIdle)
+        {
+            drawSeedPulseTrace (g);
+            return;
+        }
+
         const auto path = displayPathForSlam();
         if (path.isEmpty())
             return;
@@ -334,6 +356,74 @@ private:
         }
         g.setColour (juce::Colour (0xfffff7fa).withAlpha ((0.34f + 0.30f * s) * dim)); // constant hot centre
         g.strokePath (path, { 0.55f, joint, cap });
+    }
+
+    // SEED's screen feedback: the OLD curve compresses toward a hot ruby
+    // scanline, tears with a few frames of quiet static, then the same
+    // scanline unfurls into the NEW (already-seeded) curve. No slam-warp
+    // during the pulse -- it is a brief, self-contained transition.
+    void drawSeedPulseTrace (juce::Graphics& g) const
+    {
+        if (traceXs.empty() || traceXs.size() != traceDbs.size() || traceXs.size() != pulseOldDbs.size())
+            return;
+
+        const auto plot = plotBounds();
+        if (plot.isEmpty())
+            return;
+
+        const double dbTop = t.curveDbTop(), dbBot = t.curveDbBottom();
+        const float centreY = plot.getY() + plot.getHeight() * 0.5f;
+        const size_t N = traceXs.size();
+
+        float squash = 1.0f;         // 1 = normal shape, ~0.06 = collapsed scanline
+        float progress = 0.0f;       // 0..1 within the current phase
+        bool jitter = false;
+
+        if (pulsePhase == PulseCompress)
+        {
+            progress = (float) juce::jlimit (0.0, 1.0, pulseElapsedMs / kPulseCompressMs);
+            squash = juce::jmap (progress, 1.0f, 0.06f);
+        }
+        else if (pulsePhase == PulseStatic)
+        {
+            squash = 0.06f;
+            jitter = true;
+        }
+        else // PulseRedraw
+        {
+            progress = (float) juce::jlimit (0.0, 1.0, pulseElapsedMs / kPulseRedrawMs);
+            squash = juce::jmap (progress, 0.06f, 1.0f);
+        }
+
+        juce::Path path;
+        for (size_t i = 0; i < N; ++i)
+        {
+            double db = pulseOldDbs[i];
+            if (pulsePhase == PulseRedraw)
+                db = pulseOldDbs[i] + (traceDbs[i] - pulseOldDbs[i]) * progress;
+
+            double yt = juce::jlimit (-0.06, 1.06, (dbTop - db) / (dbTop - dbBot));
+            float y = plot.getY() + (float) yt * plot.getHeight();
+            y = centreY + (y - centreY) * squash;
+            if (jitter)
+                y += pulseRng.nextFloat() * 3.0f - 1.5f; // quiet tear, not a chaotic glitch
+
+            if (i == 0) path.startNewSubPath (traceXs[i], y);
+            else        path.lineTo (traceXs[i], y);
+        }
+
+        // Hot ruby during compress/static (the "compressed scanline"); cools
+        // back toward the normal phosphor colour as the redraw completes.
+        const float heat = pulsePhase == PulseRedraw ? (1.0f - progress) : 1.0f;
+        const auto hot = juce::Colour (0xfffff7fa).interpolatedWith (juce::Colour (0xffff2f4a), 0.4f);
+        const auto col = t.curveColour().interpolatedWith (hot, heat);
+        constexpr auto joint = juce::PathStrokeType::curved;
+        constexpr auto cap   = juce::PathStrokeType::rounded;
+
+        g.setColour (col.withAlpha (0.10f));
+        g.strokePath (path, { 3.2f, joint, cap });
+        g.setColour (col.withAlpha (0.95f));
+        g.strokePath (path, { 1.2f, joint, cap });
     }
 
     void drawSlamReadout (juce::Graphics& g, juce::Rectangle<float> screen) const
@@ -394,10 +484,43 @@ private:
     std::unique_ptr<juce::ParameterAttachment> motionOnAtt;
     float canvasDefault = 0.0f;
 
+    // SEED pulse state. Static/Redraw durations are the direction's exact
+    // numbers (~80ms/~100ms); Compress has no given duration, 60ms is a
+    // reasonable choice, not a measured constant.
+    enum PulsePhase { PulseIdle, PulseCompress, PulseStatic, PulseRedraw };
+    PulsePhase pulsePhase = PulseIdle;
+    double pulseElapsedMs = 0.0;
+    std::vector<float> pulseOldDbs;
+    mutable juce::Random pulseRng;
+    static constexpr double kPulseCompressMs = 60.0;
+    static constexpr double kPulseStaticMs   = 80.0;
+    static constexpr double kPulseRedrawMs   = 100.0;
+
     void timerCallback() override
     {
         meterAlpha = juce::jmax (0.0f, meterAlpha - 0.05f);
-        if (meterAlpha <= 0.01f) stopTimer();
+
+        if (pulsePhase != PulseIdle)
+        {
+            pulseElapsedMs += 30.0;
+            if (pulsePhase == PulseCompress && pulseElapsedMs >= kPulseCompressMs)
+            {
+                pulsePhase = PulseStatic;
+                pulseElapsedMs = 0.0;
+            }
+            else if (pulsePhase == PulseStatic && pulseElapsedMs >= kPulseStaticMs)
+            {
+                pulsePhase = PulseRedraw;
+                pulseElapsedMs = 0.0;
+            }
+            else if (pulsePhase == PulseRedraw && pulseElapsedMs >= kPulseRedrawMs)
+            {
+                pulsePhase = PulseIdle;
+                pulseOldDbs.clear();
+            }
+        }
+
+        if (meterAlpha <= 0.01f && pulsePhase == PulseIdle) stopTimer();
         repaint();
     }
 

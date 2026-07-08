@@ -87,7 +87,12 @@ PluginEditor::PluginEditor (PluginProcessor& p)
     secondaryReadout = std::make_unique<ValueReadout> ("qReadout", theme);
     amountFader  = std::make_unique<AmountFader> (processor.apvts, theme);
     seedButton   = std::make_unique<SeedButton> (theme);
-    seedButton->onSeed = [this] { processor.seedCurrentBody(); };
+    seedButton->onSeed = [this]
+    {
+        processor.seedCurrentBody();
+        graph->playSeedPulse();
+        moveChip->flashSiblingLabel();
+    };
     takeButton   = std::make_unique<TakeButton> (theme);
     // Same real-heard-audio drag pattern as takeView->onKeep above -- no
     // offline render, the take is what you actually just heard.

@@ -24,7 +24,8 @@ namespace trench::ui
 //
 // TIME is never independently adjustable and never baked per-gesture in the
 // engine -- it's just part of which named state is selected here.
-class MoveChip : public juce::Component
+class MoveChip : public juce::Component,
+                 private juce::Timer
 {
 public:
     struct State
@@ -102,6 +103,17 @@ public:
 
     ~MoveChip() override { combo.setLookAndFeel (nullptr); }
 
+    // SEED's screen feedback: replace this chip's own text with "SIBLING"
+    // for ~500ms, then revert to whatever MOVE state was actually selected
+    // (unchanged the whole time -- this only overrides the DISPLAYED text).
+    void flashSiblingLabel()
+    {
+        showingSibling = true;
+        siblingElapsedMs = 0.0;
+        startTimer (30);
+        repaint();
+    }
+
     void resized() override { combo.setBounds (chipBounds()); }
 
     void mouseEnter (const juce::MouseEvent&) override { hover = true; repaint(); }
@@ -121,16 +133,18 @@ public:
 
         g.setFont (displayFont (11.0f, false).withStyle (juce::Font::italic));
         g.setColour ((on ? t.amber() : kQuietInk).withAlpha (hover ? 1.0f : (on ? 0.95f : 0.82f)));
-        g.drawText (combo.getText(), chip.reduced (7.0f, 0.0f), juce::Justification::centredLeft, false);
+        g.drawText (displayText(), chip.reduced (7.0f, 0.0f), juce::Justification::centredLeft, false);
     }
 
 private:
+    juce::String displayText() const { return showingSibling ? "SIBLING" : combo.getText(); }
+
     // The chip hugs its text content (padded), capped at this component's
     // assigned outer bounds -- it does not stretch to fill them.
     juce::Rectangle<int> chipBounds() const
     {
         const auto font = displayFont (11.0f, false).withStyle (juce::Font::italic);
-        const float textW = juce::GlyphArrangement::getStringWidth (font, combo.getText());
+        const float textW = juce::GlyphArrangement::getStringWidth (font, displayText());
         const int w = juce::jmin (getWidth(), (int) textW + 22);
         return { 0, 0, w, getHeight() };
     }
@@ -161,7 +175,20 @@ private:
         repaint();
     }
 
+    void timerCallback() override
+    {
+        siblingElapsedMs += 30.0;
+        if (siblingElapsedMs >= kSiblingFlashMs)
+        {
+            showingSibling = false;
+            stopTimer();
+            resized();
+        }
+        repaint();
+    }
+
     static inline const juce::Colour kQuietInk { 0xffe9dfc6 };
+    static constexpr double kSiblingFlashMs = 500.0; // the direction's exact number
 
     Theme t;
     SelectorLookAndFeel lookAndFeel;
@@ -173,6 +200,8 @@ private:
     std::unique_ptr<juce::ParameterAttachment> tileAtt;
     std::unique_ptr<juce::ParameterAttachment> divAtt;
     bool hover = false;
+    bool showingSibling = false;
+    double siblingElapsedMs = 0.0;
 
     JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR (MoveChip)
 };
