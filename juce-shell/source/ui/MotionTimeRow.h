@@ -10,10 +10,13 @@
 namespace trench::ui
 {
 
-// One compact clickable row under the screen: "RISER · 1/16" or just "OFF".
-// Left word = MOTION (Off/Riser/Breathe/Adlib Chop/Wobble), right word =
-// TIME (musical division) — two independent popups sharing one line, no
-// "MOTION"/"TIME" labels, no duplicate state shown anywhere else.
+// A single small status chip that sits INSIDE the red screen (top-left,
+// over the curve) — "OFF" or "RISER · 1/16". The screen is still not an
+// editor: it draws only the curve (GraphDisplay) plus this one clickable
+// chip. Left half of the chip's text = MOTION popup (Off/Riser/Breathe/
+// Adlib Chop/Wobble), right half = TIME popup (musical division) — hidden
+// entirely when there's no time to show (motion off, or Adlib Chop, which
+// has no tempo division).
 class MotionTimeRow : public juce::Component
 {
 public:
@@ -40,6 +43,9 @@ public:
         motionCombo.addItem ("Breathe", 3);
         motionCombo.addItem ("Adlib Chop", 4);
         motionCombo.addItem ("Wobble", 5);
+        // "User" (an alt-drag-recorded custom motion) is not added here yet --
+        // there is no recording mechanism behind it. Add it as item 6 once
+        // that exists; until then this list only offers what's real.
 
         timeCombo.addItem ("1/4", 1);
         timeCombo.addItem ("1/8", 2);
@@ -47,6 +53,10 @@ public:
         timeCombo.addItem ("1/16", 4);
         timeCombo.addItem ("1/16T", 5);
         timeCombo.addItem ("1/32", 6);
+        timeCombo.addItem ("1/2", 7);
+        timeCombo.addItem ("1 BAR", 8);
+        timeCombo.addItem ("2 BAR", 9);
+        timeCombo.addItem ("4 BAR", 10);
 
         motionDivParam = apvts.getParameter (ParamID::motionDiv);
         if (motionOnParam != nullptr)
@@ -102,22 +112,22 @@ public:
 
     void resized() override
     {
-        const auto b = getLocalBounds();
+        const auto chip = chipBounds();
         const bool on = motionOnParam != nullptr && motionOnParam->getValue() > 0.5f;
         const int tile = currentTile();
         const bool showTime = on && tile != 2; // Adlib Chop has no tempo division
 
         if (! showTime)
         {
-            motionCombo.setBounds (b);
+            motionCombo.setBounds (chip);
             timeCombo.setBounds (0, 0, 0, 0);
             return;
         }
 
         const float splitFrac = juce::jlimit (0.25f, 0.75f, motionTextWidthFrac());
-        const int splitX = (int) ((float) b.getWidth() * splitFrac);
-        motionCombo.setBounds (b.withWidth (splitX));
-        timeCombo.setBounds (b.withX (splitX).withWidth (b.getWidth() - splitX));
+        const int splitX = chip.getX() + (int) ((float) chip.getWidth() * splitFrac);
+        motionCombo.setBounds (chip.withRight (splitX));
+        timeCombo.setBounds (chip.withLeft (splitX));
     }
 
     void mouseEnter (const juce::MouseEvent&) override { hover = true; repaint(); }
@@ -134,15 +144,32 @@ public:
 
     void paint (juce::Graphics& g) override
     {
-        const auto b = getLocalBounds().toFloat();
+        const auto chip = chipBounds().toFloat();
         const bool on = motionOnParam != nullptr && motionOnParam->getValue() > 0.5f;
+        const float radius = juce::jmin (5.0f, chip.getHeight() * 0.5f);
 
-        g.setFont (displayFont (12.0f, false).withStyle (juce::Font::italic));
-        g.setColour ((on ? t.amber() : kQuietInk).withAlpha (hover ? 1.0f : (on ? 0.95f : 0.88f)));
-        g.drawText (currentText(), b, juce::Justification::centredLeft, false);
+        // Small dark recessed badge on the glass -- quiet, not a card.
+        g.setColour (juce::Colours::black.withAlpha (0.40f));
+        g.fillRoundedRectangle (chip, radius);
+        g.setColour (juce::Colours::black.withAlpha (0.55f));
+        g.drawRoundedRectangle (chip.reduced (0.5f), radius, 1.0f);
+
+        g.setFont (displayFont (11.0f, false).withStyle (juce::Font::italic));
+        g.setColour ((on ? t.amber() : kQuietInk).withAlpha (hover ? 1.0f : (on ? 0.95f : 0.82f)));
+        g.drawText (currentText(), chip.reduced (7.0f, 0.0f), juce::Justification::centredLeft, false);
     }
 
 private:
+    // The chip hugs its text content (padded), capped at this component's
+    // assigned outer bounds -- it does not stretch to fill them.
+    juce::Rectangle<int> chipBounds() const
+    {
+        const auto font = displayFont (11.0f, false).withStyle (juce::Font::italic);
+        const float textW = juce::GlyphArrangement::getStringWidth (font, currentText());
+        const int w = juce::jmin (getWidth(), (int) textW + 22);
+        return { 0, 0, w, getHeight() };
+    }
+
     int currentTile() const
     {
         if (motionTileParam == nullptr) return 0;
@@ -159,11 +186,12 @@ private:
         return motionWord + "  \xC2\xB7  " + timeCombo.getText().toUpperCase();
     }
 
-    // Fraction of the row's width the motion word (+ separator) occupies, so
-    // the two invisible combo hit-zones line up with the drawn text's split.
+    // Fraction of the chip's width the motion word (+ separator) occupies,
+    // so the two invisible combo hit-zones line up with the drawn text's
+    // split.
     float motionTextWidthFrac() const
     {
-        const auto font = displayFont (12.0f, false).withStyle (juce::Font::italic);
+        const auto font = displayFont (11.0f, false).withStyle (juce::Font::italic);
         const auto motionWord = motionCombo.getText().toUpperCase() + "  \xC2\xB7  ";
         const float mw = juce::GlyphArrangement::getStringWidth (font, motionWord);
         const float full = juce::GlyphArrangement::getStringWidth (font, currentText());
@@ -183,7 +211,7 @@ private:
         repaint();
     }
 
-    static inline const juce::Colour kQuietInk { 0xffd9bcc4 };
+    static inline const juce::Colour kQuietInk { 0xffe9dfc6 };
 
     Theme t;
     SelectorLookAndFeel lookAndFeel;

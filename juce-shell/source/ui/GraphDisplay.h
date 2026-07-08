@@ -2,6 +2,7 @@
 
 #include "Theme.h"
 #include "../dsp/SlamStage.h"
+#include "../parameters/TrenchParameters.h"
 
 #include <juce_audio_processors/juce_audio_processors.h>
 
@@ -45,6 +46,9 @@ public:
             canvasDefault = canvasParam->getDefaultValue();
             setMouseCursor (juce::MouseCursor::UpDownResizeCursor);
         }
+        motionOnParam = apvts.getParameter (ParamID::motionOn);
+        if (motionOnParam != nullptr)
+            motionOnAtt = std::make_unique<juce::ParameterAttachment> (*motionOnParam, [this] (float) { repaint(); });
         // The screen takes mouse input to drive SLAM (children like the [1][2]
         // pad and MOD tag sit on top and still get their own clicks).
         setInterceptsMouseClicks (canvasParam != nullptr, false);
@@ -305,24 +309,30 @@ private:
         constexpr auto joint = juce::PathStrokeType::curved;
         constexpr auto cap   = juce::PathStrokeType::rounded;
 
+        // MOTION off -> a faint baseline, not the fully "live" trace: the
+        // curve is still the true current response, just visually quiet
+        // until there's actual motion to preview.
+        const bool motionOn = motionOnParam != nullptr && motionOnParam->getValue() > 0.5f;
+        const float dim = motionOn ? 1.0f : 0.4f;
+
         // One curve only, drawn like a measured trace on hardware glass:
         // a tiny two-pass phosphor glow, a dark bed for contrast against the
         // glass texture, then ONE consistent thin phosphor line with a fixed
         // hot centre. SLAM warms and thickens the same line slightly.
-        g.setColour (phos.withAlpha (0.045f + 0.05f * s));      // outer glow — soft, tiny
+        g.setColour (phos.withAlpha ((0.045f + 0.05f * s) * dim));      // outer glow — soft, tiny
         g.strokePath (path, { 4.6f + 0.8f * s, joint, cap });
-        g.setColour (phos.withAlpha (0.10f + 0.08f * s));       // inner glow
+        g.setColour (phos.withAlpha ((0.10f + 0.08f * s) * dim));       // inner glow
         g.strokePath (path, { 2.4f + 0.5f * s, joint, cap });
-        g.setColour (kInk.withAlpha (0.45f));                   // dark bed under the line
+        g.setColour (kInk.withAlpha (0.45f * dim));                     // dark bed under the line
         g.strokePath (path, { 1.9f, joint, cap });
-        g.setColour (phos.withAlpha (0.98f));                   // the phosphor line
+        g.setColour (phos.withAlpha (0.98f * dim));                     // the phosphor line
         g.strokePath (path, { 1.15f + 0.20f * s, joint, cap });
         if (limit > 0.001f)
         {
-            g.setColour (juce::Colour (0xfffff7fa).withAlpha (0.18f + 0.36f * limit));
+            g.setColour (juce::Colour (0xfffff7fa).withAlpha ((0.18f + 0.36f * limit) * dim));
             g.strokePath (path, { 0.8f + 1.3f * limit, joint, cap });
         }
-        g.setColour (juce::Colour (0xfffff7fa).withAlpha (0.34f + 0.30f * s)); // constant hot centre
+        g.setColour (juce::Colour (0xfffff7fa).withAlpha ((0.34f + 0.30f * s) * dim)); // constant hot centre
         g.strokePath (path, { 0.55f, joint, cap });
     }
 
@@ -379,6 +389,9 @@ private:
     // SLAM on-screen (canvas) control
     juce::RangedAudioParameter* canvasParam = nullptr;
     std::unique_ptr<juce::ParameterAttachment> canvasAtt;
+    // Read live only to dim the curve when MOTION is off — never written here.
+    juce::RangedAudioParameter* motionOnParam = nullptr;
+    std::unique_ptr<juce::ParameterAttachment> motionOnAtt;
     float canvasDefault = 0.0f;
 
     void timerCallback() override

@@ -236,13 +236,12 @@ void PluginEditor::layoutComponents()
     takeView->setBounds (rectOf ("spectrumGrid"));
     moveView->setBounds (rectOf ("spectrumGrid"));
     slotPad->setBounds (rectOf ("slotPad"));
-    // One compact row directly BELOW the screen — the old "modulateTag" rect
-    // actually overlapped the bottom of the screen glass (spectrumGrid spans
-    // y 220-601, modulateTag sat at y 442-498, panel-source coords), which is
-    // exactly the "text inside the display" problem being fixed here.
+    // One small status chip, top-left INSIDE the screen, over the curve.
+    // The screen itself (GraphDisplay) draws only the curve; this chip is a
+    // separate component layered on top (added after graph -> paints front).
     {
         const auto scr = rectOf ("spectrumGrid");
-        motionTimeRow->setBounds (scr.getX(), scr.getBottom() + 6, scr.getWidth(), 22);
+        motionTimeRow->setBounds (scr.getX() + 8, scr.getY() + 8, 170, 20);
     }
     typeSelector->setBounds (rectOf ("typeSelector"));
     morphWheel->setBounds (rectOf ("morphWheel"));

@@ -125,8 +125,9 @@ juce::AudioProcessorValueTreeState::ParameterLayout createParameterLayout()
     layout.add (std::make_unique<juce::AudioParameterChoice> (
         juce::ParameterID { ParamID::motionDiv, 1 },
         "M.Div",
-        juce::StringArray { "1/4", "1/8", "1/8T", "1/16", "1/16T", "1/32" },
-        3));  // default = 1/16.
+        juce::StringArray { "1/4", "1/8", "1/8T", "1/16", "1/16T", "1/32", "1/2", "1 BAR", "2 BAR", "4 BAR" },
+        3));  // default = 1/16. Bar values appended at the end (6-9) so the
+              // existing 0-5 fast-subdivision indices keep their meaning.
 
     layout.add (std::make_unique<juce::AudioParameterChoice> (
         juce::ParameterID { ParamID::motionSync, 1 },
