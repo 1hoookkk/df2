@@ -346,15 +346,20 @@ impl FilterEngine {
                     stage[i] = a * stage[i] + (1.0 - a) * PASSTHROUGH_COEFFS[i];
                 }
             }
-            // Gain compensation: blending the numerator toward [1,0,0] shifts
-            // the cascade's own peak response, so match the blended peak back
-            // to the full-strength (amount=1) peak — Amount tapers character,
-            // not level.
-            let peak_full = compute_cascade_peak(&corner, self.sample_rate);
-            let peak_blended = compute_cascade_peak(&blended, self.sample_rate);
-            if peak_blended > 1.0e-6 {
-                boost *= peak_full / peak_blended;
-            }
+            // Gain compensation: NOT "match the α=1 level" (that would make
+            // amount=0 louder than dry, contradicting "0 = flat/identity").
+            // The two endpoints are already correct by construction (blended
+            // == corner at a=1, blended == identity with peak 1.0 at a=0) —
+            // what needs correcting is the MIDDLE, because gain is a
+            // nonlinear function of the coefficients being blended linearly.
+            // Target: peak taper is linear in dB from 0 dB (a=0) to the
+            // full-strength peak's dB (a=1); compensate only the deviation
+            // from that straight line at the current `a`.
+            let peak_full = compute_cascade_peak(&corner, self.sample_rate).max(1.0e-6);
+            let peak_blended = compute_cascade_peak(&blended, self.sample_rate).max(1.0e-6);
+            let expected_db = a as f32 * 20.0 * peak_full.log10();
+            let actual_db = 20.0 * peak_blended.log10();
+            boost *= 10.0_f32.powf ((expected_db - actual_db) / 20.0);
             blended
         } else {
             corner
@@ -936,6 +941,48 @@ mod tests {
         assert!(diff > 0.5, "amount=1 vs amount=0 output should clearly differ, diff={diff}");
         assert!(!full.take_instability_flag());
         assert!(!flat.take_instability_flag());
+    }
+
+    #[test]
+    fn amount_tapers_the_cascade_peak_smoothly_and_monotonically() {
+        // "Does it tame the curve?" -- checks the actual peak |H(e^jw)| at each
+        // amount step, not just the two endpoints. A real taper should shrink
+        // monotonically from the full-strength peak down to 1.0 (0 dB, flat)
+        // as amount decreases, with no bump/overshoot in the middle.
+        let steps = [1.0f32, 0.75, 0.5, 0.25, 0.0];
+        let mut peaks_db = Vec::new();
+
+        for &amt in &steps {
+            let mut engine = FilterEngine::new();
+            engine.prepare(44100.0);
+            engine.load_cartridge(make_resonant_cartridge());
+            engine.set_amount(amt);
+
+            let mut l = vec![0.0_f32; BLOCK_SIZE * 8];
+            let mut r = vec![0.0_f32; BLOCK_SIZE * 8];
+            engine.process_block(&mut l, &mut r, 0.5, 0.5);
+
+            let mut coeffs = [[0.0_f64; NUM_COEFFS]; crate::cascade::NUM_STAGES];
+            engine.cascade_l.get_coeffs(&mut coeffs);
+            let peak = compute_cascade_peak(&coeffs, 44100.0);
+            peaks_db.push(20.0 * peak.log10());
+        }
+
+        println!("amount -> peak (dB): {:?}", steps.iter().zip(&peaks_db).collect::<Vec<_>>());
+
+        // Endpoints: full strength has real resonance (> 0 dB); flat is exactly 0 dB.
+        assert!(peaks_db[0] > 1.0, "amount=1 should show real resonance gain, got {} dB", peaks_db[0]);
+        assert!(peaks_db[4].abs() < 0.01, "amount=0 should be exactly flat (0 dB), got {} dB", peaks_db[4]);
+
+        // Monotonic: each step's peak must be <= the previous (small slack for
+        // floating-point noise). This is the actual "tames the curve" claim.
+        for i in 1..peaks_db.len() {
+            assert!(
+                peaks_db[i] <= peaks_db[i - 1] + 0.05,
+                "peak should taper monotonically as amount decreases: {:?}",
+                peaks_db
+            );
+        }
     }
 
     // NOTE: `gain_ceiling_clamps_runaway_boost` referenced
