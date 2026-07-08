@@ -27,15 +27,8 @@ PluginEditor::PluginEditor (PluginProcessor& p)
     faceplate    = std::make_unique<FaceplateView> (panel, theme);
     graph        = std::make_unique<GraphDisplay> (grid, theme, processor.apvts, ParamID::slamDrive);
     slotPad      = std::make_unique<SlotPad> (theme);
-    modulateTag  = std::make_unique<ModulateTag> (processor.apvts, theme);
-    modulateTag->onRequestGrid = [this] { graph->openTileGrid(); };
-    // The tag/lamp components sit on top of the graph in z-order and would
-    // otherwise render directly over the tile grid — hide them while it's open.
-    graph->onScreenModeChanged = [this] (bool gridOpen)
-    {
-        modulateTag->setVisible (! gridOpen);
-        fiveDTag->setVisible (! gridOpen);
-    };
+    motionSelector = std::make_unique<MotionSelector> (processor.apvts, theme);
+    timeSelector   = std::make_unique<TimeSelector> (processor.apvts, theme);
     fiveDTag     = std::make_unique<FiveDTag> (processor.apvts, theme);
     takeView     = std::make_unique<TakeView> (theme);
     moveView     = std::make_unique<MoveView> (processor, theme, grid);
@@ -99,8 +92,9 @@ PluginEditor::PluginEditor (PluginProcessor& p)
     addAndMakeVisible (*takeView);     // page 2 overlay; visibility toggled by setPage
     addChildComponent (*moveView);     // page 2 (MOVE/PLAY) screen; shown by setPage
     addChildComponent (*slotPad);      // pager RETIRED everywhere (Tyson: no pages)
-    addAndMakeVisible (*modulateTag);  // faded "Modulation" tag + LED, low-left on the glass
-    addAndMakeVisible (*fiveDTag);     // 5D (QSound Space) switch, seated below Modulation
+    addAndMakeVisible (*motionSelector); // MOTION: Off/Riser/Breathe/Adlib Chop/Wobble
+    addAndMakeVisible (*timeSelector);   // TIME: musical division, shares the old Modulation row
+    addAndMakeVisible (*fiveDTag);       // 5D (QSound Space) switch, seated below Motion/Time
     addAndMakeVisible (*typeSelector);
     addAndMakeVisible (*morphWheel);
     addAndMakeVisible (*secondaryWheel);
@@ -232,7 +226,14 @@ void PluginEditor::layoutComponents()
     takeView->setBounds (rectOf ("spectrumGrid"));
     moveView->setBounds (rectOf ("spectrumGrid"));
     slotPad->setBounds (rectOf ("slotPad"));
-    modulateTag->setBounds (rectOf ("modulateTag"));
+    // MOTION + TIME share the old single-row "modulateTag" slot, side by side —
+    // no new panel real estate, matching the "panel stays simple" law.
+    {
+        const auto row = rectOf ("modulateTag");
+        const int half = row.getWidth() / 2;
+        motionSelector->setBounds (row.withWidth (half));
+        timeSelector->setBounds (row.withX (row.getX() + half).withWidth (row.getWidth() - half));
+    }
     fiveDTag->setBounds (rectOf ("fiveDTag"));
     typeSelector->setBounds (rectOf ("typeSelector"));
     morphWheel->setBounds (rectOf ("morphWheel"));
@@ -293,11 +294,8 @@ void PluginEditor::onFrame()
         return 0.0f;
     };
     const bool motionOn = read (ParamID::motionOn) > 0.5f;
-    const auto typeBehavior = processor.getModulationBehaviorForUi();
-    graph->setMotionState (motionOn,
-                           processor.getMotionStepForUi(),
-                           (typeBehavior == trench::TypeBehavior::Dynamic) ? 1.0f
-                                                                           : read (ParamID::motionAmount));
+    // GraphDisplay reads motionOn/motionTile/motionDiv live for its own MOTION/TIME
+    // readout — no push needed from here.
 
     if (currentPage == 1)
     {
@@ -342,7 +340,8 @@ void PluginEditor::setPage (int page)
     graph->setVisible (! move);
     moveView->setVisible (move);            // V1: MOVE = PLAY only (ROUTE shelved)
     takeView->setVisible (false);           // Take/variant tray is not a V1 page
-    modulateTag->setVisible (true);
+    motionSelector->setVisible (true);
+    timeSelector->setVisible (true);
     fiveDTag->setVisible (true);
     slotPad->setActive (currentPage);
 

@@ -293,13 +293,18 @@ PluginProcessor::ModulatedControls PluginProcessor::applyMotion (float morph, fl
     const bool   bpmSync   = apvts.getRawParameterValue (ParamID::motionBpm)->load() > 0.5f;
     const float  rateHz    = apvts.getRawParameterValue (ParamID::motionRate)->load();
     const int    sync      = (int) apvts.getRawParameterValue (ParamID::motionSync)->load();
-    const int    divIdx    = cachedSmart.divIdx;       // body-curated speed
+    // TIME: the live division selector (1/4..1/32), seeded from the tile's
+    // curated default on arm (applyModulationBehavior) but user-adjustable
+    // from there — the same "seed on arm, then live" pattern Depth uses.
+    const int    divIdx    = (int) apvts.getRawParameterValue (ParamID::motionDiv)->load();
     const bool   smooth    = cachedSmart.smooth;       // glide vs stepped
     const int    direction = cachedSmart.direction;    // Fwd / Pendulum / ...
     const int    length    = cachedSmart.length;
-    // Motion Amount is the public depth lever: it scales the curated Morph/Q sweep
-    // from still (0) to full (1). amount=0 is a true null even while armed.
-    const float  amount    = juce::jlimit (0.0f, 1.0f, apvts.getRawParameterValue (ParamID::motionAmount)->load());
+    // DEPTH is the public depth lever (the renamed/repurposed AMOUNT fader):
+    // it scales the curated Morph/Q sweep from still (0) to full (1), and
+    // simultaneously scales the honest-dose filter blend (see processBlock).
+    // amount=0 is a true null even while armed.
+    const float  amount    = juce::jlimit (0.0f, 1.0f, apvts.getRawParameterValue (ParamID::amount)->load());
     const float  mDepth    = cachedSmart.morphDepth * amount;
     const float  qDepth    = cachedSmart.qDepth     * amount;
     // Morph/Q only. Drive/SLAM stays an explicit control path outside Motion.
@@ -403,12 +408,11 @@ trench::TypeBehavior PluginProcessor::getModulationBehaviorForUi() const noexcep
     }
 }
 
-// Called when the grid picks a tile (see GraphDisplay::tileTapped). Arms
-// Motion with that tile for the given body. `behavior` is derived by the
-// caller from the tile index via getModulationBehaviorForUi's mapping.
+// Called when the MOTION selector picks a tile. Arms Motion with that tile
+// for the given body. `behavior` is derived by the caller from the tile
+// index via getModulationBehaviorForUi's mapping.
 void PluginProcessor::applyModulationBehavior (trench::TypeBehavior behavior, int bodyIndex)
 {
-    juce::ignoreUnused (bodyIndex);
     setParameterDenormalized (ParamID::moveOn, 0.0f);
     setParameterDenormalized (ParamID::moveTension, 0.0f);
     setParameterDenormalized (ParamID::motionWarp, 0.0f);
@@ -423,12 +427,15 @@ void PluginProcessor::applyModulationBehavior (trench::TypeBehavior behavior, in
     }
 
     setParameterDenormalized (ParamID::motionOn, 1.0f);
-    // Amount/React stay at the curated defaults baked into SmartMotion's
-    // kTileAmount table; the public Motion Amt knob still scales on top of
-    // that (see applyMotion's `amount` read), matching today's behavior.
-    setParameterDenormalized (ParamID::motionAmount, 1.0f);
+    // DEPTH (ParamID::amount) is a live, user-owned fader now — arming a
+    // tile must not stomp it. React is still an internal constant (not
+    // exposed as a control per the current design: MOTION/TIME/DEPTH only).
     setParameterDenormalized (ParamID::motionReact,
                               behavior == trench::TypeBehavior::Dynamic ? 0.85f : 0.0f);
+    // TIME: seed the live division from this tile's curated default, then
+    // it's user-adjustable from there (same seed-on-arm-then-live pattern).
+    const auto seeded = trench::smartMotionFor (bodyIndex, behavior);
+    setParameterDenormalized (ParamID::motionDiv, (float) seeded.divIdx);
 }
 
 //==============================================================================

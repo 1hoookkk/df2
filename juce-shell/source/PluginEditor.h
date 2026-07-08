@@ -6,13 +6,15 @@
 #include "ui/FaceplateView.h"
 #include "ui/GraphDisplay.h"
 #include "ui/SlotPad.h"
-#include "ui/ModulateTag.h"
+#include "ui/MotionSelector.h"
+#include "ui/TimeSelector.h"
 #include "ui/FiveDTag.h"
 #include "ui/TakeView.h"
 #include "ui/MoveView.h"
 // RouteView.h is shelved for V1 (ROUTE matrix editor not wired) — kept on disk for later.
 #include "ui/WheelControl.h"
 #include "ui/ValueReadout.h"
+#include "ui/AmountFader.h"
 #include "ui/TypeSelectorView.h"
 #include "ui/LabelsLayer.h"
 #include "ui/DecalsLayer.h"
@@ -55,8 +57,9 @@ private:
     std::unique_ptr<trench::ui::FaceplateView>    faceplate;
     std::unique_ptr<trench::ui::GraphDisplay>     graph;
     std::unique_ptr<trench::ui::SlotPad>          slotPad;
-    std::unique_ptr<trench::ui::ModulateTag>      modulateTag;
-    std::unique_ptr<trench::ui::FiveDTag>         fiveDTag;   // 5D (QSound Space) switch below Modulation
+    std::unique_ptr<trench::ui::MotionSelector>   motionSelector; // MOTION: Off/Riser/Breathe/Adlib Chop/Wobble
+    std::unique_ptr<trench::ui::TimeSelector>     timeSelector;   // TIME: musical division, right half of the old Modulation row
+    std::unique_ptr<trench::ui::FiveDTag>         fiveDTag;   // 5D (QSound Space) switch below Motion/Time
     std::unique_ptr<trench::ui::TakeView>         takeView;
     std::unique_ptr<trench::ui::MoveView>         moveView;   // Page 2 — MOVE / PLAY (V1)
    #ifdef TRENCH_PLAYER_DIAGNOSTICS
@@ -71,6 +74,7 @@ private:
     std::unique_ptr<trench::ui::WheelControl>     secondaryWheel;
     std::unique_ptr<trench::ui::ValueReadout>     morphReadout;
     std::unique_ptr<trench::ui::ValueReadout>     secondaryReadout;
+    std::unique_ptr<trench::ui::AmountFader>      amountFader;   // honest-dose fader, left of the screen
     std::unique_ptr<trench::ui::LabelsLayer>      labels;
     std::unique_ptr<trench::ui::DecalsLayer>      decalsLayer;
 
