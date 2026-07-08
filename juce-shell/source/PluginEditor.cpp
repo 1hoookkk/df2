@@ -83,6 +83,18 @@ PluginEditor::PluginEditor (PluginProcessor& p)
     morphReadout = std::make_unique<ValueReadout> ("morphReadout", theme);
     secondaryReadout = std::make_unique<ValueReadout> ("qReadout", theme);
     amountFader  = std::make_unique<AmountFader> (processor.apvts, theme);
+    seedButton   = std::make_unique<SeedButton>();
+    seedButton->onSeed = [this] { processor.seedCurrentBody(); };
+    takeButton   = std::make_unique<TakeButton>();
+    // Same real-heard-audio drag pattern as takeView->onKeep above -- no
+    // offline render, the take is what you actually just heard.
+    takeButton->onDragTake = [this] (juce::Component* source)
+    {
+        const auto f = processor.captureSmartTake();
+        if (f.existsAsFile())
+            juce::DragAndDropContainer::performExternalDragDropOfFiles (
+                { f.getFullPathName() }, false, source, nullptr);
+    };
     labels       = std::make_unique<LabelsLayer> (theme);
     decalsLayer  = std::make_unique<DecalsLayer> (theme);
 
@@ -101,6 +113,8 @@ PluginEditor::PluginEditor (PluginProcessor& p)
     addAndMakeVisible (*morphReadout);
     addAndMakeVisible (*secondaryReadout);
     addAndMakeVisible (*amountFader);
+    addAndMakeVisible (*seedButton);
+    addAndMakeVisible (*takeButton);
     addAndMakeVisible (*labels);
     addAndMakeVisible (*decalsLayer);   // front-most: free text/boxes/lines
 
@@ -251,6 +265,19 @@ void PluginEditor::layoutComponents()
         const int fTop = scr.getBottom() + 18;   // air below the display
         const int fBot = qr.getBottom() + 34;    // tall — run down toward (above) the cutout
         amountFader->setBounds (fx, fTop, fw, juce::jmax (120, fBot - fTop));
+    }
+    // SEED + TAKE — one row below the Q wheel, spanning the same column the
+    // wheels occupy. Small permanent action buttons, not a toolbar: the
+    // verbs, not a control surface.
+    {
+        const auto qw = rectOf ("qWheel");
+        const auto qr = rectOf ("qReadout");
+        const int y = qr.getBottom() + 14;
+        const int left = qw.getX();
+        const int right = qr.getRight();
+        const int half = (right - left) / 2;
+        seedButton->setBounds (left, y, half, 26);
+        takeButton->setBounds (left + half, y, right - left - half, 26);
     }
 
     decalsLayer->setBounds (base);

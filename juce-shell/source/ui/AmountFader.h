@@ -5,13 +5,14 @@
 namespace trench::ui
 {
 
-// DEPTH — the unified dose/depth control. A clean vertical fader for the right
+// AMOUNT — the single macro dose control. A clean vertical fader for the right
 // utility column (RC-20 "Magnitude" role, TRENCH's tall layout): a recessed black
 // slot, a ruby fill rising to the value, a horizontal ribbed thumb you drag, a
-// light DEPTH label above, a small cream value window below, and subtle ticks.
+// light AMOUNT label above, a small cream value window below, and subtle ticks.
 // Secondary to the Morph/Q wheels but clearly readable. Wraps an invisible
 // LinearVertical slider bound to `amount` — scales BOTH the honest-dose filter
-// blend and Motion's morph/Q sweep depth, one dial for the whole treated effect.
+// blend and Motion's morph/Q sweep depth: one dial for the whole recipe,
+// deliberately not split into a second "depth" fader (V1 is opinionated).
 class AmountFader : public juce::Component
 {
 public:
@@ -23,8 +24,8 @@ public:
         slider.setRange (0.0, 1.0, 0.0);
         slider.setDoubleClickReturnValue (true, 1.0);
         slider.setMouseCursor (juce::MouseCursor::UpDownResizeCursor);
-        slider.setTooltip ("Depth - filter dose + modulation intensity (flat to full)");
-        slider.setTitle ("Depth");
+        slider.setTooltip ("Amount - scales the whole recipe, including modulation intensity");
+        slider.setTitle ("Amount");
         slider.onValueChange = [this] { repaint(); };
         for (auto id : { juce::Slider::backgroundColourId, juce::Slider::trackColourId,
                          juce::Slider::thumbColourId })
@@ -51,7 +52,7 @@ public:
     void paint (juce::Graphics& g) override
     {
         // ── AMOUNT label (light, tracked — the navy plate's label ink) ──
-        drawEngravedTrackedText (g, "DEPTH", labelArea.toFloat(),
+        drawEngravedTrackedText (g, "AMOUNT", labelArea.toFloat(),
                                  displayFont (juce::jlimit (6.5f, 8.5f, getWidth() * 0.17f), false),
                                  panelInk, 0.7f, 0.0f);
 

@@ -15,6 +15,8 @@
 #include "ui/WheelControl.h"
 #include "ui/ValueReadout.h"
 #include "ui/AmountFader.h"
+#include "ui/SeedButton.h"
+#include "ui/TakeButton.h"
 #include "ui/TypeSelectorView.h"
 #include "ui/LabelsLayer.h"
 #include "ui/DecalsLayer.h"
@@ -75,6 +77,8 @@ private:
     std::unique_ptr<trench::ui::ValueReadout>     morphReadout;
     std::unique_ptr<trench::ui::ValueReadout>     secondaryReadout;
     std::unique_ptr<trench::ui::AmountFader>      amountFader;   // honest-dose fader, left of the screen
+    std::unique_ptr<trench::ui::SeedButton>       seedButton;    // SEED: one tap, one related sibling
+    std::unique_ptr<trench::ui::TakeButton>       takeButton;    // TAKE: drag the last few seconds into the DAW
     std::unique_ptr<trench::ui::LabelsLayer>      labels;
     std::unique_ptr<trench::ui::DecalsLayer>      decalsLayer;
 

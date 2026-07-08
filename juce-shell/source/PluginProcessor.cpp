@@ -300,9 +300,10 @@ PluginProcessor::ModulatedControls PluginProcessor::applyMotion (float morph, fl
     const bool   smooth    = cachedSmart.smooth;       // glide vs stepped
     const int    direction = cachedSmart.direction;    // Fwd / Pendulum / ...
     const int    length    = cachedSmart.length;
-    // DEPTH is the public depth lever (the renamed/repurposed AMOUNT fader):
-    // it scales the curated Morph/Q sweep from still (0) to full (1), and
-    // simultaneously scales the honest-dose filter blend (see processBlock).
+    // AMOUNT is the single public macro lever: it scales the curated Morph/Q
+    // sweep from still (0) to full (1), and simultaneously scales the
+    // honest-dose filter blend (see processBlock) — one dial for the whole
+    // recipe, deliberately not split into a separate depth control.
     // amount=0 is a true null even while armed.
     const float  amount    = juce::jlimit (0.0f, 1.0f, apvts.getRawParameterValue (ParamID::amount)->load());
     const float  mDepth    = cachedSmart.morphDepth * amount;
