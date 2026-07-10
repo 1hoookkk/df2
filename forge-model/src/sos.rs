@@ -96,6 +96,16 @@ fn nrmse_real(got: &[f64], want: &[f64]) -> f64 {
     (err / refp.max(1e-300)).sqrt()
 }
 
+/// Measure one cascade against another: complex NRMSE on the dense log
+/// grid and impulse NRMSE. The per-projection loss report primitive —
+/// e.g. native model rows vs decoded packed-corner rows.
+pub fn cascade_loss(got: &[[f64; 5]], want: &[[f64; 5]]) -> (f64, f64) {
+    let grid = freq_grid();
+    let c = nrmse_complex(&response(got, &grid), &response(want, &grid));
+    let i = nrmse_real(&impulse(got, IMPULSE_LEN), &impulse(want, IMPULSE_LEN));
+    (c, i)
+}
+
 /// Compile one anchor's modes into the smallest section budget whose
 /// complex AND impulse NRMSE against the native (all-mode) response stay
 /// within `tol`. If no budget passes, the largest is returned with its
