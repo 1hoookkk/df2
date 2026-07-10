@@ -1,15 +1,16 @@
-//! FORGE ZERO — iteration 0 of the from-zero design surface.
+//! FORGE ZERO — iteration 1 of the from-zero design surface.
 //!
-//! One window. One mode: a pole pair you can grab, a zero pair you can grab.
-//! Your loop (drop a WAV) playing through the REAL engine (trench-core:
-//! pack_body -> Cartridge -> FilterEngine). The dot lands where your cursor is.
-//!
-//! The internal model is MODAL (modes with identity), and the 240-byte packed
-//! body is its PROJECTION — the A/B baseline is built in from birth.
-//! Ladder: it1 native modal render beside the projection · it2 anchors/morph ·
-//! it3 mode activation · it4 adaptive order · it5 dual-cascade transitions.
+//! The model IS the state: `forge_model::Mode` (one mode today), and the
+//! 240-byte packed body is its PROJECTION via `forge_model::packed`.
+//! it1 = native-vs-projection A/B: both curves drawn (native white, packed
+//! projection amber), the per-projection loss printed on-surface, and an
+//! A/B monitor — hear the true packed engine or the native f64 model.
+//! Ladder: it2 anchors/morph · it3 mode activation · it4 adaptive order.
 
 use eframe::egui::{self, Color32, Pos2, Rect, Sense, Stroke, Vec2};
+use forge_model::packed::{project, CORNERS};
+use forge_model::sos::cascade_loss;
+use forge_model::{Anchor, Design, Mode, RootPair};
 use std::path::Path;
 use std::sync::{Arc, Mutex};
 
@@ -20,58 +21,66 @@ const DB_MIN: f32 = -36.0;
 const DB_MAX: f32 = 24.0;
 const RP_MAX: f32 = 0.9989;
 
-/// One mode of the design model. Today: a conjugate pole pair plus a paired
-/// zero. (Residue/activation arrive with the native render in it1.)
-#[derive(Clone, Copy)]
-struct Mode {
-    pole_hz: f32,
-    pole_r: f32,
-    zero_hz: f32,
-    zero_r: f32,
-}
-
-impl Default for Mode {
-    fn default() -> Self {
-        Self {
-            pole_hz: 740.0,
-            pole_r: 0.97,
-            zero_hz: 1480.0,
-            zero_r: 0.90,
-        }
+fn hz_r(p: RootPair) -> (f64, f64) {
+    match p {
+        RootPair::Pair { hz, r } => (hz, r),
+        RootPair::Split { z1, z2 } => (0.0, z1.abs().max(z2.abs())),
     }
 }
 
-// ---- response math (single section, conjugate pairs, unity gain) ------------
+fn make_mode(pole_hz: f32, pole_r: f32, zero_hz: f32, zero_r: f32) -> Mode {
+    Mode::pole_zero(pole_hz as f64, pole_r as f64, zero_hz as f64, zero_r as f64)
+}
 
-fn quad_mag(cf: f32, r: f32, w: f32) -> f32 {
-    // |1 + a1 z^-1 + a2 z^-2| on the unit circle for a conjugate pair at (cf, r)
-    let wc = std::f32::consts::TAU * cf / SR_AUTHOR;
-    let (a1, a2) = (-2.0 * r * wc.cos(), r * r);
-    let (zr, zi) = (w.cos(), -w.sin());
-    let (z2r, z2i) = (zr * zr - zi * zi, 2.0 * zr * zi);
-    let re = 1.0 + a1 * zr + a2 * z2r;
-    let im = a1 * zi + a2 * z2i;
-    (re * re + im * im).sqrt().max(1e-9)
+fn default_mode() -> Mode {
+    make_mode(740.0, 0.97, 1480.0, 0.90)
+}
+
+fn one_mode_design(mode: Mode) -> Design {
+    Design {
+        name: "zero".into(),
+        anchors: CORNERS
+            .iter()
+            .map(|&(morph, q)| Anchor {
+                morph,
+                q,
+                modes: vec![mode],
+            })
+            .collect(),
+    }
+}
+
+// ---- response math ------------------------------------------------------------
+
+fn rows_db(rows: &[[f64; 5]], f: f32) -> f32 {
+    let w = std::f64::consts::TAU * f as f64 / SR_AUTHOR as f64;
+    let (c1, s1) = (w.cos(), -w.sin());
+    let (c2, s2) = ((2.0 * w).cos(), -(2.0 * w).sin());
+    let mut mag2 = 1.0f64;
+    for r in rows {
+        let (nr, ni) = (r[0] + r[1] * c1 + r[2] * c2, r[1] * s1 + r[2] * s2);
+        let (dr, di) = (1.0 + r[3] * c1 + r[4] * c2, r[3] * s1 + r[4] * s2);
+        mag2 *= (nr * nr + ni * ni) / (dr * dr + di * di).max(1e-300);
+    }
+    (10.0 * mag2.max(1e-30).log10()) as f32
 }
 
 fn mode_db(m: &Mode, f: f32) -> f32 {
-    let w = std::f32::consts::TAU * f / SR_AUTHOR;
-    20.0 * (quad_mag(m.zero_hz, m.zero_r, w) / quad_mag(m.pole_hz, m.pole_r, w)).log10()
+    rows_db(&[m.biquad()], f)
 }
 
-/// Solve the radius so the curve at the handle's own frequency meets target_db.
-/// Monotonic in r -> bisection. This is what makes the dot follow the cursor.
+/// Solve the radius so the native curve at the handle's own frequency meets
+/// target_db. Monotonic in r -> bisection; the dot follows the cursor.
 fn solve_radius(m: &Mode, pole: bool, target_db: f32) -> f32 {
-    let (mut lo, mut hi) = if pole { (0.05, RP_MAX) } else { (0.0, 1.0) };
+    let (ph, pr) = hz_r(m.pole);
+    let (zh, zr) = hz_r(m.zero);
+    let (mut lo, mut hi) = if pole { (0.05f32, RP_MAX) } else { (0.0f32, 1.0f32) };
     for _ in 0..28 {
         let mid = 0.5 * (lo + hi);
-        let mut probe = *m;
-        let (f, rising) = if pole {
-            probe.pole_r = mid;
-            (m.pole_hz, true)
+        let (probe, f, rising) = if pole {
+            (make_mode(ph as f32, mid, zh as f32, zr as f32), ph as f32, true)
         } else {
-            probe.zero_r = mid;
-            (m.zero_hz, false)
+            (make_mode(ph as f32, pr as f32, zh as f32, mid), zh as f32, false)
         };
         if (mode_db(&probe, f) < target_db) == rising {
             lo = mid;
@@ -82,33 +91,33 @@ fn solve_radius(m: &Mode, pole: bool, target_db: f32) -> f32 {
     0.5 * (lo + hi)
 }
 
-// ---- projection: the mode packed into the 240-byte body (all 4 corners) -----
+// ---- projection: the model packed into the 240-byte body ----------------------
 
 fn pack(m: &Mode) -> [u8; 240] {
-    let mut params = Vec::with_capacity(168);
-    for _corner in 0..4 {
-        // stage 0 = the mode; stages 1-5 off
-        params.extend_from_slice(&[
-            1.0,
-            m.pole_hz as f64,
-            m.pole_r as f64,
-            1.0, // unity gain — levels are the roots
-            if m.zero_r > 0.0001 { 1.0 } else { 0.0 },
-            m.zero_hz as f64,
-            m.zero_r as f64,
-        ]);
-        for _ in 1..6 {
-            params.extend_from_slice(&[0.0, 1000.0, 0.5, 1.0, 0.0, 1000.0, 0.0]);
-        }
-    }
-    trench_core::compiler::pack_body(&params)
+    project(&one_mode_design(*m)).expect("one-mode design projects")
 }
 
-// ---- audio: source -> FilterEngine (the shipped chain) -> device ------------
+/// Decoded packed rows of corner 0 — what the runtime actually plays there.
+fn packed_rows(body: &[u8; 240]) -> Vec<[f64; 5]> {
+    let pc = trench_core::minifloat::PackedCorners::from_body_bytes(body).expect("240 bytes");
+    (0..6)
+        .map(|si| trench_core::minifloat::stage_words_to_biquad(pc.words[0][si]))
+        .collect()
+}
+
+// ---- audio: source -> Packed (real engine) or Native (f64 model) --------------
+
+#[derive(Clone, Copy, PartialEq)]
+enum Monitor {
+    Packed,
+    Native,
+}
 
 struct AudioCtl {
     playing: bool,
+    monitor: Monitor,
     pending_cart: Option<trench_core::cartridge::Cartridge>,
+    pending_native: Option<[f64; 5]>,
     pending_loop: Option<Arc<Vec<f32>>>,
 }
 
@@ -118,7 +127,7 @@ struct Audio {
     sr: f64,
 }
 
-fn start_audio(body: [u8; 240]) -> Result<Audio, String> {
+fn start_audio(body: [u8; 240], native: [f64; 5]) -> Result<Audio, String> {
     use cpal::traits::{DeviceTrait, HostTrait, StreamTrait};
     let device = cpal::default_host()
         .default_output_device()
@@ -130,12 +139,16 @@ fn start_audio(body: [u8; 240]) -> Result<Audio, String> {
         .map_err(|e| format!("cartridge: {e}"))?;
     let ctl = Arc::new(Mutex::new(AudioCtl {
         playing: false,
+        monitor: Monitor::Packed,
         pending_cart: Some(cart),
+        pending_native: Some(native),
         pending_loop: None,
     }));
     let ctl_cb = ctl.clone();
     let mut engine = trench_core::engine::FilterEngine::new();
     engine.prepare(sr);
+    let mut native_rows = [1.0f64, 0.0, 0.0, 0.0, 0.0];
+    let (mut nw1, mut nw2) = (0.0f64, 0.0f64);
     let mut loop_buf: Option<Arc<Vec<f32>>> = None;
     let mut loop_pos = 0usize;
     let mut saw_phase = 0.0f32;
@@ -145,12 +158,21 @@ fn start_audio(body: [u8; 240]) -> Result<Audio, String> {
         .build_output_stream(
             &config.into(),
             move |data: &mut [f32], _| {
-                let (playing, cart, lp) = {
+                let (playing, monitor, cart, native, lp) = {
                     let mut c = ctl_cb.lock().unwrap();
-                    (c.playing, c.pending_cart.take(), c.pending_loop.take())
+                    (
+                        c.playing,
+                        c.monitor,
+                        c.pending_cart.take(),
+                        c.pending_native.take(),
+                        c.pending_loop.take(),
+                    )
                 };
                 if let Some(cart) = cart {
                     engine.load_cartridge(cart);
+                }
+                if let Some(rows) = native {
+                    native_rows = rows;
                 }
                 if let Some(lp) = lp {
                     loop_buf = Some(lp);
@@ -178,7 +200,27 @@ fn start_audio(body: [u8; 240]) -> Result<Audio, String> {
                         }
                     }
                     right[..n].copy_from_slice(&left[..n]);
-                    engine.process_block(&mut left[..n], &mut right[..n], 0.0, 0.0);
+                    match monitor {
+                        Monitor::Packed => {
+                            engine.process_block(&mut left[..n], &mut right[..n], 0.0, 0.0);
+                        }
+                        Monitor::Native => {
+                            // the model itself: one DF2T biquad, f64, no packing
+                            let r = native_rows;
+                            for v in left[..n].iter_mut() {
+                                let x = *v as f64;
+                                let y = r[0] * x + nw1;
+                                nw1 = r[1] * x - r[3] * y + nw2;
+                                nw2 = r[2] * x - r[4] * y;
+                                *v = y as f32;
+                            }
+                            if !nw1.is_finite() || !nw2.is_finite() {
+                                nw1 = 0.0;
+                                nw2 = 0.0;
+                            }
+                            right[..n].copy_from_slice(&left[..n]);
+                        }
+                    }
                     for i in 0..n {
                         let base = (done + i) * channels;
                         data[base] = left[i];
@@ -258,7 +300,7 @@ fn read_wav(path: &Path) -> Option<(Vec<f32>, f64)> {
     Some((out, sr as f64))
 }
 
-// ---- the app -----------------------------------------------------------------
+// ---- the app -------------------------------------------------------------------
 
 #[derive(Clone, Copy, PartialEq)]
 enum Grab {
@@ -268,6 +310,9 @@ enum Grab {
 
 struct Zero {
     mode: Mode,
+    packed: Vec<[f64; 5]>,
+    loss: (f64, f64),
+    monitor: Monitor,
     audio: Option<Audio>,
     playing: bool,
     grab: Option<Grab>,
@@ -275,13 +320,34 @@ struct Zero {
 }
 
 impl Zero {
-    fn push_body(&mut self) {
+    fn new() -> Self {
+        let mode = default_mode();
+        let packed = packed_rows(&pack(&mode));
+        let loss = cascade_loss(&packed, &[mode.biquad()]);
+        Self {
+            mode,
+            packed,
+            loss,
+            monitor: Monitor::Packed,
+            audio: None,
+            playing: false,
+            grab: None,
+            status: "drop a WAV to replace the saw".into(),
+        }
+    }
+
+    /// Model changed: re-project, re-measure the loss, push both to audio.
+    fn model_changed(&mut self) {
+        let body = pack(&self.mode);
+        self.packed = packed_rows(&body);
+        self.loss = cascade_loss(&self.packed, &[self.mode.biquad()]);
         if let Some(a) = &self.audio {
             if let Ok(cart) =
-                trench_core::cartridge::Cartridge::from_body_bytes("zero", &pack(&self.mode), 1.0)
+                trench_core::cartridge::Cartridge::from_body_bytes("zero", &body, 1.0)
             {
                 if let Ok(mut c) = a.ctl.lock() {
                     c.pending_cart = Some(cart);
+                    c.pending_native = Some(self.mode.biquad());
                 }
             }
         }
@@ -348,7 +414,7 @@ impl eframe::App for Zero {
                 );
                 let p = ui.painter();
 
-                // top bar: PLAY + status
+                // top bar: PLAY + A/B monitor + status
                 let play_r = Rect::from_min_size(
                     Pos2::new(bar.left() + 10.0, bar.top() + 5.0),
                     Vec2::new(70.0, 24.0),
@@ -366,10 +432,39 @@ impl eframe::App for Zero {
                     egui::FontId::monospace(13.0),
                     Color32::from_rgb(120, 240, 160),
                 );
+                let ab_r = Rect::from_min_size(
+                    Pos2::new(play_r.right() + 10.0, bar.top() + 5.0),
+                    Vec2::new(110.0, 24.0),
+                );
+                let ab_on = self.monitor == Monitor::Native;
+                p.rect_filled(ab_r, 4.0, Color32::from_rgb(22, 24, 32));
+                p.rect_stroke(
+                    ab_r,
+                    4.0,
+                    Stroke::new(
+                        1.0,
+                        if ab_on {
+                            Color32::from_rgb(240, 220, 120)
+                        } else {
+                            Color32::from_rgb(90, 100, 120)
+                        },
+                    ),
+                );
                 p.text(
-                    Pos2::new(play_r.right() + 14.0, bar.center().y),
+                    ab_r.center(),
+                    egui::Align2::CENTER_CENTER,
+                    if ab_on { "NATIVE f64" } else { "PACKED 240B" },
+                    egui::FontId::monospace(12.0),
+                    if ab_on {
+                        Color32::from_rgb(240, 220, 120)
+                    } else {
+                        Color32::from_rgb(150, 165, 190)
+                    },
+                );
+                p.text(
+                    Pos2::new(ab_r.right() + 14.0, bar.center().y),
                     egui::Align2::LEFT_CENTER,
-                    "FORGE ZERO — one mode · drag the dots · drop a WAV",
+                    "FORGE ZERO — the model, projected · drag the dots · drop a WAV",
                     egui::FontId::monospace(12.0),
                     Color32::from_rgb(140, 160, 150),
                 );
@@ -389,8 +484,19 @@ impl eframe::App for Zero {
                     Stroke::new(0.8, Color32::from_rgb(45, 55, 52)),
                 );
 
-                // the curve — this IS the mode; nothing else exists yet
+                // it1 A/B on the canvas: packed projection (amber, what ships)
+                // under the native model curve (white, the source of truth)
                 let n = 360;
+                let packed_pts: Vec<Pos2> = (0..n)
+                    .map(|i| {
+                        let f = F_MIN * (F_MAX / F_MIN).powf(i as f32 / (n - 1) as f32);
+                        Pos2::new(x_of(plot, f), y_of(plot, rows_db(&self.packed, f)))
+                    })
+                    .collect();
+                p.add(egui::Shape::line(
+                    packed_pts,
+                    Stroke::new(1.4, Color32::from_rgb(214, 148, 62)),
+                ));
                 let pts: Vec<Pos2> = (0..n)
                     .map(|i| {
                         let f = F_MIN * (F_MAX / F_MIN).powf(i as f32 / (n - 1) as f32);
@@ -402,14 +508,16 @@ impl eframe::App for Zero {
                     Stroke::new(2.4, Color32::from_rgb(235, 245, 240)),
                 ));
 
-                // the two dots, ON the curve at their own frequencies
+                // the two dots, ON the native curve at their own frequencies
+                let (ph, _pr) = hz_r(self.mode.pole);
+                let (zh, _zr) = hz_r(self.mode.zero);
                 let pole_pos = Pos2::new(
-                    x_of(plot, self.mode.pole_hz),
-                    y_of(plot, mode_db(&self.mode, self.mode.pole_hz)),
+                    x_of(plot, ph as f32),
+                    y_of(plot, mode_db(&self.mode, ph as f32)),
                 );
                 let zero_pos = Pos2::new(
-                    x_of(plot, self.mode.zero_hz),
-                    y_of(plot, mode_db(&self.mode, self.mode.zero_hz)),
+                    x_of(plot, zh as f32),
+                    y_of(plot, mode_db(&self.mode, zh as f32)),
                 );
                 p.circle_filled(pole_pos, 8.0, Color32::from_rgb(255, 178, 92));
                 p.circle_stroke(zero_pos, 8.0, Stroke::new(2.4, Color32::from_rgb(127, 212, 255)));
@@ -419,9 +527,7 @@ impl eframe::App for Zero {
                 let pointer = ctx.input(|i| i.pointer.interact_pos());
                 if resp.drag_started() {
                     if let Some(pos) = pointer {
-                        if play_r.contains(pos) {
-                            // fall through: click handled on release
-                        } else {
+                        if !play_r.contains(pos) && !ab_r.contains(pos) {
                             let dp = pos.distance(pole_pos);
                             let dz = pos.distance(zero_pos);
                             if dp.min(dz) < 30.0 {
@@ -432,10 +538,21 @@ impl eframe::App for Zero {
                 }
                 if resp.clicked() {
                     if let Some(pos) = pointer {
-                        if play_r.contains(pos) {
+                        if ab_r.contains(pos) {
+                            self.monitor = if self.monitor == Monitor::Packed {
+                                Monitor::Native
+                            } else {
+                                Monitor::Packed
+                            };
+                            if let Some(a) = &self.audio {
+                                if let Ok(mut c) = a.ctl.lock() {
+                                    c.monitor = self.monitor;
+                                }
+                            }
+                        } else if play_r.contains(pos) {
                             self.playing = !self.playing;
                             if self.playing && self.audio.is_none() {
-                                match start_audio(pack(&self.mode)) {
+                                match start_audio(pack(&self.mode), self.mode.biquad()) {
                                     Ok(a) => self.audio = Some(a),
                                     Err(e) => {
                                         self.playing = false;
@@ -446,6 +563,7 @@ impl eframe::App for Zero {
                             if let Some(a) = &self.audio {
                                 if let Ok(mut c) = a.ctl.lock() {
                                     c.playing = self.playing;
+                                    c.monitor = self.monitor;
                                 }
                             }
                         }
@@ -455,34 +573,37 @@ impl eframe::App for Zero {
                     if resp.dragged() {
                         let f = f_of(plot, pos.x).clamp(F_MIN, F_MAX);
                         let db_t = db_of(plot, pos.y);
-                        match g {
+                        let (cur_ph, cur_pr) = hz_r(self.mode.pole);
+                        let (cur_zh, cur_zr) = hz_r(self.mode.zero);
+                        self.mode = match g {
                             Grab::Pole => {
-                                self.mode.pole_hz = f;
-                                self.mode.pole_r = solve_radius(&self.mode, true, db_t);
+                                let m = make_mode(f, cur_pr as f32, cur_zh as f32, cur_zr as f32);
+                                let r = solve_radius(&m, true, db_t);
+                                make_mode(f, r, cur_zh as f32, cur_zr as f32)
                             }
                             Grab::Zero => {
-                                self.mode.zero_hz = f;
-                                self.mode.zero_r = solve_radius(&self.mode, false, db_t);
+                                let m = make_mode(cur_ph as f32, cur_pr as f32, f, cur_zr as f32);
+                                let r = solve_radius(&m, false, db_t);
+                                make_mode(cur_ph as f32, cur_pr as f32, f, r)
                             }
-                        }
-                        self.push_body();
+                        };
+                        self.model_changed();
                     }
                 }
                 if resp.drag_stopped() {
                     self.grab = None;
                 }
 
-                // footer: the mode, in plain words
+                // footer: the mode + the projection loss, in plain words
+                let (fph, fpr) = hz_r(self.mode.pole);
+                let (fzh, fzr) = hz_r(self.mode.zero);
                 p.text(
                     Pos2::new(plot.left(), full.bottom() - 18.0),
                     egui::Align2::LEFT_TOP,
                     format!(
-                        "pole {:.0} Hz r{:.3}   ·   zero {:.0} Hz r{:.3}   ·   {}",
-                        self.mode.pole_hz,
-                        self.mode.pole_r,
-                        self.mode.zero_hz,
-                        self.mode.zero_r,
-                        self.status
+                        "pole {fph:.0} Hz r{fpr:.3}   ·   zero {fzh:.0} Hz r{fzr:.3}   ·   \
+                         projection loss: complex {:.1e} / impulse {:.1e}   ·   {}",
+                        self.loss.0, self.loss.1, self.status
                     ),
                     egui::FontId::monospace(11.0),
                     Color32::from_rgb(120, 140, 132),
@@ -498,14 +619,6 @@ fn main() -> eframe::Result<()> {
             viewport: egui::ViewportBuilder::default().with_inner_size([980.0, 560.0]),
             ..Default::default()
         },
-        Box::new(|_| {
-            Ok(Box::new(Zero {
-                mode: Mode::default(),
-                audio: None,
-                playing: false,
-                grab: None,
-                status: "drop a WAV to replace the saw".into(),
-            }))
-        }),
+        Box::new(|_| Ok(Box::new(Zero::new()))),
     )
 }
