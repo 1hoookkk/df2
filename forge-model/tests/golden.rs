@@ -12,6 +12,13 @@ use forge_model::{Anchor, Design, Mode};
 /// The protected P12 fixture (vowel-slot winner, Tyson's "A").
 const P12: &[u8; 240] = include_bytes!("../../desk/sheets/VOWL_typed_p12.body240");
 
+/// The rest of the ear-picked roster, staged in desk/finishing/.
+const ROSTER: [(&str, &[u8; 240]); 3] = [
+    ("VOWL_typed_p12", include_bytes!("../../desk/finishing/VOWL_typed_p12.body240")),
+    ("PHON_SPLITTER", include_bytes!("../../desk/finishing/surv_PHON_SPLITTER.body240")),
+    ("FUZZ_B_RAZOR", include_bytes!("../../desk/finishing/surv_FUZZ_B_RAZOR.body240")),
+];
+
 /// forge-zero's pack(): one mode in stage 0, stages 1-5 off, all 4 corners
 /// identical, through trench_core::compiler::pack_body. Kept verbatim so the
 /// golden reference is the surface's actual byte path.
@@ -93,4 +100,19 @@ fn p12_import_project_roundtrips_within_packed_quantization() {
     // Regression canary: today the roundtrip is byte-exact. If refactoring
     // introduces drift, this surfaces it even while the ±1 gate still passes.
     assert_eq!(off_by_one, 0, "{off_by_one}/120 words drifted one LSB");
+}
+
+#[test]
+fn roster_bodies_import_as_model_instances_byte_exact() {
+    // The whole ship roster is representable as forge-model Designs with no
+    // loss: import -> project reproduces every body byte-for-byte.
+    for (name, bytes) in ROSTER {
+        let design = import(name, bytes).unwrap_or_else(|e| panic!("{name}: {e}"));
+        assert_eq!(design.anchors.len(), 4, "{name}: 4 corner anchors");
+        for a in &design.anchors {
+            assert_eq!(a.modes.len(), 6, "{name}: 6 modes per anchor");
+        }
+        let body = project(&design).unwrap_or_else(|e| panic!("{name}: {e}"));
+        assert_eq!(&body[..], &bytes[..], "{name}: roundtrip must be byte-exact");
+    }
 }
