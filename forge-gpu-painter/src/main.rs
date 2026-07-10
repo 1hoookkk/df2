@@ -43,6 +43,7 @@ enum AudioSrc {
     Noise,
     Saw,
     Pad,
+    Loop,
 }
 
 impl AudioSrc {
@@ -51,6 +52,7 @@ impl AudioSrc {
             Self::Noise => "NOISE",
             Self::Saw => "SAW",
             Self::Pad => "PAD",
+            Self::Loop => "LOOP",
         }
     }
 }
@@ -60,23 +62,41 @@ struct AudioCtl {
     morph: f64,
     q: f64,
     src: AudioSrc,
+    agc: bool,
+    sat: bool,
+    drive: f32,
     // parsed on the UI thread — the audio callback only swaps it in
     pending_cart: Option<trench_core::cartridge::Cartridge>,
+    // dropped-WAV loop (already resampled to the device rate), same swap pattern
+    pending_loop: Option<std::sync::Arc<Vec<f32>>>,
 }
 
 struct AudioHandle {
     _stream: cpal::Stream, // kept alive; drops = silence
     ctl: Arc<Mutex<AudioCtl>>,
+    sr: f64, // device rate — dropped WAVs resample to this
 }
 
 struct SourceState {
     rng: u32,
     phase: [f32; 4],
+    loop_buf: Option<std::sync::Arc<Vec<f32>>>,
+    loop_pos: usize,
 }
 
 impl SourceState {
     fn fill(&mut self, src: AudioSrc, sr: f32, out: &mut [f32]) {
         match src {
+            AudioSrc::Loop => {
+                if let Some(buf) = &self.loop_buf {
+                    for v in out.iter_mut() {
+                        *v = buf[self.loop_pos];
+                        self.loop_pos = (self.loop_pos + 1) % buf.len();
+                    }
+                } else {
+                    out.fill(0.0);
+                }
+            }
             AudioSrc::Noise => {
                 for v in out.iter_mut() {
                     // xorshift32 white noise
@@ -126,14 +146,9 @@ struct SolveReq {
 
 struct SolveResp {
     sections: Vec<Section>,
-    stages: Vec<usize>,
-    residual: f32,
-    f_center: f32,
-    sigma: f32,
 }
 
 enum Job {
-    Solve(SolveReq),
     Optimize(OptReq),
     Heat {
         words: [[[u16; 5]; STAGES]; CORNERS],
@@ -145,7 +160,6 @@ enum Job {
 }
 
 enum Resp {
-    Solve(SolveResp),
     Optimize(OptResp),
     Heat(Vec<Color32>),
     Audit {
@@ -166,9 +180,8 @@ fn spawn_worker() -> (
         loop {
             let Ok(first) = job_rx.recv() else { return };
             // coalesce: keep only the newest job of each kind
-            let (mut solve, mut optimize, mut heat, mut audit) = (None, None, None, None);
+            let (mut optimize, mut heat, mut audit) = (None, None, None);
             let mut stash = |job: Job| match job {
-                Job::Solve(r) => solve = Some(r),
                 Job::Optimize(r) => optimize = Some(r),
                 Job::Heat { words, q } => heat = Some((words, q)),
                 Job::Audit { words } => audit = Some(words),
@@ -176,9 +189,6 @@ fn spawn_worker() -> (
             stash(first);
             while let Ok(job) = job_rx.try_recv() {
                 stash(job);
-            }
-            if let Some(req) = solve {
-                let _ = resp_tx.send(Resp::Solve(solve_grip(req)));
             }
             if let Some(req) = optimize {
                 let _ = resp_tx.send(Resp::Optimize(solve_goal(req)));
@@ -311,13 +321,7 @@ fn solve_grip(req: SolveReq) -> SolveResp {
     let stages: Vec<usize> = recruited.iter().map(|(k, _)| *k).collect();
     let grip_w: Vec<f32> = recruited.iter().map(|(_, w)| *w).collect();
     if stages.is_empty() {
-        return SolveResp {
-            sections,
-            stages,
-            residual: 0.0,
-            f_center: req.f_center,
-            sigma: req.sigma,
-        };
+        return SolveResp { sections };
     }
     // window + Gaussian brush shape in BARK (sigma is critical-band units)
     let zc = bark_z(req.f_center);
@@ -397,20 +401,7 @@ fn solve_grip(req: SolveReq) -> SolveResp {
         }
     }
     grip_apply_to(&mut sections, &stages, &req.scope, &p);
-    let cur = eval_packed_goal_t(&sections, req.morph, req.q, &wtrig);
-    let mut rms = 0.0;
-    let mut wsum = 0.0;
-    for i in 0..m {
-        rms += weights[i] * (cur[i] - target[i]).powi(2);
-        wsum += weights[i];
-    }
-    SolveResp {
-        sections,
-        stages,
-        residual: (rms / wsum.max(1e-9)).sqrt(),
-        f_center: req.f_center,
-        sigma: req.sigma,
-    }
+    SolveResp { sections }
 }
 
 // ── goal pins: declarative targets solved through the packed runtime ─────────
@@ -430,18 +421,6 @@ enum PinShape {
     Notch,
     LowShelf,
     HighShelf,
-}
-
-impl PinShape {
-    fn label(self) -> &'static str {
-        match self {
-            Self::Point => "POINT",
-            Self::Peak => "PEAK",
-            Self::Notch => "NOTCH",
-            Self::LowShelf => "SHELF◀",
-            Self::HighShelf => "SHELF▶",
-        }
-    }
 }
 
 #[derive(Clone, Copy)]
@@ -921,7 +900,40 @@ fn compute_audit(words: &[[[u16; 5]; STAGES]; CORNERS]) -> (Vec<f32>, f32, usize
     (levels, maxr, unstable, pixels)
 }
 
-fn start_audio(body: [u8; 240], morph: f64, q: f64, src: AudioSrc) -> Result<AudioHandle, String> {
+fn cascade_product_gate(levels: &[f32], unstable: usize) -> Result<(f32, f32), String> {
+    if unstable > 0 {
+        return Err(format!(
+            "{unstable} unstable cells in the 17x17 packed audit"
+        ));
+    }
+    if levels.iter().any(|v| !v.is_finite()) {
+        return Err("nonfinite packed cascade level in the 17x17 audit".into());
+    }
+    let min_peak = levels.iter().fold(f32::INFINITY, |acc, v| acc.min(*v));
+    let max_peak = levels.iter().fold(f32::NEG_INFINITY, |acc, v| acc.max(*v));
+    if min_peak < CASCADE_PRODUCT_MIN_PEAK_DB {
+        return Err(format!(
+            "packed cascade product too quiet: weakest Morph/Pressure peak {min_peak:.1} dB, floor {CASCADE_PRODUCT_MIN_PEAK_DB:.1} dB"
+        ));
+    }
+    if max_peak > CASCADE_PRODUCT_MAX_PEAK_DB {
+        return Err(format!(
+            "packed cascade product too hot: hottest Morph/Pressure peak {max_peak:.1} dB, ceiling {CASCADE_PRODUCT_MAX_PEAK_DB:.1} dB"
+        ));
+    }
+    Ok((min_peak, max_peak))
+}
+
+fn start_audio(
+    body: [u8; 240],
+    morph: f64,
+    q: f64,
+    src: AudioSrc,
+    agc: bool,
+    sat: bool,
+    drive: f32,
+    loop_buf: Option<std::sync::Arc<Vec<f32>>>,
+) -> Result<AudioHandle, String> {
     use cpal::traits::{DeviceTrait, HostTrait, StreamTrait};
     let host = cpal::default_host();
     let device = host
@@ -938,7 +950,11 @@ fn start_audio(body: [u8; 240], morph: f64, q: f64, src: AudioSrc) -> Result<Aud
         morph,
         q,
         src,
+        agc,
+        sat,
+        drive,
         pending_cart: Some(cart),
+        pending_loop: loop_buf,
     }));
     let ctl_cb = ctl.clone();
 
@@ -947,6 +963,8 @@ fn start_audio(body: [u8; 240], morph: f64, q: f64, src: AudioSrc) -> Result<Aud
     let mut source = SourceState {
         rng: 0x1234_5678,
         phase: [0.0; 4],
+        loop_buf: None,
+        loop_pos: 0,
     };
     let mut left = vec![0.0f32; 256];
     let mut right = vec![0.0f32; 256];
@@ -955,12 +973,34 @@ fn start_audio(body: [u8; 240], morph: f64, q: f64, src: AudioSrc) -> Result<Aud
         .build_output_stream(
             &config.into(),
             move |data: &mut [f32], _| {
-                let (playing, morph, q, src, cart) = {
+                let (playing, morph, q, src, cart, lp, agc_enabled, sat_enabled, drive_val) = {
                     let mut c = ctl_cb.lock().unwrap();
-                    (c.playing, c.morph, c.q, c.src, c.pending_cart.take())
+                    (
+                        c.playing,
+                        c.morph,
+                        c.q,
+                        c.src,
+                        c.pending_cart.take(),
+                        c.pending_loop.take(),
+                        c.agc,
+                        c.sat,
+                        c.drive,
+                    )
                 };
                 if let Some(cart) = cart {
                     engine.load_cartridge(cart);
+                }
+                if let Some(lp) = lp {
+                    source.loop_buf = Some(lp);
+                    source.loop_pos = 0;
+                }
+                engine.debug.agc_enabled = agc_enabled;
+                engine.debug.saturation_enabled = sat_enabled;
+                engine.set_slam_drive(drive_val);
+                if drive_val > 0.0 {
+                    engine.set_input_mode(trench_core::engine::InputMode::MackieDeskSlam);
+                } else {
+                    engine.set_input_mode(trench_core::engine::InputMode::None);
                 }
                 if !playing {
                     data.fill(0.0);
@@ -994,6 +1034,7 @@ fn start_audio(body: [u8; 240], morph: f64, q: f64, src: AudioSrc) -> Result<Aud
     Ok(AudioHandle {
         _stream: stream,
         ctl,
+        sr,
     })
 }
 
@@ -1009,6 +1050,8 @@ const AUDIT_BINS: usize = 96;
 const STAGES: usize = 6;
 const CORNERS: usize = 4;
 const SR: f32 = 39_062.5;
+const CASCADE_PRODUCT_MIN_PEAK_DB: f32 = -3.0;
+const CASCADE_PRODUCT_MAX_PEAK_DB: f32 = 36.0;
 
 const RP_MIN: f32 = 0.5;
 const RP_MAX: f32 = 0.9992;
@@ -1327,23 +1370,17 @@ enum Drag {
     },
     SurfaceMap,
     SweepMap,
-    Curve,
     /// hold D + drag: paint a target stroke; released, it becomes dense
     /// Bark-spaced target pins and the goal optimizer fits (SPEC item 5,
     /// draw-the-target)
     Draw,
-    Pin {
-        idx: usize,
+    Drive,
+    /// MOVEMENT view: drag a pole track's Low (x=left) or High (x=right) endpoint
+    /// up/down to author that stage's Q0 corner pole frequency.
+    Track {
+        stage: usize,
+        high: bool,
     },
-}
-
-/// Outcome of the last goal optimize, for the plot overlay.
-struct OptOutcome {
-    stages: Vec<usize>,
-    before: f32,
-    after: f32,
-    accepted: bool,
-    at: Instant,
 }
 
 /// The display never snaps to solver output. Solves set this TARGET; every
@@ -1381,16 +1418,6 @@ fn lerp_sections(a: &[Section], b: &[Section], t: f32) -> Vec<Section> {
             s
         })
         .collect()
-}
-
-/// State of a combined-curve grab — the pottery grip. Viscous: every frame the
-/// material under the brush takes a small step toward the finger from where it
-/// is NOW (no frozen grab-time target, no spring-back). Sections are recruited
-/// under the brush each frame. Evaluated through the TRUE packed runtime
-/// (pack_body → word lerp → |H|), never a continuous surrogate.
-struct CurveGrip {
-    plot: Rect,
-    residual_rms: f32,
 }
 
 struct Tables {
@@ -1459,7 +1486,6 @@ enum MenuAction {
     ToggleBark,
 }
 
-
 const VOWEL_PAIRS: [(&str, &str, &str); 4] = [
     ("aa", "iy", "vowel  ah > ee"),
     ("uw", "iy", "vowel  oo > ee"),
@@ -1496,6 +1522,12 @@ struct App {
     bark: bool,
     overlay_vowel: Option<usize>,
     show_rail: bool,
+    /// MOVEMENT view: plot each stage's pole/zero frequency journey across morph
+    /// (X = morph 0→1, Y = log-Hz) instead of the response curve. Parallel path.
+    movement_view: bool,
+    /// point-authoring: edits land at the (morph,q) interpolation point and the
+    /// four corners derive, rather than editing one corner directly.
+    point_edit: bool,
     audit_levels: [f32; AUDIT_N * AUDIT_N],
     audit_maxr: f32,
     audit_unstable: usize,
@@ -1504,11 +1536,14 @@ struct App {
     audio: Option<AudioHandle>,
     playing: bool,
     audio_src: AudioSrc,
+    audio_agc: bool,
+    audio_sat: bool,
+    audio_drive: f32,
+    loop_buf: Option<std::sync::Arc<Vec<f32>>>, // dropped WAV, device-rate mono
     brush_bark: f32, // curve-grip / pin brush half-width (Gaussian σ, BARK)
     pins: Vec<GoalPin>,
     selected_pin: Option<usize>,
     optimize_inflight: bool,
-    last_opt: Option<OptOutcome>,
     solve_target: Option<Vec<Section>>,
     last_frame: Instant,
     frame_ms_avg: f32,   // EMA of frame-to-frame time — the jank meter
@@ -1537,10 +1572,7 @@ struct App {
     heat_inflight: bool,
     audit_inflight: bool,
     table_gen_idx: usize,
-    hand: Option<(f32, f32, f32)>, // (f_center, finger_db, fine) — latest moulding hand state
-    last_dispatch: Instant,
     drag: Option<Drag>,
-    curve_grip: Option<CurveGrip>,
     hover: Option<Pos2>,
     open_menu: Option<Menu>,
     menu_opened_at: Option<Instant>,
@@ -1565,6 +1597,8 @@ struct App {
     overlay_ref: Option<String>,
     /// the source picker panel (frequency-scale layout, color by kind)
     picker_open: bool,
+    picker_lane: usize,
+    picker_page: usize,
     picker_sel: Option<(usize, usize)>,
     /// a packed body seeded verbatim for listening/plotting — sections do not
     /// describe it; any edit recompiles from sections and drops the preview
@@ -1650,7 +1684,7 @@ fn main() -> eframe::Result {
     }
     if std::env::args().any(|arg| arg == "--inventory-test") {
         let root = repo_root();
-        let Some(manifest) = sources::manifest::load(&root) else {
+        let Some(manifest) = load_start_manifest_with_recent(&root) else {
             println!(
                 "inventory-test: FAILED — no manifest at {} (run tools/build_forge_start_manifest.py)",
                 sources::manifest::MANIFEST_PATH
@@ -1682,10 +1716,74 @@ fn main() -> eframe::Result {
             overlays.len(),
             manifest.quarantine.len()
         );
-        assert!(manifest.lanes.len() >= 4, "expected at least four provenance lanes");
+        assert!(
+            manifest.lanes.len() >= 4,
+            "expected at least four provenance lanes"
+        );
         assert_eq!(missing, 0, "every referenced .body240 must load");
-        assert!(!manifest.quarantine.is_empty(), "quarantine must be visible");
+        assert!(
+            !manifest.quarantine.is_empty(),
+            "quarantine must be visible"
+        );
         println!("inventory-test: OK");
+        return Ok(());
+    }
+    if std::env::args().any(|arg| arg == "--preview-test") {
+        // headless proof of the packed PREVIEW path: every wizard_bank row through
+        // start_manifest_row's packed fallback → seed_packed_preview → 17x17 audit
+        let mut app = App::default_state();
+        let mut rows = Vec::new();
+        if let Some(manifest) = &app.start_manifest {
+            if let Some(li) = manifest.lanes.iter().position(|l| l.id == "wizard_bank") {
+                for (ri, row) in manifest.lanes[li].rows.iter().enumerate() {
+                    rows.push((li, ri, row.label.clone()));
+                }
+            }
+        }
+        assert!(!rows.is_empty(), "no wizard_bank rows in manifest");
+        for (li, ri, label) in rows {
+            app.start_manifest_row(li, ri);
+            assert!(
+                app.packed_preview.is_some(),
+                "{label}: did not enter packed preview"
+            );
+            let (_, maxr, unstable, _) = compute_audit(&app.words());
+            assert_eq!(unstable, 0, "{label}: unstable cells in 17x17 audit");
+            println!("preview-test: {label} · packed preview · max_r {maxr:.4} · unstable 0");
+        }
+        println!("preview-test: OK");
+        return Ok(());
+    }
+    if std::env::args().any(|arg| arg == "--start-gallery-test") {
+        // START rail-gallery proof: two different measured wizard sources feed
+        // the explicit LOW/HIGH frame slots. Q rows are derived by the app's
+        // link rule; the final body is still a 240-byte packed-runtime object.
+        let mut app = App::default_state();
+        let Some(manifest) = &app.start_manifest else {
+            panic!("no START manifest");
+        };
+        let li = manifest
+            .lanes
+            .iter()
+            .position(|l| l.id == "wizard_bank")
+            .expect("wizard_bank lane missing");
+        let row_count = manifest.lanes[li].rows.len();
+        assert!(
+            row_count >= 2,
+            "need at least two wizard rows for a pose pair"
+        );
+        let low_label = manifest.lanes[li].rows[0].label.clone();
+        let high_label = manifest.lanes[li].rows[1].label.clone();
+        app.load_frame_from_source(li, 0, true, false);
+        app.load_frame_from_source(li, 1, false, true);
+        assert!(app.q_link, "Q rows must derive from the two loaded frames");
+        assert_eq!(app.body.len(), 240, "body must stay 240 bytes");
+        let (_, maxr, unstable, _) = compute_audit(&app.words());
+        assert_eq!(unstable, 0, "pose pair must pass 17x17 stability audit");
+        println!(
+            "start-gallery-test: LOW={low_label} · HIGH={high_label} · 240 bytes · max_r {maxr:.4} · unstable 0"
+        );
+        println!("start-gallery-test: OK");
         return Ok(());
     }
     if std::env::args().any(|arg| arg == "--author-once") {
@@ -1976,6 +2074,8 @@ fn main() -> eframe::Result {
         let mut src = SourceState {
             rng: 0x1234_5678,
             phase: [0.0; 4],
+            loop_buf: None,
+            loop_pos: 0,
         };
         let mut l = vec![0.0f32; 4096];
         let mut r = vec![0.0f32; 4096];
@@ -1991,7 +2091,7 @@ fn main() -> eframe::Result {
                 "SILENT/BAD"
             }
         );
-        match start_audio(app.body, 0.5, 0.5, AudioSrc::Noise) {
+        match start_audio(app.body, 0.5, 0.5, AudioSrc::Noise, false, false, 0.0, None) {
             Ok(_h) => {
                 std::thread::sleep(Duration::from_millis(1200));
                 println!("device stream ran 1.2 s: OK");
@@ -2028,6 +2128,110 @@ fn repo_root() -> PathBuf {
         }
     }
     PathBuf::from(".")
+}
+
+fn load_start_manifest_with_recent(root: &Path) -> Option<sources::manifest::StartManifest> {
+    let mut manifest =
+        sources::manifest::load(root).unwrap_or_else(|| sources::manifest::StartManifest {
+            format: "forge-start-manifest-v1".into(),
+            lanes: Vec::new(),
+            quarantine: Vec::new(),
+        });
+    if let Some(lane) = recent_filter_lane(root) {
+        manifest.lanes.insert(0, lane);
+    }
+    Some(manifest)
+}
+
+fn recent_filter_lane(root: &Path) -> Option<sources::manifest::Lane> {
+    let mut files: Vec<(std::time::SystemTime, PathBuf)> = Vec::new();
+    for rel in [
+        "dev/tmp/forge_sheet",
+        "dev/tmp/author_sheet",
+        "dev/tmp/cull_v1_0705",
+        "dev/tmp/wizard_reverse_0705/bodies",
+        "dev/tmp/wizard_reverse_0705/phone_compare",
+        "dev/tmp/journeys_0705/bodies",
+        "desk/bank/v1/staging",
+        "desk/sheets",
+        "presets",
+        "bodies",
+    ] {
+        collect_recent_body_files(root, &root.join(rel), &mut files);
+    }
+    files.sort_by(|a, b| b.0.cmp(&a.0));
+    files.dedup_by(|a, b| a.1 == b.1);
+    let rows: Vec<sources::manifest::Row> = files
+        .into_iter()
+        .take(64)
+        .filter_map(|(_, path)| {
+            let rel = path
+                .strip_prefix(root)
+                .ok()?
+                .to_string_lossy()
+                .replace('\\', "/");
+            let label = path
+                .file_stem()
+                .and_then(|s| s.to_str())
+                .unwrap_or("recent filter")
+                .replace('_', " ");
+            Some(sources::manifest::Row {
+                label,
+                note: "local recent packed body — editable at M50/Q50".into(),
+                kind: "recent".into(),
+                kind_hint: Some("recent".into()),
+                body: Some(rel),
+                stages: None,
+                curves: None,
+                exact_key: None,
+                evidence: Some("runtime scan of local recent body folders".into()),
+            })
+        })
+        .collect();
+    (!rows.is_empty()).then_some(sources::manifest::Lane {
+        id: "recent_local".into(),
+        title: "Recent local filters".into(),
+        badge: "RECENT".into(),
+        rows,
+    })
+}
+
+fn collect_recent_body_files(
+    root: &Path,
+    dir: &Path,
+    out: &mut Vec<(std::time::SystemTime, PathBuf)>,
+) {
+    if !dir.exists() || !dir.starts_with(root) {
+        return;
+    }
+    let Ok(entries) = fs::read_dir(dir) else {
+        return;
+    };
+    for entry in entries.flatten() {
+        let path = entry.path();
+        if path.is_dir() {
+            collect_recent_body_files(root, &path, out);
+            continue;
+        }
+        let ext_ok = path
+            .extension()
+            .and_then(|s| s.to_str())
+            .map(|s| s.eq_ignore_ascii_case("body240") || s.eq_ignore_ascii_case("bin"))
+            .unwrap_or(false);
+        if !ext_ok {
+            continue;
+        }
+        let Ok(meta) = fs::metadata(&path) else {
+            continue;
+        };
+        if meta.len() != 240 {
+            continue;
+        }
+        out.push((
+            meta.modified().unwrap_or(std::time::SystemTime::UNIX_EPOCH),
+            path,
+        ));
+    }
 }
 
 fn load_tables() -> Tables {
@@ -2335,6 +2539,18 @@ impl App {
         }
         if std::env::args().any(|a| a == "--boot-start") {
             app.picker_open = true;
+            if let Some(manifest) = &app.start_manifest {
+                if let Some(li) = manifest.lanes.iter().position(|l| l.id == "wizard_bank") {
+                    app.picker_lane = li;
+                    app.picker_page = 0;
+                    if !manifest.lanes[li].rows.is_empty() {
+                        app.picker_sel = Some((li, 0));
+                    }
+                }
+            }
+        }
+        if std::env::args().any(|a| a == "--boot-details") {
+            app.show_rail = true;
         }
         if std::env::args().any(|a| a == "--boot-author") {
             app.body_name = "first sweep 180 to 2k6".into();
@@ -2372,16 +2588,14 @@ impl App {
             heat_inflight: false,
             audit_inflight: false,
             table_gen_idx: 0,
-            hand: None,
-            last_dispatch: Instant::now(),
             sections: scratch_sections(),
             selected_stage: 1,
             selected_corner: CornerKey::M0Q0,
-            scope: EditScope::Corner,
+            scope: EditScope::All,
             quantize: Quantize::Measured,
             key_root: 9,
-            morph: 0.0,
-            q: 0.0,
+            morph: 0.5,
+            q: 0.5,
             sweep: false,
             sweep_t0: Instant::now(),
             body: [0; 240],
@@ -2394,7 +2608,9 @@ impl App {
             show_ghosts: false,
             bark: false,
             overlay_vowel: None,
-            show_rail: true,
+            show_rail: false,
+            movement_view: false,
+            point_edit: true,
             audit_levels: [f32::NAN; AUDIT_N * AUDIT_N],
             audit_maxr: 0.0,
             audit_unstable: 0,
@@ -2403,11 +2619,14 @@ impl App {
             audio: None,
             playing: false,
             audio_src: AudioSrc::Noise,
+            loop_buf: None,
+            audio_agc: false,
+            audio_sat: false,
+            audio_drive: 0.0,
             brush_bark: 1.0,
             pins: Vec::new(),
             selected_pin: None,
             optimize_inflight: false,
-            last_opt: None,
             solve_target: None,
             last_frame: Instant::now(),
             frame_ms_avg: 0.0,
@@ -2425,7 +2644,6 @@ impl App {
             patch: model::peak_shelf::PeakShelfPatch::default(),
             patch_linked: false,
             drag: None,
-            curve_grip: None,
             hover: None,
             open_menu: None,
             menu_opened_at: None,
@@ -2434,13 +2652,15 @@ impl App {
             undo: Vec::new(),
             redo: Vec::new(),
             tables: load_tables(),
-            start_manifest: sources::manifest::load(&repo_root()),
+            start_manifest: load_start_manifest_with_recent(&repo_root()),
             source_bodies: HashMap::new(),
             overlay_curves: HashMap::new(),
             centroids: HashMap::new(),
             tile_cache: HashMap::new(),
             overlay_ref: None,
             picker_open: false,
+            picker_lane: 0,
+            picker_page: 0,
             picker_sel: None,
             packed_preview: None,
             status: "ready — six biquads pack to one 240-byte body".into(),
@@ -2451,18 +2671,58 @@ impl App {
             app.source_bodies = sources::manifest::load_bodies(&root, manifest);
             app.overlay_curves = sources::manifest::load_overlays(&root, manifest);
             for (path, body) in &app.source_bodies {
-                let db = body_db_row(body);
-                app.centroids.insert(path.clone(), spectral_centroid_hz(&db));
+                let db = body_center_db_row(body);
+                app.centroids
+                    .insert(path.clone(), spectral_centroid_hz(&db));
                 app.tile_cache.insert(path.clone(), db);
             }
             for (path, ov) in &app.overlay_curves {
                 if let Some(c) = ov.curves.first() {
-                    app.centroids.insert(path.clone(), spectral_centroid_hz(&c.db));
+                    app.centroids
+                        .insert(path.clone(), spectral_centroid_hz(&c.db));
+                }
+            }
+            if let Some(lane) = manifest.lanes.first() {
+                if lane.id == "recent_local" && !lane.rows.is_empty() {
+                    app.picker_sel = Some((0, 0));
                 }
             }
         }
         app.rebuild_body();
+        app.load_default_recent_body();
         app
+    }
+
+    fn load_default_recent_body(&mut self) {
+        let Some(manifest) = &self.start_manifest else {
+            return;
+        };
+        let Some((lane_idx, row_idx, label, body)) = manifest
+            .lanes
+            .iter()
+            .enumerate()
+            .find(|(_, lane)| lane.id == "recent_local")
+            .and_then(|(lane_idx, lane)| {
+                lane.rows.iter().enumerate().find_map(|(row_idx, row)| {
+                    let body = row
+                        .body
+                        .as_ref()
+                        .and_then(|path| self.source_bodies.get(path))
+                        .copied()?;
+                    Some((lane_idx, row_idx, row.label.clone(), body))
+                })
+            })
+        else {
+            return;
+        };
+        self.load_editable_body_at_center(&label, body);
+        self.picker_sel = Some((lane_idx, row_idx));
+        self.picker_lane = lane_idx;
+        self.picker_page = row_idx / 4;
+        self.picker_open = false;
+        self.undo.clear();
+        self.redo.clear();
+        self.status = format!("{label} loaded — editing middle at M50/Q50");
     }
 
     /// Editing a Q100 corner directly is the deliberate break-out from the
@@ -2470,8 +2730,7 @@ impl App {
     fn ensure_q_free(&mut self, corner: CornerKey) {
         if self.q_link && corner.morph_q().1 > 0.5 {
             self.q_link = false;
-            self.status =
-                "Q rows are separate now — use LINK Q or CORNERS to rebuild them".into();
+            self.status = "Q rows are separate now — use LINK Q or CORNERS to rebuild them".into();
         }
     }
 
@@ -2585,7 +2844,6 @@ impl App {
         match self.drag {
             Some(Drag::Handle { stage, .. }) => Some(stage),
             Some(Drag::Value { .. }) => Some(self.selected_stage),
-            Some(Drag::Curve) => Some(self.selected_stage),
             _ => None,
         }
     }
@@ -2593,16 +2851,7 @@ impl App {
     fn rebuild_body(&mut self) {
         // any recompile from sections supersedes a verbatim packed preview
         self.packed_preview = None;
-        // frames-as-working-unit: Q100 rows are derived state while linked
-        if self.q_link {
-            for s in &mut self.sections {
-                for (lo, hi) in [(0usize, 2usize), (1, 3)] {
-                    let mut c = s.corners[lo];
-                    c.pole_r = (1.0 - (1.0 - c.pole_r) * 0.35).clamp(RP_MIN, RP_MAX);
-                    s.corners[hi] = c;
-                }
-            }
-        }
+        self.derive_q_rows_if_linked();
         let params = self.params168();
         self.body = trench_core::compiler::pack_body(&params);
         self.recompute_response();
@@ -2621,10 +2870,41 @@ impl App {
         }
     }
 
+    fn derive_q_rows_if_linked(&mut self) {
+        // frames-as-working-unit: Q100 rows are derived state while linked.
+        // Frequencies are copied exactly; pressure touches radius/gain only.
+        if !self.q_link {
+            return;
+        }
+        for (i, s) in self.sections.iter_mut().enumerate() {
+            let is_notch = i == 3;
+            for (lo, hi) in [(0usize, 2usize), (1, 3)] {
+                let mut c = s.corners[lo];
+                let r0 = c.pole_r;
+                c.pole_r = (1.0 - (1.0 - r0) * 0.35).clamp(RP_MIN, RP_MAX);
+                if is_notch {
+                    c.zero_r = (1.0 - (1.0 - c.zero_r) * 0.5).clamp(0.0, RZ_MAX);
+                }
+                let trim = 0.5 * 20.0 * ((1.0 - r0) / (1.0 - c.pole_r)).log10();
+                c.gain_db = (c.gain_db - trim).clamp(GAIN_DB_MIN, GAIN_DB_MAX);
+                s.corners[hi] = c;
+            }
+        }
+    }
+
     fn toggle_play(&mut self) {
         self.playing = !self.playing;
         if self.playing && self.audio.is_none() {
-            match start_audio(self.body, self.morph as f64, self.q as f64, self.audio_src) {
+            match start_audio(
+                self.body,
+                self.morph as f64,
+                self.q as f64,
+                self.audio_src,
+                self.audio_agc,
+                self.audio_sat,
+                self.audio_drive,
+                self.loop_buf.clone(),
+            ) {
                 Ok(handle) => {
                     self.audio = Some(handle);
                     self.status =
@@ -2647,6 +2927,9 @@ impl App {
                 c.morph = self.morph as f64;
                 c.q = self.q as f64;
                 c.src = self.audio_src;
+                c.agc = self.audio_agc;
+                c.sat = self.audio_sat;
+                c.drive = self.audio_drive;
             }
         }
     }
@@ -2692,33 +2975,12 @@ impl App {
     fn pump_worker(&mut self, ctx: &egui::Context) {
         while let Ok(resp) = self.resp_rx.try_recv() {
             match resp {
-                Resp::Solve(r) => {
-                    self.solve_inflight = false;
-                    self.solve_target = Some(r.sections);
-                    if let Some(grip) = &mut self.curve_grip {
-                        grip.residual_rms = r.residual;
-                    }
-                    let names: Vec<String> =
-                        r.stages.iter().map(|s| format!("S{}", s + 1)).collect();
-                    self.status = format!(
-                        "shaping {} at {} · width {:.2} (wheel) · error {:.2} dB",
-                        names.join("+"),
-                        format_freq(r.f_center),
-                        r.sigma,
-                        r.residual,
-                    );
-                    // still holding? keep the ping-pong going with the newest hand state
-                    if matches!(self.drag, Some(Drag::Curve)) {
-                        self.dispatch_solve();
-                    }
-                }
                 Resp::Optimize(r) => {
                     self.optimize_inflight = false;
                     // undo was pushed at gesture start (pin add / drag begin),
                     // so the result just lands — magic, but Ctrl+Z still reverts
                     let names: Vec<String> =
                         r.stages.iter().map(|s| format!("S{}", s + 1)).collect();
-                    let dragging = matches!(self.drag, Some(Drag::Pin { .. }));
                     if r.accepted {
                         self.solve_target = Some(r.sections);
                         self.status = format!(
@@ -2729,17 +2991,6 @@ impl App {
                         );
                     } else if !r.message.is_empty() {
                         self.status = r.message;
-                    }
-                    self.last_opt = Some(OptOutcome {
-                        stages: r.stages,
-                        before: r.before,
-                        after: r.after,
-                        accepted: r.accepted,
-                        at: Instant::now(),
-                    });
-                    // still dragging a pin? keep the light-solve ping-pong going
-                    if dragging {
-                        self.dispatch_optimize(true);
                     }
                 }
                 Resp::Heat(pixels) => {
@@ -2783,25 +3034,6 @@ impl App {
                 }
             }
         }
-    }
-
-    /// Current-state goal residual through the packed runtime (the live words
-    /// of self.body — same bytes the engine plays). Cheap; recomputed per frame.
-    fn goal_residual_now(&self) -> Option<f32> {
-        if self.pins.is_empty() {
-            return None;
-        }
-        let stages = live_biquads(&self.words(), self.morph, self.q);
-        let eval = |f: f32| cascade_db(&stages, f);
-        let samples = goal_samples(&self.pins, &eval);
-        Some(residual_goal_packed(&samples, &eval))
-    }
-
-    /// Combined packed response at one frequency (current morph/Q).
-    fn response_db_at(&self, freq: f32) -> f32 {
-        let t = (freq / F_MIN).log2() / (F_MAX / F_MIN).log2();
-        let i = (t.clamp(0.0, 1.0) * (FREQ_BINS - 1) as f32).round() as usize;
-        self.response[i]
     }
 
     /// Fire the goal solve. Silent plumbing: pins call this on add / drag /
@@ -2872,73 +3104,6 @@ impl App {
             self.pins.len()
         );
         self.dispatch_optimize(false);
-    }
-
-    fn add_goal_pin(&mut self, pos: Pos2, plot: Rect, hold: bool) -> bool {
-        let n = self.response.len();
-        let tx = ((pos.x - plot.left()) / plot.width()).clamp(0.0, 1.0);
-        let f = axis_f(tx);
-        if (pos.y - y_for_db(plot, self.response[bin_for_freq(f, n)])).abs() < 12.0 {
-            return false;
-        }
-        self.ensure_q_free(self.selected_corner); // pin solves edit this corner's rows
-        let pin = if hold {
-            GoalPin {
-                kind: PinKind::Anchor,
-                shape: PinShape::Peak,
-                freq_hz: f,
-                target_db: self.response_db_at(f),
-                width_bark: 1.5,
-            }
-        } else {
-            let db = DB_MIN
-                + (1.0 - (pos.y - plot.top()) / plot.height()).clamp(0.0, 1.0) * (DB_MAX - DB_MIN);
-            GoalPin {
-                kind: PinKind::Target,
-                shape: PinShape::Peak,
-                freq_hz: self.snap(f, false),
-                target_db: db,
-                width_bark: self.brush_bark,
-            }
-        };
-        self.push_undo();
-        self.pins.push(pin);
-        self.selected_pin = Some(self.pins.len() - 1);
-        self.dispatch_optimize(true);
-        self.status = format!(
-            "{} {} {:+.1} dB — fitting now (drag it · right-click removes · Ctrl+Z reverts)",
-            if hold { "hold point at" } else { "target at" },
-            format_freq(pin.freq_hz),
-            pin.target_db,
-        );
-        true
-    }
-
-    fn dispatch_solve(&mut self) {
-        if self.solve_inflight {
-            return;
-        }
-        let Some((f_center, finger_db, fine)) = self.hand else {
-            return;
-        };
-        let dt = self.last_dispatch.elapsed().as_secs_f32().min(0.1);
-        self.last_dispatch = Instant::now();
-        let follow = 1.0 - (-dt * 10.0).exp();
-        let req = SolveReq {
-            sections: self.sections.clone(),
-            corner: self.selected_corner.idx(),
-            scope: self.selected_corner.scope_corners(self.scope),
-            f_center,
-            finger_db,
-            sigma: self.brush_bark,
-            follow,
-            fine,
-            morph: self.morph,
-            q: self.q,
-        };
-        if self.job_tx.send(Job::Solve(req)).is_ok() {
-            self.solve_inflight = true;
-        }
     }
 
     #[allow(dead_code)]
@@ -3093,12 +3258,9 @@ impl App {
                         self.selected_stage = 0;
                         self.selected_corner = CornerKey::M0Q0;
                         self.rebuild_body();
-                        self.status =
-                            format!("START: {} — compiled law, editable", row.label);
+                        self.status = format!("START: {} — compiled law, editable", row.label);
                     }
-                    Err(err) => {
-                        self.status = format!("could not start from {}: {err}", row.label)
-                    }
+                    Err(err) => self.status = format!("could not start from {}: {err}", row.label),
                 }
             }
             "exact_skeleton" => {
@@ -3135,9 +3297,25 @@ impl App {
                     self.status = format!("{}: curves file missing on disk", row.label);
                 }
             }
+            "recent" => {
+                let Some(body) = row
+                    .body
+                    .as_ref()
+                    .and_then(|p| self.source_bodies.get(p))
+                    .copied()
+                else {
+                    self.status = format!("{}: body bytes missing on disk", row.label);
+                    return;
+                };
+                self.load_editable_body_at_center(&row.label, body);
+            }
             _ => {
                 // packed: verbatim bytes for listening/plotting only
-                let Some(body) = row.body.as_ref().and_then(|p| self.source_bodies.get(p)).copied()
+                let Some(body) = row
+                    .body
+                    .as_ref()
+                    .and_then(|p| self.source_bodies.get(p))
+                    .copied()
                 else {
                     self.status = format!("{}: body bytes missing on disk", row.label);
                     return;
@@ -3148,7 +3326,9 @@ impl App {
     }
 
     fn run_picker_act(&mut self, act: PickerAct) {
-        let Some((li, ri)) = self.picker_sel else { return };
+        let Some((li, ri)) = self.picker_sel else {
+            return;
+        };
         match act {
             PickerAct::Overlay => self.toggle_source_overlay(li, ri),
             PickerAct::Snap => self.snap_selected_to_source(li, ri),
@@ -3167,8 +3347,15 @@ impl App {
     /// words at that frame (inferred where the numerator has real roots).
     /// Q rows derive via the measured link rule; the pairing morphs.
     fn load_frame_from_source(&mut self, lane: usize, row: usize, low: bool, high: bool) {
-        let Some(manifest) = &self.start_manifest else { return };
-        let Some(r) = manifest.lanes.get(lane).and_then(|l| l.rows.get(row)).cloned() else {
+        let Some(manifest) = &self.start_manifest else {
+            return;
+        };
+        let Some(r) = manifest
+            .lanes
+            .get(lane)
+            .and_then(|l| l.rows.get(row))
+            .cloned()
+        else {
             return;
         };
         if matches!(r.kind_hint.as_deref(), Some("reference")) {
@@ -3240,7 +3427,12 @@ impl App {
         let Some(manifest) = &self.start_manifest else {
             return;
         };
-        let Some(r) = manifest.lanes.get(lane).and_then(|l| l.rows.get(row)).cloned() else {
+        let Some(r) = manifest
+            .lanes
+            .get(lane)
+            .and_then(|l| l.rows.get(row))
+            .cloned()
+        else {
             return;
         };
         let key = if let Some(curves) = &r.curves {
@@ -3267,7 +3459,10 @@ impl App {
                     let live = live_biquads(&words, m, q);
                     sources::manifest::OverlayCurve {
                         label: label.into(),
-                        db: trig.iter().map(|&(c1, c2)| cascade_db_c(&live, c1, c2)).collect(),
+                        db: trig
+                            .iter()
+                            .map(|&(c1, c2)| cascade_db_c(&live, c1, c2))
+                            .collect(),
                     }
                 })
                 .collect();
@@ -3301,7 +3496,12 @@ impl App {
         let Some(manifest) = &self.start_manifest else {
             return;
         };
-        let Some(r) = manifest.lanes.get(lane).and_then(|l| l.rows.get(row)).cloned() else {
+        let Some(r) = manifest
+            .lanes
+            .get(lane)
+            .and_then(|l| l.rows.get(row))
+            .cloned()
+        else {
             return;
         };
         let Some(body) = self.picker_row_body(&r) else {
@@ -3370,9 +3570,28 @@ impl App {
                 }
             }
         }
-        self.status = format!(
-            "packed preview: {label} — sweep/listen; editing returns to your sections"
-        );
+        self.status =
+            format!("packed preview: {label} — sweep/listen; editing returns to your sections");
+    }
+
+    /// Recent local bodies are our own work, so open them as editable six-lane
+    /// pole/zero sections and park the authoring cursor at the center surface.
+    fn load_editable_body_at_center(&mut self, label: &str, body: [u8; 240]) {
+        self.finish_anim();
+        self.push_undo();
+        self.sections = decode_body_sections(&words_of(&body));
+        self.q_link = true;
+        self.patch_linked = false;
+        self.packed_preview = None;
+        self.pins.clear();
+        self.selected_pin = None;
+        self.body_name = slugify(label);
+        self.morph = 0.5;
+        self.q = 0.5;
+        self.selected_corner = CornerKey::M0Q0;
+        self.selected_stage = 0;
+        self.rebuild_body();
+        self.status = format!("{label} loaded editable — authoring at M50 / Q50");
     }
 
     fn seed_scratch(&mut self) {
@@ -3606,7 +3825,8 @@ impl App {
     fn seed_exact(&mut self, which: usize) {
         let Some(sk) = self.tables.skeletons.get(which).cloned() else {
             self.status = if self.tables.skeleton_verification_loaded {
-                "no verified tables — run tools/verify_exact_skeletons.py and fix failing rows".into()
+                "no verified tables — run tools/verify_exact_skeletons.py and fix failing rows"
+                    .into()
             } else {
                 "tables not verified — run python tools/verify_exact_skeletons.py".into()
             };
@@ -3658,7 +3878,8 @@ impl App {
             self.status = if self.tables.skeleton_verification_loaded {
                 "verified start unavailable — no source rows passed".into()
             } else {
-                "verified start unavailable — run python tools/verify_exact_skeletons.py first".into()
+                "verified start unavailable — run python tools/verify_exact_skeletons.py first"
+                    .into()
             };
             return;
         }
@@ -3698,6 +3919,48 @@ impl App {
             if unstable == 0 { "stable" } else { "UNSTABLE" },
             maxr,
             pub_note
+        );
+    }
+
+    /// Plain WAV drop: load as the PLAY loop — judge bodies on REAL material.
+    fn load_loop_wav(&mut self, path: &Path) {
+        let Ok(bytes) = fs::read(path) else {
+            self.status = format!("could not read {}", path.display());
+            return;
+        };
+        let Some((samples, sr)) = parse_wav(&bytes) else {
+            self.status = "not a readable WAV (PCM 16/24/32 or float32)".into();
+            return;
+        };
+        let dev_sr = self.audio.as_ref().map(|a| a.sr).unwrap_or(48_000.0);
+        // linear resample to the device rate, peak-normalized to leave AGC headroom
+        let n_out = ((samples.len() as f64) * dev_sr / sr).max(1.0) as usize;
+        let mut buf = Vec::with_capacity(n_out);
+        for i in 0..n_out {
+            let x = i as f64 * sr / dev_sr;
+            let j = x as usize;
+            let fr = (x - j as f64) as f32;
+            let a = samples[j.min(samples.len() - 1)] as f32;
+            let b = samples[(j + 1).min(samples.len() - 1)] as f32;
+            buf.push(a + (b - a) * fr);
+        }
+        let peak = buf.iter().fold(0.0f32, |m, v| m.max(v.abs())).max(1e-9);
+        for v in &mut buf {
+            *v *= 0.5 / peak;
+        }
+        let arc = std::sync::Arc::new(buf);
+        self.loop_buf = Some(arc.clone());
+        if let Some(audio) = &self.audio {
+            if let Ok(mut c) = audio.ctl.lock() {
+                c.pending_loop = Some(arc);
+            }
+        }
+        self.audio_src = AudioSrc::Loop;
+        self.sync_audio();
+        let secs = n_out as f64 / dev_sr;
+        self.status = format!(
+            "LOOP loaded: {} ({secs:.1}s) — Ctrl+drop for LPC fit",
+            path.file_name().map(|s| s.to_string_lossy().into_owned()).unwrap_or_default()
         );
     }
 
@@ -3835,8 +4098,8 @@ impl App {
     /// SPEC item 6: KEEP → bank staging. Assembles a keeper's evidence bundle
     /// — bytes, compiled cartridge, source sections, a fresh synchronous
     /// 17×17 audit, byte provenance (SHA-256) — into desk/bank/v1/staging/.
-    /// The verdict and the BANK.md row remain the producer's; an unstable
-    /// audit refuses outright.
+    /// The verdict and the BANK.md row remain the producer's; the cascade
+    /// product gate refuses unstable, nonfinite, too-quiet, or too-hot bodies.
     fn keep_to_staging(&mut self) {
         use sha2::Digest;
         if let Some(label) = &self.packed_preview {
@@ -3847,10 +4110,13 @@ impl App {
         }
         let words = self.words();
         let (levels, maxr, unstable, _) = compute_audit(&words);
-        if unstable > 0 {
-            self.status = format!("KEEP refused — {unstable} unstable cells in the 17×17 audit");
-            return;
-        }
+        let (weakest_peak_db, hottest_peak_db) = match cascade_product_gate(&levels, unstable) {
+            Ok(value) => value,
+            Err(reason) => {
+                self.status = format!("KEEP refused — cascade product gate failed: {reason}");
+                return;
+            }
+        };
         let slug = if self.body_name.trim().is_empty() {
             let h = sha2::Sha256::digest(self.body);
             format!("keep_{:02x}{:02x}{:02x}{:02x}", h[0], h[1], h[2], h[3])
@@ -3899,6 +4165,14 @@ impl App {
             "max_abs_pole": maxr,
             "unstable_cells": unstable,
             "levels_db": levels,
+            "cascade_product_gate": {
+                "pass": true,
+                "weakest_peak_db": weakest_peak_db,
+                "hottest_peak_db": hottest_peak_db,
+                "min_peak_db": CASCADE_PRODUCT_MIN_PEAK_DB,
+                "max_peak_db": CASCADE_PRODUCT_MAX_PEAK_DB,
+                "note": "Gate is the serial cascade product budget across the packed 17x17 Morph/Pressure grid."
+            },
             "note": "17×17 Morph×Q max |H| dB through the packed word-lerp (rows Q, cols Morph)",
         });
         let _ = serde_json::to_vec_pretty(&audit)
@@ -4087,23 +4361,9 @@ impl App {
                 self.sections[s].on = !self.sections[s].on;
                 self.rebuild_body();
             }
-            if i.key_pressed(Key::Delete) {
-                if let Some(k) = self.selected_pin {
-                    if k < self.pins.len() {
-                        self.pins.remove(k);
-                        self.selected_pin = None;
-                        self.status = "target removed".into();
-                    }
-                }
-            }
             if i.key_pressed(Key::Escape) && self.picker_open {
                 self.picker_open = false;
                 self.picker_sel = None;
-            } else if i.key_pressed(Key::Escape) && self.open_menu.is_none() && !self.pins.is_empty()
-            {
-                self.pins.clear();
-                self.selected_pin = None;
-                self.status = "all targets cleared".into();
             }
             if i.key_pressed(Key::ArrowRight) {
                 self.selected_stage = (self.selected_stage + 1) % STAGES;
@@ -4129,9 +4389,13 @@ impl App {
         });
         let dropped = ctx.input(|i| i.raw.dropped_files.clone());
         if !dropped.is_empty() {
-            let shift = ctx.input(|i| i.modifiers.shift);
+            let (shift, ctrl) = ctx.input(|i| (i.modifiers.shift, i.modifiers.ctrl));
             if let Some(path) = dropped[0].path.clone() {
-                self.fit_wav(&path, shift);
+                if ctrl {
+                    self.fit_wav(&path, shift); // Ctrl+drop = LPC fit (Shift: high frame)
+                } else {
+                    self.load_loop_wav(&path); // plain drop = PLAY loop (real material)
+                }
             }
         }
     }
@@ -4150,15 +4414,15 @@ struct Layout {
     statusbar: Rect,
 }
 
-// The machinery is never hidden: rail + section cards + values row are the
-// editor and stay on screen. DETAILS only collapses them for a camera-clean
-// view; the frame band and status bar are always present.
-fn layout(rect: Rect, show_rail: bool) -> Layout {
+// The front surface is the instrument: hero plot + control row + frame band.
+// Rail + section cards + values row are the machinery behind DETAILS
+// (show_rail); the frame band and status bar are always present.
+fn layout(rect: Rect, show_rail: bool, _patch_linked: bool) -> Layout {
     let bar1_h = 34.0;
     let bar2_h = 26.0;
-    let strip_h = if show_rail { 70.0 } else { 0.0 };
+    let strip_h = 88.0;
     let values_h = if show_rail { 30.0 } else { 0.0 };
-    let front_h = 64.0;
+    let front_h = 42.0;
     let status_h = 22.0;
     let rail_w = 220.0;
     let bar1 = Rect::from_min_max(rect.min, Pos2::new(rect.right(), rect.top() + bar1_h));
@@ -4167,8 +4431,7 @@ fn layout(rect: Rect, show_rail: bool) -> Layout {
         Pos2::new(rect.right(), bar1.bottom() + bar2_h),
     );
     let work_top = bar2.bottom();
-    let statusbar =
-        Rect::from_min_max(Pos2::new(rect.left(), rect.bottom() - status_h), rect.max);
+    let statusbar = Rect::from_min_max(Pos2::new(rect.left(), rect.bottom() - status_h), rect.max);
     let front = Rect::from_min_max(
         Pos2::new(rect.left(), statusbar.top() - front_h),
         Pos2::new(rect.right(), statusbar.top()),
@@ -4177,15 +4440,11 @@ fn layout(rect: Rect, show_rail: bool) -> Layout {
         Pos2::new(rect.left(), front.top() - values_h),
         Pos2::new(rect.right(), front.top()),
     );
-    let strip = if show_rail {
-        Rect::from_min_max(
-            Pos2::new(rect.left(), values.top() - strip_h),
-            Pos2::new(rect.right(), values.top()),
-        )
-    } else {
-        Rect::NOTHING
-    };
-    let work_bottom = if show_rail { strip.top() } else { front.top() };
+    let strip = Rect::from_min_max(
+        Pos2::new(rect.left(), values.top() - strip_h),
+        Pos2::new(rect.right(), values.top()),
+    );
+    let work_bottom = strip.top();
     let work = Rect::from_min_max(
         Pos2::new(rect.left() + 8.0, work_top + 6.0),
         Pos2::new(rect.right() - 8.0, work_bottom - 6.0),
@@ -4231,11 +4490,14 @@ struct Frame {
     morph_rect: Rect,
     q_rect: Rect,
     sweep_rect: Rect,
+    center_rect: Rect,
     name_rect: Rect,
     bake_rect: Rect,
     audition_rect: Rect,
     handles: Vec<(Pos2, usize, HandleKind)>,
     travel_handles: Vec<(Pos2, usize, HandleKind)>, // the other morph frame's dots
+    track_handles: Vec<(Pos2, usize, bool)>,        // MOVEMENT view endpoint dots (bool = high end)
+    move_rect: Rect,
     cards: Vec<Hit<usize>>,
     locks: Vec<Hit<usize>>,
     value_fields: Vec<Hit<ValueField>>,
@@ -4249,11 +4511,17 @@ struct Frame {
     front_sliders: Vec<Hit<FrontSlider>>,
     start_rect: Rect,
     picker_rect: Option<Rect>,
+    picker_lanes: Vec<Hit<usize>>,
+    picker_pages: Vec<Hit<i32>>,
     picker_tiles: Vec<Hit<(usize, usize)>>,
     picker_acts: Vec<Hit<PickerAct>>,
     surface_rect: Option<Rect>,
     sweepmap_rect: Option<Rect>,
     pin_handles: Vec<(Pos2, usize)>,
+    agc_rect: Rect,
+    sat_rect: Rect,
+    drive_rect: Rect,
+    bypasses: Vec<Hit<usize>>,
 }
 
 impl Default for Frame {
@@ -4267,11 +4535,14 @@ impl Default for Frame {
             morph_rect: z,
             q_rect: z,
             sweep_rect: z,
+            center_rect: z,
             name_rect: z,
             bake_rect: z,
             audition_rect: z,
             handles: Vec::new(),
             travel_handles: Vec::new(),
+            track_handles: Vec::new(),
+            move_rect: z,
             cards: Vec::new(),
             locks: Vec::new(),
             value_fields: Vec::new(),
@@ -4285,11 +4556,17 @@ impl Default for Frame {
             front_sliders: Vec::new(),
             start_rect: z,
             picker_rect: None,
+            picker_lanes: Vec::new(),
+            picker_pages: Vec::new(),
             picker_tiles: Vec::new(),
             picker_acts: Vec::new(),
             surface_rect: None,
             sweepmap_rect: None,
             pin_handles: Vec::new(),
+            agc_rect: z,
+            sat_rect: z,
+            drive_rect: z,
+            bypasses: Vec::new(),
         }
     }
 }
@@ -4445,7 +4722,7 @@ impl eframe::App for App {
                 let rect = ui.max_rect();
                 let resp = ui.allocate_rect(rect, Sense::click_and_drag());
                 let p = ui.painter().clone();
-                let lay = layout(rect, self.show_rail);
+                let lay = layout(rect, self.show_rail, self.patch_linked);
 
                 let mut frame = Frame::default();
                 self.draw_bar1(&p, lay.bar1, &mut frame);
@@ -4455,9 +4732,9 @@ impl eframe::App for App {
                     if let Some(rail) = lay.rail {
                         self.draw_rail(&p, rail, &mut frame);
                     }
-                    self.draw_strip(&p, lay.strip, &mut frame);
                     self.draw_values(&p, lay.values, &mut frame);
                 }
+                self.draw_strip(&p, lay.strip, &mut frame);
                 self.draw_front(&p, lay.front, &mut frame);
                 self.draw_status(&p, lay.statusbar);
                 if self.picker_open {
@@ -4588,11 +4865,16 @@ impl App {
             Quantize::Tet => "12-TET",
             Quantize::Off => "off",
         };
-        // SOURCES toggles the picker panel — material on the frequency scale
+        // BODY opens the compact recent-body tray. DETAILS exposes the source machinery.
         let start_r = Rect::from_min_size(Pos2::new(x, cy - 10.0), Vec2::new(76.0, 20.0));
-        chip(p, start_r, "SOURCES", self.picker_open, ICE);
+        chip(p, start_r, "BODY", self.picker_open, ICE);
         frame.start_rect = start_r;
         x += 84.0;
+        // MOVE: swap the hero plot to the pole/zero journey view (X=morph, Y=Hz)
+        let move_r = Rect::from_min_size(Pos2::new(x, cy - 10.0), Vec2::new(58.0, 20.0));
+        chip(p, move_r, "MOVE", self.movement_view, ICE);
+        frame.move_rect = move_r;
+        x += 66.0;
         let menus: Vec<(Menu, String)> = if self.show_rail {
             vec![
                 (Menu::Seed, "SEED ▾".into()),
@@ -4625,21 +4907,22 @@ impl App {
             x += label.chars().count() as f32 * 6.6 + 10.0;
         }
         // Q LINK: while lit, Q100 corners derive from the Q0 rows (the measured
-        // radius rule); editing a Q100 corner breaks it out automatically
-        let ql_r = Rect::from_min_size(Pos2::new(x, cy - 10.0), Vec2::new(62.0, 20.0));
-        chip(p, ql_r, "LINK Q", self.q_link, ICE);
-        frame.qlink_rect = ql_r;
+        // radius rule); editing a Q100 corner breaks it out automatically.
+        // Machinery language — lives behind DETAILS with the rest of the editor.
+        if self.show_rail {
+            let ql_r = Rect::from_min_size(Pos2::new(x, cy - 10.0), Vec2::new(62.0, 20.0));
+            chip(p, ql_r, "LINK Q", self.q_link, ICE);
+            frame.qlink_rect = ql_r;
+        }
 
         let rx = bar.right() - 14.0;
-        // DETAILS only collapses the editor for a camera-clean take —
-        // the machinery is visible by default
-        let panels_r =
-            Rect::from_min_size(Pos2::new(rx - 74.0, cy - 10.0), Vec2::new(74.0, 20.0));
-        chip(p, panels_r, "EDITOR", self.show_rail, TEXT);
+        // DETAILS unfolds the machinery: rail, section cards, values row, menus
+        let panels_r = Rect::from_min_size(Pos2::new(rx - 74.0, cy - 10.0), Vec2::new(74.0, 20.0));
+        chip(p, panels_r, "DETAILS", self.show_rail, TEXT);
         frame.panels_rect = panels_r;
 
-        // MORPH/Q live in the rail (the navigation hub); the frame band
-        // below carries the Peak/Shelf controls. No duplicate sliders.
+        // MORPH/PRESSURE/SWEEP/PLAY live on the front band — single owner,
+        // no duplicate sliders in the rail.
     }
 
     // ── front band: the Peak/Shelf Morph surface ──────────────────────────────
@@ -4649,20 +4932,109 @@ impl App {
     fn draw_front(&self, p: &egui::Painter, band: Rect, frame: &mut Frame) {
         use painter::theme::CORNER;
         p.rect_filled(band, 0.0, PANEL);
-        p.line_segment(
-            [band.left_top(), band.right_top()],
-            Stroke::new(1.0, EDGE),
-        );
+        p.line_segment([band.left_top(), band.right_top()], Stroke::new(1.0, EDGE));
         let row_h = 20.0;
         let pad = 14.0;
-        let gap = (band.height() - 2.0 * row_h) / 3.0;
-        let row_y = |i: f32| band.top() + gap * (i + 1.0) + row_h * i;
+
+        // ── live control row: SWEEP | MORPH | PRESSURE | PLAY — the performance
+        // axes are always active, independent of the Peak/Shelf patch link
+        let ctrl_y = band.top() + 6.0;
+        let sweep_r =
+            Rect::from_min_size(Pos2::new(band.left() + pad, ctrl_y), Vec2::new(76.0, row_h));
+        chip(p, sweep_r, "SWEEP", self.sweep, section_color(0));
+        frame.sweep_rect = sweep_r;
+        let center_r = Rect::from_min_size(
+            Pos2::new(sweep_r.right() + 8.0, ctrl_y),
+            Vec2::new(78.0, row_h),
+        );
+        chip(
+            p,
+            center_r,
+            "M50/Q50",
+            (self.morph - 0.5).abs() < 0.01 && (self.q - 0.5).abs() < 0.01,
+            ICE,
+        );
+        frame.center_rect = center_r;
+        let play_w = 96.0;
+        let play_r = Rect::from_min_size(
+            Pos2::new(band.right() - pad - play_w, ctrl_y),
+            Vec2::new(play_w, row_h),
+        );
+        chip(
+            p,
+            play_r,
+            if self.playing {
+                "❚❚ PAUSE"
+            } else {
+                "► PLAY"
+            },
+            self.playing,
+            Color32::from_rgb(127, 225, 180),
+        );
+        frame.play_rect = play_r;
+        // Draw SAT, AGC, DRIVE controls to the left of the PLAY button
+        let mut rx = play_r.left() - 12.0;
+
+        // SAT toggle chip
+        let sat_w = 40.0;
+        let sat_r = Rect::from_min_size(Pos2::new(rx - sat_w, ctrl_y), Vec2::new(sat_w, row_h));
+        chip(p, sat_r, "SAT", self.audio_sat, FAULT);
+        frame.sat_rect = sat_r;
+        rx -= sat_w + 12.0;
+
+        // AGC toggle chip
+        let agc_w = 40.0;
+        let agc_r = Rect::from_min_size(Pos2::new(rx - agc_w, ctrl_y), Vec2::new(agc_w, row_h));
+        chip(p, agc_r, "AGC", self.audio_agc, EMBER);
+        frame.agc_rect = agc_r;
+        rx -= agc_w + 12.0;
+
+        // DRIVE slider chip
+        let drive_w = 100.0;
+        let drive_r =
+            Rect::from_min_size(Pos2::new(rx - drive_w, ctrl_y), Vec2::new(drive_w, row_h));
+        slider_chip(
+            p,
+            drive_r,
+            "DRIVE",
+            self.audio_drive,
+            Color32::from_rgb(255, 221, 118),
+        );
+        frame.drive_rect = drive_r;
+        rx -= drive_w + 12.0;
+
+        // Remainder is for MORPH & PRESSURE sliders
+        let sliders_l = center_r.right() + 12.0;
+        let sw = (rx - sliders_l - 12.0) / 2.0;
+
+        let morph_r = Rect::from_min_size(Pos2::new(sliders_l, ctrl_y), Vec2::new(sw, row_h));
+        slider_chip(p, morph_r, "MORPH", self.morph, section_color(0));
+        frame.morph_rect = morph_r;
+
+        let q_r = Rect::from_min_size(
+            Pos2::new(sliders_l + sw + 12.0, ctrl_y),
+            Vec2::new(sw, row_h),
+        );
+        slider_chip(p, q_r, "PRESSURE", self.q, ICE);
+        frame.q_rect = q_r;
+
+        if band.height() < 70.0 {
+            return;
+        }
+
+        // ── frame rows live below the control row
+        let lower = Rect::from_min_max(Pos2::new(band.left(), ctrl_y + row_h + 4.0), band.max);
+        let gap = (lower.height() - 2.0 * row_h) / 3.0;
+        let row_y = |i: f32| lower.top() + gap * (i + 1.0) + row_h * i;
 
         // MASTER holds the right column; the frame rows stop before it
         let master_w = 170.0;
         let master_t = ((self.patch.master_peak_db + 12.0) / 24.0).clamp(0.0, 1.0);
         let master_r = Rect::from_min_size(
-            Pos2::new(band.right() - pad - master_w, band.center().y - row_h * 0.5),
+            Pos2::new(
+                band.right() - pad - master_w,
+                lower.center().y - row_h * 0.5,
+            ),
             Vec2::new(master_w, row_h),
         );
         if self.patch_linked {
@@ -4688,7 +5060,11 @@ impl App {
                 "LOW",
                 &self.patch.low,
                 CORNER[0],
-                [FrontSlider::LowFreq, FrontSlider::LowShelf, FrontSlider::LowPeak],
+                [
+                    FrontSlider::LowFreq,
+                    FrontSlider::LowShelf,
+                    FrontSlider::LowPeak,
+                ],
             ),
             (
                 "HIGH",
@@ -4755,8 +5131,8 @@ impl App {
             "frame controls are NOT driving the body — touch one to take over"
         };
         p.text(
-            Pos2::new(band.right() - pad, band.top() + 3.0),
-            Align2::RIGHT_TOP,
+            Pos2::new(band.right() - pad, band.bottom() - 4.0),
+            Align2::RIGHT_BOTTOM,
             note,
             FontId::monospace(8.5),
             if self.patch_linked { TEXT_DIM } else { EMBER },
@@ -4795,7 +5171,7 @@ impl App {
 
     /// "color coded by what it is": the picker's kind rows. Index, color,
     /// plain label — driven by the manifest's kind_hint, never by path.
-    const PICKER_KINDS: [(&'static str, Color32); 10] = [
+    const PICKER_KINDS: [(&'static str, Color32); 11] = [
         ("law", ICE),
         ("physical", painter::theme::CORNER[2]),
         ("vocal", painter::theme::GOOD),
@@ -4806,6 +5182,7 @@ impl App {
         ("auto recipe", Color32::from_rgb(122, 138, 152)),
         ("study", TEXT_DIM),
         ("approx fit", Color32::from_rgb(168, 134, 96)),
+        ("recent", Color32::from_rgb(127, 225, 180)),
     ];
 
     fn picker_kind(row: &sources::manifest::Row) -> usize {
@@ -4819,6 +5196,7 @@ impl App {
             "iconic" => 6,
             "auto" => 7,
             "study" => 8,
+            "recent" => 10,
             _ => 9,
         }
     }
@@ -4841,7 +5219,9 @@ impl App {
                 .skeletons
                 .iter()
                 .position(|sk| Some(&sk.key) == row.exact_key.as_ref())?;
-            return self.skeleton_preview_body(idx).map(|b| body_db_row(&b));
+            return self
+                .skeleton_preview_body(idx)
+                .map(|b| body_center_db_row(&b));
         }
         None
     }
@@ -4852,6 +5232,41 @@ impl App {
             .or(row.curves.as_ref())
             .and_then(|p| self.centroids.get(p))
             .copied()
+    }
+
+    /// Four source-corner curves for the picker card, in visual 2x2 order:
+    /// top row = Q100, bottom row = Q0.
+    fn picker_row_corner_values(&self, row: &sources::manifest::Row) -> Option<Vec<Vec<f32>>> {
+        if let Some(path) = &row.curves {
+            let curves = self.overlay_curves.get(path)?;
+            let mut out: Vec<Vec<f32>> =
+                curves.curves.iter().take(4).map(|c| c.db.clone()).collect();
+            if out.len() == 4 {
+                // overlay files usually arrive C0,C1,C2,C3; show C2,C3,C0,C1
+                out = vec![
+                    out[2].clone(),
+                    out[3].clone(),
+                    out[0].clone(),
+                    out[1].clone(),
+                ];
+            }
+            return (!out.is_empty()).then_some(out);
+        }
+        if let Some(body) = self.picker_row_body(row) {
+            let words = words_of(&body);
+            let trig = grid_trig(AUDIT_BINS);
+            let mut out = Vec::with_capacity(4);
+            for (m, q) in [(0.0, 1.0), (1.0, 1.0), (0.0, 0.0), (1.0, 0.0)] {
+                let live = live_biquads(&words, m, q);
+                out.push(
+                    trig.iter()
+                        .map(|&(c1, c2)| cascade_db_c(&live, c1, c2))
+                        .collect(),
+                );
+            }
+            return Some(out);
+        }
+        self.picker_tile_values(row).map(|v| vec![v])
     }
 
     fn menu_entries(&self, menu: Menu) -> Vec<(String, Option<MenuAction>)> {
@@ -4919,7 +5334,7 @@ impl App {
                     }
                 }
                 v.push(("— fit —".into(), None));
-                v.push(("LPC fit: drop a WAV on the window".into(), None));
+                v.push(("drop a WAV = PLAY loop · Ctrl+drop = LPC fit".into(), None));
                 v.push(("(plain = low frame · Shift = high frame)".into(), None));
                 v
             }
@@ -5058,219 +5473,321 @@ impl App {
         Some(trench_core::compiler::pack_body(&params))
     }
 
-
-    /// The source picker: every real source laid out on the frequency scale
-    /// (x = spectral centroid), one row per kind, color coded, each tile a
-    /// mini plot. A source is material — OVERLAY its exact curves, SNAP the
-    /// selected section's pole to its nearest pole, or LOAD it (editable
-    /// laws load stages; packed bodies load as honest previews).
+    /// The source picker: select a manifest source lane, then page through
+    /// square source cards. Each card is a 2x2 mini-plot of that source's four
+    /// packed corners. A source is material: feed it to LOW, HIGH, overlay it,
+    /// snap to its poles, or preview/load when appropriate.
     fn draw_picker(&self, p: &egui::Painter, plot: Rect, frame: &mut Frame) {
         let Some(manifest) = &self.start_manifest else {
             return;
         };
-        let h = 340.0_f32.min(plot.height() * 0.72);
-        let rect = Rect::from_min_max(Pos2::new(plot.left(), plot.bottom() - h), plot.max);
-        p.rect_filled(rect, 6.0, Color32::from_rgba_unmultiplied(7, 10, 9, 247));
+        let compact = !self.show_rail;
+        let h = if compact {
+            210.0_f32.min(plot.height() * 0.42).max(168.0)
+        } else {
+            620.0_f32.min(plot.height() * 0.88).max(380.0)
+        };
+        let rect = if compact {
+            Rect::from_min_max(
+                Pos2::new(plot.left() + 8.0, plot.top() + 8.0),
+                Pos2::new(plot.right() - 8.0, plot.top() + 8.0 + h),
+            )
+        } else {
+            Rect::from_min_max(Pos2::new(plot.left(), plot.bottom() - h), plot.max)
+        };
+        p.rect_filled(
+            rect,
+            5.0,
+            Color32::from_rgba_unmultiplied(7, 10, 9, if compact { 232 } else { 247 }),
+        );
         p.line_segment([rect.left_top(), rect.right_top()], Stroke::new(1.0, EDGE));
         frame.picker_rect = Some(rect);
 
         let pad = 14.0;
-        let label_w = 110.0;
-        let tx0 = rect.left() + label_w;
-        let tx1 = rect.right() - pad - 8.0;
-        let tile_w = 40.0;
+        p.text(
+            Pos2::new(rect.left() + pad, rect.top() + 10.0),
+            Align2::LEFT_TOP,
+            if self.show_rail {
+                "SOURCE"
+            } else {
+                "RECENT FILTERS"
+            },
+            FontId::monospace(10.5),
+            TEXT_DIM,
+        );
 
-        // frequency ruler across the panel — the layout axis
-        let ruler_y = rect.top() + 22.0;
-        for f in [50.0, 100.0, 200.0, 500.0, 1000.0, 2000.0, 5000.0, 10_000.0] {
-            let x = tx0 + axis_t(f) * (tx1 - tx0);
-            p.line_segment(
-                [
-                    Pos2::new(x, ruler_y + 2.0),
-                    Pos2::new(x, rect.bottom() - 26.0),
-                ],
-                Stroke::new(1.0, with_alpha(EDGE, 55)),
+        let mut ly = rect.top() + 7.0;
+        let lane_chip_h = 20.0;
+        if self.show_rail {
+            let mut lx = rect.left() + pad + 62.0;
+            for (li, lane) in manifest.lanes.iter().enumerate() {
+                let label = format!("{} {}", lane.badge, lane.rows.len());
+                let w = (label.chars().count() as f32 * 6.4 + 16.0).clamp(78.0, 170.0);
+                if lx + w > rect.right() - pad {
+                    lx = rect.left() + pad + 62.0;
+                    ly += lane_chip_h + 6.0;
+                }
+                let r = Rect::from_min_size(Pos2::new(lx, ly), Vec2::new(w, lane_chip_h));
+                let active = li == self.picker_lane.min(manifest.lanes.len().saturating_sub(1));
+                chip(
+                    p,
+                    r,
+                    &label,
+                    active,
+                    Self::PICKER_KINDS[li.min(Self::PICKER_KINDS.len() - 1)].1,
+                );
+                frame.picker_lanes.push(Hit { rect: r, value: li });
+                lx += w + 7.0;
+            }
+        }
+
+        let lane_idx = if self.show_rail {
+            self.picker_lane.min(manifest.lanes.len().saturating_sub(1))
+        } else {
+            manifest
+                .lanes
+                .iter()
+                .position(|l| l.id == "recent_local")
+                .unwrap_or(0)
+        };
+        let lane = &manifest.lanes[lane_idx];
+        let row_indices: Vec<usize> = lane
+            .rows
+            .iter()
+            .enumerate()
+            .filter(|(_, row)| {
+                row.body.is_some() || row.curves.is_some() || row.kind == "exact_skeleton"
+            })
+            .map(|(ri, _)| ri)
+            .collect();
+        let page_count = ((row_indices.len() + 3) / 4).max(1);
+        let page = self.picker_page.min(page_count - 1);
+
+        let grid_top =
+            (ly + lane_chip_h + 14.0).max(rect.top() + if compact { 40.0 } else { 52.0 });
+        let grid_bottom = rect.bottom() - if compact { 44.0 } else { 66.0 };
+        let gap = 10.0;
+        let cols = if compact { 4usize } else { 2usize };
+        let rows = if compact { 1usize } else { 2usize };
+        let card_w = if compact {
+            ((rect.width() - pad * 2.0 - gap * (cols as f32 - 1.0)) / cols as f32).max(88.0)
+        } else {
+            let w = (rect.width() - pad * 2.0 - gap) * 0.5;
+            let h = (grid_bottom - grid_top - gap) * 0.5;
+            w.min(h).max(110.0)
+        };
+        let card_h = if compact {
+            (grid_bottom - grid_top).max(96.0)
+        } else {
+            card_w
+        };
+        let grid_w = card_w * cols as f32 + gap * (cols as f32 - 1.0);
+        let grid_h = card_h * rows as f32 + gap * (rows as f32 - 1.0);
+        let grid_x = rect.center().x - grid_w * 0.5;
+        let grid_y = grid_top + ((grid_bottom - grid_top - grid_h) * 0.5).max(0.0);
+
+        let mut hovered: Option<(usize, usize)> = None;
+        for slot in 0..4 {
+            let Some(&ri) = row_indices.get(page * 4 + slot) else {
+                continue;
+            };
+            let row = &lane.rows[ri];
+            let col = slot % cols;
+            let rown = slot / cols;
+            let tile = Rect::from_min_size(
+                Pos2::new(
+                    grid_x + col as f32 * (card_w + gap),
+                    grid_y + rown as f32 * (card_h + gap),
+                ),
+                Vec2::new(card_w, card_h),
+            );
+            frame.picker_tiles.push(Hit {
+                rect: tile,
+                value: (lane_idx, ri),
+            });
+            let selected = self.picker_sel == Some((lane_idx, ri));
+            let is_hover = self.hover.map_or(false, |hp| tile.contains(hp));
+            if is_hover {
+                hovered = Some((lane_idx, ri));
+            }
+            let kind_color = Self::PICKER_KINDS[Self::picker_kind(row)].1;
+            p.rect_filled(tile, 6.0, Color32::from_rgb(11, 16, 14));
+            p.rect_stroke(
+                tile,
+                6.0,
+                Stroke::new(
+                    1.0,
+                    if selected {
+                        TRUTH
+                    } else {
+                        with_alpha(kind_color, 130)
+                    },
+                ),
             );
             p.text(
-                Pos2::new(x, ruler_y),
-                Align2::CENTER_BOTTOM,
-                if f >= 1000.0 {
-                    format!("{:.0}k", f / 1000.0)
-                } else {
-                    format!("{f:.0}")
-                },
+                tile.left_top() + Vec2::new(9.0, 8.0),
+                Align2::LEFT_TOP,
+                row.label.as_str(),
+                FontId::monospace(10.0),
+                TEXT,
+            );
+            let sublabel = if self.show_rail {
+                format!(
+                    "{} · {}",
+                    row.kind,
+                    row.kind_hint.as_deref().unwrap_or("source")
+                )
+            } else {
+                "load editable at M50/Q50".to_string()
+            };
+            p.text(
+                tile.left_top() + Vec2::new(9.0, 24.0),
+                Align2::LEFT_TOP,
+                sublabel,
                 FontId::monospace(8.0),
                 TEXT_DIM,
             );
-        }
 
-        // gather EVERY source tile, grouped by kind, sorted low → high
-        let mut by_kind: Vec<Vec<(usize, usize, f32)>> =
-            vec![Vec::new(); Self::PICKER_KINDS.len()];
-        for (li, lane) in manifest.lanes.iter().enumerate() {
-            for (ri, row) in lane.rows.iter().enumerate() {
-                if row.kind == "peak_shelf" {
-                    continue; // the template lives in the action row below
-                }
-                let Some(centroid) = self.picker_row_centroid(row).or_else(|| {
-                    (row.kind == "exact_skeleton").then_some(1000.0)
-                }) else {
-                    continue;
-                };
-                by_kind[Self::picker_kind(row)].push((li, ri, centroid));
-            }
-        }
-        for tiles in &mut by_kind {
-            tiles.sort_by(|a, b| a.2.partial_cmp(&b.2).unwrap_or(std::cmp::Ordering::Equal));
-        }
-
-        // variable row heights: each kind gets the shelf levels it needs
-        // (1–3), scaled to fit — every source stays on screen
-        let span = tx1 - tx0;
-        let levels: Vec<usize> = by_kind
-            .iter()
-            .map(|t| {
-                (((t.len() as f32 * (tile_w + 2.0)) / span).ceil() as usize).clamp(1, 3)
-            })
-            .collect();
-        let rows_top = ruler_y + 10.0;
-        let avail = rect.bottom() - 28.0 - rows_top;
-        let nominal: f32 = levels.iter().map(|&l| l as f32 * 16.0 + 5.0).sum();
-        let scale = (avail / nominal).min(1.0);
-        let lvl_h = 16.0 * scale;
-        let tile_h = (lvl_h - 2.0).max(8.0);
-        let mut row_tops = Vec::with_capacity(levels.len());
-        let mut yacc = rows_top;
-        for &l in &levels {
-            row_tops.push(yacc);
-            yacc += (l as f32 * 16.0 + 5.0) * scale;
-        }
-        for (k, (label, color)) in Self::PICKER_KINDS.iter().enumerate() {
-            if by_kind[k].is_empty() {
-                continue;
-            }
-            p.text(
-                Pos2::new(
-                    rect.left() + pad,
-                    row_tops[k] + levels[k] as f32 * lvl_h * 0.5,
-                ),
-                Align2::LEFT_CENTER,
-                format!("{label} {}", by_kind[k].len()),
-                FontId::monospace(8.0),
-                with_alpha(*color, 200),
+            let plot_area = Rect::from_min_max(
+                tile.left_top() + Vec2::new(8.0, 42.0),
+                tile.right_bottom() - Vec2::new(8.0, 8.0),
             );
-        }
-
-        let mut hovered: Option<(usize, usize)> = None;
-        for (k, tiles) in by_kind.iter().enumerate() {
-            let color = Self::PICKER_KINDS[k].1;
-            let nlv = levels[k];
-            let mut last_end = vec![f32::MIN; nlv];
-            for &(li, ri, centroid) in tiles {
-                let x = (tx0 + axis_t(centroid) * (tx1 - tx0) - tile_w * 0.5)
-                    .clamp(tx0, tx1 - tile_w);
-                // lowest free shelf; saturated → least-recently-ended
-                // (slight overlap beats hiding a source)
-                let lvl = (0..nlv).find(|&l| last_end[l] <= x - 1.0).unwrap_or_else(|| {
-                    (0..nlv)
-                        .min_by(|&a, &b| {
-                            last_end[a]
-                                .partial_cmp(&last_end[b])
-                                .unwrap_or(std::cmp::Ordering::Equal)
-                        })
-                        .unwrap_or(0)
-                });
-                last_end[lvl] = x + tile_w;
-                let y = row_tops[k] + lvl as f32 * lvl_h;
-                let tile = Rect::from_min_size(Pos2::new(x, y), Vec2::new(tile_w, tile_h));
-                frame.picker_tiles.push(Hit {
-                    rect: tile,
-                    value: (li, ri),
-                });
-                let selected = self.picker_sel == Some((li, ri));
-                let is_hover = self.hover.map_or(false, |hp| tile.contains(hp));
-                if is_hover {
-                    hovered = Some((li, ri));
-                }
-                // minimal: the curve IS the tile — chrome only when the hand
-                // is on it or it's chosen
-                p.rect_filled(tile, 2.0, Color32::from_rgba_unmultiplied(13, 19, 16, 200));
-                if selected || is_hover {
-                    p.rect_stroke(
-                        tile.expand(1.0),
-                        2.0,
-                        Stroke::new(1.0, if selected { TRUTH } else { color }),
+            if !self.show_rail {
+                if let Some(values) = self.picker_tile_values(row) {
+                    mini_curve(p, plot_area, &values, kind_color);
+                } else {
+                    p.text(
+                        plot_area.center(),
+                        Align2::CENTER_CENTER,
+                        "no middle plot",
+                        FontId::monospace(10.0),
+                        TEXT_DIM,
                     );
                 }
-                let row = &manifest.lanes[li].rows[ri];
-                if let Some(values) = self.picker_tile_values(row) {
-                    let n = values.len().max(2);
-                    let (mut lo, mut hi) = (f32::MAX, f32::MIN);
-                    for &v in &values {
-                        if v.is_finite() {
-                            lo = lo.min(v);
-                            hi = hi.max(v);
-                        }
+            } else if let Some(curves) = self.picker_row_corner_values(row) {
+                if curves.len() >= 4 {
+                    let qgap = 5.0;
+                    let qw = (plot_area.width() - qgap) * 0.5;
+                    let qh = (plot_area.height() - qgap) * 0.5;
+                    let colors = [
+                        painter::theme::CORNER[2],
+                        painter::theme::CORNER[3],
+                        painter::theme::CORNER[0],
+                        painter::theme::CORNER[1],
+                    ];
+                    for qi in 0..4 {
+                        let qc = qi % 2;
+                        let qr = qi / 2;
+                        let r = Rect::from_min_size(
+                            plot_area.left_top()
+                                + Vec2::new(qc as f32 * (qw + qgap), qr as f32 * (qh + qgap)),
+                            Vec2::new(qw, qh),
+                        );
+                        mini_curve(p, r, &curves[qi], colors[qi]);
                     }
-                    let vspan = (hi - lo).max(6.0);
-                    let pts: Vec<Pos2> = values
-                        .iter()
-                        .enumerate()
-                        .map(|(i, &v)| {
-                            let t = i as f32 / (n - 1) as f32;
-                            let vy = ((hi - v) / vspan).clamp(0.0, 1.0);
-                            Pos2::new(
-                                tile.left() + 2.0 + t * (tile.width() - 4.0),
-                                tile.top() + 2.0 + vy * (tile.height() - 4.0),
-                            )
-                        })
-                        .collect();
-                    p.add(egui::Shape::line(pts, Stroke::new(1.0, with_alpha(color, 230))));
+                } else {
+                    mini_curve(p, plot_area, &curves[0], kind_color);
                 }
+            } else {
+                p.text(
+                    plot_area.center(),
+                    Align2::CENTER_CENTER,
+                    "no plot",
+                    FontId::monospace(10.0),
+                    TEXT_DIM,
+                );
             }
         }
+
+        // page chips
+        let page_y = rect.bottom() - 56.0;
+        let prev_r =
+            Rect::from_min_size(Pos2::new(rect.left() + pad, page_y), Vec2::new(56.0, 20.0));
+        let next_r = Rect::from_min_size(
+            Pos2::new(rect.left() + pad + 64.0, page_y),
+            Vec2::new(56.0, 20.0),
+        );
+        chip(p, prev_r, "PREV", page > 0, ICE);
+        chip(p, next_r, "NEXT", page + 1 < page_count, ICE);
+        frame.picker_pages.push(Hit {
+            rect: prev_r,
+            value: -1,
+        });
+        frame.picker_pages.push(Hit {
+            rect: next_r,
+            value: 1,
+        });
+        p.text(
+            Pos2::new(rect.left() + pad + 132.0, page_y + 10.0),
+            Align2::LEFT_CENTER,
+            format!(
+                "{} · page {}/{} · {} plotted rows",
+                lane.title,
+                page + 1,
+                page_count,
+                row_indices.len()
+            ),
+            FontId::monospace(8.5),
+            TEXT_DIM,
+        );
 
         // readout: the hovered/selected source, terse
         let focus = hovered.or(self.picker_sel);
-        if let Some((li, ri)) = focus {
-            if let Some(row) = manifest.lanes.get(li).and_then(|l| l.rows.get(ri)) {
-                let badge = manifest.lanes[li].badge.as_str();
-                let centroid = self
-                    .picker_row_centroid(row)
-                    .map(|hz| format!(" · {}", fmt_hz(hz)))
-                    .unwrap_or_default();
-                p.text(
-                    Pos2::new(rect.right() - pad, rect.top() + 8.0),
-                    Align2::RIGHT_TOP,
-                    format!("{} — {} · {badge}{centroid}", row.label, row.note),
-                    FontId::monospace(9.0),
-                    TEXT,
-                );
+        if !compact {
+            if let Some((li, ri)) = focus {
+                if let Some(row) = manifest.lanes.get(li).and_then(|l| l.rows.get(ri)) {
+                    let badge = manifest.lanes[li].badge.as_str();
+                    let centroid = self
+                        .picker_row_centroid(row)
+                        .map(|hz| format!(" · {}", fmt_hz(hz)))
+                        .unwrap_or_default();
+                    p.text(
+                        Pos2::new(rect.right() - pad, rect.top() + 8.0),
+                        Align2::RIGHT_TOP,
+                        format!("{} — {} · {badge}{centroid}", row.label, row.note),
+                        FontId::monospace(9.0),
+                        TEXT,
+                    );
+                }
             }
         }
 
         // action row: the selected source feeds the FRAMES — that is the
         // instrument. Overlay/snap are the study moves.
-        let ay = rect.bottom() - 22.0;
+        let ay = rect.bottom() - 24.0;
         let mut ax = rect.left() + pad;
         if let Some((li, ri)) = self.picker_sel {
             if let Some(row) = manifest.lanes.get(li).and_then(|l| l.rows.get(ri)) {
-                let reference_only = matches!(row.kind_hint.as_deref(), Some("reference"))
-                    || row.kind == "overlay";
-                let has_body =
-                    row.body.is_some() || row.kind == "exact_skeleton";
+                let reference_only =
+                    matches!(row.kind_hint.as_deref(), Some("reference")) || row.kind == "overlay";
+                let has_body = row.body.is_some() || row.kind == "exact_skeleton";
                 let mut acts: Vec<(PickerAct, &str, Color32)> = Vec::new();
-                if !reference_only && has_body {
-                    acts.push((PickerAct::LowFrame, "→ LOW FRAME", painter::theme::CORNER[0]));
-                    acts.push((PickerAct::HighFrame, "→ HIGH FRAME", painter::theme::CORNER[1]));
-                    acts.push((PickerAct::BothFrames, "→ BOTH", TRUTH));
-                }
-                acts.push((PickerAct::Overlay, "OVERLAY", EMBER));
-                if has_body {
-                    acts.push((PickerAct::Snap, "SNAP POLE", ICE));
-                }
-                if row.kind == "law" {
-                    acts.push((PickerAct::Load, "LOAD LAW", ICE));
+                if row.kind == "recent" || !self.show_rail {
+                    acts.push((PickerAct::Load, "LOAD", TRUTH));
+                } else {
+                    if !reference_only && has_body {
+                        acts.push((
+                            PickerAct::LowFrame,
+                            "→ LOW FRAME",
+                            painter::theme::CORNER[0],
+                        ));
+                        acts.push((
+                            PickerAct::HighFrame,
+                            "→ HIGH FRAME",
+                            painter::theme::CORNER[1],
+                        ));
+                        acts.push((PickerAct::BothFrames, "→ BOTH", TRUTH));
+                    }
+                    acts.push((PickerAct::Overlay, "OVERLAY", EMBER));
+                    if has_body {
+                        acts.push((PickerAct::Snap, "SNAP POLE", ICE));
+                    }
+                    if row.kind == "law" {
+                        acts.push((PickerAct::Load, "LOAD LAW", ICE));
+                    }
+                    if row.kind == "packed" && has_body {
+                        acts.push((PickerAct::Load, "PREVIEW", ICE));
+                    }
                 }
                 for (act, label, color) in acts {
                     let w = label.chars().count() as f32 * 6.6 + 16.0;
@@ -5287,7 +5804,11 @@ impl App {
             p.text(
                 Pos2::new(ax, ay + 9.0),
                 Align2::LEFT_CENTER,
-                "click a source — feed it to the LOW or HIGH frame · overlay · snap",
+                if self.show_rail {
+                    "click a source — feed it to the LOW or HIGH frame · overlay · snap"
+                } else {
+                    "click a recent filter — load it editable at M50/Q50"
+                },
                 FontId::monospace(8.5),
                 TEXT_DIM,
             );
@@ -5298,7 +5819,7 @@ impl App {
             .iter()
             .map(|q| q.label.as_str())
             .collect();
-        if !q.is_empty() {
+        if self.show_rail && !q.is_empty() {
             p.text(
                 Pos2::new(rect.right() - pad, ay + 9.0),
                 Align2::RIGHT_CENTER,
@@ -5362,6 +5883,10 @@ impl App {
     fn draw_plot(&self, p: &egui::Painter, rect: Rect, frame: &mut Frame) {
         p.rect_filled(rect, 6.0, Color32::from_rgb(16, 17, 21));
         p.rect_stroke(rect, 6.0, Stroke::new(1.0, EDGE));
+        if self.movement_view {
+            self.draw_movement(p, rect, frame);
+            return;
+        }
         draw_grid(p, rect);
         let fast_drag = self.drag.is_some();
         let stride = if fast_drag { 2 } else { 1 };
@@ -5482,7 +6007,6 @@ impl App {
         // GPU path: one WGSL pass draws underfill + ghosts + glow + core + the
         // brush footprint from the same dB rows. egui path is the fallback.
         let n = self.response.len();
-        let gripping_now = matches!(self.drag, Some(Drag::Curve));
         if self.gpu_plot {
             let mut rows = Vec::with_capacity(4 * n);
             rows.extend_from_slice(&self.response);
@@ -5492,14 +6016,7 @@ impl App {
                 Some(q) if q.len() == n => rows.extend_from_slice(q),
                 _ => rows.resize(4 * n, 0.0),
             }
-            let mut hand = match (gripping_now, self.hand) {
-                (true, Some((f_h, _, _))) => {
-                    let x0 = axis_t(bark_f(bark_z(f_h) - self.brush_bark));
-                    let x1 = axis_t(bark_f(bark_z(f_h) + self.brush_bark));
-                    [axis_t(f_h), ((x1 - x0) * 0.5).max(0.001), 1.0, 0.0]
-                }
-                _ => [0.0, 0.0, 0.0, 0.0],
-            };
+            let mut hand = [0.0f32, 0.0, 0.0, 0.0];
             hand[3] = if self.qcompare.is_some() { 1.0 } else { 0.0 };
             let ppp = p.ctx().pixels_per_point();
             p.add(egui_wgpu::Callback::new_paint_callback(
@@ -5582,31 +6099,17 @@ impl App {
             }
         }
 
-        // brush affordance: contact ring on the curve; width band only while gripping
-        let gripping = matches!(self.drag, Some(Drag::Curve));
-        if gripping || self.drag.is_none() {
+        // brush affordance: contact ring on the curve
+        if self.drag.is_none() {
             if let Some(h) = self.hover {
                 if rect.contains(h) {
                     let f_h = axis_f(((h.x - rect.left()) / rect.width()).clamp(0.0, 1.0));
                     let cy = y_for_db(rect, self.response[bin_for_freq(f_h, n)]);
-                    if gripping || (h.y - cy).abs() < 12.0 {
-                        if gripping && !self.gpu_plot {
-                            // egui fallback only — the shader draws the footprint
-                            let x0 = x_for_freq(rect, bark_f(bark_z(f_h) - self.brush_bark));
-                            let x1 = x_for_freq(rect, bark_f(bark_z(f_h) + self.brush_bark));
-                            p.rect_filled(
-                                Rect::from_min_max(
-                                    Pos2::new(x0, rect.top()),
-                                    Pos2::new(x1, rect.bottom()),
-                                ),
-                                0.0,
-                                with_alpha(ICE, 12),
-                            );
-                        }
+                    if (h.y - cy).abs() < 12.0 {
                         p.circle_stroke(
                             Pos2::new(h.x, cy),
-                            if gripping { 7.0 } else { 6.0 },
-                            Stroke::new(1.2, with_alpha(ICE, if gripping { 230 } else { 150 })),
+                            6.0,
+                            Stroke::new(1.2, with_alpha(ICE, 150)),
                         );
                     }
                 }
@@ -5632,23 +6135,6 @@ impl App {
                 FontId::monospace(10.0),
                 EMBER,
             );
-        }
-
-        // tether: finger ↔ material gap while moulding — resistance made
-        // visible (locks, trust region and format limits all read as stiffness)
-        if gripping {
-            if let Some((f_h, finger_db, _)) = self.hand {
-                let hx = x_for_freq(rect, f_h);
-                let fy = y_for_db(rect, finger_db);
-                let my = y_for_db(rect, self.response_db_at(f_h));
-                if (fy - my).abs() > 3.0 {
-                    p.line_segment(
-                        [Pos2::new(hx, fy), Pos2::new(hx, my)],
-                        Stroke::new(1.0, with_alpha(ICE, 140)),
-                    );
-                }
-                p.circle_filled(Pos2::new(hx, fy), 2.5, with_alpha(ICE, 230));
-            }
         }
 
         // the selected section's own contribution curve — the line both its
@@ -5698,7 +6184,13 @@ impl App {
             } else {
                 color
             };
-            let c = section.corners[corner];
+            let use_interpolated_handles =
+                self.point_edit || ((self.morph - 0.5).abs() < 0.02 && (self.q - 0.5).abs() < 0.02);
+            let c = if use_interpolated_handles {
+                interpolate_stage(section, self.morph, self.q)
+            } else {
+                section.corners[corner]
+            };
 
             let pole = Pos2::new(
                 x_for_freq(rect, c.pole_hz),
@@ -5745,7 +6237,7 @@ impl App {
             // hollow dots, joined by a thin arc. The one long arc on a body is
             // the leader move; held sections stay short or have none. Dragging
             // the hollow dot authors the other frame without switching corners.
-            if !inactive_drag && !section.locked {
+            if !inactive_drag && !section.locked && !use_interpolated_handles {
                 let mc = section.corners[mirror.idx()];
                 if (mc.pole_hz / c.pole_hz).log2().abs() > 0.02 {
                     let pole2 = Pos2::new(
@@ -5767,395 +6259,120 @@ impl App {
                 }
             }
         }
-        self.draw_goal(p, rect, frame);
-        self.draw_surgical_overlay(p, rect);
     }
 
-    // ── goal pins: chips, pin glyphs, residual + optimize overlay ────────────
+    // ── MOVEMENT view ──────────────────────────────────────────────────────────
+    // the journey, not the response: X = morph 0→1 (Low→High frame), Y = log-Hz.
+    // each on stage draws a pole track (bright) and zero track (faint); dragging a
+    // pole track's Low/High endpoint authors that stage's Q0 corner pole freq.
+    fn draw_movement(&self, p: &egui::Painter, rect: Rect, frame: &mut Frame) {
+        // Y maps frequency through the SAME log/Bark axis the response plot uses.
+        let y_for_freq = |f: f32| rect.bottom() - axis_t(f).clamp(0.0, 1.0) * rect.height();
+        let x_for_morph = |m: f32| rect.left() + m.clamp(0.0, 1.0) * rect.width();
 
-    fn draw_goal(&self, p: &egui::Painter, rect: Rect, frame: &mut Frame) {
-        if self.pins.is_empty() {
-            return;
-        }
-
-        // residual readout — always through the packed runtime
-        if let Some(res) = self.goal_residual_now() {
-            p.text(
-                rect.left_top() + Vec2::new(12.0, 44.0),
-                Align2::LEFT_TOP,
-                format!(
-                    "target error {res:.2} dB · {} pin{}",
-                    self.pins.len(),
-                    if self.pins.len() == 1 { "" } else { "s" }
-                ),
-                FontId::monospace(10.0),
-                EMBER,
+        // grid: horizontal frequency lines
+        let grid = Color32::from_rgba_unmultiplied(110, 105, 118, 34);
+        let grid_dim = Color32::from_rgba_unmultiplied(110, 105, 118, 16);
+        for f in [100.0, 200.0, 500.0, 1000.0, 2000.0, 5000.0, 10000.0] {
+            let y = y_for_freq(f);
+            p.line_segment(
+                [Pos2::new(rect.left(), y), Pos2::new(rect.right(), y)],
+                Stroke::new(1.0, grid),
             );
-        }
-        if self.optimize_inflight {
-            p.text(
-                rect.left_top() + Vec2::new(12.0, 58.0),
-                Align2::LEFT_TOP,
-                "fitting the target…",
-                FontId::monospace(10.0),
-                FAULT,
-            );
-        } else if let Some(o) = &self.last_opt {
-            if o.at.elapsed() < Duration::from_secs(5) {
-                let names: Vec<String> = o.stages.iter().map(|s| format!("S{}", s + 1)).collect();
-                p.text(
-                    rect.left_top() + Vec2::new(12.0, 58.0),
-                    Align2::LEFT_TOP,
-                    format!(
-                        "{}: error {:.2} → {:.2} dB{}",
-                        if o.accepted { "accepted" } else { "rejected" },
-                        o.before,
-                        o.after,
-                        if names.is_empty() {
-                            String::new()
-                        } else {
-                            format!(" on {}", names.join("+"))
-                        },
-                    ),
-                    FontId::monospace(10.0),
-                    if o.accepted { ICE } else { FAULT },
-                );
-                // ring the moved stages' pole handles
-                if o.accepted {
-                    let corner = self.selected_corner.idx();
-                    for &s in &o.stages {
-                        let c = self.sections[s].corners[corner];
-                        let pos = Pos2::new(
-                            x_for_freq(rect, c.pole_hz),
-                            y_for_db(rect, self.stage_db_at(s, c.pole_hz)),
-                        );
-                        p.circle_stroke(pos, 12.0, Stroke::new(1.3, with_alpha(EMBER, 200)));
-                    }
-                }
-            }
-        }
-
-        // pins
-        for (i, pin) in self.pins.iter().enumerate() {
-            let pos = Pos2::new(x_for_freq(rect, pin.freq_hz), y_for_db(rect, pin.target_db));
-            frame.pin_handles.push((pos, i));
-            let col = if pin.kind == PinKind::Anchor {
-                ICE
+            let label = if f >= 1000.0 {
+                format!("{}k", (f / 1000.0) as i32)
             } else {
-                EMBER
+                format!("{}", f as i32)
             };
-            let selected = self.selected_pin == Some(i);
-            if selected {
-                let x0 = x_for_freq(rect, bark_f(bark_z(pin.freq_hz) - pin.width_bark));
-                let x1 = x_for_freq(rect, bark_f(bark_z(pin.freq_hz) + pin.width_bark));
-                p.rect_filled(
-                    Rect::from_min_max(Pos2::new(x0, rect.top()), Pos2::new(x1, rect.bottom())),
-                    0.0,
-                    with_alpha(col, 7),
-                );
+            p.text(
+                Pos2::new(rect.left() + 3.0, y - 2.0),
+                Align2::LEFT_BOTTOM,
+                label,
+                FontId::monospace(9.5),
+                Color32::from_rgb(110, 106, 116),
+            );
+        }
+        // vertical morph gridlines
+        for t in [0.25f32, 0.5, 0.75] {
+            let x = x_for_morph(t);
+            p.line_segment(
+                [Pos2::new(x, rect.top()), Pos2::new(x, rect.bottom())],
+                Stroke::new(1.0, grid_dim),
+            );
+        }
+
+        p.text(
+            rect.left_top() + Vec2::new(12.0, 10.0),
+            Align2::LEFT_TOP,
+            "MOVEMENT — pole/zero frequency across morph",
+            FontId::monospace(12.0),
+            ICE,
+        );
+        p.text(
+            rect.left_bottom() + Vec2::new(8.0, -4.0),
+            Align2::LEFT_BOTTOM,
+            "LOW",
+            FontId::monospace(9.5),
+            TEXT_DIM,
+        );
+        p.text(
+            rect.right_bottom() + Vec2::new(-8.0, -4.0),
+            Align2::RIGHT_BOTTOM,
+            "HIGH",
+            FontId::monospace(9.5),
+            TEXT_DIM,
+        );
+
+        // the current morph cursor
+        let cx = x_for_morph(self.morph);
+        p.line_segment(
+            [Pos2::new(cx, rect.top()), Pos2::new(cx, rect.bottom())],
+            Stroke::new(1.2, with_alpha(ICE, 150)),
+        );
+
+        const NS: usize = 48;
+        for (i, section) in self.sections.iter().enumerate() {
+            if !section.on {
+                continue;
             }
-            if pin.kind == PinKind::Anchor {
-                p.rect_stroke(
-                    Rect::from_center_size(pos, Vec2::splat(8.0)),
-                    1.0,
-                    Stroke::new(1.6, col),
-                );
+            let color = section_color(i);
+            let selected = i == self.selected_stage;
+            // pole track (bright) + zero track (thin, faint), q held at self.q
+            let mut pole_pts = Vec::with_capacity(NS + 1);
+            let mut zero_pts = Vec::with_capacity(NS + 1);
+            for k in 0..=NS {
+                let m = k as f32 / NS as f32;
+                let c = interpolate_stage(section, m, self.q);
+                let x = x_for_morph(m);
+                pole_pts.push(Pos2::new(x, y_for_freq(c.pole_hz)));
+                zero_pts.push(Pos2::new(x, y_for_freq(c.zero_hz)));
+            }
+            p.add(egui::Shape::line(
+                zero_pts,
+                Stroke::new(1.0, with_alpha(color, 80)),
+            ));
+            p.add(egui::Shape::line(
+                pole_pts.clone(),
+                Stroke::new(if selected { 2.2 } else { 1.6 }, color),
+            ));
+
+            // endpoint handle dots: Low end at x=left, High end at x=right
+            let lo = pole_pts[0];
+            let hi = pole_pts[NS];
+            let r = if section.locked { 4.0 } else { 5.5 };
+            p.circle_filled(lo, r, color);
+            p.circle_filled(hi, r, color);
+            if selected {
+                p.circle_stroke(lo, r + 2.5, Stroke::new(1.3, TRUTH));
+                p.circle_stroke(hi, r + 2.5, Stroke::new(1.3, TRUTH));
+            }
+            if section.locked {
+                draw_padlock(p, lo + Vec2::new(9.0, -9.0), color);
             } else {
-                match pin.shape {
-                    PinShape::Point => {
-                        p.circle_filled(pos, 4.0, col);
-                    }
-                    PinShape::Peak => {
-                        p.add(egui::Shape::convex_polygon(
-                            vec![
-                                pos + Vec2::new(0.0, -5.5),
-                                pos + Vec2::new(5.0, 3.5),
-                                pos + Vec2::new(-5.0, 3.5),
-                            ],
-                            col,
-                            Stroke::NONE,
-                        ));
-                    }
-                    PinShape::Notch => {
-                        p.add(egui::Shape::convex_polygon(
-                            vec![
-                                pos + Vec2::new(0.0, 5.5),
-                                pos + Vec2::new(5.0, -3.5),
-                                pos + Vec2::new(-5.0, -3.5),
-                            ],
-                            col,
-                            Stroke::NONE,
-                        ));
-                    }
-                    PinShape::LowShelf => {
-                        p.circle_filled(pos, 3.5, col);
-                        p.line_segment([pos, pos + Vec2::new(-16.0, 0.0)], Stroke::new(2.0, col));
-                    }
-                    PinShape::HighShelf => {
-                        p.circle_filled(pos, 3.5, col);
-                        p.line_segment([pos, pos + Vec2::new(16.0, 0.0)], Stroke::new(2.0, col));
-                    }
-                }
-            }
-            if selected {
-                p.circle_stroke(pos, 8.5, Stroke::new(1.4, TRUTH));
-                p.text(
-                    pos + Vec2::new(9.0, -9.0),
-                    Align2::LEFT_BOTTOM,
-                    format!(
-                        "{}{} {:+.1} dB",
-                        if pin.kind == PinKind::Anchor {
-                            "hold "
-                        } else {
-                            ""
-                        },
-                        format_freq(pin.freq_hz),
-                        pin.target_db,
-                    ),
-                    FontId::monospace(9.0),
-                    with_alpha(col, 220),
-                );
+                frame.track_handles.push((lo, i, false));
+                frame.track_handles.push((hi, i, true));
             }
         }
-    }
-
-    fn draw_surgical_overlay(&self, p: &egui::Painter, rect: Rect) {
-        let Some(drag) = self.drag else { return };
-        let cursor = self.hover.unwrap_or(rect.center());
-        let cursor = Pos2::new(
-            cursor.x.clamp(rect.left(), rect.right()),
-            cursor.y.clamp(rect.top(), rect.bottom()),
-        );
-        let stage = self.drag_focus_stage().unwrap_or(self.selected_stage);
-        let color = section_color(stage);
-
-        p.rect_stroke(
-            rect.shrink(1.0),
-            6.0,
-            Stroke::new(2.0, with_alpha(color, 220)),
-        );
-        p.line_segment(
-            [
-                Pos2::new(cursor.x, rect.top()),
-                Pos2::new(cursor.x, rect.bottom()),
-            ],
-            Stroke::new(1.0, with_alpha(color, 105)),
-        );
-        p.line_segment(
-            [
-                Pos2::new(rect.left(), cursor.y),
-                Pos2::new(rect.right(), cursor.y),
-            ],
-            Stroke::new(1.0, with_alpha(color, 105)),
-        );
-
-        let corner = self.selected_corner.idx();
-        let (focus, label) = match drag {
-            Drag::Handle {
-                stage,
-                kind,
-                gain,
-                start_pos,
-                start,
-                corner: hc,
-            } => {
-                let c = self.sections[stage].corners[hc.idx()];
-                let s0 = start[hc.idx()];
-                let (kind_label, hz, radius, hz0, radius0, focus) = match kind {
-                    HandleKind::Pole => (
-                        "POLE",
-                        c.pole_hz,
-                        c.pole_r,
-                        s0.pole_hz,
-                        s0.pole_r,
-                        Pos2::new(
-                            x_for_freq(rect, c.pole_hz),
-                            y_for_db(rect, self.stage_db_at(stage, c.pole_hz)),
-                        ),
-                    ),
-                    HandleKind::Zero => (
-                        "ZERO",
-                        c.zero_hz,
-                        c.zero_r,
-                        s0.zero_hz,
-                        s0.zero_r,
-                        Pos2::new(
-                            x_for_freq(rect, c.zero_hz),
-                            y_for_db(rect, self.stage_db_at(stage, c.zero_hz)),
-                        ),
-                    ),
-                };
-                p.line_segment([start_pos, focus], Stroke::new(1.2, with_alpha(color, 160)));
-                p.circle_stroke(focus, 14.0, Stroke::new(1.6, color));
-                p.circle_stroke(focus, 25.0, Stroke::new(1.0, with_alpha(color, 82)));
-                let oct = (hz / hz0.max(1.0)).log2();
-                let gain_delta = c.gain_db - s0.gain_db;
-                (
-                    focus,
-                    format!(
-                        "SURGICAL S{} {}{}  {}  r {:.4}  Δ {:+.2} oct  {:+.4} r  {:+.1} dB",
-                        stage + 1,
-                        kind_label,
-                        if gain { "+GAIN" } else { "" },
-                        format_freq(hz),
-                        radius,
-                        oct,
-                        radius - radius0,
-                        gain_delta
-                    ),
-                )
-            }
-            Drag::Value { field, start, .. } => {
-                let c = self.sections[self.selected_stage].corners[corner];
-                let s0 = start[corner];
-                let (name, now, delta) = match field {
-                    ValueField::PoleHz => (
-                        "POLE HZ",
-                        format_freq(c.pole_hz),
-                        format!("{:+.2} oct", (c.pole_hz / s0.pole_hz.max(1.0)).log2()),
-                    ),
-                    ValueField::PoleR => (
-                        "POLE R",
-                        format!("{:.4}", c.pole_r),
-                        format!("{:+.4}", c.pole_r - s0.pole_r),
-                    ),
-                    ValueField::ZeroHz => (
-                        "ZERO HZ",
-                        format_freq(c.zero_hz),
-                        format!("{:+.2} oct", (c.zero_hz / s0.zero_hz.max(1.0)).log2()),
-                    ),
-                    ValueField::ZeroR => (
-                        "ZERO R",
-                        format!("{:.4}", c.zero_r),
-                        format!("{:+.4}", c.zero_r - s0.zero_r),
-                    ),
-                    ValueField::GainDb => (
-                        "GAIN",
-                        format!("{:+.1} dB", c.gain_db),
-                        format!("{:+.1} dB", c.gain_db - s0.gain_db),
-                    ),
-                };
-                (
-                    cursor,
-                    format!(
-                        "SURGICAL S{} {}  {}  Δ {}",
-                        self.selected_stage + 1,
-                        name,
-                        now,
-                        delta
-                    ),
-                )
-            }
-            Drag::Curve => {
-                let tx = ((cursor.x - rect.left()) / rect.width()).clamp(0.0, 1.0);
-                let f = axis_f(tx);
-                let db = DB_MIN
-                    + (1.0 - (cursor.y - rect.top()) / rect.height()).clamp(0.0, 1.0)
-                        * (DB_MAX - DB_MIN);
-                (
-                    cursor,
-                    format!(
-                        "SHAPE CURVE  {}  {:+.1} dB  width {:.2}",
-                        format_freq(f),
-                        db,
-                        self.brush_bark
-                    ),
-                )
-            }
-            Drag::Draw => {
-                let tx = ((cursor.x - rect.left()) / rect.width()).clamp(0.0, 1.0);
-                let f = axis_f(tx);
-                let db = DB_MIN
-                    + (1.0 - (cursor.y - rect.top()) / rect.height()).clamp(0.0, 1.0)
-                        * (DB_MAX - DB_MIN);
-                (
-                    cursor,
-                    format!(
-                        "DRAW TARGET  {}  {:+.1} dB — release to fit",
-                        format_freq(f),
-                        db
-                    ),
-                )
-            }
-            Drag::Pin { idx } => {
-                let label = self
-                    .pins
-                    .get(idx)
-                    .map(|pin| {
-                        format!(
-                            "TARGET {}{} {} {:+.1} dB · width {:.2}",
-                            if pin.kind == PinKind::Anchor {
-                                "ANCHOR "
-                            } else {
-                                ""
-                            },
-                            pin.shape.label(),
-                            format_freq(pin.freq_hz),
-                            pin.target_db,
-                            pin.width_bark,
-                        )
-                    })
-                    .unwrap_or_else(|| "TARGET".into());
-                (cursor, label)
-            }
-            Drag::Morph | Drag::Q | Drag::SurfaceMap | Drag::SweepMap => (
-                cursor,
-                format!(
-                    "M{:02} Q{:02}",
-                    (self.morph * 100.0).round() as i32,
-                    (self.q * 100.0).round() as i32
-                ),
-            ),
-            Drag::Front(s) => {
-                let (frame_word, fc) = match s {
-                    FrontSlider::LowFreq | FrontSlider::LowShelf | FrontSlider::LowPeak => {
-                        ("LOW", &self.patch.low)
-                    }
-                    FrontSlider::HighFreq | FrontSlider::HighShelf | FrontSlider::HighPeak => {
-                        ("HIGH", &self.patch.high)
-                    }
-                    FrontSlider::Master => ("MASTER", &self.patch.low),
-                };
-                let label = match s {
-                    FrontSlider::Master => {
-                        format!("MASTER  {:+.1} dB", self.patch.master_peak_db)
-                    }
-                    FrontSlider::LowFreq | FrontSlider::HighFreq => {
-                        format!("{frame_word} FREQ  {}", fmt_hz(fc.freq_hz))
-                    }
-                    FrontSlider::LowShelf | FrontSlider::HighShelf => {
-                        format!("{frame_word} SHELF  {:+.0}", fc.shelf)
-                    }
-                    FrontSlider::LowPeak | FrontSlider::HighPeak => {
-                        format!("{frame_word} PEAK  {:+.1} dB", fc.peak_db)
-                    }
-                };
-                (cursor, label)
-            }
-        };
-
-        let w = (label.len() as f32 * 6.45 + 18.0).clamp(220.0, rect.width() - 24.0);
-        let x = (focus.x + 16.0)
-            .min(rect.right() - w - 10.0)
-            .max(rect.left() + 10.0);
-        let y = (focus.y - 42.0)
-            .max(rect.top() + 48.0)
-            .min(rect.bottom() - 34.0);
-        let hud = Rect::from_min_size(Pos2::new(x, y), Vec2::new(w, 26.0));
-        p.rect_filled(
-            hud.expand(3.0),
-            7.0,
-            Color32::from_rgba_unmultiplied(0, 0, 0, 150),
-        );
-        p.rect_filled(hud, 6.0, Color32::from_rgb(9, 10, 13));
-        p.rect_stroke(hud, 6.0, Stroke::new(1.2, color));
-        p.text(
-            hud.left_center() + Vec2::new(9.0, 0.0),
-            Align2::LEFT_CENTER,
-            label,
-            FontId::monospace(10.5),
-            TRUTH,
-        );
     }
 
     // ── analysis rail ────────────────────────────────────────────────────────
@@ -6221,7 +6438,11 @@ impl App {
                 Align2::LEFT_TOP,
                 format!("S{} {}", i + 1, usage.label),
                 FontId::monospace(9.5),
-                if i == self.selected_stage { TEXT } else { TEXT_DIM },
+                if i == self.selected_stage {
+                    TEXT
+                } else {
+                    TEXT_DIM
+                },
             );
         }
     }
@@ -6264,13 +6485,7 @@ impl App {
                 } else {
                     ICE
                 };
-                chip(
-                    p,
-                    r,
-                    corner.plain_label(),
-                    active,
-                    colr,
-                );
+                chip(p, r, corner.plain_label(), active, colr);
                 frame.corner_chips.push(Hit {
                     rect: r,
                     value: corner,
@@ -6352,35 +6567,11 @@ impl App {
         frame.surface_rect = Some(map);
         y += map_size + 10.0;
 
+        // MORPH/PRESSURE/PLAY moved to the front band (single owner);
+        // the rail keeps the source chips and the map above
         let sw = rail.width() - pad * 2.0;
-        let morph_r = Rect::from_min_size(Pos2::new(rail.left() + pad, y), Vec2::new(sw, 20.0));
-        slider_chip(p, morph_r, "MORPH", self.morph, section_color(0));
-        frame.morph_rect = morph_r;
-        y += 26.0;
-        let q_r = Rect::from_min_size(Pos2::new(rail.left() + pad, y), Vec2::new(sw, 20.0));
-        slider_chip(p, q_r, "Q", self.q, ICE);
-        frame.q_rect = q_r;
-        y += 28.0;
-
-        let play_r = Rect::from_min_size(
-            Pos2::new(rail.left() + pad, y),
-            Vec2::new(sw, 22.0),
-        );
-        chip(
-            p,
-            play_r,
-            if self.playing {
-                "❚❚ PAUSE"
-            } else {
-                "► PLAY"
-            },
-            self.playing,
-            Color32::from_rgb(127, 225, 180),
-        );
-        frame.play_rect = play_r;
-        y += 28.0;
-        let src_w = (sw - 12.0) / 3.0;
-        for (i, src) in [AudioSrc::Noise, AudioSrc::Saw, AudioSrc::Pad]
+        let src_w = (sw - 18.0) / 4.0;
+        for (i, src) in [AudioSrc::Noise, AudioSrc::Saw, AudioSrc::Pad, AudioSrc::Loop]
             .into_iter()
             .enumerate()
         {
@@ -6408,14 +6599,7 @@ impl App {
         let gap = 6.0;
         let w = (strip.width() - pad * 2.0 - gap * (STAGES as f32 - 1.0)) / STAGES as f32;
         let corner = self.selected_corner.idx();
-        // while moulding, show which sections the brush is holding (mirrors the
-        // worker's recruitment — same fn, same inputs)
-        let recruited: Vec<(usize, f32)> = match (&self.drag, self.hand) {
-            (Some(Drag::Curve), Some((f_h, _, _))) => {
-                recruit_in(&self.sections, f_h, self.brush_bark, corner)
-            }
-            _ => Vec::new(),
-        };
+        let recruited: Vec<(usize, f32)> = Vec::new();
         for (i, section) in self.sections.iter().enumerate() {
             let x = strip.left() + pad + i as f32 * (w + gap);
             let cell = Rect::from_min_size(
@@ -6445,78 +6629,111 @@ impl App {
                 let a = (110.0 + wgt * 120.0).min(235.0) as u8;
                 p.rect_stroke(cell.expand(1.5), 6.0, Stroke::new(1.6, with_alpha(ICE, a)));
             }
-            p.rect_filled(
-                Rect::from_min_max(
-                    cell.left_top() + Vec2::new(2.0, 2.0),
-                    Pos2::new(cell.right() - 2.0, cell.top() + 5.0),
-                ),
-                3.0,
-                if section.on {
-                    color
-                } else {
-                    with_alpha(color, 60)
-                },
+
+            // Left side: mini curve plot (width 46, height 46)
+            let plot_rect = Rect::from_min_size(
+                Pos2::new(cell.left() + 6.0, cell.top() + (cell.height() - 46.0) / 2.0),
+                Vec2::new(46.0, 46.0),
             );
-            let c = section.corners[corner];
-            let usage = biquad_use(section, corner);
-            let title = if section.on {
-                format!("S{}  {}  {}", i + 1, usage.label, format_freq(c.pole_hz))
-            } else {
-                format!("S{}  off", i + 1)
-            };
+            mini_curve(p, plot_rect, &self.stage_db[i], color);
+
+            // Right side starts at rx = cell.left() + 58.0
+            let rx = cell.left() + 58.0;
+
+            // Title: "S{i+1}"
+            let title_y = cell.top() + 6.0;
             p.text(
-                cell.left_top() + Vec2::new(8.0, 7.0),
+                Pos2::new(rx, title_y),
                 Align2::LEFT_TOP,
-                title,
-                FontId::monospace(10.5),
+                format!("S{}", i + 1),
+                FontId::monospace(11.0),
                 if section.on { TEXT } else { TEXT_DIM },
             );
-            if section.on {
-                p.text(
-                    cell.left_top() + Vec2::new(8.0, 21.0),
-                    Align2::LEFT_TOP,
-                    format!("zero {}", format_freq(c.zero_hz)),
-                    FontId::monospace(9.0),
-                    if usage.zero_used { TEXT_DIM } else { with_alpha(TEXT_DIM, 95) },
-                );
-                p.text(
-                    cell.left_top() + Vec2::new(8.0, 35.0),
-                    Align2::LEFT_TOP,
-                    format!("gain {:+.1} dB", c.gain_db),
-                    FontId::monospace(9.0),
-                    TEXT_DIM,
-                );
+            let role = if section.role.is_empty() {
+                model::peak_shelf::LANE_ROLES[i]
             } else {
-                p.text(
-                    cell.center() + Vec2::new(0.0, 8.0),
-                    Align2::CENTER_CENTER,
-                    "bypass",
-                    FontId::monospace(9.0),
-                    TEXT_DIM,
-                );
-            }
-            // lock badge (click target)
-            let lock_r = Rect::from_min_size(
-                cell.right_top() + Vec2::new(-24.0, 8.0),
-                Vec2::new(18.0, 18.0),
+                section.role.as_str()
+            };
+            p.text(
+                Pos2::new(rx + 42.0, title_y + 2.0),
+                Align2::LEFT_TOP,
+                role,
+                FontId::monospace(8.5),
+                if section.on {
+                    with_alpha(color, 185)
+                } else {
+                    with_alpha(TEXT_DIM, 120)
+                },
             );
-            if section.locked {
-                draw_padlock(p, lock_r.center(), color);
+
+            // Lock icon button (padlock)
+            let lock_r =
+                Rect::from_min_size(Pos2::new(rx + 22.0, title_y + 1.0), Vec2::new(16.0, 16.0));
+            let lock_color = if section.locked {
+                EMBER
             } else {
-                p.circle_stroke(
-                    lock_r.center(),
-                    4.0,
-                    Stroke::new(1.0, with_alpha(TEXT_DIM, 110)),
-                );
-            }
+                with_alpha(TEXT_DIM, 80)
+            };
+            draw_padlock(p, lock_r.center(), lock_color);
             frame.locks.push(Hit {
                 rect: lock_r,
                 value: i,
             });
+
+            // Bypass (ON/OFF) chip
+            let byp_w = 26.0;
+            let byp_r = Rect::from_min_size(
+                Pos2::new(cell.right() - byp_w - 6.0, title_y),
+                Vec2::new(byp_w, 14.0),
+            );
+            chip(
+                p,
+                byp_r,
+                if section.on { "ON" } else { "BYP" },
+                section.on,
+                color,
+            );
+            frame.bypasses.push(Hit {
+                rect: byp_r,
+                value: i,
+            });
+
+            // Card click hitbox (selects the card)
             frame.cards.push(Hit {
                 rect: cell,
                 value: i,
             });
+
+            // Parameters (pole/zero/gain)
+            let c = if !self.show_rail
+                || ((self.morph - 0.5).abs() < 0.02 && (self.q - 0.5).abs() < 0.02)
+            {
+                interpolate_stage(section, self.morph, self.q)
+            } else {
+                section.corners[corner]
+            };
+
+            p.text(
+                Pos2::new(rx, cell.top() + 27.0),
+                Align2::LEFT_TOP,
+                format!("pole {} r{:.2}", format_freq(c.pole_hz), c.pole_r),
+                FontId::monospace(9.0),
+                TEXT_DIM,
+            );
+            p.text(
+                Pos2::new(rx, cell.top() + 41.0),
+                Align2::LEFT_TOP,
+                format!("zero {} r{:.2}", format_freq(c.zero_hz), c.zero_r),
+                FontId::monospace(9.0),
+                TEXT_DIM,
+            );
+            p.text(
+                Pos2::new(rx, cell.top() + 55.0),
+                Align2::LEFT_TOP,
+                format!("gain {:+.1} dB", c.gain_db),
+                FontId::monospace(9.0),
+                TEXT_DIM,
+            );
         }
     }
 
@@ -6650,28 +6867,15 @@ impl App {
         if !self.show_help {
             return;
         }
-        let rows: [(&str, &str); 12] = [
+        let rows: [(&str, &str); 8] = [
             (
                 "drag a dot",
-                "move pole / zero — 1:1 on the axis · Shift = fine",
+                "frequency/radius · Alt+drag = frequency/gain · Shift = fine",
             ),
             (
                 "drag a hollow dot",
                 "place it in the other morph frame (the travel)",
             ),
-            (
-                "Alt + drag curve",
-                "shape the whole curve under your hand",
-            ),
-            (
-                "grip at any morph/q",
-                "nearest corner moves so this spot follows",
-            ),
-            (
-                "Ctrl + drag",
-                "target pin · right-click removes · Esc clears",
-            ),
-            ("hold D + drag", "draw a target curve — release to fit"),
             ("hold C", "overlay the other Q row (red)"),
             ("Tab / Shift+Tab", "other morph frame / other Q row"),
             ("1 2 3 4", "corners · ←/→ section · E on/off · L lock"),
@@ -6740,7 +6944,7 @@ impl App {
     fn interact(&mut self, ctx: &egui::Context, resp: &egui::Response, lay: Layout, frame: Frame) {
         let pointer = resp.interact_pointer_pos();
         let hover = ctx.input(|i| i.pointer.hover_pos());
-        let (shift, alt, ctrl) =
+        let (shift, alt, _ctrl) =
             ctx.input(|i| (i.modifiers.shift, i.modifiers.alt, i.modifiers.command));
 
         // clicks
@@ -6771,6 +6975,15 @@ impl App {
                         return;
                     }
                 }
+                if frame.move_rect.contains(pos) {
+                    self.movement_view = !self.movement_view;
+                    self.status = if self.movement_view {
+                        "movement view — pole/zero frequency journeys across morph".into()
+                    } else {
+                        "response view".into()
+                    };
+                    return;
+                }
                 if frame.panels_rect.contains(pos) {
                     self.show_rail = !self.show_rail;
                     self.status = if self.show_rail {
@@ -6782,8 +6995,23 @@ impl App {
                 }
                 if frame.start_rect.contains(pos) {
                     self.picker_open = !self.picker_open;
-                    if !self.picker_open {
-                        self.picker_sel = None;
+                    if self.picker_open && self.picker_sel.is_none() {
+                        if let Some(manifest) = &self.start_manifest {
+                            let li = manifest
+                                .lanes
+                                .iter()
+                                .position(|lane| lane.id == "recent_local")
+                                .unwrap_or(0);
+                            if manifest
+                                .lanes
+                                .get(li)
+                                .map_or(false, |lane| !lane.rows.is_empty())
+                            {
+                                self.picker_lane = li;
+                                self.picker_page = 0;
+                                self.picker_sel = Some((li, 0));
+                            }
+                        }
                     }
                     return;
                 }
@@ -6793,7 +7021,11 @@ impl App {
                         return;
                     }
                     // rev: overlapping tiles — the one drawn on top wins
-                    if let Some(h) = frame.picker_tiles.iter().rev().find(|h| h.rect.contains(pos))
+                    if let Some(h) = frame
+                        .picker_tiles
+                        .iter()
+                        .rev()
+                        .find(|h| h.rect.contains(pos))
                     {
                         self.picker_sel = Some(h.value);
                         return;
@@ -6815,6 +7047,15 @@ impl App {
                 if frame.sweep_rect.contains(pos) {
                     self.sweep = !self.sweep;
                     self.sweep_t0 = Instant::now();
+                    return;
+                }
+                if frame.center_rect.contains(pos) {
+                    self.sweep = false;
+                    self.morph = 0.5;
+                    self.q = 0.5;
+                    self.recompute_response();
+                    self.sync_audio();
+                    self.status = "authoring at M50 / Q50".into();
                     return;
                 }
                 if let Some(h) = frame.front_sliders.iter().find(|h| h.rect.contains(pos)) {
@@ -6869,6 +7110,39 @@ impl App {
                     self.sections[s].locked = !self.sections[s].locked;
                     return;
                 }
+                if frame.agc_rect.contains(pos) {
+                    self.audio_agc = !self.audio_agc;
+                    self.sync_audio();
+                    self.status =
+                        format!("audio AGC {}", if self.audio_agc { "ON" } else { "OFF" });
+                    return;
+                }
+                if frame.sat_rect.contains(pos) {
+                    self.audio_sat = !self.audio_sat;
+                    self.sync_audio();
+                    self.status = format!(
+                        "audio saturation/limiting {}",
+                        if self.audio_sat { "ON" } else { "OFF" }
+                    );
+                    return;
+                }
+                for h in &frame.bypasses {
+                    if h.rect.contains(pos) {
+                        self.push_undo();
+                        self.sections[h.value].on = !self.sections[h.value].on;
+                        self.rebuild_body();
+                        self.status = format!(
+                            "S{} {}",
+                            h.value + 1,
+                            if self.sections[h.value].on {
+                                "enabled"
+                            } else {
+                                "bypassed"
+                            }
+                        );
+                        return;
+                    }
+                }
                 for h in &frame.locks {
                     if h.rect.contains(pos) {
                         self.sections[h.value].locked = !self.sections[h.value].locked;
@@ -6891,36 +7165,25 @@ impl App {
                     }
                 }
                 if lay.plot.contains(pos) {
-                    if let Some(i) = nearest_pin(pos, &frame.pin_handles) {
-                        self.selected_pin = Some(i);
-                        return;
-                    }
                     if let Some((stage, _)) = nearest_handle(pos, &frame.handles) {
                         self.selected_stage = stage;
                         return;
                     }
-                    // empty space: just deselect — pins are placed by DRAG only
-                    self.selected_pin = None;
                 }
             }
         }
 
-        // right click: delete the pin under the cursor
-        if resp.secondary_clicked() {
-            if let Some(pos) = ctx.input(|i| i.pointer.interact_pos()) {
-                if lay.plot.contains(pos) {
-                    if let Some(i) = nearest_pin(pos, &frame.pin_handles) {
-                        self.pins.remove(i);
-                        self.selected_pin = None;
-                        self.status = "target removed".into();
-                    }
-                }
-            }
-        }
-
-        // double click: card on/off
+        // double click: card on/off or load picker tile
         if resp.double_clicked() {
             if let Some(pos) = pointer {
+                if self.picker_open {
+                    if let Some(h) = frame.picker_tiles.iter().find(|h| h.rect.contains(pos)) {
+                        let (li, ri) = h.value;
+                        self.picker_sel = Some((li, ri));
+                        self.run_picker_act(PickerAct::Load);
+                        return;
+                    }
+                }
                 for h in &frame.cards {
                     if h.rect.contains(pos) {
                         self.push_undo();
@@ -6936,15 +7199,27 @@ impl App {
         if resp.drag_started() {
             if let Some(pos) = pointer {
                 if frame.menu_rect.map_or(false, |r| r.contains(pos))
-                    || (self.picker_open
-                        && frame.picker_rect.map_or(false, |r| r.contains(pos)))
+                    || (self.picker_open && frame.picker_rect.map_or(false, |r| r.contains(pos)))
                 {
                     // no drags inside menus or the source picker
+                } else if self.movement_view && lay.plot.contains(pos) {
+                    // MOVEMENT view: grab a pole track endpoint dot (non-locked only)
+                    if let Some((stage, high)) = nearest_track(pos, &frame.track_handles) {
+                        self.selected_stage = stage;
+                        self.push_undo();
+                        self.drag = Some(Drag::Track { stage, high });
+                    }
                 } else if frame.morph_rect.contains(pos) {
                     self.sweep = false;
                     self.drag = Some(Drag::Morph);
                 } else if frame.q_rect.contains(pos) {
                     self.drag = Some(Drag::Q);
+                } else if frame.drive_rect.contains(pos) {
+                    self.drag = Some(Drag::Drive);
+                    let t = ((pos.x - frame.drive_rect.left()) / frame.drive_rect.width())
+                        .clamp(0.0, 1.0);
+                    self.audio_drive = t;
+                    self.sync_audio();
                 } else if let Some(h) = frame.front_sliders.iter().find(|h| h.rect.contains(pos)) {
                     self.push_undo();
                     self.drag = Some(Drag::Front(h.value));
@@ -6979,24 +7254,8 @@ impl App {
                             break;
                         }
                     }
-                    let d_held = !self.name_active && ctx.input(|i| i.key_down(Key::D));
-                    if !grabbed && lay.plot.contains(pos) && d_held {
-                        // draw-the-target: paint the curve you want, release to fit
-                        let tx = ((pos.x - lay.plot.left()) / lay.plot.width()).clamp(0.0, 1.0);
-                        let db = DB_MIN
-                            + (1.0 - (pos.y - lay.plot.top()) / lay.plot.height()).clamp(0.0, 1.0)
-                                * (DB_MAX - DB_MIN);
-                        self.draw_stroke = Some(vec![(axis_f(tx), db)]);
-                        self.drag = Some(Drag::Draw);
-                    } else if !grabbed && lay.plot.contains(pos) {
-                        if let Some(i) = nearest_pin(pos, &frame.pin_handles) {
-                            // existing pin: drag it — the solver chases live
-                            self.selected_pin = Some(i);
-                            self.ensure_q_free(self.selected_corner);
-                            self.push_undo();
-                            self.drag = Some(Drag::Pin { idx: i });
-                            self.dispatch_optimize(true);
-                        } else if let Some((stage, kind)) = nearest_handle(pos, &frame.handles) {
+                    if !grabbed && lay.plot.contains(pos) {
+                        if let Some((stage, kind)) = nearest_handle(pos, &frame.handles) {
                             self.selected_stage = stage;
                             if self.sections[stage].locked {
                                 self.show_hint(
@@ -7037,22 +7296,8 @@ impl App {
                                     corner: self.selected_corner.morph_mirror(),
                                 });
                             }
-                        } else if ctrl {
-                            // pins are deliberate targets; they win over the curve grip.
-                            if self.add_goal_pin(pos, lay.plot, shift) {
-                                self.drag = Some(Drag::Pin {
-                                    idx: self.pins.len() - 1,
-                                });
-                            }
-                        } else if alt {
-                            // The curve grip is an inverse solve, so keep it out of the
-                            // default drag path. Handles and target drawing are the 1:1
-                            // authoring gestures; this remains available for experiments.
-                            if !self.try_start_curve_grip(pos, lay.plot) {
-                                self.show_hint("Alt-drag must start on the white curve", pos);
-                            }
                         } else {
-                            self.show_hint("drag dots for 1:1 edits · hold D to draw a target · Alt-drag curve to experiment", pos);
+                            self.show_hint("drag dots for 1:1 edits · Alt + drag for gain", pos);
                         }
                     }
                 }
@@ -7072,10 +7317,14 @@ impl App {
                         self.recompute_response();
                         self.heat_dirty = true;
                     }
+                    Drag::Drive => {
+                        self.audio_drive = ((pos.x - frame.drive_rect.left())
+                            / frame.drive_rect.width())
+                        .clamp(0.0, 1.0);
+                        self.sync_audio();
+                    }
                     Drag::Front(slider) => {
-                        if let Some(h) =
-                            frame.front_sliders.iter().find(|h| h.value == slider)
-                        {
+                        if let Some(h) = frame.front_sliders.iter().find(|h| h.value == slider) {
                             let t = (pos.x - h.rect.left()) / h.rect.width();
                             self.apply_front_slider(slider, t);
                         }
@@ -7116,25 +7365,6 @@ impl App {
                             stage, kind, gain, start_pos, pos, start, shift, lay.plot, corner,
                         );
                     }
-                    Drag::Pin { idx } => {
-                        let plot = lay.plot;
-                        let tx = ((pos.x - plot.left()) / plot.width()).clamp(0.0, 1.0);
-                        let f = axis_f(tx);
-                        let db = DB_MIN
-                            + (1.0 - (pos.y - plot.top()) / plot.height()).clamp(0.0, 1.0)
-                                * (DB_MAX - DB_MIN);
-                        let captured = self.response_db_at(f);
-                        if let Some(pin) = self.pins.get_mut(idx) {
-                            pin.freq_hz = f;
-                            pin.target_db = match pin.kind {
-                                PinKind::Target => db,
-                                // hold pins re-capture the packed response at the new frequency
-                                PinKind::Anchor => captured,
-                            };
-                        }
-                        // the worker coalesces; light solves chase the pin live
-                        self.dispatch_optimize(true);
-                    }
                     Drag::Draw => {
                         let plot = lay.plot;
                         let tx = ((pos.x - plot.left()) / plot.width()).clamp(0.0, 1.0);
@@ -7145,42 +7375,20 @@ impl App {
                             stroke.push((axis_f(tx), db));
                         }
                     }
-                    Drag::Curve => {
-                        // record the hand; the worker ping-pongs solves at its own rate
-                        if let Some(grip) = &self.curve_grip {
-                            let plot = grip.plot;
-                            let tx = ((pos.x - plot.left()) / plot.width()).clamp(0.0, 1.0);
-                            let f_center = axis_f(tx);
-                            let finger_db = DB_MIN
-                                + (1.0 - (pos.y - plot.top()) / plot.height()).clamp(0.0, 1.0)
-                                    * (DB_MAX - DB_MIN);
-                            self.hand = Some((f_center, finger_db, if shift { 0.3 } else { 1.0 }));
-                            self.dispatch_solve();
-                        }
+                    Drag::Track { stage, high } => {
+                        // cursor Y → freq through the inverse of the movement Y axis
+                        let plot = lay.plot;
+                        let t = ((plot.bottom() - pos.y) / plot.height()).clamp(0.0, 1.0);
+                        let f = axis_f(t).clamp(F_MIN, F_MAX);
+                        let ci = if high { 1 } else { 0 }; // C1 High-Q0 else C0 Low-Q0
+                        self.sections[stage].corners[ci].pole_hz = f;
+                        self.rebuild_body();
                     }
                 }
             }
         }
         if resp.drag_stopped() {
-            if matches!(self.drag, Some(Drag::Draw)) {
-                self.finish_draw_stroke();
-            }
-            if matches!(self.drag, Some(Drag::Pin { .. })) {
-                // release: one full polish solve, eased in
-                self.drag = None;
-                self.dispatch_optimize(false);
-            }
-            if matches!(self.drag, Some(Drag::Curve)) {
-                if let Some(grip) = &self.curve_grip {
-                    self.status = format!(
-                        "curve shaping released — error {:.2} dB vs target",
-                        grip.residual_rms
-                    );
-                }
-            }
             self.drag = None;
-            self.curve_grip = None;
-            self.hand = None;
             self.recompute_response(); // refresh the frame ghosts skipped while moulding
         }
         self.hover = hover;
@@ -7210,8 +7418,7 @@ impl App {
                     }
                 } else if scroll.abs() >= 0.5 {
                     let steps = (scroll / 120.0).clamp(-6.0, 6.0);
-                    let gripping = matches!(self.drag, Some(Drag::Curve));
-                    let on_curve = gripping || {
+                    let on_curve = {
                         let n = self.response.len();
                         let f =
                             axis_f(((pos.x - lay.plot.left()) / lay.plot.width()).clamp(0.0, 1.0));
@@ -7221,12 +7428,10 @@ impl App {
                     if on_curve {
                         self.brush_bark =
                             (self.brush_bark * 2f32.powf(steps * 0.12)).clamp(0.3, 3.0);
-                        if !gripping {
-                            self.status = format!(
-                                "curve width {:.2} — fingertip 0.3 … palm 3.0",
-                                self.brush_bark
-                            );
-                        }
+                        self.status = format!(
+                            "curve width {:.2} — fingertip 0.3 … palm 3.0",
+                            self.brush_bark
+                        );
                     } else {
                         let stage = self.selected_stage;
                         if self.sections[stage].locked {
@@ -7285,21 +7490,78 @@ impl App {
     ) {
         let dy = pos.y - start_pos.y;
         let fine = if shift { 0.15 } else { 0.55 };
-        // horizontal is 1:1 on the plot's own log axis — the handle stays under
-        // the cursor (Shift = 1:4 fine). Cursor octave delta → same pole/zero
-        // octave delta, applied as a ratio so scoped corners keep their offsets.
+        // horizontal is 1:1 on the log axis
         let t0 = ((start_pos.x - plot.left()) / plot.width()).clamp(0.0, 1.0);
         let t1 = ((pos.x - plot.left()) / plot.width()).clamp(0.0, 1.0);
         let doct = (axis_f(t1) / axis_f(t0)).log2() * if shift { 0.25 } else { 1.0 };
         let freq_ratio = 2.0_f32.powf(doct);
+
+        let center_authoring =
+            self.point_edit || ((self.morph - 0.5).abs() < 0.02 && (self.q - 0.5).abs() < 0.02);
+
+        if center_authoring {
+            let dummy_section = Section {
+                on: true,
+                locked: false,
+                role: String::new(),
+                corners: start,
+            };
+            let s_interp = interpolate_stage(&dummy_section, self.morph, self.q);
+            let start_f = match kind {
+                HandleKind::Pole => s_interp.pole_hz,
+                HandleKind::Zero => s_interp.zero_hz,
+            }
+            .max(1.0);
+            let snapped_f = self.snap((start_f * freq_ratio).clamp(F_MIN, F_MAX), shift);
+            let ratio = snapped_f / start_f;
+            let weights = [(0usize, 1.0 - self.morph), (1usize, self.morph)];
+            let norm = (weights[0].1 * weights[0].1 + weights[1].1 * weights[1].1).max(1e-5);
+
+            for (ci, weight) in weights {
+                let factor = weight / norm;
+                let s = start[ci];
+                let c = &mut self.sections[stage].corners[ci];
+                match kind {
+                    HandleKind::Pole => {
+                        c.pole_hz = (s.pole_hz * ratio.powf(factor)).clamp(F_MIN, F_MAX);
+                        if gain {
+                            c.gain_db = (s.gain_db + (-dy * fine / 13.0) * factor)
+                                .clamp(GAIN_DB_MIN, GAIN_DB_MAX);
+                        } else {
+                            let target_r = (1.0
+                                - (1.0 - s_interp.pole_r) * 2.0_f32.powf(dy * fine / 150.0))
+                            .clamp(RP_MIN, RP_MAX);
+                            c.pole_r = (s.pole_r + (target_r - s_interp.pole_r) * factor)
+                                .clamp(RP_MIN, RP_MAX);
+                        }
+                    }
+                    HandleKind::Zero => {
+                        c.zero_hz = (s.zero_hz * ratio.powf(factor)).clamp(F_MIN, F_MAX);
+                        if gain {
+                            c.gain_db = (s.gain_db + (-dy * fine / 13.0) * factor)
+                                .clamp(GAIN_DB_MIN, GAIN_DB_MAX);
+                        } else {
+                            let target_r = (1.0
+                                - (1.0 - s_interp.zero_r) * 2.0_f32.powf(-dy * fine / 150.0))
+                            .clamp(0.0, RZ_MAX);
+                            c.zero_r = (s.zero_r + (target_r - s_interp.zero_r) * factor)
+                                .clamp(0.0, RZ_MAX);
+                        }
+                    }
+                }
+            }
+            self.q_link = true;
+            self.rebuild_body();
+            return;
+        }
+
         for ci in corner.scope_corners(self.scope) {
             let s = start[ci];
-            let snapped_pole = self.snap((s.pole_hz * freq_ratio).clamp(F_MIN, F_MAX), shift);
-            let snapped_zero = self.snap((s.zero_hz * freq_ratio).clamp(F_MIN, F_MAX), shift);
-            let c = &mut self.sections[stage].corners[ci];
             match kind {
                 HandleKind::Pole => {
-                    c.pole_hz = snapped_pole;
+                    let pole_hz = self.snap((s.pole_hz * freq_ratio).clamp(F_MIN, F_MAX), shift);
+                    let c = &mut self.sections[stage].corners[ci];
+                    c.pole_hz = pole_hz;
                     if gain {
                         c.gain_db = (s.gain_db - dy * fine / 13.0).clamp(GAIN_DB_MIN, GAIN_DB_MAX);
                     } else {
@@ -7308,7 +7570,9 @@ impl App {
                     }
                 }
                 HandleKind::Zero => {
-                    c.zero_hz = snapped_zero;
+                    let zero_hz = self.snap((s.zero_hz * freq_ratio).clamp(F_MIN, F_MAX), shift);
+                    let c = &mut self.sections[stage].corners[ci];
+                    c.zero_hz = zero_hz;
                     if gain {
                         c.gain_db = (s.gain_db - dy * fine / 13.0).clamp(GAIN_DB_MIN, GAIN_DB_MAX);
                     } else {
@@ -7319,57 +7583,6 @@ impl App {
             }
         }
         self.rebuild_body();
-    }
-
-    // ── curve grip: edit the combined response, the stages follow ─────────────
-    //
-    // Damped Gauss-Newton over [log2 f_p, ln(1-r_p), gain dB] of the K nearest
-    // unlocked sections, minimum-motion (Tikhonov toward the grab state),
-    // forward model = the REAL packed runtime. Zeros are never touched; locked
-    // sections are never touched; what moved is visible as moved handles.
-
-    fn try_start_curve_grip(&mut self, pos: Pos2, plot: Rect) -> bool {
-        // grab only the combined curve, and only docked at a corner
-        let n = self.response.len();
-        let f_press = axis_f(((pos.x - plot.left()) / plot.width()).clamp(0.0, 1.0));
-        let curve_y = y_for_db(plot, self.response[bin_for_freq(f_press, n)]);
-        if (pos.y - curve_y).abs() > 12.0 {
-            return false;
-        }
-        let docked = (self.morph < 0.02 || self.morph > 0.98) && (self.q < 0.02 || self.q > 0.98);
-        let corner = match (self.morph > 0.5, self.q > 0.5) {
-            (false, false) => CornerKey::M0Q0,
-            (true, false) => CornerKey::M100Q0,
-            (false, true) => CornerKey::M0Q100,
-            (true, true) => CornerKey::M100Q100,
-        };
-        if docked {
-            // snap exactly onto the corner
-            self.morph = if self.morph > 0.5 { 1.0 } else { 0.0 };
-            self.q = if self.q > 0.5 { 1.0 } else { 0.0 };
-        } else {
-            // SPEC item 4 — the interior grip: hold the live (morph, q) and
-            // mould the *interpolated middle*; the solver moves the nearest
-            // corner (largest interpolation weight) and every evaluation runs
-            // through the packed word-lerp at this exact interior point, so
-            // the emergent interior is gripped directly, never a surrogate.
-            self.status = format!(
-                "interior grip at M{:.0} Q{:.0} — moulding through {}",
-                self.morph * 100.0,
-                self.q * 100.0,
-                corner.code()
-            );
-        }
-        self.selected_corner = corner;
-        self.ensure_q_free(corner);
-        self.push_undo();
-        self.recompute_response();
-        self.curve_grip = Some(CurveGrip {
-            plot,
-            residual_rms: 0.0,
-        });
-        self.drag = Some(Drag::Curve);
-        true
     }
 
     fn apply_value_drag(
@@ -7437,7 +7650,15 @@ fn slugify(s: &str) -> String {
 /// numerator is a conjugate pair and clamped-inferred when it has real
 /// roots. The result re-packs through pack_body — the plot shows truth.
 fn decode_corner_rows(words: &[[[u16; 5]; STAGES]; CORNERS], morph: f32) -> [CornerStage; STAGES] {
-    let live = live_biquads(words, morph, 0.0);
+    decode_rows_at(words, morph, 0.0)
+}
+
+fn decode_rows_at(
+    words: &[[[u16; 5]; STAGES]; CORNERS],
+    morph: f32,
+    q: f32,
+) -> [CornerStage; STAGES] {
+    let live = live_biquads(words, morph, q);
     let mut out = [CornerStage {
         pole_hz: 1000.0,
         pole_r: RP_MIN,
@@ -7484,6 +7705,58 @@ fn decode_corner_rows(words: &[[[u16; 5]; STAGES]; CORNERS], morph: f32) -> [Cor
     out
 }
 
+fn decode_body_sections(words: &[[[u16; 5]; STAGES]; CORNERS]) -> Vec<Section> {
+    let rows = [
+        decode_rows_at(words, 0.0, 0.0),
+        decode_rows_at(words, 1.0, 0.0),
+        decode_rows_at(words, 0.0, 1.0),
+        decode_rows_at(words, 1.0, 1.0),
+    ];
+    (0..STAGES)
+        .map(|i| Section {
+            on: true,
+            locked: false,
+            role: format!("S{}", i + 1),
+            corners: [rows[0][i], rows[1][i], rows[2][i], rows[3][i]],
+        })
+        .collect()
+}
+
+fn interpolate_stage(s: &Section, morph: f32, q: f32) -> CornerStage {
+    let lerp_r = |ra: f32, rb: f32, t: f32| {
+        1.0 - (1.0 - ra).max(1e-6).powf(1.0 - t) * (1.0 - rb).max(1e-6).powf(t)
+    };
+    let f_lo_pole =
+        s.corners[0].pole_hz * (s.corners[1].pole_hz / s.corners[0].pole_hz).powf(morph);
+    let f_lo_zero =
+        s.corners[0].zero_hz * (s.corners[1].zero_hz / s.corners[0].zero_hz).powf(morph);
+    let r_lo_pole = lerp_r(s.corners[0].pole_r, s.corners[1].pole_r, morph);
+    let r_lo_zero = lerp_r(s.corners[0].zero_r, s.corners[1].zero_r, morph);
+    let g_lo = s.corners[0].gain_db + (s.corners[1].gain_db - s.corners[0].gain_db) * morph;
+
+    let f_hi_pole =
+        s.corners[2].pole_hz * (s.corners[3].pole_hz / s.corners[2].pole_hz).powf(morph);
+    let f_hi_zero =
+        s.corners[2].zero_hz * (s.corners[3].zero_hz / s.corners[2].zero_hz).powf(morph);
+    let r_hi_pole = lerp_r(s.corners[2].pole_r, s.corners[3].pole_r, morph);
+    let r_hi_zero = lerp_r(s.corners[2].zero_r, s.corners[3].zero_r, morph);
+    let g_hi = s.corners[2].gain_db + (s.corners[3].gain_db - s.corners[2].gain_db) * morph;
+
+    let pole_hz = f_lo_pole * (f_hi_pole / f_lo_pole).powf(q);
+    let zero_hz = f_lo_zero * (f_hi_zero / f_lo_zero).powf(q);
+    let pole_r = lerp_r(r_lo_pole, r_hi_pole, q);
+    let zero_r = lerp_r(r_lo_zero, r_hi_zero, q);
+    let gain_db = g_lo + (g_hi - g_lo) * q;
+
+    CornerStage {
+        pole_hz,
+        pole_r,
+        zero_hz,
+        zero_r,
+        gain_db,
+    }
+}
+
 /// Pole positions (Hz, radius) of a packed body at M0 Q0 — snap landmarks.
 fn source_poles(body: &[u8; 240]) -> Vec<(f32, f32)> {
     let live = live_biquads(&words_of(body), 0.0, 0.0);
@@ -7494,9 +7767,8 @@ fn source_poles(body: &[u8; 240]) -> Vec<(f32, f32)> {
                 return None;
             }
             let r = a2.sqrt();
-            let hz = ((-a1 / (2.0 * r)).clamp(-1.0, 1.0).acos()
-                / std::f64::consts::TAU
-                * SR as f64) as f32;
+            let hz = ((-a1 / (2.0 * r)).clamp(-1.0, 1.0).acos() / std::f64::consts::TAU * SR as f64)
+                as f32;
             ((F_MIN..=F_MAX).contains(&hz) && r > 0.3).then_some((hz, r as f32))
         })
         .collect()
@@ -7526,6 +7798,47 @@ fn chip(p: &egui::Painter, rect: Rect, text: &str, active: bool, color: Color32)
             Color32::from_rgb(168, 162, 154)
         },
     );
+}
+
+fn mini_curve(p: &egui::Painter, rect: Rect, values: &[f32], color: Color32) {
+    p.rect_filled(rect, 3.0, Color32::from_rgb(9, 13, 12));
+    p.rect_stroke(rect, 3.0, Stroke::new(1.0, with_alpha(EDGE, 140)));
+    if values.len() < 2 {
+        return;
+    }
+    let (mut lo, mut hi) = (f32::MAX, f32::MIN);
+    for &v in values {
+        if v.is_finite() {
+            lo = lo.min(v);
+            hi = hi.max(v);
+        }
+    }
+    if !(lo.is_finite() && hi.is_finite()) {
+        return;
+    }
+    let span = (hi - lo).max(9.0);
+    let zero_y = rect.bottom() - ((0.0 - lo) / span).clamp(0.0, 1.0) * rect.height();
+    p.line_segment(
+        [
+            Pos2::new(rect.left(), zero_y),
+            Pos2::new(rect.right(), zero_y),
+        ],
+        Stroke::new(1.0, with_alpha(TEXT_DIM, 34)),
+    );
+    let n = values.len();
+    let pts: Vec<Pos2> = values
+        .iter()
+        .enumerate()
+        .map(|(i, &v)| {
+            let t = i as f32 / (n - 1) as f32;
+            let y = rect.bottom() - ((v - lo) / span).clamp(0.0, 1.0) * rect.height();
+            Pos2::new(rect.left() + t * rect.width(), y)
+        })
+        .collect();
+    p.add(egui::Shape::line(
+        pts,
+        Stroke::new(1.2, with_alpha(color, 230)),
+    ));
 }
 
 #[allow(dead_code)]
@@ -7573,9 +7886,10 @@ fn spectral_centroid_hz(db: &[f32]) -> f32 {
     ((num / den).exp() as f32).clamp(F_MIN, F_MAX)
 }
 
-/// 96-bin response of a packed body at M0 Q0 — tile curves + centroid input.
-fn body_db_row(body: &[u8; 240]) -> Vec<f32> {
-    let live = live_biquads(&words_of(body), 0.0, 0.0);
+/// 96-bin response of a packed body at M50 Q50 — recent-filter cards and
+/// centroid input for the normal "design the middle" workflow.
+fn body_center_db_row(body: &[u8; 240]) -> Vec<f32> {
+    let live = live_biquads(&words_of(body), 0.5, 0.5);
     let trig = grid_trig(AUDIT_BINS);
     (0..AUDIT_BINS)
         .map(|i| cascade_db_c(&live, trig[i].0, trig[i].1))
@@ -7805,6 +8119,20 @@ fn nearest_handle(pos: Pos2, hits: &[(Pos2, usize, HandleKind)]) -> Option<(usiz
         if d < bd {
             bd = d;
             best = Some((*stage, *kind));
+        }
+    }
+    best
+}
+
+/// MOVEMENT view endpoint hit-test: nearest (stage, high) track dot within range.
+fn nearest_track(pos: Pos2, hits: &[(Pos2, usize, bool)]) -> Option<(usize, bool)> {
+    let mut best = None;
+    let mut bd = 18.0;
+    for (hp, stage, high) in hits {
+        let d = hp.distance(pos);
+        if d < bd {
+            bd = d;
+            best = Some((*stage, *high));
         }
     }
     best
