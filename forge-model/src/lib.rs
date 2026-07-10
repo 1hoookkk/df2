@@ -12,6 +12,7 @@
 use serde::{Deserialize, Serialize};
 
 pub mod packed;
+pub mod sos;
 
 pub use trench_core::compiler::AUTHORING_SR;
 
