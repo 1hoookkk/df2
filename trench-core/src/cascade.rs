@@ -121,6 +121,23 @@ impl Cascade {
         self.boost_delta = (target - self.boost) / ramp_samples;
     }
 
+    /// Set the 6 active stages' coefficients immediately, no ramp, and clear
+    /// all ramp deltas. The dual frozen-cascade transition law
+    /// (`transition::DualCascade`) uses this: a frozen cascade never ramps.
+    pub fn snap_targets(&mut self, interpolated: &CornerData) {
+        for (stage, coeffs) in self.stages[..NUM_STAGES]
+            .iter_mut()
+            .zip(interpolated.iter())
+        {
+            stage.coeffs = *coeffs;
+            stage.deltas = [0.0; NUM_COEFFS];
+        }
+        for i in NUM_STAGES..TOTAL_STAGES {
+            self.stages[i].coeffs = PASSTHROUGH_COEFFS;
+            self.stages[i].deltas = [0.0; NUM_COEFFS];
+        }
+    }
+
     /// Set target coefficients for the 6 active stages from interpolated cartridge data.
     /// Passthrough stages (6..12) remain identity.
     pub fn set_targets(&mut self, interpolated: &CornerData, ramp_samples: usize) {

@@ -20,6 +20,8 @@ pub mod phantom_voice;
 pub mod qsound_spatial;
 pub mod response;
 pub mod role;
+pub mod seed;
+pub mod transition;
 pub mod trench_matrix;
 
 pub use agc::agc_step;

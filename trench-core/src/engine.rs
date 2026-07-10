@@ -16,7 +16,8 @@
 
 use crate::agc::{active_agc_table, agc_step_stereo};
 use crate::cartridge::{Cartridge, CornerData};
-use crate::cascade::{Cascade, BLOCK_SIZE, NUM_COEFFS, PASSTHROUGH_COEFFS};
+use crate::cascade::{BLOCK_SIZE, NUM_COEFFS, PASSTHROUGH_COEFFS};
+use crate::transition::{DualCascade, TRANSITION_SECONDS};
 use crate::cvsd_input::CvsdInput;
 use crate::desk_drive::{DeskDrive, SUPPORTED_MODEL as DESK_SLAM_MODEL};
 use crate::qsound_spatial::QSoundSpatial;
@@ -90,9 +91,9 @@ pub struct DebugToggles {
     pub agc_bypass: bool,
     /// Linear makeup gain used when `agc_bypass` is set. 1.0 = unity.
     pub agc_makeup_gain: f32,
-    /// DEBUG probe knob: scales the coefficient ramp length handed to
-    /// `Cascade::set_targets` (`ramp = chunk * scale`, min 1 sample).
-    /// 1.0 = stock (ramp == control chunk).
+    /// INERT since the dual frozen-cascade transition law: coefficients no
+    /// longer ramp, so there is no ramp length to scale. Field kept for FFI/
+    /// ABI stability.
     pub coeff_ramp_scale: f32,
 }
 
@@ -135,8 +136,8 @@ fn saturate(x: f32) -> f32 {
 
 /// Stereo Filter Engine — handles dual cascades, Mackie saturation, and QSound.
 pub struct FilterEngine {
-    cascade_l: Cascade,
-    cascade_r: Cascade,
+    cascade_l: DualCascade,
+    cascade_r: DualCascade,
     // Audio-thread-owned. New bodies arrive via `CartridgeMailbox` (a sibling
     // field of `EngineHandle`, never inside this `&mut`-borrowed struct) and are
     // installed at a block boundary; the displaced box is handed back to the
@@ -202,8 +203,8 @@ impl FilterEngine {
     pub fn new() -> Self {
         let sr = 44100.0;
         Self {
-            cascade_l: Cascade::new(),
-            cascade_r: Cascade::new(),
+            cascade_l: DualCascade::new(),
+            cascade_r: DualCascade::new(),
             cartridge: None,
             sample_rate: sr,
             output_gain: 1.0,
@@ -236,6 +237,9 @@ impl FilterEngine {
 
     pub fn prepare(&mut self, sample_rate: f64) {
         self.sample_rate = sample_rate;
+        let fade = (TRANSITION_SECONDS * sample_rate).round() as usize;
+        self.cascade_l.set_fade_len(fade);
+        self.cascade_r.set_fade_len(fade);
         self.cascade_l.reset();
         self.cascade_r.reset();
         self.output_gain = 1.0;
@@ -365,14 +369,11 @@ impl FilterEngine {
             corner
         };
 
-        // DEBUG knob: coeff_ramp_scale == 1.0 passes chunk_size through unchanged.
-        let ramp_samples = if self.debug.coeff_ramp_scale == 1.0 {
-            chunk_size
-        } else {
-            ((chunk_size as f32 * self.debug.coeff_ramp_scale).round() as usize).max(1)
-        };
-        self.cascade_l.set_targets(&corner, ramp_samples);
-        self.cascade_r.set_targets(&corner, ramp_samples);
+        // Dual frozen-cascade law: the transition owns its own sample-counted
+        // timing, so there is no per-chunk coefficient ramp any more (the
+        // `coeff_ramp_scale` debug knob is inert). Equal corners are a no-op.
+        self.cascade_l.set_target(&corner);
+        self.cascade_r.set_target(&corner);
 
         self.target_output_gain = boost;
         self.delta_output_gain = (boost - self.output_gain) / chunk_size.max(1) as f32;
