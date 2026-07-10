@@ -1,0 +1,31 @@
+{
+  "format": "emu-morph-designer-tool-law-v1",
+  "provenance": {
+    "source": "E-MU Emulator X3 Advanced Applications Guide, pp. 43-45 (Morph Designer); pp. 17, 91 (warnings)",
+    "captured": "NotebookLM Q&A 2026-07-11; exact quotes with page cites",
+    "clean_room_note": "Manufacturer documentation, behavioral only."
+  },
+  "tool_law": {
+    "sections": {"quote": "combine up to six, 2nd-order filter sections", "page": 43},
+    "section_types": {"quote": "lowpass, highpass or EQ", "codes": ["LP", "HP", "EQ"], "page": 43},
+    "per_section_params": {"quote": "Frequency and Gain/Q for both the low and high positions", "ui_fields": ["FREQ (Hz)", "GAIN (dB)"], "page": 43},
+    "global_wheel": {
+      "quote": "The lower Gain wheel affects the gain if the section is an EQ. If the section is a HP or LP filter, the Gain wheel changes the Q... The Gain wheel adds a Gain or Q Offset to all filter sections. (clipping at 0 or 100%) In other words, it ADDS to the Gain/Q setting programmed in each section.",
+      "also": "The Q control adds to the Lo and Hi Q settings.",
+      "pages": [43, 44],
+      "law": "Pressure is TYPE-DEPENDENT: EQ sections take it as GAIN; LP/HP sections take it as Q. One clipped additive offset, applied to BOTH endpoints. This is the TOOL tier only — factory bodies are body-specific (see p2k_filter_q_behavior.json)."
+    },
+    "morph_behavior": {
+      "quotes": [
+        {"q": "When the Morph control is changed, all the filter controls interpolate between the low and high settings you programmed.", "page": 43},
+        {"q": "The Morph Wheel interpolates between the Lo and Hi settings of the filter section.", "page": 45}
+      ]
+    },
+    "warnings": [
+      {"q": "Some of the filters have extremely high gain at certain frequencies and they may distort with the harmonically-dense voice samples.", "page": 17},
+      {"q": "Some of the filter types may distort because of their extremely high Q values. If you hear distortion, simply reduce the Amplifier Gain", "page": 91}
+    ],
+    "interface_example_values": {"freqs_hz": [491, 5970], "gain_db": -24.0, "page": 44,
+      "note": "UI example values only; complete numeric ranges NOT IN SOURCES on these pages."}
+  }
+}
