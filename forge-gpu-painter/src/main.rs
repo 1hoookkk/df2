@@ -3577,12 +3577,16 @@ impl App {
     /// Recent local bodies are our own work, so open them as editable six-lane
     /// pole/zero sections and park the authoring cursor at the center surface.
     fn load_editable_body_at_center(&mut self, label: &str, body: [u8; 240]) {
+        // VERBATIM LAW: a loaded body plays and plots its exact file bytes until
+        // the first explicit edit. Sections decode ALL FOUR corners as saved —
+        // q_link stays OFF so the derived-Q rule never overwrites the file's
+        // Q100 corners (factory-style four-corner bodies were being silently
+        // rewritten here: Q rows re-derived, then repacked through decode clamps).
         self.finish_anim();
         self.push_undo();
         self.sections = decode_body_sections(&words_of(&body));
-        self.q_link = true;
+        self.q_link = false; // Q rows are as saved, not derived
         self.patch_linked = false;
-        self.packed_preview = None;
         self.pins.clear();
         self.selected_pin = None;
         self.body_name = slugify(label);
@@ -3590,8 +3594,26 @@ impl App {
         self.q = 0.5;
         self.selected_corner = CornerKey::M0Q0;
         self.selected_stage = 0;
-        self.rebuild_body();
-        self.status = format!("{label} loaded editable — authoring at M50 / Q50");
+        // exact bytes for the curve and the ears; first edit recompiles from
+        // sections and drops the preview (rebuild_body clears it)
+        self.body = body;
+        self.packed_preview = Some(label.to_string());
+        self.recompute_response();
+        self.heat_dirty = true;
+        self.audit_dirty = true;
+        self.last_edit = Instant::now();
+        if let Some(audio) = &self.audio {
+            if let Ok(cart) =
+                trench_core::cartridge::Cartridge::from_body_bytes("forge", &self.body, 1.0)
+            {
+                if let Ok(mut c) = audio.ctl.lock() {
+                    c.pending_cart = Some(cart);
+                }
+            }
+        }
+        self.status = format!(
+            "{label} loaded VERBATIM (exact bytes) — first edit switches to your sections"
+        );
     }
 
     fn seed_scratch(&mut self) {
@@ -6160,8 +6182,9 @@ impl App {
             }
         }
 
-        // handles: only the selected section's pole + zero live on the canvas —
-        // the strip cards below are the section selector. One curve, two dots.
+        // handles: EVERY on-stage's pole + zero live on the canvas, always.
+        // Grabbing any dot selects its stage and drags it in one gesture —
+        // no stage ceremony. Selected stage draws bright, the rest dimmer.
         let corner = self.selected_corner.idx();
         // the other morph frame, for the travel arcs (same Q row as selected)
         let mirror = self.selected_corner.morph_mirror();
@@ -6171,10 +6194,10 @@ impl App {
             self.selected_corner.morph_q().1,
         );
         for (i, section) in self.sections.iter().enumerate() {
-            if !section.on || i != self.selected_stage {
+            if !section.on {
                 continue;
             }
-            let selected = true;
+            let selected = i == self.selected_stage;
             let color = section_color(i);
             let inactive_drag = fast_drag && focus_stage != Some(i);
             let dimmed = if inactive_drag {
@@ -6237,7 +6260,9 @@ impl App {
             // hollow dots, joined by a thin arc. The one long arc on a body is
             // the leader move; held sections stay short or have none. Dragging
             // the hollow dot authors the other frame without switching corners.
-            if !inactive_drag && !section.locked && !use_interpolated_handles {
+            // Travel arcs draw for the selected stage only (12 always-on dots is
+            // signal; 12 dots + 12 arcs is clutter).
+            if selected && !inactive_drag && !section.locked && !use_interpolated_handles {
                 let mc = section.corners[mirror.idx()];
                 if (mc.pole_hz / c.pole_hz).log2().abs() > 0.02 {
                     let pole2 = Pos2::new(
@@ -7476,6 +7501,55 @@ impl App {
         }
     }
 
+    /// One stage's own response (dB) at frequency f — conjugate pole/zero pairs
+    /// plus the stage gain. Used to make dragged dots LAND WHERE THE CURSOR IS.
+    fn corner_stage_mag_db(c: &CornerStage, f: f32) -> f32 {
+        let w = std::f32::consts::TAU * f / SR;
+        let (zr_re, zr_im) = (w.cos(), -w.sin()); // z^-1 on the unit circle
+        let quad = |cf: f32, r: f32| -> f32 {
+            // |1 + a1 z^-1 + a2 z^-2| for a conjugate pair at (cf, r)
+            let wc = std::f32::consts::TAU * cf / SR;
+            let a1 = -2.0 * r * wc.cos();
+            let a2 = r * r;
+            let z2_re = zr_re * zr_re - zr_im * zr_im;
+            let z2_im = 2.0 * zr_re * zr_im;
+            let re = 1.0 + a1 * zr_re + a2 * z2_re;
+            let im = a1 * zr_im + a2 * z2_im;
+            (re * re + im * im).sqrt().max(1e-9)
+        };
+        c.gain_db + 20.0 * (quad(c.zero_hz, c.zero_r) / quad(c.pole_hz, c.pole_r)).log10()
+    }
+
+    /// Solve the radius so this stage's curve at the handle's frequency hits
+    /// target_db. Monotonic in r -> plain bisection, cheap per drag event.
+    fn solve_radius_for_db(c: &CornerStage, kind: HandleKind, target_db: f32) -> f32 {
+        let (mut lo, mut hi) = match kind {
+            HandleKind::Pole => (RP_MIN, RP_MAX),
+            HandleKind::Zero => (0.0, RZ_MAX),
+        };
+        for _ in 0..28 {
+            let mid = 0.5 * (lo + hi);
+            let mut probe = *c;
+            let (f, rising) = match kind {
+                HandleKind::Pole => {
+                    probe.pole_r = mid;
+                    (c.pole_hz, true) // tighter pole -> higher curve at the pole
+                }
+                HandleKind::Zero => {
+                    probe.zero_r = mid;
+                    (c.zero_hz, false) // tighter zero -> deeper curve at the zero
+                }
+            };
+            let db = Self::corner_stage_mag_db(&probe, f);
+            if (db < target_db) == rising {
+                lo = mid;
+            } else {
+                hi = mid;
+            }
+        }
+        0.5 * (lo + hi)
+    }
+
     fn apply_handle_drag(
         &mut self,
         stage: usize,
@@ -7514,8 +7588,25 @@ impl App {
             .max(1.0);
             let snapped_f = self.snap((start_f * freq_ratio).clamp(F_MIN, F_MAX), shift);
             let ratio = snapped_f / start_f;
-            let weights = [(0usize, 1.0 - self.morph), (1usize, self.morph)];
-            let norm = (weights[0].1 * weights[0].1 + weights[1].1 * weights[1].1).max(1e-5);
+            // cursor height in dB — the dot lands exactly here (direct manipulation)
+            let cursor_db = DB_MIN
+                + (1.0 - (pos.y - plot.top()) / plot.height()).clamp(0.0, 1.0)
+                    * (DB_MAX - DB_MIN);
+            // q_link ON: edits land in the two morph frames, Q rows re-derive.
+            // q_link OFF (verbatim four-corner body): distribute bilinearly across
+            // ALL FOUR corners — the file's Q rows are edited, never wiped.
+            let (m, q) = (self.morph, self.q);
+            let weights: Vec<(usize, f32)> = if self.q_link {
+                vec![(0, 1.0 - m), (1, m)]
+            } else {
+                vec![
+                    (0, (1.0 - m) * (1.0 - q)),
+                    (1, m * (1.0 - q)),
+                    (2, (1.0 - m) * q),
+                    (3, m * q),
+                ]
+            };
+            let norm = weights.iter().map(|(_, w)| w * w).sum::<f32>().max(1e-5);
 
             for (ci, weight) in weights {
                 let factor = weight / norm;
@@ -7528,9 +7619,13 @@ impl App {
                             c.gain_db = (s.gain_db + (-dy * fine / 13.0) * factor)
                                 .clamp(GAIN_DB_MIN, GAIN_DB_MAX);
                         } else {
-                            let target_r = (1.0
-                                - (1.0 - s_interp.pole_r) * 2.0_f32.powf(dy * fine / 150.0))
-                            .clamp(RP_MIN, RP_MAX);
+                            // the dot follows the cursor: solve r so the stage curve
+                            // at the pole hits the cursor's dB
+                            let mut probe = s_interp;
+                            probe.pole_hz = snapped_f;
+                            let target_r =
+                                Self::solve_radius_for_db(&probe, HandleKind::Pole, cursor_db)
+                                    .clamp(RP_MIN, RP_MAX);
                             c.pole_r = (s.pole_r + (target_r - s_interp.pole_r) * factor)
                                 .clamp(RP_MIN, RP_MAX);
                         }
@@ -7541,16 +7636,19 @@ impl App {
                             c.gain_db = (s.gain_db + (-dy * fine / 13.0) * factor)
                                 .clamp(GAIN_DB_MIN, GAIN_DB_MAX);
                         } else {
-                            let target_r = (1.0
-                                - (1.0 - s_interp.zero_r) * 2.0_f32.powf(-dy * fine / 150.0))
-                            .clamp(0.0, RZ_MAX);
+                            let mut probe = s_interp;
+                            probe.zero_hz = snapped_f;
+                            let target_r =
+                                Self::solve_radius_for_db(&probe, HandleKind::Zero, cursor_db)
+                                    .clamp(0.0, RZ_MAX);
                             c.zero_r = (s.zero_r + (target_r - s_interp.zero_r) * factor)
                                 .clamp(0.0, RZ_MAX);
                         }
                     }
                 }
             }
-            self.q_link = true;
+            // q_link is NOT forced back on: a verbatim four-corner body keeps its
+            // own Q rows (edited bilinearly above); a linked body stays linked.
             self.rebuild_body();
             return;
         }
