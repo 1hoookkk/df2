@@ -1328,6 +1328,15 @@ dependencies = [
 ]
 
 [[package]]
+name = "forge-model"
+version = "0.1.0"
+dependencies = [
+ "serde",
+ "serde_json",
+ "trench-core",
+]
+
+[[package]]
 name = "forge-zero"
 version = "0.1.0"
 dependencies = [

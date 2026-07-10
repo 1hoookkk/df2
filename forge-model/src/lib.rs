@@ -11,6 +11,8 @@
 
 use serde::{Deserialize, Serialize};
 
+pub mod packed;
+
 pub use trench_core::compiler::AUTHORING_SR;
 
 const TAU: f64 = std::f64::consts::TAU;
@@ -97,6 +99,22 @@ impl Mode {
         let (a1, a2) = self.pole.quad();
         let (n1, n2) = self.zero.quad();
         [self.gain, self.gain * n1, self.gain * n2, a1, a2]
+    }
+
+    /// A conjugate pole + conjugate zero mode with the DC-normalized gain
+    /// law the legacy authoring path uses — byte-identical to what the
+    /// forge-zero surface packs, because it routes through the one owner
+    /// (`trench_core::compiler::stage_biquad`).
+    pub fn pole_zero(pole_hz: f64, pole_r: f64, zero_hz: f64, zero_r: f64) -> Self {
+        Mode::from_biquad(trench_core::compiler::stage_biquad(&[
+            1.0,
+            pole_hz,
+            pole_r,
+            1.0,
+            if zero_r > 0.0001 { 1.0 } else { 0.0 },
+            zero_hz,
+            zero_r,
+        ]))
     }
 
     /// Recover a mode from a biquad row. A `b0 == 0` row (a silenced
