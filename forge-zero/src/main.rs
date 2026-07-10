@@ -2,15 +2,15 @@
 //!
 //! The model IS the state: a `forge_model::Design` (multi-anchor, six
 //! modes), and the 240-byte packed body is its PROJECTION. it2 = the
-//! wheel: MORPH drives the real packed engine live; the two Q0 anchors
-//! are the editing poses. Drop a roster `.body240` and its six lanes are
+//! wheels: MORPH and Q both drive the real packed engine live; the four
+//! corner anchors are the editing poses. Drop a roster `.body240` and its six lanes are
 //! on screen, each grabbable at the poses; drop a WAV and it's the loop.
 //!
 //! White curve = the packed interior you are hearing (the runtime's
 //! truth). Amber = the native model at the active pose; the daylight
 //! between them is the projection loss, printed in the footer.
 //! Interior wheel positions are derived — no dots there, no lie.
-//! Ladder: it3 mode activation + the Q wheel · it4 adaptive order.
+//! Ladder: it3b mode activation · it4 adaptive order.
 
 use eframe::egui::{self, Color32, Pos2, Rect, Sense, Stroke, Vec2};
 use forge_model::packed::{import, project, CORNERS};
@@ -127,6 +127,7 @@ struct AudioCtl {
     playing: bool,
     monitor: Monitor,
     morph: f64,
+    q: f64,
     pending_cart: Option<trench_core::cartridge::Cartridge>,
     pending_native: Option<Vec<[f64; 5]>>,
     pending_loop: Option<Arc<Vec<f32>>>,
@@ -152,6 +153,7 @@ fn start_audio(body: [u8; 240], native: Vec<[f64; 5]>) -> Result<Audio, String> 
         playing: false,
         monitor: Monitor::Packed,
         morph: 0.0,
+        q: 0.0,
         pending_cart: Some(cart),
         pending_native: Some(native),
         pending_loop: None,
@@ -170,12 +172,13 @@ fn start_audio(body: [u8; 240], native: Vec<[f64; 5]>) -> Result<Audio, String> 
         .build_output_stream(
             &config.into(),
             move |data: &mut [f32], _| {
-                let (playing, monitor, morph, cart, native, lp) = {
+                let (playing, monitor, morph, q, cart, native, lp) = {
                     let mut c = ctl_cb.lock().unwrap();
                     (
                         c.playing,
                         c.monitor,
                         c.morph,
+                        c.q,
                         c.pending_cart.take(),
                         c.pending_native.take(),
                         c.pending_loop.take(),
@@ -216,7 +219,7 @@ fn start_audio(body: [u8; 240], native: Vec<[f64; 5]>) -> Result<Audio, String> 
                     right[..n].copy_from_slice(&left[..n]);
                     match monitor {
                         Monitor::Packed => {
-                            engine.process_block(&mut left[..n], &mut right[..n], morph, 0.0);
+                            engine.process_block(&mut left[..n], &mut right[..n], morph, q);
                         }
                         Monitor::Native => {
                             // the model itself at the active pose: f64 DF2T
@@ -323,23 +326,28 @@ fn read_wav(path: &Path) -> Option<(Vec<f32>, f64)> {
 enum Grab {
     Pole(usize),
     Zero(usize),
-    Wheel,
+    MorphWheel,
+    QWheel,
 }
 
-/// Which anchor pose the wheel is at, if any.
-fn pose_of(wheel: f32) -> Option<(f64, f64)> {
-    if wheel <= POSE_SNAP {
-        Some((0.0, 0.0))
-    } else if wheel >= 1.0 - POSE_SNAP {
-        Some((1.0, 0.0))
-    } else {
-        None
-    }
+/// Which anchor pose the wheels are at, if any (both must sit at an end).
+fn pose_of(wheel: f32, qwheel: f32) -> Option<(f64, f64)> {
+    let axis = |w: f32| {
+        if w <= POSE_SNAP {
+            Some(0.0)
+        } else if w >= 1.0 - POSE_SNAP {
+            Some(1.0)
+        } else {
+            None
+        }
+    };
+    Some((axis(wheel)?, axis(qwheel)?))
 }
 
 struct Zero {
     design: Design,
     wheel: f32,
+    qwheel: f32,
     body: [u8; 240],
     /// Decoded packed rows at the current wheel position — what you hear.
     heard: Vec<[f64; 5]>,
@@ -369,6 +377,7 @@ impl Zero {
         let mut z = Self {
             design,
             wheel: 0.0,
+            qwheel: 0.0,
             body: [0; 240],
             heard: Vec::new(),
             loss: None,
@@ -383,14 +392,15 @@ impl Zero {
     }
 
     fn active_pose(&self) -> Option<&Anchor> {
-        pose_of(self.wheel).and_then(|(m, q)| self.design.anchor_at(m, q))
+        pose_of(self.wheel, self.qwheel).and_then(|(m, q)| self.design.anchor_at(m, q))
     }
 
     fn native_rows(&self) -> Vec<[f64; 5]> {
-        // the pose the wheel is nearest — the native monitor's cascade
+        // the pose the wheels are nearest — the native monitor's cascade
         let m = if self.wheel < 0.5 { 0.0 } else { 1.0 };
+        let q = if self.qwheel < 0.5 { 0.0 } else { 1.0 };
         self.design
-            .anchor_at(m, 0.0)
+            .anchor_at(m, q)
             .map(|a| a.modes.iter().map(Mode::biquad).collect())
             .unwrap_or_default()
     }
@@ -420,7 +430,7 @@ impl Zero {
     /// Wheel moved (or design changed): refresh the heard curve + loss.
     fn wheel_moved(&mut self) {
         if let Ok(pc) = PackedCorners::from_body_bytes(&self.body) {
-            self.heard = pc.interpolate_biquad(self.wheel, 0.0).to_vec();
+            self.heard = pc.interpolate_biquad(self.wheel, self.qwheel).to_vec();
         }
         self.loss = self.active_pose().map(|anchor| {
             let native: Vec<[f64; 5]> = anchor.modes.iter().map(Mode::biquad).collect();
@@ -429,6 +439,7 @@ impl Zero {
         if let Some(a) = &self.audio {
             if let Ok(mut c) = a.ctl.lock() {
                 c.morph = self.wheel as f64;
+                c.q = self.qwheel as f64;
                 c.pending_native = Some(self.native_rows());
             }
         }
@@ -510,7 +521,7 @@ impl eframe::App for Zero {
                 let full = ui.available_rect_before_wrap();
                 let bar = Rect::from_min_size(full.min, Vec2::new(full.width(), 34.0));
                 let wheel_strip = Rect::from_min_max(
-                    Pos2::new(full.left() + 8.0, full.bottom() - 54.0),
+                    Pos2::new(full.left() + 8.0, full.bottom() - 84.0),
                     Pos2::new(full.right() - 8.0, full.bottom() - 26.0),
                 );
                 let plot = Rect::from_min_max(
@@ -620,33 +631,40 @@ impl eframe::App for Zero {
                     }
                 }
 
-                // wheel strip
+                // wheel strip: MORPH and Q tracks
                 p.rect_filled(wheel_strip, 4.0, Color32::from_rgb(14, 16, 18));
-                let track_y = wheel_strip.center().y;
-                p.line_segment(
-                    [
-                        Pos2::new(wheel_strip.left() + 60.0, track_y),
-                        Pos2::new(wheel_strip.right() - 16.0, track_y),
-                    ],
-                    Stroke::new(2.0, Color32::from_rgb(50, 58, 64)),
-                );
                 let track_l = wheel_strip.left() + 60.0;
                 let track_w = wheel_strip.right() - 16.0 - track_l;
-                let handle = Pos2::new(track_l + self.wheel * track_w, track_y);
-                p.circle_filled(handle, 9.0, Color32::from_rgb(120, 200, 220));
-                p.text(
-                    Pos2::new(wheel_strip.left() + 8.0, track_y),
-                    egui::Align2::LEFT_CENTER,
-                    "MORPH",
-                    egui::FontId::monospace(11.0),
-                    Color32::from_rgb(140, 160, 150),
-                );
-                p.text(
-                    Pos2::new(handle.x, track_y - 14.0),
-                    egui::Align2::CENTER_CENTER,
-                    format!("{:.0}", self.wheel * 100.0),
-                    egui::FontId::monospace(10.0),
-                    Color32::from_rgb(120, 200, 220),
+                let morph_y = wheel_strip.top() + 20.0;
+                let q_y = wheel_strip.bottom() - 16.0;
+                for (label, y, val, col) in [
+                    ("MORPH", morph_y, self.wheel, Color32::from_rgb(120, 200, 220)),
+                    ("Q", q_y, self.qwheel, Color32::from_rgb(220, 170, 110)),
+                ] {
+                    p.line_segment(
+                        [Pos2::new(track_l, y), Pos2::new(track_l + track_w, y)],
+                        Stroke::new(2.0, Color32::from_rgb(50, 58, 64)),
+                    );
+                    let handle = Pos2::new(track_l + val * track_w, y);
+                    p.circle_filled(handle, 9.0, col);
+                    p.text(
+                        Pos2::new(wheel_strip.left() + 8.0, y),
+                        egui::Align2::LEFT_CENTER,
+                        label,
+                        egui::FontId::monospace(11.0),
+                        Color32::from_rgb(140, 160, 150),
+                    );
+                    p.text(
+                        Pos2::new(handle.x, y - 14.0),
+                        egui::Align2::CENTER_CENTER,
+                        format!("{:.0}", val * 100.0),
+                        egui::FontId::monospace(10.0),
+                        col,
+                    );
+                }
+                let morph_zone = Rect::from_min_max(
+                    Pos2::new(wheel_strip.left(), wheel_strip.top()),
+                    Pos2::new(wheel_strip.right(), (morph_y + q_y) / 2.0),
                 );
 
                 // interaction
@@ -655,7 +673,11 @@ impl eframe::App for Zero {
                 if resp.drag_started() {
                     if let Some(pos) = pointer {
                         if wheel_strip.contains(pos) {
-                            self.grab = Some(Grab::Wheel);
+                            self.grab = Some(if morph_zone.contains(pos) {
+                                Grab::MorphWheel
+                            } else {
+                                Grab::QWheel
+                            });
                         } else if !play_r.contains(pos) && !ab_r.contains(pos) {
                             let best = dots
                                 .iter()
@@ -699,6 +721,7 @@ impl eframe::App for Zero {
                                     c.playing = self.playing;
                                     c.monitor = self.monitor;
                                     c.morph = self.wheel as f64;
+                                    c.q = self.qwheel as f64;
                                 }
                             }
                         }
@@ -707,12 +730,16 @@ impl eframe::App for Zero {
                 if let (Some(g), Some(pos)) = (self.grab, pointer) {
                     if resp.dragged() {
                         match g {
-                            Grab::Wheel => {
+                            Grab::MorphWheel => {
                                 self.wheel = ((pos.x - track_l) / track_w).clamp(0.0, 1.0);
                                 self.wheel_moved();
                             }
+                            Grab::QWheel => {
+                                self.qwheel = ((pos.x - track_l) / track_w).clamp(0.0, 1.0);
+                                self.wheel_moved();
+                            }
                             Grab::Pole(k) | Grab::Zero(k) => {
-                                if let Some((m0, q0)) = pose_of(self.wheel) {
+                                if let Some((m0, q0)) = pose_of(self.wheel, self.qwheel) {
                                     let is_pole = matches!(g, Grab::Pole(_));
                                     let f = f_of(plot, pos.x).clamp(F_MIN, F_MAX);
                                     let db_t = db_of(plot, pos.y);
@@ -740,9 +767,13 @@ impl eframe::App for Zero {
                 }
 
                 // footer: pose, loss, status
-                let pose_txt = match pose_of(self.wheel) {
-                    Some((m, _)) => format!("POSE {} — editable", if m == 0.0 { "0" } else { "100" }),
-                    None => "interior — derived, wheel to an end to edit".into(),
+                let pose_txt = match pose_of(self.wheel, self.qwheel) {
+                    Some((m, q)) => format!(
+                        "POSE M{}·Q{} — editable",
+                        if m == 0.0 { "0" } else { "100" },
+                        if q == 0.0 { "0" } else { "100" }
+                    ),
+                    None => "interior — derived, wheel both to ends to edit".into(),
                 };
                 let loss_txt = match self.loss {
                     Some((c, i)) => format!("projection loss: complex {c:.1e} / impulse {i:.1e}"),
