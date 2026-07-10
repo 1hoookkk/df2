@@ -5,23 +5,38 @@ doctrine.
 
 ## Current Task Focus
 
-The locked direction is **evidence-derived Morph Designer authoring** — two
-frames in, Secondary derived:
+The locked direction is **evidence-derived Morph Designer authoring** — four
+authored poses (Q AMENDMENT 2026-07-10, Tyson "we need law"; LAWS.md L23-L27):
 
 ```text
 real evidence (LPC / physical models / measured tables / clean-room grammar)
-  -> two authored Morph frames (LOW + HIGH): six pole+zero lanes each
-  -> Secondary/Q DERIVES the PUSH corners (radius/gain only, no frequency motion)
+  -> FOUR authored corner poses (M0/M100 x Q0/Q100): six pole+zero lanes each
+     (frame anatomy: crown @1, floor + unit zero @6, talkers 2-5 — L23)
+  -> Q100 = an authored SECOND SCENE, one named verb per body:
+     BLOOM / SPREAD / SCREAM / FLIP (L25 — measured 8/8 on true ROM bytes)
   -> packed .body240 -> trench_core Morph x Q audit -> plot + audio -> Tyson keep/kill
 ```
 
-Author only the LOW and HIGH frames; the Q100 corners are **generated, never
-hand-authored**. Do not turn this into free four-corner painting, a coefficient
-editor, a prompt-first body writer, or a new production-training workflow.
+Q100 corners are hand-authored like any pose. Do not turn this into free
+random-corner painting, a coefficient editor, a prompt-first body writer, or a
+new production-training workflow — corners stay KIN (the same instrument in
+four poses), never four unrelated filters.
 
 **Superseded — study/background only, never the active direction:** Law Author
 (`docs/FORGE_LAW_AUTHOR.md`), the `gpt55-pro-*` reports, and free per-corner
 editing of the four corners.
+
+## UI / Visual Rule: No Fake Layers
+
+For plugin UI work, **doing nothing is better than adding a fake layer**.
+
+Do not add a shadow, glow, bevel, decal, perspective trick, glass layer, or
+overlay if it reads as a separate graphic object. TRENCH should read as one
+physical faceplate with real seated parts, not a stack of visible effects.
+
+If a fix would become "that black thing," "that teal thing," or an obvious
+perspective illusion, stop. Fix source asset, measured geometry, material,
+spacing, or typography instead. Preserve the object first.
 
 ## Runtime Facts
 
@@ -38,7 +53,7 @@ editing of the four corners.
 
 ## The core model (locked)
 
-A df2 body = **two authored Morph frames + a derived Secondary/Q law**.
+A df2 body = **four authored poses of one instrument** (Q amendment 2026-07-10).
 
 - A **frame** = six pole+zero lanes (pole Hz/radius, zero Hz/radius, gain). Lane
   *i* of LOW morphs into lane *i* of HIGH — section index is the morph pairing,
@@ -46,21 +61,20 @@ A df2 body = **two authored Morph frames + a derived Secondary/Q law**.
 - **Poles trace to real evidence** — LPC capture, physical models (tube / vowel
   tract / cavity), measured tables, or clean-room P2K grammar. Never invented or
   random.
-- **Secondary/Q is derived, never authored.** It generates the PUSH corners from
-  the frames by pressure only:
-  - MAY change: pole radius, zero radius / notch depth, section gain, canyon depth.
-  - MAY NOT change: pole or zero **center frequency**, lane correspondence, frame
-    anatomy.
-- **Corners:** `C0 = LOW.Q0`, `C1 = HIGH.Q0`, `C2 = LOW.Q100`, `C3 = HIGH.Q100`.
-  Four stored corners; only two authored.
+- **Secondary/Q is authored, never derived** (L25 — supersedes the old
+  derived-pressure invariant, which is REJECTED against ROM ground truth:
+  Q moves centers in every measured reference). Q100 is a second scene of
+  the same instrument; centers MAY move; lane correspondence MAY NOT.
+- **Corners:** `C0 = M0.Q0`, `C1 = M100.Q0`, `C2 = M0.Q100`, `C3 = M100.Q100`.
+  Four stored corners; all four authored.
 
 ### The invariant that proves the model
 
-At each morph endpoint, the Q0 and Q100 corners share **identical pole/zero
-center frequencies**. If Secondary moves a center frequency, the model is broken.
-`forge-gpu-painter`'s `pressurize()` enforces this by construction (it touches
-radius and gain only); `forge-web`'s freehand per-corner edit predates the lock
-and violates it.
+Lane *i* is the same mode in all four poses (correspondence is sacred), and
+the four poses read as ONE instrument — a Q100 that is a different filter
+rather than a second pose of the same one is a kinship failure, not a style.
+`forge-gpu-painter`'s `pressurize()` (radius/gain-only Q) is now a BLOOM-verb
+helper, not the law; `forge-zero` edits all four poses directly.
 
 ### Roles of the machine room (evidence, not the product surface)
 
