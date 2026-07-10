@@ -147,6 +147,57 @@ apart is a chain you can't fix.
 *Forged:* the AGC/slam/saturator decomposition was only possible because the
 knobs were added mid-investigation (2026-07-04).
 
+## V. THE ANATOMY (the P2K constitution — measured 8/8 on true ROM bytes, 2026-07-10)
+
+**L23 — Frame at 1 and 6, talkers at 2–5.**
+Stage 1 is the boundary slot: the top pole (crown) and/or a low/DC zero.
+Stage 6 is the floor and ALWAYS owns the body's only unit-radius zero — the
+hard cliff is a fixture of the format, every preset, every corner. Stages
+2–5 are the talkers: the voice of the preset (formants, swarm, spray,
+ladder, jaw), flat off-resonance, serial. A preset's identity = what its
+four talkers do inside the solved frame.
+*Forged:* decoded hedz, fuzzi, razor, megasweepz, tb, alkaline, angelz,
+lucifers from ref/presets true bytes; invariant held 8/8. Tyson named the
+anatomy ("stages 2–5 are the talkers", "crown is 1 floor is 6").
+
+**L24 — One gain word per corner.**
+All six stages share one gain word per corner (hedz 0.56, razor 0.77→0.30).
+Headroom is a corner-level decision — six shared words ≈ −30 dB distributed
+headroom is what lets crowns spike +30 under Q without clipping. Deliberate
+exceptions are tools, not sprawl: fuzzi's two-tier scream floor (−52 dB),
+lucifers' word RISING past unity with the wheel (level as a morph weapon).
+Our bodies sprawled 15–22 dB across stages; that's a defect to pull in.
+*Forged:* same 8/8 decode; the P12 gate run (2026-07-10).
+
+**L25 — Q is an authored second pose. Never derived, never a sharpener.**
+Every ROM preset treats Q100 as a relocation — a second scene of the same
+instrument. The four measured Q verbs: BLOOM (radii → ~0.999, centers hold —
+hedz/alkaline), SPREAD (the talker cluster fans apart — fuzzi), SCREAM (one
+slot parks low and hot, gain word up — lucifers' +89 dB pose), FLIP (the
+frame changes register — megasweepz). Centers MAY move under Q — the old
+"Secondary must not move centers" invariant is REJECTED by ground truth
+(supersedes CLAUDE.md §6 pre-amendment; see rom-secondary-law measurement).
+Author all four corners; a body whose Q only bumps radii is unfinished.
+*Forged:* Tyson's standing verdict ("Q adds peaks", never derived) + the
+anatomy gate showing the whole roster's Q frozen while 8/8 ROM Qs travel.
+
+**L26 — Provenance before conclusions: the only P2K ground truth is
+`ref/presets/*.bin`.**
+`dev/tmp/factory/P2k_*.body240` are OUR generated bodies wearing ROM names
+(quantized table values, "family: high bank collapse"). Decoding a file
+because its name matches a preset is how a bent ruler gets minted. Verify
+byte provenance (desk/finishing REFs are byte-identical to ref/presets)
+before measuring anything called a reference.
+*Forged:* the first decode of the five named presets ran on the fakes and
+nearly shipped wrong law (2026-07-10, caught same session).
+
+**L27 — The treatment is a move, not a transplant.**
+Giving a body a reference's stage design = re-express the MEASURED LAW
+(freq/radius/gain journeys) through the one-owner compiler onto the body's
+own lanes, then run the copy-risk gate. Packed words are never copied.
+*Forged:* P12 + hedz 1+6 — "It gave it the correct shape", copy-risk 0/28
+flagged (2026-07-10).
+
 ---
 
 ## Open cases (laws waiting to be forged)
