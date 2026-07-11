@@ -158,6 +158,57 @@ def corner_from_spec(spec):
         return build_corner(modal_modes(spec[1], spec[2]))
     raise ValueError(f"unknown corner spec {spec}")
 
+def hedz_frame(secs, high, qhigh):
+    """The measured hedz S1+S6 seesaw (REF_013 decode, commit 4863ea04):
+    S1 crown = ~9 kHz pole over a TRAVELING low zero (347 -> 1711 Hz with the
+    wheel); S6 floor = low pole climbing 199 -> 1789 Hz against the unit
+    cliff zero (L23: stage 6 owns the body's only unit-radius zero); both
+    poles bloom toward r~0.999 under Q (capped by this script's 0.9985
+    stability cap). The material's four strongest modes stay as talkers.
+    Zero radii are COMPOSED, not fitted (L28)."""
+    r = 0.999 if qhigh else 0.985
+    bw = -math.log(r) * SR / math.pi
+    crown = kernel_section(9000.0, bw, 1.0,
+                           zero_f=(1711.0 if high else 347.0), zero_r=0.92)
+    floor_f = 1789.0 if high else 199.0
+    # the unit HIGH-cliff zero (hedz S6 kills the TOP, not the pole's own bin);
+    # 12 kHz placement is composed (L28), above the crown pole
+    floor = kernel_section(floor_f, bw, 1.0, zero_f=12000.0, zero_r=1.0)
+    talkers = [s for s in secs if s != PASS][:4]
+    out = [crown] + talkers
+    while len(out) < NSTAGES - 1:
+        out.append(PASS[:])
+    out.append(floor)
+    return out[:NSTAGES]
+
+
+# L24 gain-word treatments, re-expressed as the MEASURED RATIO on the corner's
+# own normalized lanes (L27: the treatment is a move, not a transplant).
+#   hedz : one constant word (0.56 everywhere) -> ratio 1.0 both ends
+#   razor: the word travels with the wheel 0.77 -> 0.30 -> ratio 1.0 -> 0.39
+FRAME_WORDS = {"hedz": (1.0, 1.0), "razor": (1.0, 0.30 / 0.77)}
+
+
+def apply_frame(corners, frame):
+    """corners = [A(M0Q0), B(M100Q0), C(M0Q100), D(M100Q100)]."""
+    if frame == "none":
+        return corners
+    lo_w, hi_w = FRAME_WORDS[frame]
+    out = []
+    for i, secs in enumerate(corners):
+        high, qhigh = (i in (1, 3)), (i in (2, 3))
+        framed = hedz_frame(secs, high, qhigh)
+        # the word ratio is the corner's TOTAL level travel, distributed across
+        # the active stages (applying it per-stage compounds ^6 = -49 dB, bug)
+        word = hi_w if high else lo_w
+        active = [s for s in framed if s != PASS]
+        per_stage = word ** (1.0 / max(1, len(active)))
+        for s in active:
+            s[4] *= per_stage         # scaling c4 scales b0..b2 together
+        out.append(framed)
+    return out
+
+
 # Curated physical starters = 4 audition corners each (M0_S0 / M1_S0 / M0_S1 /
 # M1_S1). They feed editable Forge lanes; they are not finished bodies.
 PRESETS = {
@@ -210,6 +261,8 @@ def main():
     ap.add_argument("--preset", choices=sorted(PRESETS), default=None,
                     help="curated physical starter — 4 audition corners for Forge editing")
     ap.add_argument("--list-presets", action="store_true")
+    ap.add_argument("--frame", choices=["hedz", "razor", "none"], default="hedz",
+                    help="L23/L24 frame treatment applied to preset corners")
     ap.add_argument("--model", choices=["tract", "tube", "modal"], default="tract")
     ap.add_argument("--vowels", nargs=4, default=["u", "a", "i", "ae"])
     ap.add_argument("--length", type=float, default=17.5, help="tract/tube length cm")
@@ -229,9 +282,10 @@ def main():
     if a.preset:
         names = [s[1] if s[0] == "tract" else f"{s[0]}:{s[1]}" for s in PRESETS[a.preset]]
         corners = [corner_from_spec(s) for s in PRESETS[a.preset]]
+        corners = apply_frame(corners, a.frame)
         report(corners, names)
         slot = write_cartridge(corners, a.name or f"phys_{a.preset}")
-        print(f"\nwrote {a.preset}  ->  {slot}\n(running TRENCH hot-reloads within ~0.5s)")
+        print(f"\nwrote {a.preset} (frame={a.frame})  ->  {slot}\n(running TRENCH hot-reloads within ~0.5s)")
         return
 
     if a.model == "tract":
