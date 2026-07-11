@@ -84,12 +84,16 @@ def finish(y: np.ndarray) -> np.ndarray:
     return y
 
 
-def write_wav(path: str, y: np.ndarray) -> None:
+def write_wav_sr(path: str, y: np.ndarray, sr: int) -> None:
     with wave.open(path, "wb") as w:
         w.setnchannels(1)
         w.setsampwidth(2)
-        w.setframerate(SR)
+        w.setframerate(sr)
         w.writeframes((np.clip(y, -1, 1) * 32767).astype("<i2").tobytes())
+
+
+def write_wav(path: str, y: np.ndarray) -> None:
+    write_wav_sr(path, y, SR)
 
 
 # --- the kit grammar ---------------------------------------------------------
@@ -124,27 +128,48 @@ def make_kit(body: bytes, out_dir: str) -> None:
 
 
 # --- the formant scratch demo -------------------------------------------------
-def make_scratch(out_dir: str) -> None:
-    body = open(VOWEL_BODY, "rb").read()
-    x = saw(110.0, 2.6)
-    nb = (len(x) + BLOCK - 1) // BLOCK
-    tb = (np.arange(nb) * BLOCK + BLOCK / 2) / SR
-    m = np.full(nb, 0.1)
-    # scratch phrase: wub - ya - yaow - wubba-wubba - eh
-    strokes = [(0.10, 0.35, 0.1, 0.9), (0.45, 0.62, 0.9, 0.1),
-               (0.75, 0.95, 0.1, 1.0), (0.95, 1.10, 1.0, 0.3),
-               (1.25, 1.33, 0.3, 0.9), (1.33, 1.41, 0.9, 0.2),
-               (1.41, 1.49, 0.2, 0.9), (1.49, 1.57, 0.9, 0.2),
-               (1.75, 2.10, 0.2, 0.75), (2.20, 2.50, 0.75, 0.45)]
-    for (t0, t1, m0, m1) in strokes:
+def make_scratch(out_dir: str, body_path: str = VOWEL_BODY) -> None:
+    """Syllables, not a drone: each stroke gates the source AND sweeps the
+    formants full-range - that's what makes a filter TALK (v1 was a constant
+    buzz with faint wah; measured centroid barely moved)."""
+    body = open(body_path, "rb").read()
+    total_s = 3.2
+    # The throat model's own glottal pulse (~-12 dB/oct): the real source slope
+    # is what lets F1/F2 dominate like an actual voice - a saw is too bright.
+    from tools.generate_synthetic_throat_captures import glottal_source, SR as GSR
+    x = glottal_source(total_s).astype(np.float32)
+    x = 0.5 * x / (np.max(np.abs(x)) + 1e-12)
+    sr_render = float(GSR)
+    n = len(x)
+    nb = (n + BLOCK - 1) // BLOCK
+    tb = (np.arange(nb) * BLOCK + BLOCK / 2) / sr_render
+    t = np.arange(n) / sr_render
+
+    # syllables: (start, dur, morph_from, morph_to)  - "ya  ow  ya-ow  wub-ba  eee"
+    syllables = [(0.15, 0.28, 0.05, 0.95),
+                 (0.55, 0.28, 0.95, 0.05),
+                 (0.95, 0.16, 0.05, 0.90), (1.11, 0.20, 0.90, 0.15),
+                 (1.55, 0.14, 0.15, 0.80), (1.69, 0.14, 0.80, 0.15),
+                 (1.83, 0.14, 0.15, 0.80), (1.97, 0.18, 0.80, 0.10),
+                 (2.40, 0.55, 0.10, 1.00)]
+    amp = np.zeros(n, np.float32)
+    m = np.full(nb, syllables[0][2])
+    for (t0, dur, m0, m1) in syllables:
+        t1 = t0 + dur
+        seg = (t >= t0) & (t < t1 + 0.06)
+        env = np.clip((t[seg] - t0) / 0.012, 0, 1) * np.clip((t1 + 0.06 - t[seg]) / 0.06, 0, 1)
+        amp[seg] = np.maximum(amp[seg], env.astype(np.float32))
         sel = (tb >= t0) & (tb < t1)
-        u = np.clip((tb[sel] - t0) / (t1 - t0), 0, 1)
+        u = np.clip((tb[sel] - t0) / dur, 0, 1)
         m[sel] = m0 + (m1 - m0) * u
         m[tb >= t1] = m1
-    y = finish(render(body, x, m, 0.55))
+    out = trench_ffi.engine_render_automated(
+        body, list(m), [0.80] * nb, (x * amp).astype(np.float32).tobytes(),
+        sr=sr_render, block=BLOCK)
+    y = finish(np.frombuffer(out, np.float32).copy())
     os.makedirs(out_dir, exist_ok=True)
-    write_wav(os.path.join(out_dir, "vowel_scratch.wav"), y)
-    print(f"vowel_scratch.wav written ({len(y)/SR:.2f}s)")
+    write_wav_sr(os.path.join(out_dir, "vowel_scratch.wav"), y, int(sr_render))
+    print(f"vowel_scratch.wav written ({len(y)/sr_render:.2f}s)")
 
 
 def main() -> None:
@@ -154,8 +179,8 @@ def main() -> None:
     ap.add_argument("--scratch", action="store_true", help="render the vowel formant-scratch demo")
     a = ap.parse_args()
     if a.scratch:
-        make_scratch(a.out)
-    if a.body:
+        make_scratch(a.out, a.body if a.body else VOWEL_BODY)
+    elif a.body:
         body = decode_clip(a.body) if a.body.startswith("TRENCH1") \
             else open(a.body, "rb").read()
         make_kit(body, a.out)
