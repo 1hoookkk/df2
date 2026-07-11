@@ -230,14 +230,15 @@ inline void drawIvoryWell (juce::Graphics& g, juce::Rectangle<float> r, float ra
     // shell's own dimensionality. Corner radius is the CALLER's: it must match
     // the art's opening curve (capping at 3px left ivory corners poking into
     // the plate's rounded recesses).
-    g.setColour (juce::Colours::black.withAlpha (0.22f));
-    g.fillRoundedRectangle (r.translated (0.8f, 1.4f), radius);
+    g.setColour (juce::Colours::black.withAlpha (0.30f));
+    g.fillRoundedRectangle (r.translated (0.5f, 1.0f), radius);
 
-    // Smoked warm bone (#E2DBC5 family): clearly lighter than the shell,
-    // aged and physical, never pure white.
-    juce::ColourGradient face (juce::Colour (0xffece5d0), 0.0f, r.getY(),
-                               juce::Colour (0xffd4ccb2), 0.0f, r.getBottom(), false);
-    face.addColour (0.55, juce::Colour (0xffe2dbc5));
+    // Smoked warm bone (#E2DBC5 family): clearly lighter than the shell, aged
+    // and physical, never pure white. HARD material read ("too soft", Tyson
+    // 2026-07-11): a nearly flat face — the hardness comes from crisp 1px
+    // edges, not gradient falloff.
+    juce::ColourGradient face (juce::Colour (0xffe8e1cc), 0.0f, r.getY(),
+                               juce::Colour (0xffdcd4ba), 0.0f, r.getBottom(), false);
     g.setGradientFill (face);
     g.fillRoundedRectangle (r, radius);
 
@@ -247,20 +248,17 @@ inline void drawIvoryWell (juce::Graphics& g, juce::Rectangle<float> r, float ra
         clip.addRoundedRectangle (r, radius);
         g.reduceClipRegion (clip);
 
-        // Soft inset shadow at the top only — the pill face stays bright.
-        juce::ColourGradient top (juce::Colour (0xff3a3226).withAlpha (isActive ? 0.15f : 0.10f), 0.0f, r.getY(),
-                                  juce::Colours::transparentBlack, 0.0f, r.getY() + 3.5f, false);
-        g.setGradientFill (top);
-        g.fillRect (r.getX(), r.getY(), r.getWidth(), 4.5f);
-
-        // ...and a worn bevel light along the lower edge, faint (less glow).
-        g.setColour (juce::Colours::white.withAlpha (0.16f));
-        g.fillRect (r.getX() + 2.0f, r.getBottom() - 1.0f, r.getWidth() - 4.0f, 1.0f);
+        // Crisp machined edges: a single hard shadow line under the top lip,
+        // a single hard catch-light along the bottom. No gradient mush.
+        g.setColour (juce::Colour (0xff3a3226).withAlpha (isActive ? 0.40f : 0.32f));
+        g.fillRect (r.getX() + 1.0f, r.getY() + 1.0f, r.getWidth() - 2.0f, 1.2f);
+        g.setColour (juce::Colours::white.withAlpha (0.30f));
+        g.fillRect (r.getX() + 2.0f, r.getBottom() - 1.6f, r.getWidth() - 4.0f, 1.0f);
     }
 
-    // Thin warm near-black charcoal surround (#29251F) — framed, not heavy.
-    g.setColour (juce::Colour (0xff29251f).withAlpha (isActive ? 0.98f : 0.92f));
-    g.drawRoundedRectangle (r, radius, isActive ? 1.3f : 1.1f);
+    // Thin warm near-black charcoal surround (#29251F) — crisp, definite.
+    g.setColour (juce::Colour (0xff29251f).withAlpha (isActive ? 1.0f : 0.96f));
+    g.drawRoundedRectangle (r, radius, 1.4f);
 }
 
 // The dark screen glass (t.phosphor() = the iron glass base) — the SAME base treatment the hero GraphDisplay
