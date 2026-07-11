@@ -22,8 +22,8 @@ namespace trench::ui
 class MoveView : public juce::Component
 {
 public:
-    MoveView (PluginProcessor& proc, const Theme& theme, juce::Image grid)
-        : processor (proc), apvts (proc.apvts), t (theme), gridImage (std::move (grid))
+    MoveView (PluginProcessor& proc, const Theme& theme)
+        : processor (proc), apvts (proc.apvts), t (theme)
     {
         setInterceptsMouseClicks (true, false);
     }
@@ -372,7 +372,6 @@ private:
     PluginProcessor& processor;
     juce::AudioProcessorValueTreeState& apvts;
     Theme t;
-    juce::Image gridImage;
 
     juce::Path currentResponsePath;
     std::vector<Ghost> ghostResponses;

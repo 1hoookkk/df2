@@ -32,16 +32,13 @@ PluginEditor::PluginEditor (PluginProcessor& p)
     // derives from strip width; travel = 10 fin pitches, no wrap.
     auto strip = juce::ImageCache::getFromMemory (BinaryData::trench_roller_strip_png,
                                                   BinaryData::trench_roller_strip_pngSize);
-    auto grid  = juce::ImageCache::getFromMemory (BinaryData::display_log_grid_png,
-                                                  BinaryData::display_log_grid_pngSize);
-
     faceplate    = std::make_unique<FaceplateView> (panel, theme);
     faceplate->setBufferedToImage (true);   // the static plate is cached, not re-rasterized per frame
-    graph        = std::make_unique<GraphDisplay> (grid, theme, processor.apvts, ParamID::slamDrive);
+    graph        = std::make_unique<GraphDisplay> (theme, processor.apvts, ParamID::slamDrive);
     slotPad      = std::make_unique<SlotPad> (theme);
     moveChip = std::make_unique<MoveChip> (processor.apvts, theme);
     takeView     = std::make_unique<TakeView> (theme);
-    moveView     = std::make_unique<MoveView> (processor, theme, grid);
+    moveView     = std::make_unique<MoveView> (processor, theme);
     // ROUTE matrix editor is shelved for V1 (RouteView.h kept on disk) — PLAY only until
     // the default gestures sound good. The 4x4 matrix uses factory defaults in state.
 

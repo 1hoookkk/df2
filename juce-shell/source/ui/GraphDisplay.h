@@ -46,9 +46,9 @@ public:
     }
 
 
-    GraphDisplay (juce::Image grid, const Theme& theme,
+    GraphDisplay (const Theme& theme,
                   juce::AudioProcessorValueTreeState& apvts, const juce::String& canvasParamId)
-        : gridImage (std::move (grid)), t (theme)
+        : t (theme)
     {
         canvasParam = apvts.getParameter (canvasParamId);
         if (canvasParam != nullptr)
@@ -524,7 +524,6 @@ private:
         g.drawText (line2, r.reduced (6.0f, 0.0f), juce::Justification::centredLeft, false);
     }
 
-    juce::Image gridImage;
     Theme t;
     juce::Path responsePath;
     std::vector<float> traceXs;
