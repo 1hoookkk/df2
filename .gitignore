@@ -15,7 +15,6 @@ target_vst_static/
 # stray Cargo target variants (e.g. target_alt_*) — build output, never commit
 target_alt*/
 juce-shell/JUCE/
-juce-shell/modules/
 .playwright-mcp/
 *.7z
 *.zip
@@ -32,3 +31,6 @@ bodies/generated/
 /*.mp4
 # desk judgment sheets: regenerable bulk (plots/wavs); the bank + ledgers ARE tracked
 desk/sheets/
+
+# Trace generated map
+.trace/
