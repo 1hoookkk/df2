@@ -395,24 +395,33 @@ PluginProcessor::ModulatedControls PluginProcessor::applyMotion (float morph, fl
     // Read host tempo + transport state once per block.
     double bpm = 0.0;
     bool transportPlaying = false;
+    bool hasTransport = false;                       // does a host transport exist at all?
     if (auto* ph = getPlayHead())
     {
         if (auto pos = ph->getPosition())
         {
+            hasTransport = true;
             if (auto b = pos->getBpm()) bpm = *b;
             transportPlaying = pos->getIsPlaying();
         }
     }
+    if (bpm <= 0.0)
+        bpm = 120.0;                                 // standalone / tempo-less host fallback
 
+    // Time-based motion obeys a STOPPED transport only where a transport
+    // exists. Standalone has none — motion free-runs there (armed = moving;
+    // the wheels dance on their own, Tyson 2026-07-12).
     if ((typeBehavior == trench::TypeBehavior::AutoQuarter
          || typeBehavior == trench::TypeBehavior::AutoHalf
          || typeBehavior == trench::TypeBehavior::Wobble
          || typeBehavior == trench::TypeBehavior::User)
-        && ! transportPlaying)
+        && hasTransport && ! transportPlaying)
     {
         motionStepForUi.store (0, std::memory_order_relaxed);
         return { morph, q, drive };
     }
+    if (! hasTransport)
+        transportPlaying = true;                     // free-run for the engine's own gates
 
     const auto r = motionEngine.apply (on, bpmSync, rateHz, divIdx, sync, smooth,
                                        direction, length, mDepth, qDepth,
