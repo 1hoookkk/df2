@@ -76,7 +76,7 @@ public:
         const bool hot = isMouseOverOrDragging (true) || selector.isPopupActive();
 
         // Smoked bone selector bar painted into the machined plate's slot.
-        drawIvoryWell (g, bar, 3.0f, hot, t);
+        drawIvoryWell (g, bar, bar.getHeight() * 0.22f, hot, t);
         auto inner = bar.reduced (13.0f, 2.0f);
 
         // The dropdown arrow box is its OWN layout rect, converted to this

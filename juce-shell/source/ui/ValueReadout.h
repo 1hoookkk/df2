@@ -109,7 +109,7 @@ public:
         // Edge-to-edge: the component rect IS the black opening; any inset here
         // shows as a dark ring around the face ("you see too much of the inner
         // well", Tyson 2026-07-11).
-        drawIvoryWell (g, b, 3.0f, isActive, t);
+        drawIvoryWell (g, b, b.getHeight() * 0.22f, isActive, t);
         const auto pct = juce::jlimit (0.0f, 1.0f, value) * 100.0f;
         const auto numeric = textOverride.isNotEmpty() ? textOverride : juce::String (pct, 1);
 

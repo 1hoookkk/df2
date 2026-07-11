@@ -163,25 +163,6 @@ public:
         }
 
         responsePath = std::move (path);
-
-        // Phosphor persistence: a MOVING curve leaves a brief decaying wake
-        // (real scope phosphor, gone in ~200 ms) — motion becomes visible as a
-        // comet tail, a parked curve leaves nothing. Snapshot only on real
-        // movement so idle redraws don't smear.
-        if (! traceDbs.empty())
-        {
-            float delta = 0.0f;
-            if (! wakes.empty() && wakes.back().dbs.size() == traceDbs.size())
-                for (size_t i = 0; i < traceDbs.size(); ++i)
-                    delta = juce::jmax (delta, std::abs (traceDbs[i] - wakes.back().dbs[i]));
-            if (wakes.empty() || delta > 0.4f)
-            {
-                wakes.push_back ({ traceDbs, 1.0f });
-                if (wakes.size() > 4) wakes.erase (wakes.begin());
-                startTimer (30);
-            }
-        }
-
         repaint();
     }
 
@@ -354,87 +335,41 @@ private:
             return q * std::round (y / q);                 // snap to the crunch grid
         };
 
-        juce::Path stair, fill;
+        juce::Path stair;
         float py = yOf (0);
         stair.startNewSubPath (traceXs[0], py);
-        fill.startNewSubPath (traceXs[0], plot.getBottom());
-        fill.lineTo (traceXs[0], py);
         for (size_t i = 1; i < N; ++i)
         {
             const float y = yOf (i);
             if (! juce::approximatelyEqual (y, py))
                 stair.lineTo (traceXs[i], py);             // run, then rise: the staircase
             stair.lineTo (traceXs[i], y);
-            fill.lineTo (traceXs[i], y);
             py = y;
         }
-        fill.lineTo (traceXs[N - 1], plot.getBottom());
-        fill.closeSubPath();
 
-        // Phosphor persistence wake: brief decaying echoes of where the curve
-        // just WAS — a cold comet tail under motion, nothing when parked.
-        for (const auto& w : wakes)
-        {
-            if (w.dbs.size() != N || w.life >= 0.999f)
-                continue;                                  // newest == live curve; skip
-            juce::Path echo;
-            bool first = true;
-            float ey = 0.0f;
-            for (size_t i = 0; i < N; ++i)
-            {
-                const double yt = juce::jlimit (-0.06, 1.06, (dbTop - w.dbs[i]) / (dbTop - dbBot));
-                const float y = q * std::round ((plot.getY() + (float) yt * plot.getHeight()) / q);
-                if (first) { echo.startNewSubPath (traceXs[i], y); first = false; }
-                else
-                {
-                    if (! juce::approximatelyEqual (y, ey)) echo.lineTo (traceXs[i], ey);
-                    echo.lineTo (traceXs[i], y);
-                }
-                ey = y;
-            }
-            g.setColour (juce::Colour (0xffbfc7cc).withAlpha (0.16f * w.life));  // cold echo
-            g.strokePath (echo, { 1.6f, juce::PathStrokeType::mitered,
-                                  juce::PathStrokeType::butt });
-        }
-
-        // Cold plasma flicker: the slam glow carries a whisper of electrical
-        // instability — never a static lamp. Subtle by law (±8%).
-        const float flick = 0.92f + 0.08f * (0.6f * (float) std::sin (flickerPhase)
-                                           + 0.4f * (float) std::sin (flickerPhase * 0.37 + 1.7));
-
-        // SLAM lives UNDER the curve: the trench floods as the drive rises —
-        // near-dark at rest, blazing at full slam. No meters, no bars; the
-        // energy is in the response itself. (Tyson: "much more visually
-        // impactful".)
-        {
-            const float heatA = juce::jmin (1.0f, (0.06f + 0.85f * s + 0.20f * limit) * flick);
-            juce::ColourGradient heat (t.amber().withAlpha (heatA), 0.0f, plot.getY(),
-                                       t.amber().withAlpha (0.04f * s), 0.0f, plot.getBottom(), false);
-            heat.addColour (0.50, t.amber().withAlpha (heatA * 0.45f));
-            g.setGradientFill (heat);
-            g.fillPath (fill);
-        }
-        // ...and the heat radiates FROM the trace: a wide hot halo hugging the
-        // line, swelling with drive — the curve itself is the filament.
+        // SLAM lives ON the trace: no fill, no bars — the line itself heats,
+        // thickens, and carries a glow halo that swells with drive.
         if (s > 0.01f)
         {
-            g.setColour (t.amber().withAlpha ((0.18f + 0.42f * s) * flick));
-            g.strokePath (stair, { 5.0f + 9.0f * s, juce::PathStrokeType::mitered,
+            g.setColour (t.amber().withAlpha (0.12f + 0.30f * s));
+            g.strokePath (stair, { 4.0f + 6.0f * s, juce::PathStrokeType::mitered,
                                    juce::PathStrokeType::butt });
         }
 
+        // LOW SIGNAL by design: a slightly starved beam — dimmer, thinner,
+        // the analog read of a weak trace on old glass.
         constexpr auto joint = juce::PathStrokeType::mitered;
         constexpr auto cap   = juce::PathStrokeType::butt;
-        const float lw = 2.4f + 1.0f * s;
-        g.setColour (juce::Colour (0xff1c1712).withAlpha (0.75f));      // the hard offset bed (dark glass)
+        const float lw = 2.0f + 0.7f * s;
+        g.setColour (juce::Colour (0xff15151a).withAlpha (0.55f));      // soft offset bed (dark glass)
         g.strokePath (stair, { lw + 0.7f, joint, cap },
-                      juce::AffineTransform::translation (1.6f, 2.4f));
-        g.setColour (phos.withAlpha (0.98f));                           // the ember signal
+                      juce::AffineTransform::translation (1.2f, 1.8f));
+        g.setColour (phos.withAlpha (0.78f));                           // the starved signal
         g.strokePath (stair, { lw, joint, cap });
         if (limit > 0.001f)
         {
-            g.setColour (juce::Colour (0xfffff0e8).withAlpha (0.16f + 0.34f * limit));
-            g.strokePath (stair, { 0.9f + 1.2f * limit, joint, cap });
+            g.setColour (juce::Colour (0xffeef2ff).withAlpha (0.12f + 0.28f * limit));
+            g.strokePath (stair, { 0.8f + 1.0f * limit, joint, cap });
         }
 
         // Peak crosses (the reference's + ticks): small markers on the mode
@@ -599,14 +534,6 @@ private:
     {
         meterAlpha = juce::jmax (0.0f, meterAlpha - 0.05f);
 
-        // Cold plasma flicker phase (subtle instability on the slam glow) and
-        // the phosphor wake decay (each snapshot fades out in ~200 ms).
-        flickerPhase += 0.085;
-        for (auto& w : wakes)
-            w.life -= 0.16f;
-        wakes.erase (std::remove_if (wakes.begin(), wakes.end(),
-                                     [] (const WakeSnap& w) { return w.life <= 0.0f; }),
-                     wakes.end());
 
         if (pulsePhase != PulseIdle)
         {
@@ -628,9 +555,8 @@ private:
             }
         }
 
-        if (meterAlpha <= 0.01f && pulsePhase == PulseIdle && wakes.empty()
-            && slamNorm() <= 0.02f)
-            stopTimer();                      // flicker/wake only live while something moves
+        if (meterAlpha <= 0.01f && pulsePhase == PulseIdle)
+            stopTimer();
         repaint();
     }
 
@@ -641,9 +567,6 @@ private:
     float slamOutClip = 0.0f;
     juce::Point<float> dragPos;
     float canvasAtStart = 0.0f;
-    struct WakeSnap { std::vector<float> dbs; float life; };
-    std::vector<WakeSnap> wakes;   // phosphor persistence — brief echoes of the moving curve
-    double flickerPhase = 0.0;     // cold plasma instability on the slam glow
 };
 
 } // namespace trench::ui

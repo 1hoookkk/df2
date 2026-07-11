@@ -226,9 +226,10 @@ inline void drawIvoryWell (juce::Graphics& g, juce::Rectangle<float> r, float ra
     juce::ignoreUnused (t);
 
     // Hardware display window, cast-metal era: smoked warm ivory (darker than
-    // digital white), tight machined corners, a thin dark surround — an
-    // instrument window with the shell's own dimensionality.
-    radius = juce::jmin (radius, 3.0f);
+    // digital white), a thin dark surround — an instrument window with the
+    // shell's own dimensionality. Corner radius is the CALLER's: it must match
+    // the art's opening curve (capping at 3px left ivory corners poking into
+    // the plate's rounded recesses).
     g.setColour (juce::Colours::black.withAlpha (0.22f));
     g.fillRoundedRectangle (r.translated (0.8f, 1.4f), radius);
 

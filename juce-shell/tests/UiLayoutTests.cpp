@@ -13,12 +13,11 @@ using trench::UiLayout;
 TEST_CASE ("Default layout exposes the shipped element rects")
 {
     const auto d = UiLayout::defaults();
-    // Wells re-measured 2026-07-11 to the recut beige plate (1010x1557).
-    // Wheels pin the lip rect (the 1:1 frame overhangs the black opening);
-    // windows pin the midway seat between opening and lip.
-    REQUIRE (d.sourceRectFor ("morphWheel")   == juce::Rectangle<float> (114, 684, 434, 98));
-    REQUIRE (d.sourceRectFor ("qWheel")       == juce::Rectangle<float> (114, 866, 434, 98));
-    REQUIRE (d.sourceRectFor ("typeSelector") == juce::Rectangle<float> (222, 133, 671, 74));
+    // Wells = recess MOUTHS of the recut beige plate (1010x1557), measured as
+    // contiguous lum<90 runs through each well's centre (2026-07-11).
+    REQUIRE (d.sourceRectFor ("morphWheel")   == juce::Rectangle<float> (115, 688, 428, 92));
+    REQUIRE (d.sourceRectFor ("qWheel")       == juce::Rectangle<float> (114, 869, 429, 93));
+    REQUIRE (d.sourceRectFor ("typeSelector") == juce::Rectangle<float> (218, 129, 672, 77));
     REQUIRE (d.sourceRectFor ("spectrumGrid") == juce::Rectangle<float> (110, 233, 795, 383));
     // An unknown id returns the (empty) fallback, not a garbage rect.
     REQUIRE (d.sourceRectFor ("nope")         == juce::Rectangle<float>());

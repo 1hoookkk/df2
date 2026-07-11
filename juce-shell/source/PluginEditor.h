@@ -39,6 +39,7 @@ public:
     ~PluginEditor() override;
 
     void resized() override;
+    void paintOverChildren (juce::Graphics&) override;   // the one pane of glass
 
 private:
     void timerCallback() override;     // poll ui_layout.json for hand-edits

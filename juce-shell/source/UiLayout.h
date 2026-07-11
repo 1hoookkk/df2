@@ -44,25 +44,18 @@ public:
     static UiLayout defaults()
     {
         UiLayout layout;
-        // Wells measured from the recut BEIGE plate (df2_panel_beige.png,
-        // 1010x1557 — connected-component bounds at lum<90, measured
-        // 2026-07-11). GROUND TRUTH — each control fills its dark opening; the
-        // art's bevel just outside stays as the edge. Do not hand-nudge;
-        // re-measure if the art changes. Roller wells are TIGHT (X3 sit): the
-        // wheel frame draws 1:1 and overhangs the black opening inside this rect.
-        // Wheels: lum<90 rect (opening + lip) — the 1:1 frame overhangs the black
-        // opening inside it. Window components (TYPE, readouts): the PURE-BLACK
-        // opening (lum<12) — their faces fill the hole and the art's bevel frames
-        // them; giving them the lip rect makes them paint OVER the bevel and float.
-        layout.elements["morphWheel"]   = { { 114.0f, 684.0f, 434.0f, 98.0f }, {}, {} };
-        layout.elements["qWheel"]       = { { 114.0f, 866.0f, 434.0f, 98.0f }, {}, {} };
-        // Windows pin the PURE-BLACK openings exactly, and the views draw their
-        // faces edge-to-edge (no internal insets) — the face IS the opening,
-        // the art's bevel is the frame. (Third fit iteration: adjusting rects
-        // around baked insets was the wrong method.)
-        layout.elements["typeSelector"] = { { 226.0f, 139.0f, 663.0f, 66.0f },  {}, {} };
-        layout.elements["morphReadout"] = { { 595.0f, 709.0f, 165.0f, 67.0f },  14.5f, juce::Colours::black };
-        layout.elements["qReadout"]     = { { 593.0f, 891.0f, 166.0f, 64.0f },  14.5f, juce::Colours::black };
+        // ONE well law (2026-07-11, measured — the earlier floor/lip debates are
+        // dead): every rect below is the recess MOUTH of the recut beige plate
+        // (1010x1557), read as the contiguous lum<90 run through each well's
+        // centre row/column. The art bakes floor + walls + bevel; components
+        // mount their face AT the mouth (edge-to-edge, proportional corner
+        // radius), wheels draw their 1:1 frame centred in it. Re-measure with
+        // the same probe if the art ever changes; never hand-nudge.
+        layout.elements["morphWheel"]   = { { 115.0f, 688.0f, 428.0f, 92.0f }, {}, {} };
+        layout.elements["qWheel"]       = { { 114.0f, 869.0f, 429.0f, 93.0f }, {}, {} };
+        layout.elements["typeSelector"] = { { 218.0f, 129.0f, 672.0f, 77.0f },  {}, {} };
+        layout.elements["morphReadout"] = { { 591.0f, 703.0f, 169.0f, 74.0f },  14.5f, juce::Colours::black };
+        layout.elements["qReadout"]     = { { 590.0f, 885.0f, 171.0f, 71.0f },  14.5f, juce::Colours::black };
         layout.elements["spectrumGrid"] = { { 110.0f, 233.0f, 795.0f, 383.0f }, {}, {} }; // the screen opening
         layout.elements["slotPad"]      = { { 699.0f, 240.0f, 112.0f, 26.0f }, {}, {} }; // retired pager (hidden)
         layout.elements["modulateTag"]  = { { 149.0f, 456.0f, 430.0f, 56.0f }, {}, {} }; // clickable word on the glass
