@@ -1,8 +1,84 @@
 # df2 — PRESET LOOP HANDOFF
 
-Paste this whole file as the opening message of a new Claude session. It is
-self-contained. Read the repo `CLAUDE.md` and `AGENTS.md` first; they govern. This
-handoff is the live state and the plan as of 2026-06-10.
+## UPDATE: SESSION LOG (2026-07-12, the roller/cobalt/bodies marathon)
+
+### PRODUCT LAW — corrected twice this session, get it right:
+ALL filter design tooling is INTERNAL dev only. No 4-corner editing, no
+pole/zero GUI, no fitter in the plugin face — ever. The Forge is strictly
+ours. What users get: **custom sounds on demand** — finished bodies delivered
+to them (TRENCH1 clip strings are the transport, 337 chars, `tools/body240_clip.py`).
+The plugin face stays the opinionated player (V1 verbs lock stands).
+Delivery mechanism for on-demand sounds = an open design question for next chat.
+
+### Where everything stands (all committed on fable/night-run-2026-07-10 unless noted):
+- **UI**: cobalt face DONE (his words: "done forever") — recut beige plate,
+  X3-law roller filmstrip (257f, actual size, baked cobalt glow), staircase
+  trace + peak crosses, slam = heat in the curve, glass on display only,
+  TRENCH badge top-left. **He has since hand-tuned typography/ink in the
+  working tree (Arial, #0b0b0b ink, bigger sizes, readout styling) —
+  UNCOMMITTED. Commit or lose.**
+- **Fresh checkout builds green**: clone → cmake (cargo runs inside configure,
+  cargo must be on PATH) → ninja. Four repo mines were dug out to get there.
+- **Motion in standalone**: fixed (transport gate only applies when a
+  transport exists). Wheels follow processor divergence flags.
+- **Hot-reload of authoring_slot.json requires the `@audition` body selected
+  in TYPE** — by design, it can't hijack other bodies. Diagnostics=ON in build-ninja.
+- **Bodies** (dev/tmp/zapkit/): ZAP (hedz frame, 12-TET, ear-approved, kit
+  rendered), VOICE (PB tables, audits green 9 cents; scratch phrase NOT yet
+  vocal — next move per L28: COMPOSE zeros to shade the F4/F5 crown so F1/F2
+  own the mix), MATERIALS (physical_corners --preset materials; unframed =
+  good plot, currently in the slot; hedz/razor frame treatments exist behind
+  --frame but need desk calibration — see gain law below).
+- **Tools**: drumkit_maker.py (any body/clip → kit via swipe gestures; noise
+  bursts not clicks — dirac rings 46 dB quieter), make_zap_body.py,
+  make_voice_body.py, body240_clip.py.
+- **Laws**: L28 minted (extract positive / compose negative / optimise last —
+  with the live counterexample: independent ARMA corner fits go Schur-unstable,
+  rho 1.0087). Gain mechanics: the shared word compounds ^6 through the
+  cascade (hedz 0.56^6 = the −30 dB headroom in L24); razor = seesaw (word
+  floor drops, radii hold peaks up) — level and resonance are separate levers.
+  Roles: poles extracted (agent), zeros composed + gain words chosen (Tyson,
+  with plots per candidate).
+
+### Gotchas that cost time tonight:
+- Build: minimal PATH + VsDevCmd or "input line too long"; target TRENCH_All;
+  ninja -j3 while anything heavy runs (MSVC heap died at full parallel);
+  TRENCH.exe locks trench_core.dll AND its own exe — Stop-Process first.
+- GLB imports arrive rotation_mode=QUATERNION — rotation_euler is silently
+  ignored. Blender batch renders: save_as copy=True + headless CLI, never
+  block his live session; verify motion mid-flight (phase-track FFT, not
+  pairwise correlation — irregular patterns lie).
+- tests/MotionTests.cpp carries a self-skipping DO-NOT-COMMIT guard that got
+  committed in the tracking sweep — harmless, clean up someday.
+- Tyson judges by PLOT — never send bare WAVs.
+
+### Open fronts (his stated priorities):
+1. Custom-sounds-on-demand product design (the delivery loop).
+2. SEED and TAKE.
+3. VOICE crown zeros (L28 applied); frame-word desk calibration with plots
+   per constant; the internal joint fitter (geometry first, then optimise).
+
+## UPDATE: SESSION LOG (2026-06-17)
+
+### 1. UI typography and glow strip modifications reverted
+* **Attempt**: Tried to adjust the faceplate typography (moving TYPE label left, expanding the selector well, adding MORPH and Q labels) and adjust the cyan glow strip pixel distribution to match the Emu X3 reference.
+* **Result**: The aesthetic execution of the UI changes was very poor ("janitor" quality, standard unpolished juce fonts) and ruined the 3D look of the faceplate. The simulated glow distribution also failed to meet the user's standards.
+* **Action**: Completely reverted `PluginEditor.cpp`, `df2_panel_shadow.png`, and `thumbwheel_runtime_strip_129_149x40.png` using `git restore`. The application is back to its pristine, working state prior to these changes (the 2026-06-13 terrazzo render + relative drag state). Do not attempt to style the UI or touch the glow strip without highly specific, pixel-perfect intent.
+
+## UPDATE: SESSION LOG (2026-06-13)
+
+### 1. Resumed and Completed 3D Thumbwheel Render
+* **Issue**: The Blender background render process was killed at frame 188 of 257 when the environment compacted. The plugin fell back to using the old, dark oxblood bakelite frames, resulting in a dark wheel with broken peak-glow detection in the plugin.
+* **Fix**: Modified `render_spin_257_final.py` to check for already-rendered frames, making it fully resumable. Restarted and successfully finished rendering all 257 frames of the terrazzo/polygood textured wheel.
+
+### 2. Custom Glow Application & Assembly
+* **Stitching**: Stitched the 257-frame strip with the custom-shaped cyan glow logic (exponential trailing glow, thick hot center bead, and subtle vertical halo extending halfway up the teeth).
+* **Compilation**: Recompiled the JUCE Standalone (`TRENCH.exe`) to bake in the new terrazzo asset strip (`thumbwheel_runtime_strip_257_149x40.png`).
+
+### 3. Thumbwheel "Stiffness" & Jumpiness Fix
+* **Issue**: Dragging the thumbwheels in the UI felt extremely stiff/unresponsive and caused parameter values to jump instantly to the mouse cursor position. The code mapped absolute horizontal mouse movements (`position.x`) on a very narrow 149-pixel target, ignoring vertical drags completely.
+* **Fix**: Modified [PluginEditor.cpp](file:///c:/Users/hooki/df2/juce-shell/source/PluginEditor.cpp#L367-L394) to implement **relative vertical dragging** (standard for audio plugin wheels). On mouse-down, we store the current value of the parameter. During dragging, vertical mouse delta ($Y$ axis) smoothly increases (dragging up) or decreases (dragging down) the parameter value, with a sensitivity range of 150 pixels for a full 0–100% sweep.
+* **Launch Helper**: Created a Windows Scheduled Task workaround (`schtasks`) to launch the updated Standalone interactively in Session 1, ensuring the GUI opens correctly on your primary monitor.
 
 ---
 
