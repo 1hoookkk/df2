@@ -1,30 +1,29 @@
 pub const SUPPORTED_MODEL: &str = "desk_slam_v1";
-const TWENTY_BIT_SIGNED_SCALE: f32 = 524_287.0;
 
-/// Pre-cascade authored drive.
+const MACKITY_ULTRASONIC_HZ: f64 = 19_160.0;
+const MACKITY_BIQUAD_A_Q: f64 = 0.431_684_981_684_982;
+const MACKITY_BIQUAD_B_Q: f64 = 1.158_229_8;
+const MACKITY_IIR_A: f64 = 0.001_860_867;
+const MACKITY_IIR_B: f64 = 0.000_287_496;
+const MACKITY_CURVE: f64 = 0.1768;
+const SLAM_TO_INPUT_GAIN: f64 = 99.0;
+
+/// Pre-cascade Mackie 1202-style input abuse.
 ///
-/// Mackie-ish desk input damage for hostile gain staging, emitted on a
-/// signed 20-bit grid before the packed cascade and AGC.
+/// This follows the Airwindows Mackity input-stage topology: one-knob input
+/// gain into subsonic cleanup, two ultrasonic lowpass biquads, and fifth-power
+/// desk saturation. It intentionally does not quantize or resample; converter
+/// grit is a separate sound from analog Mackie slam.
 #[derive(Debug, Clone)]
 pub struct DeskDrive {
     enabled: bool,
-    sample_rate: f32,
-    pregain: f32,
-    output_trim: f32,
-    headroom_knee: f32,
-    headroom_ratio: f32,
-    positive_knee: f32,
-    negative_knee: f32,
-    positive_rail: f32,
-    negative_rail: f32,
-    hp_alpha: f32,
-    hp_x1: f32,
-    hp_y1: f32,
-    edge_mix: f32,
-    slew_limit: f32,
-    slew_state: f32,
-    lp_alpha: f32,
-    lp_state: f32,
+    sample_rate: f64,
+    iir_amount_a: f64,
+    iir_amount_b: f64,
+    iir_sample_a: f64,
+    iir_sample_b: f64,
+    biquad_a: Biquad,
+    biquad_b: Biquad,
 }
 
 impl Default for DeskDrive {
@@ -32,22 +31,12 @@ impl Default for DeskDrive {
         Self {
             enabled: false,
             sample_rate: 44_100.0,
-            pregain: 1.0,
-            output_trim: 1.0,
-            headroom_knee: 0.42,
-            headroom_ratio: 0.35,
-            positive_knee: 0.78,
-            negative_knee: 0.72,
-            positive_rail: 0.91,
-            negative_rail: 0.87,
-            hp_alpha: 0.0,
-            hp_x1: 0.0,
-            hp_y1: 0.0,
-            edge_mix: 0.18,
-            slew_limit: 0.08,
-            slew_state: 0.0,
-            lp_alpha: 1.0,
-            lp_state: 0.0,
+            iir_amount_a: MACKITY_IIR_A,
+            iir_amount_b: MACKITY_IIR_B,
+            iir_sample_a: 0.0,
+            iir_sample_b: 0.0,
+            biquad_a: Biquad::default(),
+            biquad_b: Biquad::default(),
         }
     }
 }
@@ -60,37 +49,23 @@ impl DeskDrive {
     }
 
     pub fn prepare(&mut self, sample_rate: f32) {
-        self.sample_rate = sample_rate.max(8_000.0);
-
-        // Mild transient emphasis before slew limiting. This is not a literal
-        // op-amp model; it is a cheap edge detector that makes the rate stage
-        // flatten hits instead of sounding rounded.
-        let hp_fc = 1_200.0;
-        let hp_rc = 1.0 / (2.0 * std::f32::consts::PI * hp_fc);
-        let hp_dt = 1.0 / self.sample_rate;
-        self.hp_alpha = hp_rc / (hp_rc + hp_dt);
-
-        // Simple post-damage analog rolloff.
-        let lp_fc = 20_000.0_f32.min(self.sample_rate * 0.45);
-        self.lp_alpha = one_pole_alpha(lp_fc, self.sample_rate);
-
-        // Normalized edge rate. The nominal 5 V/us desk claim is far above
-        // audio-band deltas in this unit domain, so keep a fixed, sample-rate
-        // aware clamp that produces the intended transient flattening.
-        self.slew_limit = 3_500.0 / self.sample_rate;
+        self.sample_rate = f64::from(sample_rate.max(8_000.0));
+        let overall_scale = self.sample_rate / 44_100.0;
+        self.iir_amount_a = MACKITY_IIR_A / overall_scale;
+        self.iir_amount_b = MACKITY_IIR_B / overall_scale;
+        self.biquad_a
+            .set_lowpass(self.sample_rate, MACKITY_ULTRASONIC_HZ, MACKITY_BIQUAD_A_Q);
+        self.biquad_b
+            .set_lowpass(self.sample_rate, MACKITY_ULTRASONIC_HZ, MACKITY_BIQUAD_B_Q);
         self.reset();
     }
 
-    pub fn configure(&mut self, input_gain_db: f32, model: &str) {
-        let drive_db = input_gain_db.clamp(0.0, 60.0);
-        self.enabled = model == SUPPORTED_MODEL && drive_db > 0.0;
-        self.pregain = db_to_linear(drive_db).max(1.0);
-        self.output_trim = if self.enabled {
-            db_to_linear(-drive_db * 0.38).clamp(0.08, 1.0)
-        } else {
-            1.0
-        };
-        self.reset();
+    pub fn configure(&mut self, model: &str) {
+        let should_enable = model == SUPPORTED_MODEL;
+        if self.enabled != should_enable {
+            self.enabled = should_enable;
+            self.reset();
+        }
     }
 
     pub fn is_active(&self) -> bool {
@@ -98,107 +73,101 @@ impl DeskDrive {
     }
 
     pub fn reset(&mut self) {
-        self.hp_x1 = 0.0;
-        self.hp_y1 = 0.0;
-        self.slew_state = 0.0;
-        self.lp_state = 0.0;
+        self.iir_sample_a = 0.0;
+        self.iir_sample_b = 0.0;
+        self.biquad_a.reset();
+        self.biquad_b.reset();
     }
 
     #[inline(always)]
-    pub fn process(&mut self, input: f32) -> f32 {
+    pub fn process(&mut self, input: f32, slam: f32) -> f32 {
         if !self.enabled {
             return input;
         }
 
-        let staged = headroom_compand(
-            input * self.pregain,
-            self.headroom_knee,
-            self.headroom_ratio,
+        let slam = f64::from(slam.clamp(0.0, 1.0));
+        let mut sample = f64::from(input) * (1.0 + slam * SLAM_TO_INPUT_GAIN);
+
+        self.iir_sample_a = denormal_guard(
+            self.iir_sample_a * (1.0 - self.iir_amount_a) + sample * self.iir_amount_a,
         );
-        let saturated = asym_rail_clip(
-            staged,
-            self.positive_knee,
-            self.negative_knee,
-            self.positive_rail,
-            self.negative_rail,
+        sample -= self.iir_sample_a;
+
+        sample = self.biquad_a.process(sample);
+        sample = mackity_saturate(sample);
+        sample = self.biquad_b.process(sample);
+
+        self.iir_sample_b = denormal_guard(
+            self.iir_sample_b * (1.0 - self.iir_amount_b) + sample * self.iir_amount_b,
         );
+        sample -= self.iir_sample_b;
 
-        let edge = self.highpass(saturated);
-        let target = saturated - edge * self.edge_mix;
+        if sample.is_finite() {
+            sample.clamp(-8.0, 8.0) as f32
+        } else {
+            0.0
+        }
+    }
+}
 
-        let delta = (target - self.slew_state).clamp(-self.slew_limit, self.slew_limit);
-        self.slew_state += delta;
+#[derive(Debug, Clone, Copy, Default)]
+struct Biquad {
+    b0: f64,
+    b1: f64,
+    b2: f64,
+    a1: f64,
+    a2: f64,
+    x1: f64,
+    x2: f64,
+    y1: f64,
+    y2: f64,
+}
 
-        let rolled = self.lowpass(self.slew_state);
-        quantize_20_bit(rolled * self.output_trim)
+impl Biquad {
+    fn set_lowpass(&mut self, sample_rate: f64, freq_hz: f64, q: f64) {
+        let normalized = (freq_hz / sample_rate).clamp(1.0e-6, 0.49);
+        let k = (std::f64::consts::PI * normalized).tan();
+        let norm = 1.0 / (1.0 + k / q + k * k);
+
+        self.b0 = k * k * norm;
+        self.b1 = 2.0 * self.b0;
+        self.b2 = self.b0;
+        self.a1 = 2.0 * (k * k - 1.0) * norm;
+        self.a2 = (1.0 - k / q + k * k) * norm;
     }
 
     #[inline(always)]
-    fn highpass(&mut self, input: f32) -> f32 {
-        let output = self.hp_alpha * (self.hp_y1 + input - self.hp_x1);
-        self.hp_x1 = input;
-        self.hp_y1 = output;
-        output
+    fn process(&mut self, input: f64) -> f64 {
+        let output = self.b0 * input + self.b1 * self.x1 + self.b2 * self.x2
+            - self.a1 * self.y1
+            - self.a2 * self.y2;
+
+        self.x2 = self.x1;
+        self.x1 = input;
+        self.y2 = self.y1;
+        self.y1 = denormal_guard(output);
+        self.y1
     }
 
-    #[inline(always)]
-    fn lowpass(&mut self, input: f32) -> f32 {
-        self.lp_state += self.lp_alpha * (input - self.lp_state);
-        self.lp_state
+    fn reset(&mut self) {
+        self.x1 = 0.0;
+        self.x2 = 0.0;
+        self.y1 = 0.0;
+        self.y2 = 0.0;
     }
 }
 
 #[inline(always)]
-fn db_to_linear(db: f32) -> f32 {
-    10.0_f32.powf(db / 20.0)
+fn mackity_saturate(sample: f64) -> f64 {
+    let clipped = sample.clamp(-1.0, 1.0);
+    clipped - clipped.powi(5) * MACKITY_CURVE
 }
 
 #[inline(always)]
-fn one_pole_alpha(fc: f32, sample_rate: f32) -> f32 {
-    let omega = 2.0 * std::f32::consts::PI * fc / sample_rate;
-    (1.0 - (-omega).exp()).clamp(0.0, 1.0)
-}
-
-#[inline(always)]
-fn quantize_20_bit(sample: f32) -> f32 {
-    (sample.clamp(-1.0, 1.0) * TWENTY_BIT_SIGNED_SCALE).round() / TWENTY_BIT_SIGNED_SCALE
-}
-
-#[inline(always)]
-fn headroom_compand(sample: f32, knee: f32, ratio: f32) -> f32 {
-    let abs = sample.abs();
-    if abs <= knee {
-        return sample;
-    }
-
-    let extra = abs - knee;
-    let curved = knee + (extra * ratio) / (1.0 + extra * (1.0 - ratio));
-    curved.copysign(sample)
-}
-
-#[inline(always)]
-fn asym_rail_clip(
-    sample: f32,
-    positive_knee: f32,
-    negative_knee: f32,
-    positive_rail: f32,
-    negative_rail: f32,
-) -> f32 {
-    if sample >= 0.0 {
-        saturate_halfwave(sample, positive_knee, positive_rail, 1.8)
+fn denormal_guard(sample: f64) -> f64 {
+    if sample.abs() < 1.18e-37 {
+        0.0
     } else {
-        -saturate_halfwave(-sample, negative_knee, negative_rail, 1.2)
+        sample
     }
-}
-
-#[inline(always)]
-fn saturate_halfwave(sample: f32, knee: f32, rail: f32, curvature: f32) -> f32 {
-    if sample <= knee {
-        return sample;
-    }
-
-    let span = (rail - knee).max(1e-5);
-    let over = (sample - knee) / span;
-    let bent = over / (1.0 + curvature * over);
-    (knee + bent * span).min(rail)
 }

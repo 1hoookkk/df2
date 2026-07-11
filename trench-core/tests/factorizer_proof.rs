@@ -170,11 +170,7 @@ fn factorizer_reproduces_target_shapes() {
     proofs.push(prove(
         "synth_two_formants",
         &sample(
-            |f| {
-                -16.0
-                    + ln2_bump(f, 700.0, 20.0, 0.5)
-                    + ln2_bump(f, 1800.0, 18.0, 0.5)
-            },
+            |f| -16.0 + ln2_bump(f, 700.0, 20.0, 0.5) + ln2_bump(f, 1800.0, 18.0, 0.5),
             160,
         ),
     ));
@@ -243,7 +239,11 @@ fn factorizer_reproduces_target_shapes() {
     // formant-envelope target tightly. (Top octave parks a Nyquist-edge
     // resonance; real razor-pole P2K bodies are smoothed — both auditioned, not
     // asserted, since the ear is the fitness function.)
-    for name in ["synth_three_formants", "synth_two_formants", "synth_nasal_mid"] {
+    for name in [
+        "synth_three_formants",
+        "synth_two_formants",
+        "synth_nasal_mid",
+    ] {
         let proof = proofs.iter().find(|proof| proof.name == name).unwrap();
         assert!(
             proof.shape_rms_band < 4.0,

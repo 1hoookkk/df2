@@ -1,7 +1,6 @@
 use trench_core::compiler::{
     pack_typed_body, section_biquad, AUTHORING_SR, TAU, TYPED_PARAM_LEN, TYPE_BANDPASS,
-    TYPE_HIGH_SHELF, TYPE_HIGHPASS, TYPE_LOW_SHELF_CONTROLLED, TYPE_LOWPASS, TYPE_NOTCH,
-    TYPE_PEAK,
+    TYPE_HIGHPASS, TYPE_HIGH_SHELF, TYPE_LOWPASS, TYPE_LOW_SHELF_CONTROLLED, TYPE_NOTCH, TYPE_PEAK,
 };
 use trench_core::minifloat::{pole_radius, PackedCorners};
 
@@ -14,9 +13,7 @@ fn mag_db(bq: [f64; 5], hz: f64) -> f64 {
     let ni = -(b1 * s1 + b2 * s2);
     let dr = 1.0 + a1 * c1 + a2 * c2;
     let di = -(a1 * s1 + a2 * s2);
-    20.0 * (nr.hypot(ni) / dr.hypot(di).max(1e-12))
-        .max(1e-12)
-        .log10()
+    20.0 * (nr.hypot(ni) / dr.hypot(di).max(1e-12)).max(1e-12).log10()
 }
 
 fn pole_hz(bq: [f64; 5]) -> f64 {
@@ -61,12 +58,48 @@ fn peak_and_notch_have_the_expected_local_shape() {
 #[test]
 fn six_typed_cards_pack_to_a_valid_body_with_log_morph_edges() {
     let cards = [
-        TYPE_LOW_SHELF_CONTROLLED as f64, 75.0, 75.0, 0.7, 0.7, 6.0, 1.0,
-        TYPE_PEAK as f64, 300.0, 950.0, 5.0, 12.0, 14.0, 1.0,
-        TYPE_PEAK as f64, 1900.0, 650.0, 5.0, 12.0, 13.0, 1.0,
-        TYPE_PEAK as f64, 2500.0, 2500.0, 6.0, 10.0, 9.0, 1.0,
-        TYPE_PEAK as f64, 3400.0, 3400.0, 6.0, 9.0, 6.0, 1.0,
-        TYPE_HIGH_SHELF as f64, 9000.0, 9000.0, 0.7, 0.7, -5.0, 1.0,
+        TYPE_LOW_SHELF_CONTROLLED as f64,
+        75.0,
+        75.0,
+        0.7,
+        0.7,
+        6.0,
+        1.0,
+        TYPE_PEAK as f64,
+        300.0,
+        950.0,
+        5.0,
+        12.0,
+        14.0,
+        1.0,
+        TYPE_PEAK as f64,
+        1900.0,
+        650.0,
+        5.0,
+        12.0,
+        13.0,
+        1.0,
+        TYPE_PEAK as f64,
+        2500.0,
+        2500.0,
+        6.0,
+        10.0,
+        9.0,
+        1.0,
+        TYPE_PEAK as f64,
+        3400.0,
+        3400.0,
+        6.0,
+        9.0,
+        6.0,
+        1.0,
+        TYPE_HIGH_SHELF as f64,
+        9000.0,
+        9000.0,
+        0.7,
+        0.7,
+        -5.0,
+        1.0,
     ];
     assert_eq!(cards.len(), TYPED_PARAM_LEN);
     let body = pack_typed_body(&cards);

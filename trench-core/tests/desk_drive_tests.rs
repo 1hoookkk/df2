@@ -59,23 +59,49 @@ fn passthrough_cart_with_drive(input_gain_db: f32) -> Cartridge {
 }
 
 #[test]
-fn desk_drive_is_exact_bypass_at_zero_db() {
+fn desk_drive_keeps_subtle_character_at_zero_slam() {
     let mut drive = DeskDrive::new();
-    drive.configure(0.0, SUPPORTED_MODEL);
-    let input = [-1.0f32, -0.5, -0.125, 0.0, 0.125, 0.5, 1.0];
-    for sample in input {
-        assert_eq!(drive.process(sample), sample);
+    drive.configure(SUPPORTED_MODEL);
+    assert!(drive.is_active());
+
+    let input = coherent_sine(48_000.0, 31, 4096, 0.72);
+    let output: Vec<f32> = input.iter().map(|&s| drive.process(s, 0.0)).collect();
+    let max_tail_delta = input
+        .iter()
+        .zip(output.iter())
+        .skip(256)
+        .map(|(&dry, &wet)| (dry - wet).abs())
+        .fold(0.0f32, f32::max);
+
+    assert!(
+        max_tail_delta > 0.005,
+        "zero-slam Mackie path should still add unity-trim desk character: {max_tail_delta}"
+    );
+    assert!(
+        output.iter().all(|s| s.is_finite()),
+        "zero-slam Mackie path produced non-finite output"
+    );
+}
+
+#[test]
+fn desk_drive_unknown_model_bypasses() {
+    let mut drive = DeskDrive::new();
+    drive.configure("unknown");
+    assert!(!drive.is_active());
+
+    for sample in [-1.0f32, -0.5, -0.125, 0.0, 0.125, 0.5, 1.0] {
+        assert_eq!(drive.process(sample, 1.0), sample);
     }
 }
 
 #[test]
 fn desk_drive_generates_harmonics_when_driven() {
     let mut drive = DeskDrive::new();
-    drive.configure(12.0, SUPPORTED_MODEL);
+    drive.configure(SUPPORTED_MODEL);
     assert!(drive.is_active());
 
     let input = coherent_sine(48_000.0, 37, 4096, 0.6);
-    let output: Vec<f32> = input.iter().map(|&s| drive.process(s)).collect();
+    let output: Vec<f32> = input.iter().map(|&s| drive.process(s, 0.35)).collect();
 
     let fundamental = bin_magnitude(&output, 37);
     let harmonics = bin_magnitude(&output, 74)
@@ -91,20 +117,48 @@ fn desk_drive_generates_harmonics_when_driven() {
 }
 
 #[test]
-fn desk_drive_outputs_driven_signal_on_twenty_bit_grid() {
+fn desk_drive_does_not_force_converter_grid() {
     let mut drive = DeskDrive::new();
-    drive.configure(18.0, SUPPORTED_MODEL);
+    drive.configure(SUPPORTED_MODEL);
 
     let input = coherent_sine(48_000.0, 29, 2048, 0.7);
     let scale = 524_287.0f32;
+    let mut off_grid = 0usize;
     for sample in input {
-        let output = drive.process(sample);
+        let output = drive.process(sample, 0.50);
         let grid = output * scale;
-        assert!(
-            (grid - grid.round()).abs() < 0.02,
-            "output was not on 20-bit grid: output={output}, scaled={grid}"
-        );
+        if (grid - grid.round()).abs() > 0.02 {
+            off_grid += 1;
+        }
     }
+
+    assert!(
+        off_grid > 256,
+        "desk slam should be analog saturation, not forced 20-bit quantization: off_grid={off_grid}"
+    );
+}
+
+#[test]
+fn desk_drive_tames_ultrasonic_edge_like_mackity_input_stage() {
+    let mut drive = DeskDrive::new();
+    drive.prepare(48_000.0);
+    drive.configure(SUPPORTED_MODEL);
+
+    let low_input = coherent_sine(48_000.0, 43, 4096, 0.35);
+    let high_input = coherent_sine(48_000.0, 1900, 4096, 0.35);
+
+    let low_output: Vec<f32> = low_input.iter().map(|&s| drive.process(s, 0.50)).collect();
+
+    drive.reset();
+    let high_output: Vec<f32> = high_input.iter().map(|&s| drive.process(s, 0.50)).collect();
+
+    let low_fundamental = bin_magnitude(&low_output, 43);
+    let high_fundamental = bin_magnitude(&high_output, 1900);
+
+    assert!(
+        high_fundamental < low_fundamental * 0.45,
+        "ultrasonic Mackity filters did not tame high edge: low={low_fundamental}, high={high_fundamental}"
+    );
 }
 
 #[test]

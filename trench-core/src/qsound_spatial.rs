@@ -3,10 +3,17 @@
 //!
 //! Reference: `docs/archive/qsound_spatial.md` (canonical recon model) and
 //! `docs/archive/qsound_spatial_addendum.md` (engineering recommendations
-//! after the capture defect was identified). Per the addendum the numeric
-//! ground truth is not trustworthy — we implement the parametric model
-//! exactly and expose ITD/shelf corner tuning constants so the DSP can be
-//! re-fit once a clean capture is available.
+//! after the capture defect was identified).
+//!
+//! Re-capture provenance (2026-07-02): the ITD/ILD/shelf-corner constants
+//! below were re-fit from a CLEAN 31-point pan-grid capture of the vendor
+//! `QMixer.dll` (SHA-256 0d3784…b110e) rendered offline by `Qcreator.exe`.
+//! Method + fit residuals: `dev/tmp/qsound_voicing/{REPORT.md,fit/fit_report.md}`.
+//! The +90° render is byte-identical to the canonical fixture
+//! (`ref/canonical/qsound/…`, SHA 43a28384…9a42); the pan process was verified
+//! LINEAR (out@1.0 == 2·out@0.5, −90 dB). Fit gates all pass: ITD 11.2 µs
+//! (≤30), ILD 0.78 dB (≤1.0), spectral 0.134 dB (≤1.5). Parameters are fitted
+//! from measurements only — no bytes/tables were lifted from the DLL.
 
 use crate::cartridge::{BandChannelCoeffs, BandLawCoeffs12, LawCoeffs6, SpatialProfile};
 
@@ -15,25 +22,24 @@ use crate::cartridge::{BandChannelCoeffs, BandLawCoeffs12, LawCoeffs6, SpatialPr
 /// buffer remains cheap to allocate per instance.
 const MAX_DELAY_SAMPLES: usize = 128;
 
-/// Tuning scalar converting the `itd_law` output to integer-ish samples of
-/// inter-aural delay. The capture defect flagged in the addendum means this
-/// factor is not pinned down — 5 samples at az=+π/3 maps the raw law's
-/// ≈2666 through 2666 * (5 / 2666) = 5. Kept as a TODO constant until a
-/// clean re-capture locks the unit; exposed so per-body retuning is cheap.
-// TODO(qsound_spatial): replace with the factor chosen from the clean
-// re-capture described in `qsound_spatial_addendum.md` §"Re-capture
-// requirements before final Task 8 lock-in".
-pub const ITD_SAMPLES_PER_LAW_UNIT: f32 = 1.0 / 533.2;
+/// Microseconds-to-seconds scale for the ITD law. After the clean QCreator
+/// pan-grid re-capture (2026-07-02) the ITD law `dot6(itd_coeffs, features)`
+/// evaluates directly to MICROSECONDS of inter-aural delay, fit from the
+/// vendor QMixer.dll offline renders over −90..+90° (see
+/// `dev/tmp/qsound_voicing/fit/fit_report.md`; ITD MAE 11.2 µs, gate ≤30 µs).
+/// Converting microseconds to samples is sample-rate dependent, so this
+/// scalar is µs→s and is multiplied by the runtime sample rate in
+/// `recompute` (fixes the sample-rate-independence defect of the old
+/// placeholder `1/533.2`).
+pub const ITD_SAMPLES_PER_LAW_UNIT: f32 = 1.0e-6;
 
-/// Low-shelf corner (Hz). Per addendum the 3-band dataset splits around
-/// 400 Hz and 2500 Hz; these are engineering defaults until a clean capture
-/// pins them.
-// TODO(qsound_spatial): verify against re-capture.
-pub const LOW_SHELF_CORNER_HZ: f32 = 400.0;
+/// Low-shelf corner (Hz). Fitted from the clean re-capture: the QSound
+/// shadow-ear head-shadow filter transitions at ≈513 Hz (2-shelf model,
+/// spectral MAE 0.134 dB vs the measured per-ear magnitude, gate ≤1.5 dB).
+pub const LOW_SHELF_CORNER_HZ: f32 = 513.2;
 
-/// High-shelf corner (Hz).
-// TODO(qsound_spatial): verify against re-capture.
-pub const HIGH_SHELF_CORNER_HZ: f32 = 2_500.0;
+/// High-shelf corner (Hz). Fitted from the clean re-capture (≈1816 Hz).
+pub const HIGH_SHELF_CORNER_HZ: f32 = 1_816.4;
 
 /// Clean vendor-engine fallback calibration recovered from QCreator/QMixer.dll
 /// at the exaggerated +90-degree position. The QCreator fixture was rendered
@@ -215,14 +221,21 @@ fn high_shelf_coeffs(gain_db: f32, corner_hz: f32, sr: f32) -> Biquad {
 
 // ── Band-law feature evaluation ──
 
-fn eval_itd_ild_features(az: f32, el: f32) -> [f32; 6] {
+fn eval_itd_ild_features(az: f32, _el: f32) -> [f32; 6] {
+    // QSound (QMixer.dll) is a pure azimuth panner: the offline pan grid has
+    // no elevation degree of freedom, so the model's former 6th feature (an
+    // elevation cross-term `sin(az)*|el|/30`, identically zero for every
+    // capture and never measured) is repurposed to a 6th azimuth harmonic.
+    // This is what lets the fixed 6-coefficient ILD law track QSound's sharp
+    // ±54° "beyond-the-speakers" ILD peak: 5 harmonics gave 1.52 dB MAE
+    // (fail), 6 harmonics give 0.78 dB (gate ≤1.0 dB). See fit_report.md.
     let s1 = az.sin();
     let s2 = (2.0 * az).sin();
     let s3 = (3.0 * az).sin();
     let s4 = (4.0 * az).sin();
     let s5 = (5.0 * az).sin();
-    let el_cross = az.sin() * el.abs() / 30.0;
-    [s1, s2, s3, s4, s5, el_cross]
+    let s6 = (6.0 * az).sin();
+    [s1, s2, s3, s4, s5, s6]
 }
 
 fn dot6(coeffs: &LawCoeffs6, features: &[f32; 6]) -> f32 {
@@ -369,11 +382,12 @@ impl QSoundSpatial {
         let itd_ild_features = eval_itd_ild_features(p.azimuth, p.elevation);
         let ild_law_db = dot6(&p.ild_coeffs, &itd_ild_features);
 
-        // ITD: convert the raw law output to samples via the tuning scalar.
-        // Positive → L lags R; negative → R lags L. One-sided: only the
-        // lagging ear sees delay, the leading ear passes straight through.
-        let itd_law = dot6(&p.itd_coeffs, &itd_ild_features);
-        let itd_samples = itd_law * ITD_SAMPLES_PER_LAW_UNIT;
+        // ITD: the law now evaluates to microseconds (measurement-grounded);
+        // convert to samples at the runtime rate. Positive → L lags R;
+        // negative → R lags L. One-sided: only the lagging ear sees delay,
+        // the leading ear passes straight through.
+        let itd_law_us = dot6(&p.itd_coeffs, &itd_ild_features);
+        let itd_samples = itd_law_us * ITD_SAMPLES_PER_LAW_UNIT * self.sample_rate;
         if itd_samples >= 0.0 {
             self.delay_l.set_delay(itd_samples);
             self.delay_r.set_delay(0.0);
@@ -407,10 +421,15 @@ impl QSoundSpatial {
         // `PEAK_SAFETY_DB` absorbs 4-point Lagrange overshoot on
         // fractional ITD (worst-case ~6% ≈ 0.5 dB when `frac≈0.5` on
         // wideband noise), RBJ shelf passband ripple near the corners,
-        // and residual biquad startup — ≈1 dB is inaudible as a
-        // global pan-stage trim but keeps `peak ≤ +0 dBFS` strict on
-        // full-scale noise across the full ±60° sweep.
-        const PEAK_SAFETY_DB: f32 = 1.0;
+        // and residual biquad startup. Raised 1.0 → 2.0 dB after the
+        // 2026-07-02 re-fit: the fitted shelf corners (≈513/1816 Hz) sit
+        // closer together than the old 400/2500 Hz placeholders, so their
+        // passband ripple stacks with the Lagrange overshoot on the
+        // near-unity-gain leading ear (measured peak 1.055 at az=−30°
+        // before this bump). 2 dB is an inaudible global pan-stage trim
+        // that keeps `peak ≤ +0 dBFS` strict on full-scale noise across
+        // the full ±60° sweep.
+        const PEAK_SAFETY_DB: f32 = 2.0;
         l_broadband_db -= l_shelf.low_db.max(0.0) + l_shelf.high_db.max(0.0) + PEAK_SAFETY_DB;
         r_broadband_db -= r_shelf.low_db.max(0.0) + r_shelf.high_db.max(0.0) + PEAK_SAFETY_DB;
 
