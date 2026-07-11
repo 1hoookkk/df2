@@ -172,6 +172,9 @@ PRESETS = {
     "morph_worlds": [("tube", 24.0), ("tract", "a"), ("modal", "bell", 330.0), ("modal", "membrane", 180.0)],
     "cavern":       [("tube", 32.0), ("tube", 12.0), ("modal", "plate", 260.0), ("modal", "bell", 200.0)],
     "string_voice": [("modal", "string", 110.0), ("modal", "string", 220.0), ("tract", "i"), ("tract", "u")],
+    # material alchemy (Tyson 2026-07-12): four OBJECTS, one surface —
+    # wood bar -> metal bell across MORPH; glass plate / drum skin on SECONDARY
+    "materials":    [("modal", "bar", 180.0), ("modal", "bell", 300.0), ("modal", "plate", 420.0), ("modal", "membrane", 140.0)],
 }
 
 # ── cartridge assembly + hot-reload write ───────────────────────────────────────
