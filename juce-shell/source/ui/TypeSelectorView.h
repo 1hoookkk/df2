@@ -76,7 +76,7 @@ public:
         const bool hot = isMouseOverOrDragging (true) || selector.isPopupActive();
 
         // Smoked bone selector bar painted into the machined plate's slot.
-        drawIvoryWell (g, bar, bar.getHeight() * 0.22f, hot, t);
+        drawIvoryWell (g, bar, bar.getHeight() * 0.18f, hot, t);
         auto inner = bar.reduced (13.0f, 2.0f);
 
         // The dropdown arrow box is its OWN layout rect, converted to this
@@ -99,17 +99,17 @@ public:
         const auto selectedIndex = selector.getSelectedId() - 1;
         const auto typeText = selectedIndex >= 0 ? trench::bodyDisplayName (selectedIndex) : juce::String();
         
-        // Render name: quiet engineered weight, warm charcoal ink; a touch
-        // darker when hot (the only hover feedback — no painted face).
-        drawTrackedText (g, typeText, textArea, displayFont (t.fontSize ("typeName", 14.0f), false),
-                         hot ? juce::Colour (0xff141210) : t.labelInk(), 0.0f);
+        // Large plain preset name, matching the reference UI's software-first
+        // hierarchy. The plate supplies the material; the text stays crisp.
+        g.setFont (displayFont (t.fontSize ("typeName", 17.0f), false));
+        g.setColour (hot ? juce::Colours::black : t.textColour ("typeName", juce::Colour (0xff0b0b0b)));
+        g.drawFittedText (typeText, textArea.toNearestInt(),
+                          juce::Justification::centredLeft, 1, 0.94f);
 
-        // Engraved divider seam before the arrow segment: a dark cut with a
-        // light catch beside it — a machined groove, not a combo-box border.
-        g.setColour (juce::Colour (0xff2a2419).withAlpha (0.55f));
-        g.drawLine (box.getX() - 4.0f, bar.getY() + 4.0f, box.getX() - 4.0f, bar.getBottom() - 4.0f, 1.0f);
-        g.setColour (juce::Colours::white.withAlpha (0.35f));
-        g.drawLine (box.getX() - 3.0f, bar.getY() + 4.0f, box.getX() - 3.0f, bar.getBottom() - 4.0f, 0.8f);
+        // One clean divider before the arrow segment.
+        g.setColour (juce::Colour (0xff6a6256).withAlpha (0.52f));
+        g.drawLine (box.getX() - 3.5f, bar.getY() + 5.0f,
+                    box.getX() - 3.5f, bar.getBottom() - 5.0f, 1.0f);
 
         // Engraved chevron: light catch below the cut, ink on top — the same
         // physical depth as the readout digits.
@@ -138,12 +138,12 @@ private:
 
         juce::Font getComboBoxFont (juce::ComboBox&) override
         {
-            return displayFont (13.0f, false);
+            return displayFont (14.5f, false);
         }
 
         juce::Font getPopupMenuFont() override
         {
-            return displayFont (13.0f, false);
+            return displayFont (14.5f, false);
         }
 
         void drawPopupMenuBackground (juce::Graphics& g, int width, int height) override
@@ -211,7 +211,7 @@ private:
             }
 
             const auto textArea = area.reduced (action ? 10 : 12, 0);
-            g.setFont (displayFont (action ? 11.5f : 13.0f, action));
+            g.setFont (displayFont (action ? 13.0f : 14.5f, action));
 
             // aged cream ink on the dark panel; disabled rows sink into the navy
             juce::Colour textCol = isActive ? juce::Colour (0xffe9dfc6)

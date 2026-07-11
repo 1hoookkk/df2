@@ -16,8 +16,8 @@ class SelectorLookAndFeel final : public juce::LookAndFeel_V4
 public:
     void drawComboBox (juce::Graphics&, int, int, bool, int, int, int, int, juce::ComboBox&) override {}
 
-    juce::Font getComboBoxFont (juce::ComboBox&) override { return displayFont (10.5f, false); }
-    juce::Font getPopupMenuFont() override { return displayFont (11.5f, false); }
+    juce::Font getComboBoxFont (juce::ComboBox&) override { return displayFont (12.0f, true); }
+    juce::Font getPopupMenuFont() override { return displayFont (13.0f, false); }
 
     void drawPopupMenuBackground (juce::Graphics& g, int width, int height) override
     {
@@ -64,7 +64,7 @@ public:
         }
 
         const auto textArea = area.reduced (10, 0);
-        g.setFont (displayFont (11.0f, false));
+        g.setFont (displayFont (13.0f, false));
         juce::Colour textCol = isActive ? juce::Colour (0xffe9dfc6) : juce::Colour (0xff5d6478);
         if (isTicked) textCol = juce::Colour (0xfff4ecd8);
         g.setColour (textCol);

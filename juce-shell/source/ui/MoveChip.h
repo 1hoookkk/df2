@@ -173,17 +173,17 @@ public:
         const auto lamp = juce::Rectangle<float> (chip.getX(),
                                                    chip.getCentreY() - lampD * 0.5f,
                                                    lampD, lampD);
-        // The active accent lamp (muted acid-green): lit only when motion runs.
-        g.setColour (on ? juce::Colour (0xffa9d85e) : juce::Colour (0xff23301f).withAlpha (0.9f));
+        // The active lamp uses the same malachite family as the trace/wheel.
+        g.setColour (on ? t.amber() : t.accent().darker (0.72f).withAlpha (0.82f));
         g.fillEllipse (lamp);
         g.setColour (juce::Colours::black.withAlpha (0.45f));
         g.drawEllipse (lamp, 0.7f);
 
         // OFF is the lamp's job, not the text's: dark dot + "MOTION" alone.
         // When running, the state name earns its place next to the lit lamp.
-        // Pale sage ink — printed on the deep verdigris glass.
-        g.setFont (displayFont (11.0f, false));
-        g.setColour (juce::Colour (0xffaac4a0).withAlpha ((hover || on) ? 1.0f : 0.85f));
+        // Faded sage ink on espresso glass; regular weight keeps this subordinate.
+        g.setFont (displayFont (11.5f, false));
+        g.setColour (juce::Colour (0xffc7d3bf).withAlpha ((hover || on) ? 0.94f : 0.76f));
         g.drawText ((on || showingSibling) ? "MOTION  " + displayText() : "MOTION",
                     chip.withTrimmedLeft (lampD + 6.0f),
                     juce::Justification::centredLeft, false);

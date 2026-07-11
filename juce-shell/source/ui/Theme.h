@@ -23,10 +23,11 @@ inline juce::Rectangle<float> sourceRectToEditor (juce::Rectangle<float> s)
              s.getHeight() * kEditorHeight / kPanelSourceHeight };
 }
 
-// The UI typeface family. kUiFontName is the built-in default; the LIVE value lives in
-// uiFontFamily() so ui_layout.json ("strings":{"fontFamily":"<name>"}) can swap the whole
-// UI's font at runtime with no rebuild. The editor sets it whenever the layout loads.
-inline const char* const kUiFontName = "Bahnschrift";
+// Gill Sans gives the plate a humanist/editorial voice: distinctive enough to
+// own the product, open enough for small values, and much less severe than a
+// condensed grotesk. Hierarchy comes from size and spacing, not blanket bold.
+inline const char* const kUiFontName = "Gill Sans MT";
+inline const char* const kUiEmphasisFontName = "Gill Sans MT";
 
 inline juce::String& uiFontFamily()
 {
@@ -34,21 +35,26 @@ inline juce::String& uiFontFamily()
     return family;
 }
 
-// Whether call-site bold is honoured. Default OFF: synthetic-bolding a face at small
-// sizes smudges on the bone panel, so the UI renders at the face's natural weight
-// unless ui_layout.json ("params":{"fontBold":1}) turns emphasis back on. Pick weight
-// via a weight-named family (e.g. "Segoe UI Semibold") rather than synthetic bold.
+inline juce::String& uiEmphasisFontFamily()
+{
+    static juce::String family { kUiEmphasisFontName };
+    return family;
+}
+
+// Whether an emphasis face is additionally synthetic-bolded. Default OFF: the
+// named Semibold display face already provides enough hierarchy.
 inline bool& uiBoldEnabled()
 {
     static bool enabled = false;
     return enabled;
 }
 
-inline juce::Font displayFont (float height, bool bold = false)
+inline juce::Font displayFont (float height, bool emphasis = false)
 {
-    const bool useBold = bold || uiBoldEnabled();
-    return juce::Font (juce::FontOptions (uiFontFamily(), height,
-                                          useBold ? juce::Font::bold : juce::Font::plain));
+    const bool useSyntheticBold = emphasis && uiBoldEnabled();
+    const auto& family = emphasis ? uiEmphasisFontFamily() : uiFontFamily();
+    return juce::Font (juce::FontOptions (family, height,
+                                          useSyntheticBold ? juce::Font::bold : juce::Font::plain));
 }
 
 // Named token accessors over the baked UiLayout — the Theme layer.
@@ -56,12 +62,12 @@ struct Theme
 {
     const trench::UiLayout& layout;
 
-    // 60:30:10 (2026-07-11): SAND 60 (the plate, locked) / IRON 30 (wheels,
-    // wells, glass) / EMBER 10 (the ONLY lit family: glow, trace, active text).
+    // 60:30:10: WARM PUTTY 60 (the plate, locked) / ESPRESSO CHARCOAL 30
+    // (wheels, type, glass) / MALACHITE 10 (wheel lamp, trace, active state).
     // Values live in UiLayout::defaults() — change them there, not here.
-    juce::Colour accent()      const { return layout.colour ("accent",      juce::Colour (0xffefa63c)); }
+    juce::Colour accent()      const { return layout.colour ("accent",      juce::Colour (0xff4f8f70)); }
     juce::Colour curveColour() const { return layout.colour ("curveColour", accent()); }
-    juce::Colour amber()       const { return layout.colour ("amber",       juce::Colour (0xffefa63c)); } // legacy name: active glow
+    juce::Colour amber()       const { return layout.colour ("amber",       juce::Colour (0xff3e8060)); } // legacy name: active glow
     juce::Colour wellTop()     const { return layout.colour ("wellTop",     juce::Colour (0xffe7dec9)); }
     juce::Colour wellBottom()  const { return layout.colour ("wellBottom",  juce::Colour (0xffc9c0a8)); }
     juce::Colour wellKeyline() const { return layout.colour ("wellKeyline", juce::Colour (0xff5c4f3a)); }
@@ -69,10 +75,10 @@ struct Theme
     juce::Colour bevelLo()     const { return layout.colour ("bevelLo",     juce::Colour (0x3d000000)); }
     juce::Colour arrow()       const { return layout.colour ("arrow",       juce::Colour (0xff241e15)); }
     juce::Colour rim()         const { return layout.colour ("rim",         juce::Colour (0xff241e15)); }
-    juce::Colour dashed()      const { return layout.colour ("dashed",      juce::Colour (0xff5c4f3a)); }
-    juce::Colour screenEdge()  const { return layout.colour ("screenEdge",  juce::Colour (0xff241e15)); }
-    juce::Colour labelInk()    const { return layout.colour ("labelInk",    juce::Colour (0xff241e15)); }
-    juce::Colour phosphor()    const { return layout.colour ("phosphor",    juce::Colour (0xff241e15)); }
+    juce::Colour dashed()      const { return layout.colour ("dashed",      juce::Colour (0xff4a4640)); }
+    juce::Colour screenEdge()  const { return layout.colour ("screenEdge",  juce::Colour (0xff151311)); }
+    juce::Colour labelInk()    const { return layout.colour ("labelInk",    juce::Colour (0xff2a2722)); }
+    juce::Colour phosphor()    const { return layout.colour ("phosphor",    juce::Colour (0xff26231f)); }
 
     float  wellRadius()        const { return (float) layout.param ("wellRadius", 9.0); }
     float  componentRadius()   const { return (float) layout.param ("componentRadius", 2.5); }
@@ -214,31 +220,22 @@ inline void drawHardwareKey (juce::Graphics& g, juce::Rectangle<float> b,
     g.drawFittedText (label, area, juce::Justification::centred, 1);
 }
 
-// Display WINDOW — the readout/TYPE part: a small aged-ivory hardware display
-// window mounted into the beige plate (material-realism brief, 2026-07-02).
-// Warm cream face — slightly dark and dirty, same family as the plate — with a
-// soft inset shadow, a tiny worn bevel light, and a THIN warm taupe seam. No
-// black outlines, no pure white, no gloss: believable, not drawn. The panel
-// well's dark floor shows as soft ambient occlusion around the window.
-// Callers leave ~3.5px inside their bounds for that ring.
+// Shared TYPE/readout box: a clean software control seated on the plate. The
+// face is light and quiet, with one restrained contact shadow, a thin warm-grey
+// seam and a small inner highlight. It keeps the physical context without
+// turning every value into a miniature piece of industrial hardware.
 inline void drawIvoryWell (juce::Graphics& g, juce::Rectangle<float> r, float radius, bool isActive, const Theme& t)
 {
     juce::ignoreUnused (t);
 
-    // Hardware display window, cast-metal era: smoked warm ivory (darker than
-    // digital white), a thin dark surround — an instrument window with the
-    // shell's own dimensionality. Corner radius is the CALLER's: it must match
-    // the art's opening curve (capping at 3px left ivory corners poking into
-    // the plate's rounded recesses).
-    g.setColour (juce::Colours::black.withAlpha (0.30f));
-    g.fillRoundedRectangle (r.translated (0.5f, 1.0f), radius);
+    // One soft contact shadow, kept close to the control.
+    g.setColour (juce::Colours::black.withAlpha (isActive ? 0.22f : 0.17f));
+    g.fillRoundedRectangle (r.translated (0.0f, 1.0f), radius);
 
-    // Smoked warm bone (#E2DBC5 family): clearly lighter than the shell, aged
-    // and physical, never pure white. HARD material read ("too soft", Tyson
-    // 2026-07-11): a nearly flat face — the hardness comes from crisp 1px
-    // edges, not gradient falloff.
-    juce::ColourGradient face (juce::Colour (0xffe8e1cc), 0.0f, r.getY(),
-                               juce::Colour (0xffdcd4ba), 0.0f, r.getBottom(), false);
+    // Refined warm-white face: brighter than the plate, never stark white.
+    juce::ColourGradient face (juce::Colour (0xfff6f2e8), 0.0f, r.getY(),
+                               juce::Colour (0xffddd6c7), 0.0f, r.getBottom(), false);
+    face.addColour (0.52, juce::Colour (0xffeee8da));
     g.setGradientFill (face);
     g.fillRoundedRectangle (r, radius);
 
@@ -248,17 +245,17 @@ inline void drawIvoryWell (juce::Graphics& g, juce::Rectangle<float> r, float ra
         clip.addRoundedRectangle (r, radius);
         g.reduceClipRegion (clip);
 
-        // Crisp machined edges: a single hard shadow line under the top lip,
-        // a single hard catch-light along the bottom. No gradient mush.
-        g.setColour (juce::Colour (0xff3a3226).withAlpha (isActive ? 0.40f : 0.32f));
-        g.fillRect (r.getX() + 1.0f, r.getY() + 1.0f, r.getWidth() - 2.0f, 1.2f);
-        g.setColour (juce::Colours::white.withAlpha (0.30f));
-        g.fillRect (r.getX() + 2.0f, r.getBottom() - 1.6f, r.getWidth() - 4.0f, 1.0f);
+        g.setColour (juce::Colours::white.withAlpha (0.58f));
+        g.fillRect (r.getX() + 2.0f, r.getY() + 1.0f, r.getWidth() - 4.0f, 1.0f);
+        g.setColour (juce::Colour (0xff6f675b).withAlpha (0.13f));
+        g.fillRect (r.getX() + 2.0f, r.getBottom() - 1.5f, r.getWidth() - 4.0f, 1.0f);
     }
 
-    // Thin warm near-black charcoal surround (#29251F) — crisp, definite.
-    g.setColour (juce::Colour (0xff29251f).withAlpha (isActive ? 1.0f : 0.96f));
-    g.drawRoundedRectangle (r, radius, 1.4f);
+    // Thin warm-grey seam and an interior catch: precise, not outlined in black.
+    g.setColour (juce::Colour (0xff665f54).withAlpha (isActive ? 0.92f : 0.74f));
+    g.drawRoundedRectangle (r.reduced (0.5f), radius, 1.0f);
+    g.setColour (juce::Colours::white.withAlpha (0.28f));
+    g.drawRoundedRectangle (r.reduced (1.4f), juce::jmax (2.0f, radius - 1.2f), 0.65f);
 }
 
 // The dark screen glass (t.phosphor() = the iron glass base) — the SAME base treatment the hero GraphDisplay
@@ -269,9 +266,9 @@ inline void fillPhosphorGlass (juce::Graphics& g, juce::Rectangle<float> screen,
 {
     g.setColour (t.phosphor());
     g.fillRect (screen);
-    g.setColour (juce::Colour (0xffd6ecef).withAlpha (0.055f)); // cool glass sheen
+    g.setColour (juce::Colour (0xfff0e3cc).withAlpha (0.045f)); // warm reflection on charcoal glass
     g.fillRect (screen);
-    g.setColour (juce::Colour (0xff18221f).withAlpha (0.32f)); // black-green lower depth
+    g.setColour (juce::Colour (0xff171411).withAlpha (0.34f)); // espresso lower depth
     auto lower = screen;
     g.fillRect (lower.removeFromBottom (lower.getHeight() * 0.34f));
 }

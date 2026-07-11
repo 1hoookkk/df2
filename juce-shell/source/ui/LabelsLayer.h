@@ -33,8 +33,8 @@ public:
 
     void paint (juce::Graphics& g) override
     {
-        // Compact hardware labels: small spaced caps, light ink on the navy
-        // panel, with a one-pixel dark bite for readability.
+        // Clear software typography over the physical plate: direct dark text,
+        // relaxed weight, no engraved catch-light or poster-headline treatment.
         const auto draw = [this, &g] (const juce::String& id, const juce::String& text, bool centred)
         {
             const auto r = t.rect (id);
@@ -43,8 +43,12 @@ public:
             const float fs = t.fontSize (id, 11.0f);
             if (r.getWidth() < 1.0f || r.getHeight() < 1.0f || fs < 0.5f || text.isEmpty())
                 return;
-            drawPanelLabelText (g, text.toUpperCase(), r, displayFont (fs, false),
-                                t.textColour (id, t.labelInk()), fs * 0.03f, centred);
+            g.setFont (displayFont (fs, false).withExtraKerningFactor (0.025f));
+            g.setColour (t.textColour (id, t.labelInk()));
+            g.drawFittedText (text.toUpperCase(), r.toNearestInt(),
+                              centred ? juce::Justification::centred
+                                       : juce::Justification::centredLeft,
+                              1, 0.92f);
         };
 
         draw ("filterLabel", t.text ("filterLabel", ""), false);
@@ -54,72 +58,31 @@ public:
         draw ("morphLabel",  railUpper, true);
         draw ("qLabel",      railLower, true);
 
-        // Engraved nameplate: letter-spaced wordmark + wide-tracked sub-line —
-        // machined hardware silk, not plain fitted text.
+        // Product name gets the one firmer face on the plate. No wide tracking
+        // or deboss treatment; it remains a small nameplate, not a headline.
         {
             const auto br = t.rect ("brandLabel");
-            const float bfs = t.fontSize ("brandLabel", 16.0f) * 1.18f;
+            const float bfs = t.fontSize ("brandLabel", 16.5f);
             if (br.getWidth() >= 1.0f && bfs >= 0.5f)
-                drawEngravedTrackedText (g, t.text ("brandLabel", ""), br,
-                                         displayFont (bfs, false),
-                                         t.textColour ("brandLabel", t.labelInk()),
-                                         bfs * 0.24f);
+            {
+                g.setFont (displayFont (bfs, true).withExtraKerningFactor (0.045f));
+                g.setColour (t.textColour ("brandLabel", t.labelInk()));
+                g.drawFittedText (t.text ("brandLabel", ""), br.toNearestInt(),
+                                  juce::Justification::centredLeft, 1, 0.92f);
+            }
             const auto sr = t.rect ("brandSub");
-            const float sfs = t.fontSize ("brandSub", 8.0f) * 1.18f;
+            const float sfs = t.fontSize ("brandSub", 9.0f);
             if (sr.getWidth() >= 1.0f && sfs >= 0.5f)
-                drawEngravedTrackedText (g, t.text ("brandSub", ""), sr,
-                                         displayFont (sfs, false),
-                                         t.textColour ("brandSub", t.labelInk()),
-                                         sfs * 0.38f, 0.35f);
+            {
+                g.setFont (displayFont (sfs, true));
+                g.setColour (t.textColour ("brandSub", t.labelInk()));
+                g.drawFittedText (t.text ("brandSub", ""), sr.toNearestInt(),
+                                  juce::Justification::centredLeft, 1, 0.92f);
+            }
         }
     }
 
 private:
-    static void drawPanelLabelText (juce::Graphics& g, const juce::String& text,
-                                    juce::Rectangle<float> area, const juce::Font& font,
-                                    juce::Colour colour, float tracking, bool centred)
-    {
-        const int n = text.length();
-        if (n <= 0)
-            return;
-
-        float total = tracking * (float) (n - 1);
-        for (int i = 0; i < n; ++i)
-            total += juce::GlyphArrangement::getStringWidth (font, text.substring (i, i + 1));
-
-        if (total > area.getWidth())
-        {
-            tracking = 0.0f;
-            total = juce::GlyphArrangement::getStringWidth (font, text);
-        }
-
-        const auto drawRun = [&] (juce::Colour c, float dy)
-        {
-            g.setFont (font);
-            g.setColour (c);
-            float x = centred ? area.getCentreX() - total * 0.5f : area.getX();
-            const float y = area.getCentreY() - font.getHeight() * 0.52f + dy;
-            for (int i = 0; i < n; ++i)
-            {
-                const auto glyph = text.substring (i, i + 1);
-                const float w = juce::GlyphArrangement::getStringWidth (font, glyph);
-                g.drawText (glyph, juce::Rectangle<float> (x, y, w + 2.0f, font.getHeight()),
-                            juce::Justification::centredLeft, false);
-                x += w + tracking;
-                if (x > area.getRight() + 2.0f)
-                    break;
-            }
-        };
-
-        // Engraving depth that follows the ink: dark ink on a light plate gets
-        // a light catch below; pale ink on a dark plate gets a dark bite.
-        if (colour.getBrightness() < 0.5f)
-            drawRun (juce::Colours::white.withAlpha (0.55f), 1.0f);
-        else
-            drawRun (juce::Colours::black.withAlpha (0.55f), 1.0f);
-        drawRun (colour, 0.0f);
-    }
-
     Theme t;
     juce::String railUpper { "MORPH" };
     juce::String railLower {};

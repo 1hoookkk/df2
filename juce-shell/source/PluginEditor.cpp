@@ -27,7 +27,7 @@ PluginEditor::PluginEditor (PluginProcessor& p)
     auto panel = juce::ImageCache::getFromMemory (BinaryData::df2_panel_beige_png,
                                                   BinaryData::df2_panel_beige_pngSize);
     // The wheels: the iron twin-row roller, Blender-rendered at ACTUAL SIZE with
-    // the ember position glow baked per frame (X3 law: trailing bar through the
+    // the malachite position glow baked per frame (X3 law: trailing bar through the
     // fin gaps). Frames draw 1:1 and overhang the recut wells; frame count
     // derives from strip width; travel = 10 fin pitches, no wrap.
     auto strip = juce::ImageCache::getFromMemory (BinaryData::trench_roller_strip_png,
@@ -256,7 +256,9 @@ void PluginEditor::resized()
 void PluginEditor::layoutComponents()
 {
     // Whole-UI typeface + weight, hand-editable live from ui_layout.json.
-    trench::ui::uiFontFamily()  = currentLayout.string ("fontFamily", trench::ui::kUiFontName);
+    trench::ui::uiFontFamily() = currentLayout.string ("fontFamily", trench::ui::kUiFontName);
+    trench::ui::uiEmphasisFontFamily() = currentLayout.string ("fontFamilyEmphasis",
+                                                                trench::ui::kUiEmphasisFontName);
     trench::ui::uiBoldEnabled() = currentLayout.param ("fontBold", 0.0) > 0.5;
 
     // The main UI stays in its fixed kEditorWidth region (left); the FORGE drawer extends
@@ -395,7 +397,7 @@ void PluginEditor::setPage (int page)
     }
     else
     {
-        labels->setRailLabels ("MORPH", "Q");   // values already live in the adjacent readouts
+        labels->setRailLabels ("MORPH (%)", "Q (%)");
         secondaryWheel->setParameter (processor.apvts, ParamID::q);
     }
 }

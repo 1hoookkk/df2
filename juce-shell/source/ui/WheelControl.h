@@ -12,7 +12,7 @@ namespace trench::ui
 {
 
 // One thumbwheel: the iron twin-row roller rendered at ACTUAL SIZE with the
-// ember position glow BAKED into the filmstrip (X3 law — light through the fin
+// malachite position glow BAKED into the filmstrip (X3 law — light through the fin
 // gaps, trailing bar). Frames draw 1:1, centred, overhanging the plate's black
 // opening (the recut wells are tighter than the wheel — the well edge crops it,
 // like the hardware). Drag handling reaches the parameter directly through a
@@ -186,7 +186,7 @@ public:
         // ACTUAL-SIZE draw: frames are authored at display resolution and drawn
         // 1:1, centred — never resampled, never clipped. The frame's own alpha
         // is the silhouette; it overhangs the plate's black opening so only the
-        // well edge frames it (the X3 sit). The ember position glow is BAKED
+        // well edge frames it (the X3 sit). The malachite position glow is BAKED
         // into the filmstrip — no code-drawn lamp. NOTHING is painted behind
         // the wheel: the panel art's baked recess IS the well (any code-drawn
         // cavity here reads as a fake rectangle; regressed twice, never again).

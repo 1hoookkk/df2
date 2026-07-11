@@ -14,10 +14,9 @@
 namespace trench::ui
 {
 
-// The recessed screen: plain dark wine glass plus the live cascade response
-// curve as a rose hairline that hardens toward a
-// hotter rose-white output read as SLAM rises. The faceplate,
-// rollers, readouts and TYPE selector are LOCKED — this view only owns the screen.
+// The recessed screen: failing dark glass plus the live cascade response. It
+// should feel electrically separate from the cleaner plate controls: dim,
+// uneven, and barely holding together.
 //
 // SLAM is a SECONDARY on-screen control (not a rail): dragging the canvas vertically
 // (or the mouse wheel over the graph) drives SLAM/input-clip, with a transient
@@ -224,9 +223,11 @@ public:
         juce::Graphics::ScopedSaveState save (g);
         g.reduceClipRegion (face);
 
-        // NO glass bitmap: the plate art's own baked dark recess IS the glass
-        // ("i also dont like the glass overlay", Tyson 2026-07-11). Code draws
-        // only ink — the ruled grid and the trace. No washes, no atmosphere.
+        drawFailingGlassBed (g, screen);
+
+        // The plate art's own baked dark recess remains the display body. Code
+        // only adds screen-internal decay: ruled grid, weakened trace, dirt and
+        // dropout inside the clipped glass.
         drawLogGrid (g, screen);
 
         armed = canvasParam != nullptr
@@ -235,6 +236,7 @@ public:
 
         drawResponseTrace (g);
         drawSlamReadout (g, screen);
+        drawDisplayDropouts (g, screen);
 
         // A very subtle pane of glass over the DISPLAY only (Tyson 2026-07-11):
         // faint diagonal sheen + a whisper of corner vignette — the screen reads
@@ -261,9 +263,32 @@ public:
 private:
     juce::Rectangle<float> plotBounds() const { return getLocalBounds().toFloat().reduced (6.0f, 5.0f); }
 
-    // Ruled log-frequency grid on the glass: decade majors + in-decade minors
-    // and one line per 10 dB, deep wine, plainly visible. Same 20 Hz..20 kHz
-    // mapping as the trace.
+    void drawFailingGlassBed (juce::Graphics& g, juce::Rectangle<float> screen) const
+    {
+        juce::ColourGradient dead (juce::Colours::black.withAlpha (0.34f),
+                                   screen.getX(), screen.getY(),
+                                   juce::Colours::transparentBlack,
+                                   screen.getRight(), screen.getBottom(), false);
+        dead.addColour (0.58, juce::Colour (0xff2e2923).withAlpha (0.18f));
+        g.setGradientFill (dead);
+        g.fillRect (screen);
+
+        // Uneven LCD ageing, deterministic and clipped to the aperture.
+        for (int i = 0; i < 18; ++i)
+        {
+            const float x = screen.getX() + std::fmod (19.0f + (float) i * 47.0f, screen.getWidth());
+            const float a = (i % 4 == 0) ? 0.105f : 0.045f;
+            g.setColour (juce::Colours::black.withAlpha (a));
+            g.drawLine (x, screen.getY(), x - 7.0f, screen.getBottom(), (i % 3 == 0) ? 1.2f : 0.7f);
+        }
+
+        g.setColour (juce::Colours::black.withAlpha (0.11f));
+        for (float y = screen.getY() + 9.0f; y < screen.getBottom(); y += 13.0f)
+            g.drawLine (screen.getX(), y, screen.getRight(), y, 0.55f);
+    }
+
+    // Ruled log-frequency grid on dying glass: still readable, but not married
+    // to the fresh plate typography.
     void drawLogGrid (juce::Graphics& g, juce::Rectangle<float> screen) const
     {
         const auto plot = plotBounds();
@@ -280,15 +305,15 @@ private:
                 if (f <= fLo || f >= fHi)
                     continue;
                 const bool major = (m == 10);
-                g.setColour (ink.withAlpha (major ? 0.55f : 0.28f));
-                g.drawLine (xOf (f), screen.getY(), xOf (f), screen.getBottom(), major ? 1.1f : 0.7f);
+                g.setColour (ink.withAlpha (major ? 0.36f : 0.17f));
+                g.drawLine (xOf (f), screen.getY(), xOf (f), screen.getBottom(), major ? 0.95f : 0.55f);
             }
         const double dbTop = t.curveDbTop(), dbBot = t.curveDbBottom();
         for (double db = std::ceil (dbBot / 10.0) * 10.0; db <= dbTop; db += 10.0)
         {
             const float y = plot.getY() + (float) ((dbTop - db) / (dbTop - dbBot)) * plot.getHeight();
-            g.setColour (ink.withAlpha (juce::approximatelyEqual (db, 0.0) ? 0.55f : 0.24f));
-            g.drawLine (screen.getX(), y, screen.getRight(), y, 0.7f);
+            g.setColour (ink.withAlpha (juce::approximatelyEqual (db, 0.0) ? 0.34f : 0.15f));
+            g.drawLine (screen.getX(), y, screen.getRight(), y, 0.55f);
         }
     }
 
@@ -305,12 +330,12 @@ private:
         return juce::jlimit (0.0f, 1.0f, canvasParam->getValue());
     }
 
-    // Phosphor for the trace: quiet rose at clean output, brighter rose-white
-    // as SLAM pushes the output into gain and limiting. This is a visual output read,
-    // not a claim that SLAM changes the filter body.
+    // Phosphor for the trace: faded malachite at clean output, lifting toward a worn
+    // phosphor white as SLAM pushes the output into gain and limiting. This is a
+    // visual output read, not a claim that SLAM changes the filter body.
     juce::Colour responseColour() const
     {
-        return t.curveColour().interpolatedWith (juce::Colour (0xfffff7fa), slamVisualAmount());
+        return t.curveColour().interpolatedWith (juce::Colour (0xffe7e1d3), slamVisualAmount());
     }
 
     // Etched phosphor trace, stroked from the live response Path. The wide pass is
@@ -385,18 +410,20 @@ private:
         g.setColour (juce::Colour (0xff15151a).withAlpha (0.55f));      // soft offset bed (dark glass)
         g.strokePath (stair, { lw + 0.7f, joint, cap },
                       juce::AffineTransform::translation (1.2f, 1.8f));
-        g.setColour (phos.withAlpha (0.78f));                           // the starved signal
+        g.setColour (phos.withAlpha (0.66f));                           // the starved signal
         g.strokePath (stair, { lw, joint, cap });
+        g.setColour (juce::Colour (0xffbfcbB4).withAlpha (0.20f + 0.18f * s));
+        g.strokePath (stair, { 0.75f, joint, cap });
         if (limit > 0.001f)
         {
-            g.setColour (juce::Colour (0xffeef2ff).withAlpha (0.12f + 0.28f * limit));
+            g.setColour (juce::Colour (0xffeee7d7).withAlpha (0.12f + 0.28f * limit));
             g.strokePath (stair, { 0.8f + 1.0f * limit, joint, cap });
         }
 
         // Peak crosses (the reference's + ticks): small markers on the mode
         // crests — the anatomy made visible, not decoration.
         {
-            g.setColour (juce::Colour (0xfffff0e8).withAlpha (0.80f));
+            g.setColour (juce::Colour (0xfffff0e8).withAlpha (0.58f));
             int marks = 0;
             for (size_t i = 2; i + 2 < N && marks < 8; ++i)
             {
@@ -412,6 +439,29 @@ private:
                 }
             }
         }
+    }
+
+    void drawDisplayDropouts (juce::Graphics& g, juce::Rectangle<float> screen) const
+    {
+        g.setColour (juce::Colours::black.withAlpha (0.28f));
+        g.fillRect (screen.getX(), screen.getY(), screen.getWidth(), 1.0f);
+        g.fillRect (screen.getX(), screen.getBottom() - 1.4f, screen.getWidth(), 1.4f);
+
+        const float ys[] = { 31.0f, 74.0f, 126.0f, 211.0f, 287.0f };
+        for (float off : ys)
+        {
+            const float y = screen.getY() + std::fmod (off, screen.getHeight() - 4.0f);
+            const float x0 = screen.getX() + 18.0f + std::fmod (off * 3.7f, screen.getWidth() * 0.28f);
+            const float x1 = screen.getRight() - 24.0f - std::fmod (off * 2.1f, screen.getWidth() * 0.22f);
+            g.setColour (juce::Colours::black.withAlpha (0.16f));
+            g.drawLine (x0, y, x1, y, 0.9f);
+        }
+
+        // Two weak vertical failures at the edges, as if the panel is losing
+        // contact rather than glowing as one clean DAW widget.
+        g.setColour (juce::Colours::black.withAlpha (0.18f));
+        g.fillRect (screen.getX() + screen.getWidth() * 0.055f, screen.getY(), 1.0f, screen.getHeight());
+        g.fillRect (screen.getRight() - screen.getWidth() * 0.082f, screen.getY(), 1.0f, screen.getHeight());
     }
 
     // SEED's screen feedback: the OLD curve compresses toward a hot ruby
@@ -471,7 +521,7 @@ private:
         // Hot ruby during compress/static (the "compressed scanline"); cools
         // back toward the normal phosphor colour as the redraw completes.
         const float heat = pulsePhase == PulseRedraw ? (1.0f - progress) : 1.0f;
-        const auto hot = juce::Colour (0xfffff7fa).interpolatedWith (juce::Colour (0xffff2f4a), 0.4f);
+        const auto hot = juce::Colour (0xffe9dfc7).interpolatedWith (juce::Colour (0xffc9853f), 0.38f);
         const auto col = t.curveColour().interpolatedWith (hot, heat);
         constexpr auto joint = juce::PathStrokeType::curved;
         constexpr auto cap   = juce::PathStrokeType::rounded;
@@ -488,7 +538,7 @@ private:
             return;
 
         // No permanent riser/meter on the glass — SLAM's visual home is the
-        // ember heat-fill under the curve (drawResponseTrace). Only the
+        // phosphor lift under the curve (drawResponseTrace). Only the
         // transient value text appears, while interacting. (Tyson 2026-07-11:
         // "the bar on the right is clutter".)
         const float s = slamNorm();
@@ -515,11 +565,11 @@ private:
         // Remove the background box and border drawing to avoid fake overlays!
         // We only draw the text on the glass.
 
-        g.setFont (displayFont (11.0f, false));
-        g.setColour (juce::Colour (0xfffff7fa).withAlpha (0.95f * a));
+        g.setFont (displayFont (12.5f, true));
+        g.setColour (juce::Colour (0xffe7e1d3).withAlpha (0.95f * a));
         g.drawText (line1, r.removeFromTop (15.0f).reduced (6.0f, 1.0f),
                     juce::Justification::centredLeft, false);
-        g.setFont (displayFont (8.8f, false));
+        g.setFont (displayFont (10.5f, false));
         g.setColour (t.curveColour().withAlpha (0.86f * a));
         g.drawText (line2, r.reduced (6.0f, 0.0f), juce::Justification::centredLeft, false);
     }

@@ -57,8 +57,8 @@ public:
         // px along their length — a median rect leaves wall showing at the
         // bowed rows; "look at the preset on the right side").
         layout.elements["typeSelector"] = { { 218.0f, 129.0f, 676.0f, 77.0f },  {}, {} };
-        layout.elements["morphReadout"] = { { 591.0f, 703.0f, 172.0f, 74.0f },  14.5f, juce::Colours::black };
-        layout.elements["qReadout"]     = { { 591.0f, 885.0f, 172.0f, 71.0f },  14.5f, juce::Colours::black };
+        layout.elements["morphReadout"] = { { 591.0f, 703.0f, 172.0f, 74.0f },  20.0f, juce::Colour (0xff2a2722) };
+        layout.elements["qReadout"]     = { { 591.0f, 885.0f, 172.0f, 71.0f },  20.0f, juce::Colour (0xff2a2722) };
         layout.elements["spectrumGrid"] = { { 110.0f, 233.0f, 795.0f, 383.0f }, {}, {} }; // the screen opening
         layout.elements["slotPad"]      = { { 699.0f, 240.0f, 112.0f, 26.0f }, {}, {} }; // retired pager (hidden)
         layout.elements["modulateTag"]  = { { 149.0f, 456.0f, 430.0f, 56.0f }, {}, {} }; // clickable word on the glass
@@ -66,46 +66,43 @@ public:
         layout.elements["filterLabel"]  = { { 0.0f, 0.0f, 0.0f, 0.0f },  11.5f, juce::Colour (0xff3a2f22) };
         layout.elements["filterLabel"].text = "TRENCH";   // hidden — the nameplate carries the identity
         // TYPE label rides close to the preset bar — near, not hugging.
-        layout.elements["typeLabel"]    = { { 128.0f, 133.0f, 84.0f, 74.0f },  13.5f, juce::Colour (0xff21180f) };
+        layout.elements["typeLabel"]    = { { 128.0f, 133.0f, 84.0f, 74.0f },  15.0f, juce::Colour (0xff2a2722) };
         layout.elements["typeLabel"].text = "TYPE";
-        layout.elements["typeName"]     = { { 244.0f, 127.0f, 530.0f, 79.0f },  12.5f, juce::Colours::black };
+        layout.elements["typeName"]     = { { 244.0f, 127.0f, 530.0f, 79.0f },  18.0f, juce::Colour (0xff2a2722) };
         layout.elements["typeArrow"]    = { { 838.0f, 127.0f, 56.0f,  79.0f },  {}, {} }; // dropdown arrow box (the bar's divided end segment)
         // Rail labels: the SAME measured vertical gap above each wheel well;
         // darker engraved ink, MORPH clear of the display bezel.
-        layout.elements["morphLabel"]   = { { 114.0f, 640.0f, 434.0f, 38.0f },  14.0f, juce::Colour (0xff170f08) };
+        layout.elements["morphLabel"]   = { { 114.0f, 640.0f, 434.0f, 38.0f },  15.5f, juce::Colour (0xff2a2722) };
         layout.elements["morphLabel"].text = "MORPH";
-        layout.elements["qLabel"]       = { { 114.0f, 822.0f, 434.0f, 38.0f },  14.0f, juce::Colour (0xff170f08) };
+        layout.elements["qLabel"]       = { { 114.0f, 822.0f, 434.0f, 38.0f },  15.5f, juce::Colour (0xff2a2722) };
         layout.elements["qLabel"].text = "Q";
         // TRENCH top-left, seated just above the TYPE row like the X3's FILTER
         // badge — part of the content, not floating at the plate rim. No
         // sub-line anywhere ("MUSICAL FILTER" read as a second product name).
-        layout.elements["brandLabel"]   = { { 114.0f, 84.0f, 230.0f, 40.0f }, 11.5f, juce::Colour (0xff41362a) };
+        layout.elements["brandLabel"]   = { { 114.0f, 84.0f, 230.0f, 40.0f }, 16.5f, juce::Colour (0xff2a2722) };
         layout.elements["brandLabel"].text = "TRENCH";
 
-        // COBALT scheme (2026-07-11, Tyson's call: "Try: cobalt"): SAND plate
-        // (locked art) / cool GRAPHITE darks / ELECTRIC COBALT as the ONLY lit
-        // family. Grid lines visible on the glass, never buried.
-        layout.colours["accent"]      = juce::Colour (0xff7da4ff); // cobalt trace / active text
-        layout.colours["curveColour"] = juce::Colour (0xff7da4ff);
-        layout.colours["phosphor"]    = juce::Colour (0xff26262a); // cool dark glass base (graphite family)
-        layout.colours["amber"]       = juce::Colour (0xff2a5cff); // legacy token name: the hot glow core
-        layout.colours["dashed"]      = juce::Colour (0xff33333a); // cool graphite grid — VISIBLE
-        layout.colours["screenEdge"]  = juce::Colour (0xff131318); // deep glass keyline
-        layout.colours["labelInk"]    = juce::Colour (0xff29251f); // warm near-black charcoal ink (plate family)
+        // Grounded 60:30:10: WARM PUTTY / ESPRESSO CHARCOAL / MALACHITE.
+        // Saturation supplies impact; nothing is neon or blue-lit.
+        layout.colours["accent"]      = juce::Colour (0xff4f8f70); // oxidised malachite
+        layout.colours["curveColour"] = juce::Colour (0xff79a98b); // faded green phosphor
+        layout.colours["phosphor"]    = juce::Colour (0xff26231f); // espresso glass
+        layout.colours["amber"]       = juce::Colour (0xff3e8060); // legacy token name: malachite core
+        layout.colours["dashed"]      = juce::Colour (0xff4a4640); // warm charcoal grid
+        layout.colours["screenEdge"]  = juce::Colour (0xff151311); // espresso keyline
+        layout.colours["labelInk"]    = juce::Colour (0xff2a2722); // warm charcoal type
 
         layout.params["wellRadius"]        = 9.0;
         layout.params["readoutAliasScale"] = 0.85; // crisper on the dark LED box
         layout.params["typeArrowExtra"]    = 6.0;
         layout.params["curveDbTop"]        = 40.0;   // keep high-Q bodies inside the hardware display
         layout.params["curveDbBottom"]     = -40.0;
-        layout.params["fontBold"]          = 0.0;    // natural weight — synthetic bold smudges at label sizes (Tyson 2026-07-11: "too bold")
+        layout.params["fontBold"]          = 0.0;    // named weights only; no synthetic Impact-like bold
 
-        // The whole-UI typeface. Hand-editable live from ui_layout.json
-        // ("strings":{"fontFamily":"<any installed font>"}). Choose weight via a
-        // weight-named family rather than synthetic bold.
-        // Tahoma at natural weight — the face that never drew a complaint;
-        // Bahnschrift read "typography sucks". Synthetic bold stays off.
-        layout.strings["fontFamily"] = "Tahoma";
+        // Gill Sans is the strategic counterweight to the distressed machine:
+        // humanist, editorial and readable, without poster-grotesk severity.
+        layout.strings["fontFamily"] = "Gill Sans MT";
+        layout.strings["fontFamilyEmphasis"] = "Gill Sans MT";
         return layout;
     }
 
