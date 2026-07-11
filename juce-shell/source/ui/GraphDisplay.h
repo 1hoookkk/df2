@@ -235,6 +235,27 @@ public:
 
         drawResponseTrace (g);
         drawSlamReadout (g, screen);
+
+        // A very subtle pane of glass over the DISPLAY only (Tyson 2026-07-11):
+        // faint diagonal sheen + a whisper of corner vignette — the screen reads
+        // sealed. Whisper-level; never a separate object.
+        {
+            juce::ColourGradient sheen (juce::Colours::white.withAlpha (0.045f),
+                                        screen.getX(), screen.getY(),
+                                        juce::Colours::transparentBlack,
+                                        screen.getX() + screen.getWidth() * 0.5f, screen.getBottom(), false);
+            sheen.addColour (0.35, juce::Colours::white.withAlpha (0.015f));
+            g.setGradientFill (sheen);
+            g.fillRect (screen);
+
+            juce::ColourGradient vig (juce::Colours::transparentBlack,
+                                      screen.getCentreX(), screen.getCentreY(),
+                                      juce::Colours::black.withAlpha (0.10f),
+                                      screen.getX(), screen.getY(), true);
+            vig.addColour (0.70, juce::Colours::transparentBlack);
+            g.setGradientFill (vig);
+            g.fillRect (screen);
+        }
     }
 
 private:

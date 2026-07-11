@@ -53,9 +53,12 @@ public:
         // the same probe if the art ever changes; never hand-nudge.
         layout.elements["morphWheel"]   = { { 115.0f, 688.0f, 428.0f, 92.0f }, {}, {} };
         layout.elements["qWheel"]       = { { 114.0f, 869.0f, 429.0f, 93.0f }, {}, {} };
-        layout.elements["typeSelector"] = { { 218.0f, 129.0f, 672.0f, 77.0f },  {}, {} };
-        layout.elements["morphReadout"] = { { 591.0f, 703.0f, 169.0f, 74.0f },  14.5f, juce::Colours::black };
-        layout.elements["qReadout"]     = { { 590.0f, 885.0f, 171.0f, 71.0f },  14.5f, juce::Colours::black };
+        // Window edges use the OUTERMOST wall extent (the recesses bow by a few
+        // px along their length — a median rect leaves wall showing at the
+        // bowed rows; "look at the preset on the right side").
+        layout.elements["typeSelector"] = { { 218.0f, 129.0f, 676.0f, 77.0f },  {}, {} };
+        layout.elements["morphReadout"] = { { 591.0f, 703.0f, 172.0f, 74.0f },  14.5f, juce::Colours::black };
+        layout.elements["qReadout"]     = { { 591.0f, 885.0f, 172.0f, 71.0f },  14.5f, juce::Colours::black };
         layout.elements["spectrumGrid"] = { { 110.0f, 233.0f, 795.0f, 383.0f }, {}, {} }; // the screen opening
         layout.elements["slotPad"]      = { { 699.0f, 240.0f, 112.0f, 26.0f }, {}, {} }; // retired pager (hidden)
         layout.elements["modulateTag"]  = { { 149.0f, 456.0f, 430.0f, 56.0f }, {}, {} }; // clickable word on the glass
@@ -73,9 +76,10 @@ public:
         layout.elements["morphLabel"].text = "MORPH";
         layout.elements["qLabel"]       = { { 114.0f, 822.0f, 434.0f, 38.0f },  14.0f, juce::Colour (0xff170f08) };
         layout.elements["qLabel"].text = "Q";
-        // TRENCH alone in the top-left corner. No sub-line anywhere — "MUSICAL
-        // FILTER" reads as a second product name (removed, Tyson 2026-07-11).
-        layout.elements["brandLabel"]   = { { 114.0f, 58.0f, 230.0f, 40.0f }, 11.5f, juce::Colour (0xff41362a) };
+        // TRENCH top-left, seated just above the TYPE row like the X3's FILTER
+        // badge — part of the content, not floating at the plate rim. No
+        // sub-line anywhere ("MUSICAL FILTER" read as a second product name).
+        layout.elements["brandLabel"]   = { { 114.0f, 84.0f, 230.0f, 40.0f }, 11.5f, juce::Colour (0xff41362a) };
         layout.elements["brandLabel"].text = "TRENCH";
 
         // COBALT scheme (2026-07-11, Tyson's call: "Try: cobalt"): SAND plate

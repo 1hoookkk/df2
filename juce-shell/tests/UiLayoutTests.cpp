@@ -17,7 +17,7 @@ TEST_CASE ("Default layout exposes the shipped element rects")
     // contiguous lum<90 runs through each well's centre (2026-07-11).
     REQUIRE (d.sourceRectFor ("morphWheel")   == juce::Rectangle<float> (115, 688, 428, 92));
     REQUIRE (d.sourceRectFor ("qWheel")       == juce::Rectangle<float> (114, 869, 429, 93));
-    REQUIRE (d.sourceRectFor ("typeSelector") == juce::Rectangle<float> (218, 129, 672, 77));
+    REQUIRE (d.sourceRectFor ("typeSelector") == juce::Rectangle<float> (218, 129, 676, 77));
     REQUIRE (d.sourceRectFor ("spectrumGrid") == juce::Rectangle<float> (110, 233, 795, 383));
     // An unknown id returns the (empty) fallback, not a garbage rect.
     REQUIRE (d.sourceRectFor ("nope")         == juce::Rectangle<float>());

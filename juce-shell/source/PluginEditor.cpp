@@ -376,31 +376,6 @@ void PluginEditor::onFrame()
     secondaryReadout->setActive (secondaryActive);
 }
 
-void PluginEditor::paintOverChildren (juce::Graphics& g)
-{
-    // ONE pane of very subtle glass over the whole unit, display included
-    // (Tyson 2026-07-11): a faint diagonal sheen and a whisper of corner
-    // vignette — the entire faceplate reads as sealed behind a single sheet.
-    // Whisper-level by law: this must never read as a separate object.
-    const auto b = getLocalBounds().toFloat();
-
-    juce::ColourGradient sheen (juce::Colours::white.withAlpha (0.035f),
-                                b.getX(), b.getY(),
-                                juce::Colours::transparentBlack,
-                                b.getX() + b.getWidth() * 0.55f, b.getBottom(), false);
-    sheen.addColour (0.35, juce::Colours::white.withAlpha (0.012f));
-    g.setGradientFill (sheen);
-    g.fillRect (b);
-
-    juce::ColourGradient vig (juce::Colours::transparentBlack,
-                              b.getCentreX(), b.getCentreY(),
-                              juce::Colours::black.withAlpha (0.055f),
-                              b.getX(), b.getY(), true);
-    vig.addColour (0.72, juce::Colours::transparentBlack);
-    g.setGradientFill (vig);
-    g.fillRect (b);
-}
-
 void PluginEditor::setPage (int page)
 {
     currentPage = juce::jlimit (0, 1, page);
