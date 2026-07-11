@@ -367,8 +367,12 @@ PluginProcessor::ModulatedControls PluginProcessor::applyMotion (float morph, fl
     // recipe, deliberately not split into a separate depth control.
     // amount=0 is a true null even while armed.
     const float  amount    = juce::jlimit (0.0f, 1.0f, apvts.getRawParameterValue (ParamID::amount)->load());
-    const float  mDepth    = cachedSmart.morphDepth * amount;
-    const float  qDepth    = cachedSmart.qDepth     * amount;
+    // MOVE targets: the M/Q lamps gate the sweep to the chosen wheel(s). A muted
+    // lamp zeroes that wheel's depth, so motion only rides what you selected.
+    const float  tgtM      = apvts.getRawParameterValue (ParamID::motionTargetM)->load() > 0.5f ? 1.0f : 0.0f;
+    const float  tgtQ      = apvts.getRawParameterValue (ParamID::motionTargetQ)->load() > 0.5f ? 1.0f : 0.0f;
+    const float  mDepth    = cachedSmart.morphDepth * amount * tgtM;
+    const float  qDepth    = cachedSmart.qDepth     * amount * tgtQ;
     // Morph/Q only. Drive/SLAM stays an explicit control path outside Motion.
     constexpr bool accToDrv = false;
     constexpr float drvDepth = 0.0f;
@@ -382,8 +386,8 @@ PluginProcessor::ModulatedControls PluginProcessor::applyMotion (float morph, fl
         const float push = juce::jlimit (0.0f, 1.0f, inputEnv * juce::jmax (amount, react));
         motionStepForUi.store ((int) std::round (push * 15.0f), std::memory_order_relaxed);
         return {
-            juce::jlimit (0.0f, 1.0f, morph + push * cachedSmart.morphDepth),
-            juce::jlimit (0.0f, 1.0f, q     + push * cachedSmart.qDepth),
+            juce::jlimit (0.0f, 1.0f, morph + push * cachedSmart.morphDepth * tgtM),
+            juce::jlimit (0.0f, 1.0f, q     + push * cachedSmart.qDepth     * tgtQ),
             drive
         };
     }
@@ -743,8 +747,21 @@ void PluginProcessor::processBlock (juce::AudioBuffer<float>& buffer, juce::Midi
     lastSpaceSent.store (space, std::memory_order_relaxed);
     dspBridge.setSpatialMode (space > 0.001f ? 0 /*QSound*/ : kSpatialOff);
 
-    // Voicing-rig pan pose (the dev rig writes it; the shipping UI never does).
-    const float pan = rigPan.load (std::memory_order_relaxed);
+    // 5D EXTREME: when armed, the sound ORBITS the head — sweep the QSound
+    // azimuth in a continuous full circle. Free-running (independent of
+    // transport AND Motion), so it moves whether or not a motion is playing.
+    // Falls back to the dev voicing-rig pose when 5D is off (0 in shipping).
+    float pan = rigPan.load (std::memory_order_relaxed);
+    if (fiveDBase > 0.001f)
+    {
+        const double sr = getSampleRate() > 0.0 ? getSampleRate() : 48000.0;
+        constexpr double kOrbitHz = 0.35;   // ~3 s per revolution — dizzying, still musical
+        constexpr double kTwoPi   = 2.0 * juce::MathConstants<double>::pi;
+        spatialOrbitPhase += kTwoPi * kOrbitHz * (double) buffer.getNumSamples() / sr;
+        if (spatialOrbitPhase >= kTwoPi)
+            spatialOrbitPhase -= kTwoPi;
+        pan = (float) std::sin (spatialOrbitPhase);   // full -1..+1 azimuth swing
+    }
     if (! juce::approximatelyEqual (pan, lastRigPanSent))
     {
         dspBridge.setQSoundFallbackPan (pan);
@@ -1007,14 +1024,14 @@ void PluginProcessor::captureCurrentBodyBytes (const juce::String& cartridgeJson
     rosterBodyBytes = currentBodyBytes;
 }
 
-void PluginProcessor::seedCurrentBody()
+bool PluginProcessor::seedCurrentBody()
 {
     // Seed from the body that is actually playing (may already be a sibling); fall
     // back to the roster base if we do not have live bytes yet.
     if (currentBodyBytes.getSize() != 240)
         captureCurrentBodyBytes (trench::bodyCartridgeJson (loadedBodyIndex.load (std::memory_order_relaxed)));
     if (currentBodyBytes.getSize() != 240)
-        return;
+        return false;
 
     juce::MemoryBlock sibling;
     if (dspBridge.seedSiblingFromBytes (currentBodyBytes.getData(), currentBodyBytes.getSize(),
@@ -1023,11 +1040,11 @@ void PluginProcessor::seedCurrentBody()
         currentBodyBytes = std::move (sibling);
         lastLoadOk.store (true, std::memory_order_release);
         juce::Logger::writeToLog ("SEED -> sibling auditioned");
+        return true;
     }
-    else
-    {
-        juce::Logger::writeToLog ("SEED -> no legal sibling within budget (try again)");
-    }
+
+    juce::Logger::writeToLog ("SEED -> no legal sibling within budget (try again)");
+    return false;
 }
 
 void PluginProcessor::exportCurrentBody()

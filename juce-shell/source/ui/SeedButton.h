@@ -50,16 +50,12 @@ public:
     void paint (juce::Graphics& g) override
     {
         const auto b = getLocalBounds().toFloat();
-        drawWell (g, b, t);
-
-        g.setFont (displayFont (10.0f, false));
-        g.setColour (juce::Colour (0xffe9dfc6).withAlpha (down ? 0.75f : (hover ? 1.0f : 0.9f)));
-        g.drawText ("SEED", b, juce::Justification::centred, false);
+        drawHardwareKey (g, b, "SEED", hover, down, t);
 
         if (flashAlpha > 0.01f)
         {
-            g.setColour (juce::Colour (0xffefa63c).withAlpha (flashAlpha * 0.6f));
-            g.drawRoundedRectangle (b.reduced (0.5f), juce::jmax (3.0f, t.wellRadius() - 4.0f), 1.4f);
+            g.setColour (juce::Colour (0xffefa63c).withAlpha (flashAlpha * 0.55f));
+            g.drawRoundedRectangle (b.reduced (1.5f), juce::jmax (3.0f, t.wellRadius() - 3.0f), 1.4f);
         }
     }
 

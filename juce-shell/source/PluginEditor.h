@@ -15,6 +15,7 @@
 #include "ui/AmountFader.h"
 #include "ui/SeedButton.h"
 #include "ui/TakeButton.h"
+#include "ui/FiveDButton.h"
 #include "ui/TypeSelectorView.h"
 #include "ui/LabelsLayer.h"
 #include "ui/DecalsLayer.h"
@@ -53,6 +54,8 @@ private:
     trench::UiLayout currentLayout { trench::UiLayout::defaults() };
     trench::ui::Theme theme { currentLayout };
     std::unique_ptr<juce::VBlankAttachment> vblank;
+    // One instance makes every setTooltip() across the UI actually appear on hover.
+    juce::TooltipWindow tooltipWindow { this, 650 };
 
     std::unique_ptr<trench::ui::FaceplateView>    faceplate;
     std::unique_ptr<trench::ui::GraphDisplay>     graph;
@@ -75,6 +78,7 @@ private:
     std::unique_ptr<trench::ui::AmountFader>      amountFader;   // honest-dose fader, left of the screen
     std::unique_ptr<trench::ui::SeedButton>       seedButton;    // SEED: one tap, one related sibling
     std::unique_ptr<trench::ui::TakeButton>       takeButton;    // TAKE: drag the last few seconds into the DAW
+    std::unique_ptr<trench::ui::FiveDButton>      fiveDButton;   // 5D: latch the extreme spatial orbit
     std::unique_ptr<trench::ui::LabelsLayer>      labels;
     std::unique_ptr<trench::ui::DecalsLayer>      decalsLayer;
 

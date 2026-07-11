@@ -17,14 +17,28 @@ PluginEditor::PluginEditor (PluginProcessor& p)
     // file with the current layout if none exists) before building the views.
     reloadLayoutFromDisk();
 
-    auto panel = juce::ImageCache::getFromMemory (BinaryData::df2_panel_shadow_png,
-                                                  BinaryData::df2_panel_shadow_pngSize);
-    auto strip = juce::ImageCache::getFromMemory (BinaryData::thumbwheel_runtime_strip_129_149x40_png,
-                                                  BinaryData::thumbwheel_runtime_strip_129_149x40_pngSize);
+    // Back-to-beige rewrite (2026-07-10): the plate is Tyson's beige art (its
+    // baked recesses ARE the wells); ivory windows + glass are painted in code;
+    // the wheels are the real rendered sculpt strip ("these look good").
+    // The CLASSIC BEIGE plate — home. Components paint their bone faces into
+    // its baked wells.
+    // The CLASSIC BEIGE plate — home. Components paint their bone faces into
+    // its baked wells.
+    auto panel = juce::ImageCache::getFromMemory (BinaryData::df2_panel_beige_png,
+                                                  BinaryData::df2_panel_beige_pngSize);
+    // The wheels: the iron twin-row roller, Blender-rendered at ACTUAL SIZE with
+    // the ember position glow baked per frame (X3 law: trailing bar through the
+    // fin gaps). Frames draw 1:1 and overhang the recut wells; frame count
+    // derives from strip width; travel = 10 fin pitches, no wrap.
+    auto strip = juce::ImageCache::getFromMemory (BinaryData::trench_roller_strip_png,
+                                                  BinaryData::trench_roller_strip_pngSize);
     auto grid  = juce::ImageCache::getFromMemory (BinaryData::display_log_grid_png,
                                                   BinaryData::display_log_grid_pngSize);
+    auto tape  = juce::ImageCache::getFromMemory (BinaryData::musical_filter_tape_png,
+                                                  BinaryData::musical_filter_tape_pngSize);
 
-    faceplate    = std::make_unique<FaceplateView> (panel, theme);
+    faceplate    = std::make_unique<FaceplateView> (panel, theme, tape);
+    faceplate->setBufferedToImage (true);   // the static plate is cached, not re-rasterized per frame
     graph        = std::make_unique<GraphDisplay> (grid, theme, processor.apvts, ParamID::slamDrive);
     slotPad      = std::make_unique<SlotPad> (theme);
     moveChip = std::make_unique<MoveChip> (processor.apvts, theme);
@@ -71,7 +85,15 @@ PluginEditor::PluginEditor (PluginProcessor& p)
                 { f.getFullPathName() }, false, source, nullptr);
     };
     typeSelector = std::make_unique<TypeSelectorView> (processor.apvts, theme);
-    typeSelector->onSeed       = [this] { processor.seedCurrentBody(); };
+    const auto runSeed = [this]
+    {
+        if (processor.seedCurrentBody())
+        {
+            graph->playSeedPulse();
+            moveChip->flashSiblingLabel();
+        }
+    };
+    typeSelector->onSeed       = runSeed;
     typeSelector->onExportBody = [this] { processor.exportCurrentBody(); };
     // SOUND rails: upper aperture = MORPH, lower aperture = Q. SLAM is no longer a
     // rail — it is driven by dragging the screen canvas (see GraphDisplay), so the
@@ -85,14 +107,12 @@ PluginEditor::PluginEditor (PluginProcessor& p)
     secondaryWheel = std::make_unique<WheelControl> (processor.apvts, ParamID::q, strip, theme);
     morphReadout = std::make_unique<ValueReadout> ("morphReadout", theme);
     secondaryReadout = std::make_unique<ValueReadout> ("qReadout", theme);
+    // Bind so the readouts are real controls too: scroll / type / right-click menu.
+    morphReadout->bindParameter (processor.apvts.getParameter (ParamID::morph));
+    secondaryReadout->bindParameter (processor.apvts.getParameter (ParamID::q));
     amountFader  = std::make_unique<AmountFader> (processor.apvts, theme);
     seedButton   = std::make_unique<SeedButton> (theme);
-    seedButton->onSeed = [this]
-    {
-        processor.seedCurrentBody();
-        graph->playSeedPulse();
-        moveChip->flashSiblingLabel();
-    };
+    seedButton->onSeed = runSeed;
     takeButton   = std::make_unique<TakeButton> (theme);
     // Same real-heard-audio drag pattern as takeView->onKeep above -- no
     // offline render, the take is what you actually just heard.
@@ -103,6 +123,7 @@ PluginEditor::PluginEditor (PluginProcessor& p)
             juce::DragAndDropContainer::performExternalDragDropOfFiles (
                 { f.getFullPathName() }, false, source, nullptr);
     };
+    fiveDButton  = std::make_unique<FiveDButton> (processor.apvts, theme);
     labels       = std::make_unique<LabelsLayer> (theme);
     decalsLayer  = std::make_unique<DecalsLayer> (theme);
 
@@ -118,9 +139,16 @@ PluginEditor::PluginEditor (PluginProcessor& p)
     addAndMakeVisible (*secondaryWheel);
     addAndMakeVisible (*morphReadout);
     addAndMakeVisible (*secondaryReadout);
-    addAndMakeVisible (*amountFader);
-    addAndMakeVisible (*seedButton);
-    addAndMakeVisible (*takeButton);
+    // AMOUNT is a key control, so it stays visible. It will read "pasted on"
+    // until the plate art grows a milled slot for it (see faceplate regen) — a
+    // code fader on bare metal always does; the recess is the real fix.
+    // The reference face is intentionally only TYPE + glass + MORPH/Q. These
+    // utilities remain wired for the future utility drawer/host surface, but
+    // do not float on the luxury lower third.
+    addChildComponent (*amountFader);
+    addChildComponent (*seedButton);
+    addChildComponent (*takeButton);
+    addChildComponent (*fiveDButton);
     addAndMakeVisible (*labels);
     addAndMakeVisible (*decalsLayer);   // front-most: free text/boxes/lines
 
@@ -147,6 +175,10 @@ PluginEditor::PluginEditor (PluginProcessor& p)
 
     setResizable (false, false);
     setSize (kEditorWidth, kEditorHeight);
+
+    // Don't hold keyboard focus — so keystrokes fall through to the host and the
+    // user can play notes on their keyboard without clicking out of the plugin.
+    setWantsKeyboardFocus (false);
 
     // Live data (curve + readouts) on the display refresh. No timer and no
     // whole-editor repaint — each view repaints itself only when its input
@@ -251,36 +283,19 @@ void PluginEditor::layoutComponents()
     // separate component layered on top (added after graph -> paints front).
     {
         const auto scr = rectOf ("spectrumGrid");
-        moveChip->setBounds (scr.getX() + 8, scr.getY() + 8, 190, 20);
+        // One deliberate screen control: the dim Modulation-style tag parked
+        // bottom-left on the glass, exactly where the reference builds put it.
+        moveChip->setBounds (scr.getX() + 14, scr.getBottom() - 28, 178, 18);
     }
     typeSelector->setBounds (rectOf ("typeSelector"));
     morphWheel->setBounds (rectOf ("morphWheel"));
     secondaryWheel->setBounds (rectOf ("qWheel"));
     morphReadout->setBounds (rectOf ("morphReadout"));
     secondaryReadout->setBounds (rectOf ("qReadout"));
-    // AMOUNT fader — the right utility column. Left edge aligned to the readout boxes'
-    // right edge; below the display; above the lower-right cutout; fully inside the panel.
-    {
-        const auto mr  = rectOf ("morphReadout");
-        const auto qr  = rectOf ("qReadout");
-        const auto scr = rectOf ("spectrumGrid");
-        const int fx   = mr.getRight() + 26;
-        const int fw   = 44;
-        const int fTop = scr.getBottom() + 18;   // air below the display
-        const int fBot = qr.getBottom() + 34;    // tall — run down toward (above) the cutout
-        amountFader->setBounds (fx, fTop, fw, juce::jmax (120, fBot - fTop));
-    }
-    // SEED + TAKE — small hardware buttons (<=70px each), right-aligned under
-    // the Q readout so they read as two small controls, not a toolbar bar
-    // competing with the MORPH/Q readouts above them.
-    {
-        const auto qr = rectOf ("qReadout");
-        constexpr int w = 64, h = 20, gap = 6;
-        const int y = qr.getBottom() + 14;
-        const int right = qr.getRight();
-        takeButton->setBounds (right - w, y, w, h);
-        seedButton->setBounds (right - w - gap - w, y, w, h);
-    }
+    amountFader->setBounds ({});
+    seedButton->setBounds ({});
+    takeButton->setBounds ({});
+    fiveDButton->setBounds ({});
 
     decalsLayer->setBounds (base);
    #ifdef TRENCH_PLAYER_DIAGNOSTICS
@@ -343,13 +358,15 @@ void PluginEditor::onFrame()
     else
     {
         // SOUND: upper rail = MORPH, lower rail = Q. SLAM is driven by the canvas.
-        const bool moveOn = read (ParamID::moveOn) > 0.5f;
-        const bool moving = (motionOn || moveOn) && processor.isMorphModulatedForUi();
+        // The wheels follow the EFFECTIVE values whenever any engine modulates
+        // them — the processor's divergence flag is the single source of truth,
+        // so MOTION/MOVE visibly drive the wheels with no gate to go stale.
+        const bool moving = processor.isMorphModulatedForUi();
         const float morphValue = moving ? processor.getEffectiveMorphForUi() : read (ParamID::morph);
         morphWheel->setDisplayOverride (moving, morphValue);
         morphReadout->setNormalised (morphValue);
 
-        const bool qMoving = (motionOn || moveOn) && processor.isQModulatedForUi();
+        const bool qMoving = processor.isQModulatedForUi();
         const float qValue = qMoving ? processor.getEffectiveQForUi() : read (ParamID::q);
         secondaryWheel->setDisplayOverride (qMoving, qValue);
         secondaryReadout->setNormalised (qValue);
@@ -383,7 +400,7 @@ void PluginEditor::setPage (int page)
     }
     else
     {
-        labels->setRailLabels ("MORPH (%)", "Q (%)");   // target refs' wording; SLAM lives on the canvas
+        labels->setRailLabels ("MORPH", "Q");   // values already live in the adjacent readouts
         secondaryWheel->setParameter (processor.apvts, ParamID::q);
     }
 }

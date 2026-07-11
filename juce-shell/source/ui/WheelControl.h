@@ -1,30 +1,37 @@
 #pragma once
 
 #include "Theme.h"
+#include "ParamInteraction.h"
 
 #include <juce_audio_processors/juce_audio_processors.h>
+#include <cmath>
 #include <functional>
 #include <memory>
 
 namespace trench::ui
 {
 
-// One thumbwheel: filmstrip frame for the bound parameter + contact shadow, with
-// its own drag handling. The parameter is reached directly through a
+// One thumbwheel: the iron twin-row roller rendered at ACTUAL SIZE with the
+// ember position glow BAKED into the filmstrip (X3 law — light through the fin
+// gaps, trailing bar). Frames draw 1:1, centred, overhanging the plate's black
+// opening (the recut wells are tighter than the wheel — the well edge crops it,
+// like the hardware). Drag handling reaches the parameter directly through a
 // ParameterAttachment (correct begin/end gestures, host-thread-safe value
 // callbacks) — no hidden Slider, no SliderAttachment.
 class WheelControl : public juce::Component,
                      public juce::SettableTooltipClient
 {
 public:
+    static constexpr int kStripFrameWidth = 200;   // actual-size frame (drawn 1:1, never resampled)
+
     WheelControl (juce::AudioProcessorValueTreeState& apvts, juce::String paramID,
                   juce::Image filmstrip, const Theme& theme)
         : strip (std::move (filmstrip)), t (theme)
     {
-        // The filmstrip is a horizontal row of kFrameWidth-wide frames; derive the
+        // The filmstrip is a horizontal row of fixed-width frames; derive the
         // count from the image so the art and the code can never drift apart.
-        numFrames = juce::jmax (1, strip.getWidth() / kFrameWidth);
-        jassert (! strip.isValid() || strip.getWidth() % kFrameWidth == 0);
+        numFrames = juce::jmax (1, strip.getWidth() / kStripFrameWidth);
+        jassert (! strip.isValid() || strip.getWidth() % kStripFrameWidth == 0);
         isQControl = paramID.containsIgnoreCase ("q") || paramID.containsIgnoreCase ("slam");
 
         param = apvts.getParameter (paramID);
@@ -95,11 +102,19 @@ public:
 
     void mouseDown (const juce::MouseEvent& e) override
     {
+        if (e.mods.isPopupMenu())   // right-click -> Reset + host MIDI-learn/automation menu
+        {
+            showParamContextMenu (*this, param);
+            return;
+        }
         pressing = true;
         altRecording = e.mods.isAltDown() && onAltDragSample != nullptr;
         if (attachment != nullptr)
             attachment->beginGesture();
-        dragAbsolute (e);
+        dragStartX   = e.position.x;
+        valueAtStart = currentNormalised();
+        if (! e.mods.isShiftDown())   // Shift = fine drag from the press point, no jump
+            dragAbsolute (e);
         if (altRecording)
         {
             if (onAltDragStart != nullptr) onAltDragStart();
@@ -108,7 +123,21 @@ public:
     }
     void mouseDrag (const juce::MouseEvent& e) override
     {
-        dragAbsolute (e);
+        if (e.mods.isPopupMenu())
+            return;
+        if (e.mods.isShiftDown() && attachment != nullptr && param != nullptr)
+        {
+            // Fine, precise drag: scaled delta from the press point.
+            const float w    = juce::jmax (1.0f, (float) getWidth());
+            const float next = juce::jlimit (0.0f, 1.0f,
+                                             valueAtStart + (e.position.x - dragStartX) / w * 0.25f);
+            attachment->setValueAsPartOfGesture (param->convertFrom0to1 (next));
+            repaint();
+        }
+        else
+        {
+            dragAbsolute (e);
+        }
         if (altRecording && onAltDragSample != nullptr)
             onAltDragSample (currentNormalised());
     }
@@ -154,55 +183,28 @@ public:
         const int last = numFrames - 1;
         const int frame = juce::jlimit (0, last, juce::roundToInt (displayNormalised() * (float) last));
 
-        // SEATED drum (Tyson 2026-07-02: "the way the wheel sits"): the drum
-        // draws at ~90% of the well so the art's dark socket shows around it —
-        // it sits IN the opening, not on top of it. The wine shell's well
-        // floors are dark, so the margin reads as recess depth. A soft lip
-        // shadow on the drum's crown lets the well's top edge overhang it.
-        measureContentBox (fw, fh);
-        const auto well = getLocalBounds().toFloat();
-        constexpr float kSeat   = 1.00f;   // the approved wine-wheel seat (flush in the
-                                           // measured inner openings)
-        constexpr float kSeatCY = 0.50f;   // centre — rects are the true inner openings
-        // Decoupled axes: width stays flush in the opening, but HEIGHT maps to
-        // each well at the same fixed overfill — the two wells have different
-        // aspect ratios (98 vs 106 tall), and a width-driven height showed a
-        // different slice of the drum in each ("they sit differently").
-        constexpr float kOverfillY = 1.10f;   // same visible drum band in every well
-        const float scaleX = kSeat * well.getWidth() / (float) contentW;
-        const float drawW = scaleX * (float) fw;
-        const float drawH = kOverfillY * well.getHeight();
-        const float cx = well.getCentreX() - scaleX * ((float) contentX0 + (float) contentW * 0.5f);
-        const auto dst = juce::Rectangle<float> (cx, well.getY() + well.getHeight() * kSeatCY - drawH * 0.5f,
-                                                 drawW, drawH).toNearestInt();
+        // ACTUAL-SIZE draw: frames are authored at display resolution and drawn
+        // 1:1, centred — never resampled, never clipped. The frame's own alpha
+        // is the silhouette; it overhangs the plate's black opening so only the
+        // well edge frames it (the X3 sit). The ember position glow is BAKED
+        // into the filmstrip — no code-drawn lamp. NOTHING is painted behind
+        // the wheel: the panel art's baked recess IS the well (any code-drawn
+        // cavity here reads as a fake rectangle; regressed twice, never again).
+        const int dx = (getWidth()  - fw) / 2;
+        const int dy = (getHeight() - fh) / 2;
+        g.setOpacity (1.0f);
+        g.drawImage (strip, dx, dy, fw, fh, frame * fw, 0, fw, fh);
 
+        // Hover/drag feedback: the drum catches a touch more light under
+        // the cursor — state feedback as light on the object, not a ring.
+        if (hovering || pressing)
         {
-            juce::Graphics::ScopedSaveState save (g);
-            juce::Path wellShape;
-            // Corner radius must match the ART's well opening (its corners are much
-            // rounder than 13%) or the drum's square ends show outside the curve
-            // and read as hanging out of the slot.
-            wellShape.addRoundedRectangle (well, well.getHeight() * 0.20f);
-            g.reduceClipRegion (wellShape);
-            // NOTHING is painted behind the wheel. The panel art's baked recess
-            // IS the well — any code-drawn cavity/seat/trough here reads as a
-            // fake rectangle box over the real recess (regressed twice; never again).
-            g.setImageResamplingQuality (juce::Graphics::mediumResamplingQuality);
-            g.setOpacity (1.0f);
-            g.drawImage (strip, dst.getX(), dst.getY(), dst.getWidth(), dst.getHeight(),
-                         frame * fw, 0, fw, fh);
-
-            // Light-on-object only: the well's top lip shades the drum's crown,
-            // and the drum melts into the socket floor at the bottom.
-            const auto drumF = dst.toFloat();
-            juce::ColourGradient lip (juce::Colours::black.withAlpha (0.42f), 0.0f, drumF.getY(),
-                                      juce::Colours::transparentBlack, 0.0f, drumF.getY() + drumF.getHeight() * 0.24f, false);
-            g.setGradientFill (lip);
-            g.fillRect (drumF.withHeight (drumF.getHeight() * 0.24f));
-            juce::ColourGradient contact (juce::Colours::transparentBlack, 0.0f, drumF.getBottom() - drumF.getHeight() * 0.16f,
-                                          juce::Colours::black.withAlpha (0.34f), 0.0f, drumF.getBottom(), false);
-            g.setGradientFill (contact);
-            g.fillRect (drumF.withTop (drumF.getBottom() - drumF.getHeight() * 0.16f));
+            const auto drumF = juce::Rectangle<int> (dx, dy, fw, fh).toFloat();
+            juce::ColourGradient lift (juce::Colours::white.withAlpha (pressing ? 0.10f : 0.06f),
+                                       0.0f, drumF.getY() + drumF.getHeight() * 0.30f,
+                                       juce::Colours::transparentBlack, 0.0f, drumF.getBottom(), false);
+            g.setGradientFill (lift);
+            g.fillRect (drumF);
         }
 
         // The faceplate art owns the well edge. Do not draw an extra software
@@ -210,26 +212,6 @@ public:
     }
 
 private:
-    // The drum's opaque horizontal span inside one frame, measured ONCE from the
-    // strip's own alpha (frame 0) — adapts to the frozen art, no hardcoded box.
-    void measureContentBox (int fw, int fh)
-    {
-        if (contentW > 0)
-            return;
-        int lo = fw, hi = -1;
-        const juce::Image::BitmapData bd (strip, juce::Image::BitmapData::readOnly);
-        for (int x = 0; x < fw; ++x)
-            for (int y = 0; y < fh; ++y)
-                if (bd.getPixelColour (x, y).getAlpha() > 8)
-                {
-                    lo = juce::jmin (lo, x);
-                    hi = juce::jmax (hi, x);
-                    break;
-                }
-        contentX0 = lo <= hi ? lo : 0;
-        contentW  = lo <= hi ? hi - lo + 1 : fw;
-    }
-
     float currentNormalised() const
     {
         return param != nullptr ? juce::jlimit (0.0f, 1.0f, param->getValue()) : 0.0f;
@@ -255,7 +237,6 @@ private:
     std::unique_ptr<juce::ParameterAttachment> attachment;
     juce::Image strip;
     int numFrames = 1;
-    int contentX0 = 0, contentW = 0;   // frame 0's opaque drum span (lazy-measured)
     Theme t;
     bool hovering = false;
     bool pressing = false;

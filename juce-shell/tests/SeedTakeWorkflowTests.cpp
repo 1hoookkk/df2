@@ -36,9 +36,9 @@ TEST_CASE ("SEED produces distinct, valid 240-byte bodies across repeated calls"
     if (exportDir.isDirectory())
         before = exportDir.findChildFiles (juce::File::findFiles, false, "*.body240");
 
-    processor.seedCurrentBody();
+    REQUIRE (processor.seedCurrentBody());
     processor.exportCurrentBody();
-    processor.seedCurrentBody();
+    REQUIRE (processor.seedCurrentBody());
     processor.exportCurrentBody();
 
     auto after = exportDir.findChildFiles (juce::File::findFiles, false, "*.body240");

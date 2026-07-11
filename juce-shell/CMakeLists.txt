@@ -158,10 +158,12 @@ set(SourceFiles
     source/ui/DecalsLayer.h
     source/ui/LabelsLayer.h
     source/ui/MoveChip.h
+    source/ui/ParamInteraction.h
     source/ui/SelectorLookAndFeel.h
     source/ui/AmountFader.h
     source/ui/SeedButton.h
     source/ui/TakeButton.h
+    source/ui/FiveDButton.h
     source/ui/ResponseCurve.h
     source/ui/SlotPad.h
     source/ui/Theme.h

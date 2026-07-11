@@ -33,20 +33,47 @@ public:
         const char* label;
         int tile;    // -1 = OFF (motionOn=0, tile untouched)
         int divIdx;  // ignored when tile == -1
+        bool tgtM;   // the preset PACKS its target: morph always moves...
+        bool tgtQ;   // ...Q rides along only on presets where it's musical
     };
 
     // tile: 0=Riser 1=Breathe 2=Chop 3=Wobble 4=User (matches ParamID::motionTile).
-    // divIdx: matches ParamID::motionDiv's choice list (TrenchParameters.cpp).
-    static constexpr State kStates[9] = {
-        { "OFF",              -1, 0 },
-        { "RISE \xC2\xB7 1 BAR",     0, 7 },
-        { "RISE \xC2\xB7 2 BAR",     0, 8 },
-        { "BREATHE \xC2\xB7 2 BAR",  1, 8 },
-        { "CHOP \xC2\xB7 1/16",      2, 3 },
-        { "CHOP \xC2\xB7 1/32",      2, 5 },
-        { "WOBBLE \xC2\xB7 1/8",     3, 1 },
-        { "WOBBLE \xC2\xB7 1/16",    3, 3 },
-        { "USER \xC2\xB7 1 BAR",     4, 7 },
+    // divIdx: motionDiv choice list order -> 0=1/4 1=1/8 2=1/8T 3=1/16 4=1/16T
+    //         5=1/32 6=1/2 7=1 BAR 8=2 BAR 9=4 BAR (TrenchParameters.cpp).
+    // tgtM/tgtQ: which wheel(s) this preset sweeps (written to motionTargetM/Q).
+    // One authored preset per rate up to 4 bars — the list IS the rate control.
+    // Each verb gets its musical rate band; morph always moves, Q rides Wobble.
+    static constexpr State kStates[] = {
+        { "OFF",                  -1, 0, false, false },
+        // RISE — slow swell
+        { "RISE \xC2\xB7 1 BAR",      0, 7, true,  false },
+        { "RISE \xC2\xB7 2 BAR",      0, 8, true,  false },
+        { "RISE \xC2\xB7 4 BAR",      0, 9, true,  false },
+        // BREATHE — gentle cycle
+        { "BREATHE \xC2\xB7 1/2",     1, 6, true,  false },
+        { "BREATHE \xC2\xB7 1 BAR",   1, 7, true,  false },
+        { "BREATHE \xC2\xB7 2 BAR",   1, 8, true,  false },
+        { "BREATHE \xC2\xB7 4 BAR",   1, 9, true,  false },
+        // CHOP — rhythmic gate
+        { "CHOP \xC2\xB7 1/4",        2, 0, true,  false },
+        { "CHOP \xC2\xB7 1/8",        2, 1, true,  false },
+        { "CHOP \xC2\xB7 1/16",       2, 3, true,  false },
+        { "CHOP \xC2\xB7 1/32",       2, 5, true,  false },
+        // WOBBLE — LFO on morph + Q
+        { "WOBBLE \xC2\xB7 1/4",      3, 0, true,  true  },
+        { "WOBBLE \xC2\xB7 1/8",      3, 1, true,  true  },
+        { "WOBBLE \xC2\xB7 1/16",     3, 3, true,  true  },
+        { "WOBBLE \xC2\xB7 1/32",     3, 5, true,  true  },
+        // USER — your alt-drag "loop" gesture: the FULL rate band (your gesture,
+        // any speed), unlike the authored verbs which keep a curated band.
+        { "USER \xC2\xB7 1/32",       4, 5, true,  false },
+        { "USER \xC2\xB7 1/16",       4, 3, true,  false },
+        { "USER \xC2\xB7 1/8",        4, 1, true,  false },
+        { "USER \xC2\xB7 1/4",        4, 0, true,  false },
+        { "USER \xC2\xB7 1/2",        4, 6, true,  false },
+        { "USER \xC2\xB7 1 BAR",      4, 7, true,  false },
+        { "USER \xC2\xB7 2 BAR",      4, 8, true,  false },
+        { "USER \xC2\xB7 4 BAR",      4, 9, true,  false },
     };
 
     MoveChip (juce::AudioProcessorValueTreeState& apvts, const Theme& theme)
@@ -55,17 +82,22 @@ public:
         motionOnParam   = apvts.getParameter (ParamID::motionOn);
         motionTileParam = apvts.getParameter (ParamID::motionTile);
         motionDivParam  = apvts.getParameter (ParamID::motionDiv);
+        motionTgtMParam = apvts.getParameter (ParamID::motionTargetM);
+        motionTgtQParam = apvts.getParameter (ParamID::motionTargetQ);
 
         combo.setLookAndFeel (&lookAndFeel);
         combo.setInterceptsMouseClicks (false, false);
+        combo.setWantsKeyboardFocus (false);   // don't steal keys from the host
         for (auto colourId : { juce::ComboBox::backgroundColourId, juce::ComboBox::outlineColourId,
                                juce::ComboBox::buttonColourId, juce::ComboBox::arrowColourId,
                                juce::ComboBox::textColourId })
             combo.setColour (colourId, juce::Colours::transparentBlack);
         combo.setTextWhenNothingSelected ({});
         addAndMakeVisible (combo);
+        // Labels embed a UTF-8 middle dot (0xC2 0xB7); decode explicitly so it
+        // renders as "·" and not the "Â·" mojibake of a raw-byte interpretation.
         for (int i = 0; i < (int) std::size (kStates); ++i)
-            combo.addItem (kStates[(size_t) i].label, i + 1);
+            combo.addItem (juce::String (juce::CharPointer_UTF8 (kStates[(size_t) i].label)), i + 1);
 
         if (motionOnParam != nullptr)
             onAtt = std::make_unique<juce::ParameterAttachment> (*motionOnParam, [this] (float) { syncFromParams(); });
@@ -73,6 +105,12 @@ public:
             tileAtt = std::make_unique<juce::ParameterAttachment> (*motionTileParam, [this] (float) { syncFromParams(); });
         if (motionDivParam != nullptr)
             divAtt = std::make_unique<juce::ParameterAttachment> (*motionDivParam, [this] (float) { syncFromParams(); });
+        // Target attachments carry no display state — they only let the preset
+        // WRITE the packed M/Q target with a proper gesture.
+        if (motionTgtMParam != nullptr)
+            tgtMAtt = std::make_unique<juce::ParameterAttachment> (*motionTgtMParam, [] (float) {});
+        if (motionTgtQParam != nullptr)
+            tgtQAtt = std::make_unique<juce::ParameterAttachment> (*motionTgtQParam, [] (float) {});
         syncFromParams();
 
         combo.onChange = [this]
@@ -92,6 +130,9 @@ public:
                 divAtt->setValueAsCompleteGesture (motionDivParam->convertTo0to1 ((float) s.divIdx));
                 onAtt->setValueAsCompleteGesture (1.0f);
             }
+            // Preset packs the M/Q target — write it alongside tile/div/on.
+            if (tgtMAtt != nullptr) tgtMAtt->setValueAsCompleteGesture (s.tgtM ? 1.0f : 0.0f);
+            if (tgtQAtt != nullptr) tgtQAtt->setValueAsCompleteGesture (s.tgtQ ? 1.0f : 0.0f);
             repaint();
         };
 
@@ -122,31 +163,38 @@ public:
 
     void paint (juce::Graphics& g) override
     {
+        // The reference builds' "Modulation" tag (IMG_5895/5812): a small lamp
+        // dot + one dim word printed on the glass. No pill, no switch graphic —
+        // the popup still opens on click.
         const auto chip = chipBounds().toFloat();
         const bool on = motionOnParam != nullptr && motionOnParam->getValue() > 0.5f;
-        const float radius = juce::jmin (5.0f, chip.getHeight() * 0.5f);
 
-        g.setColour (juce::Colours::black.withAlpha (0.40f));
-        g.fillRoundedRectangle (chip, radius);
-        g.setColour (juce::Colours::black.withAlpha (0.55f));
-        g.drawRoundedRectangle (chip.reduced (0.5f), radius, 1.0f);
+        const float lampD = 5.5f;
+        const auto lamp = juce::Rectangle<float> (chip.getX(),
+                                                   chip.getCentreY() - lampD * 0.5f,
+                                                   lampD, lampD);
+        // The active accent lamp (muted acid-green): lit only when motion runs.
+        g.setColour (on ? juce::Colour (0xffa9d85e) : juce::Colour (0xff23301f).withAlpha (0.9f));
+        g.fillEllipse (lamp);
+        g.setColour (juce::Colours::black.withAlpha (0.45f));
+        g.drawEllipse (lamp, 0.7f);
 
-        g.setFont (displayFont (11.0f, false).withStyle (juce::Font::italic));
-        g.setColour ((on ? t.amber() : kQuietInk).withAlpha (hover ? 1.0f : (on ? 0.95f : 0.82f)));
-        g.drawText (displayText(), chip.reduced (7.0f, 0.0f), juce::Justification::centredLeft, false);
+        // OFF is the lamp's job, not the text's: dark dot + "MOTION" alone.
+        // When running, the state name earns its place next to the lit lamp.
+        // Pale sage ink — printed on the deep verdigris glass.
+        g.setFont (displayFont (11.0f, false));
+        g.setColour (juce::Colour (0xffaac4a0).withAlpha ((hover || on) ? 1.0f : 0.85f));
+        g.drawText ((on || showingSibling) ? "MOTION  " + displayText() : "MOTION",
+                    chip.withTrimmedLeft (lampD + 6.0f),
+                    juce::Justification::centredLeft, false);
     }
 
 private:
     juce::String displayText() const { return showingSibling ? "SIBLING" : combo.getText(); }
 
-    // The chip hugs its text content (padded), capped at this component's
-    // assigned outer bounds -- it does not stretch to fill them.
     juce::Rectangle<int> chipBounds() const
     {
-        const auto font = displayFont (11.0f, false).withStyle (juce::Font::italic);
-        const float textW = juce::GlyphArrangement::getStringWidth (font, displayText());
-        const int w = juce::jmin (getWidth(), (int) textW + 22);
-        return { 0, 0, w, getHeight() };
+        return getLocalBounds();
     }
 
     void syncFromParams()
@@ -196,9 +244,13 @@ private:
     juce::RangedAudioParameter* motionOnParam = nullptr;
     juce::RangedAudioParameter* motionTileParam = nullptr;
     juce::RangedAudioParameter* motionDivParam = nullptr;
+    juce::RangedAudioParameter* motionTgtMParam = nullptr;
+    juce::RangedAudioParameter* motionTgtQParam = nullptr;
     std::unique_ptr<juce::ParameterAttachment> onAtt;
     std::unique_ptr<juce::ParameterAttachment> tileAtt;
     std::unique_ptr<juce::ParameterAttachment> divAtt;
+    std::unique_ptr<juce::ParameterAttachment> tgtMAtt;
+    std::unique_ptr<juce::ParameterAttachment> tgtQAtt;
     bool hover = false;
     bool showingSibling = false;
     double siblingElapsedMs = 0.0;

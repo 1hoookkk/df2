@@ -1,54 +1,84 @@
 param(
-    [switch] $Launch
+    [switch] $Launch,
+    [string] $Target = "TRENCH_Standalone",
+    [switch] $Diagnostics
 )
 
 $ErrorActionPreference = "Stop"
 
+# Canonical build: Ninja (single-config) + MSVC. Fast incremental dev loop.
+# The Rust staticlib (trench-core) is built by CMake's `trench_core_build` target
+# as a dependency of every plugin format, so there is no separate cargo step.
+
 $repoRoot = Split-Path -Parent $PSScriptRoot
-$buildDir = Join-Path $PSScriptRoot "build"
-$standalone = Join-Path $buildDir "TRENCH_artefacts\Release\Standalone\TRENCH.exe"
-$rustCrate = Join-Path $repoRoot "trench-core"
-$rustLib = Join-Path $repoRoot "target\release\trench_core.lib"
+$buildDir = Join-Path $PSScriptRoot "build-ninja"
+
+function Import-VsDevEnvironment {
+    if ($env:VCToolsInstallDir -and $env:INCLUDE -match "MSVC") {
+        return
+    }
+
+    $vswhere = Join-Path ${env:ProgramFiles(x86)} "Microsoft Visual Studio\Installer\vswhere.exe"
+    if (-not (Test-Path $vswhere)) {
+        throw "vswhere.exe was not found; install Visual Studio C++ tools or run from a Developer PowerShell."
+    }
+
+    $installPath = & $vswhere -latest -products * `
+        -requires Microsoft.VisualStudio.Component.VC.Tools.x86.x64 `
+        -property installationPath
+    if (-not $installPath) {
+        throw "No Visual Studio install with MSVC C++ tools was found."
+    }
+
+    $vsDevCmd = Join-Path $installPath "Common7\Tools\VsDevCmd.bat"
+    if (-not (Test-Path $vsDevCmd)) {
+        throw "VsDevCmd.bat was not found at $vsDevCmd"
+    }
+
+    $cmd = "`"$vsDevCmd`" -no_logo -arch=x64 -host_arch=x64 && set"
+    $envBlock = cmd.exe /d /s /c $cmd
+    if ($LASTEXITCODE -ne 0) {
+        throw "VsDevCmd.bat failed with exit code $LASTEXITCODE"
+    }
+
+    foreach ($line in $envBlock) {
+        if ($line -match '^([^=]+)=(.*)$') {
+            Set-Item -Path ("Env:{0}" -f $matches[1]) -Value $matches[2]
+        }
+    }
+}
+
+Import-VsDevEnvironment
 
 Push-Location $repoRoot
 try {
-    # The JUCE shell links the Rust static library. Building only that crate
-    # type avoids replacing trench_core.dll while browser helpers are using it.
-    $rustInputs = @(
-        Get-Item (Join-Path $repoRoot "Cargo.toml")
-        Get-Item (Join-Path $repoRoot "Cargo.lock")
-        Get-Item (Join-Path $rustCrate "Cargo.toml")
-        Get-ChildItem (Join-Path $rustCrate "src") -Recurse -File -Filter "*.rs"
-    )
-    $rustBuildRequired = -not (Test-Path $rustLib)
-    if (-not $rustBuildRequired) {
-        $rustLibTimestamp = (Get-Item $rustLib).LastWriteTimeUtc
-        $rustBuildRequired = $null -ne ($rustInputs | Where-Object LastWriteTimeUtc -gt $rustLibTimestamp | Select-Object -First 1)
+    # Product builds stay clean. Pass -Diagnostics for the dev standalone that
+    # reads/hot-reloads Documents/TRENCH authoring/layout files.
+    $diagnosticsFlag = if ($Diagnostics) { "ON" } else { "OFF" }
+    cmake -S $PSScriptRoot -B $buildDir -G Ninja -DCMAKE_BUILD_TYPE=Release "-DTRENCH_PLAYER_DIAGNOSTICS=$diagnosticsFlag" -DTRENCH_FORGE=OFF -DTRENCH_COPY_PLUGIN_AFTER_BUILD=OFF
+    if ($LASTEXITCODE -ne 0) {
+        throw "CMake configure failed with exit code $LASTEXITCODE"
     }
 
-    if ($rustBuildRequired) {
-        cargo rustc -p trench-core --release --lib --crate-type staticlib
-        if ($LASTEXITCODE -ne 0) {
-            throw "Rust static-library build failed with exit code $LASTEXITCODE"
-        }
+    # Single-config Ninja puts artefacts under the configured build type.
+    $cfg = (Select-String -Path (Join-Path $buildDir "CMakeCache.txt") `
+            -Pattern '^CMAKE_BUILD_TYPE:\w+=(.*)$').Matches.Groups[1].Value
+    if (-not $cfg) { $cfg = "Release" }
+    $standalone = Join-Path $buildDir "TRENCH_artefacts\$cfg\Standalone\TRENCH.exe"
+
+    if ($Launch -and $Target -ne "TRENCH_Standalone") {
+        throw "-Launch is only valid with -Target TRENCH_Standalone"
     }
 
-    if (-not (Test-Path (Join-Path $buildDir "CMakeCache.txt"))) {
-        cmake -S $PSScriptRoot -B $buildDir -G "Visual Studio 17 2022"
-        if ($LASTEXITCODE -ne 0) {
-            throw "CMake configure failed with exit code $LASTEXITCODE"
-        }
-    }
-
-    if ($Launch) {
+    if ($Target -eq "TRENCH_Standalone") {
         Get-Process TRENCH -ErrorAction SilentlyContinue |
             Where-Object Path -eq $standalone |
             Stop-Process -Force
     }
 
-    cmake --build $buildDir --config Release --target TRENCH_Standalone --parallel
+    cmake --build $buildDir --target $Target
     if ($LASTEXITCODE -ne 0) {
-        throw "Standalone build failed with exit code $LASTEXITCODE"
+        throw "Build target '$Target' failed with exit code $LASTEXITCODE"
     }
 
     if ($Launch) {

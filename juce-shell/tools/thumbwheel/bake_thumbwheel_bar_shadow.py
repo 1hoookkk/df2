@@ -13,9 +13,7 @@ from pathlib import Path
 from PIL import Image, ImageDraw, ImageFilter
 
 
-PANEL_DEFAULT = Path(
-    r"C:\Users\hooki\Downloads\ChatGPT Image May 30, 2026, 12_45_47 AM - grid seated rounded.png"
-)
+PANEL_DEFAULT = Path(r"C:\Users\hooki\Downloads\ChatGPT Image May 30, 2026, 12_45_47 AM.png")
 INSTALL_DEFAULT = Path(r"C:\Users\hooki\df2\juce-shell\assets\ui\df2_panel_shadow.png")
 
 # Source-space well bounds used by PluginEditor.cpp.
@@ -27,15 +25,12 @@ WELLS = (
 
 def thumbwheel_rect(well: tuple[float, float, float, float]) -> tuple[int, int, int, int]:
     x, y, w, h = well
-    # Exact source coordinates corresponding to well.reduced(4.0f, 3.7f).translated(0.0f, 0.2f) in C++
-    reduced_x = 4.0 * (1024.0 / 360.0)
-    reduced_y = 3.7 * (1591.0 / 560.0)
-    y_nudge = 0.2 * (1591.0 / 560.0)
-
-    wheel_x = x + reduced_x
-    wheel_y = y + reduced_y + y_nudge
-    wheel_w = w - 2.0 * reduced_x
-    wheel_h = h - 2.0 * reduced_y
+    # PluginEditor draws a 149x40 runtime frame centered in the source-space well
+    # after converting through the 360x560 editor coordinate system.
+    wheel_w = 149.0 * (1024.0 / 360.0)
+    wheel_h = 40.0 * (1591.0 / 560.0)
+    wheel_x = x + (w - wheel_w) * 0.5
+    wheel_y = y + (h - wheel_h) * 0.5
     return (
         round(wheel_x),
         round(wheel_y),
@@ -47,23 +42,30 @@ def thumbwheel_rect(well: tuple[float, float, float, float]) -> tuple[int, int, 
 def add_shadow(canvas: Image.Image, rect: tuple[int, int, int, int]) -> None:
     x1, y1, x2, y2 = rect
     w = x2 - x1
-    h = y2 - y1
-    radius = max(8, h // 4)
+    bite_w = max(1, w - 28)
+    bite = Image.new("RGBA", (bite_w + 34, 22), (0, 0, 0, 0))
+    bite_mask = Image.new("L", bite.size, 0)
+    bd = ImageDraw.Draw(bite_mask)
+    bd.rounded_rectangle((17, 4, 17 + bite_w - 1, 10), radius=5, fill=92)
+    bite_mask = bite_mask.filter(ImageFilter.GaussianBlur(2))
+    bite.putalpha(bite_mask)
+    canvas.alpha_composite(bite, (x1 + (w - bite_w) // 2 - 17, y2 - 4))
 
-    # Broad cast shadow on the faceplate. Offset down and a touch left, matching
-    # the existing panel light direction.
-    broad = Image.new("RGBA", (w + 90, h + 90), (0, 0, 0, 0))
-    bd = ImageDraw.Draw(broad)
-    bd.rounded_rectangle((34, 42, 34 + w - 1, 42 + h - 1), radius=radius, fill=(0, 0, 0, 88))
-    broad = broad.filter(ImageFilter.GaussianBlur(15))
-    canvas.alpha_composite(broad, (x1 - 42, y1 - 22))
+    falloff_w = max(1, w - 52)
+    falloff_h = 24
+    falloff = Image.new("RGBA", (falloff_w + 60, falloff_h + 30), (0, 0, 0, 0))
+    falloff_mask = Image.new("L", falloff.size, 0)
+    fd = ImageDraw.Draw(falloff_mask)
 
-    # Tighter contact shadow just below the lower edge of the protruding bar.
-    contact = Image.new("RGBA", (w + 42, h + 42), (0, 0, 0, 0))
-    cd = ImageDraw.Draw(contact)
-    cd.rounded_rectangle((18, 23, 18 + w - 1, 23 + h - 1), radius=radius, fill=(0, 0, 0, 96))
-    contact = contact.filter(ImageFilter.GaussianBlur(6))
-    canvas.alpha_composite(contact, (x1 - 20, y1 - 8))
+    # Hand-painted half oval. Its top sits under the wheel, then dies quickly
+    # so the faceplate keeps the X3 "resting on metal" read.
+    fd.ellipse((30, -10, 30 + falloff_w, -10 + falloff_h), fill=118)
+    fd.rectangle((0, 0, falloff.size[0], 2), fill=0)
+
+    # Soften the sides more than the contact edge.
+    falloff_mask = falloff_mask.filter(ImageFilter.GaussianBlur(4))
+    falloff.putalpha(falloff_mask)
+    canvas.alpha_composite(falloff, (x1 + (w - falloff_w) // 2 - 30, y2 - 1))
 
 
 def bake(panel_path: Path, out_path: Path) -> None:

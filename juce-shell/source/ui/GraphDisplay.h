@@ -62,9 +62,6 @@ public:
             canvasDefault = canvasParam->getDefaultValue();
             setMouseCursor (juce::MouseCursor::UpDownResizeCursor);
         }
-        motionOnParam = apvts.getParameter (ParamID::motionOn);
-        if (motionOnParam != nullptr)
-            motionOnAtt = std::make_unique<juce::ParameterAttachment> (*motionOnParam, [this] (float) { repaint(); });
         // The screen takes mouse input to drive SLAM (children like the [1][2]
         // pad and MOD tag sit on top and still get their own clicks).
         setInterceptsMouseClicks (canvasParam != nullptr, false);
@@ -145,7 +142,9 @@ public:
             if (! ok || ! std::isfinite (mag)) continue;
 
             const double db = 20.0 * std::log10 (juce::jmax (mag, 1.0e-6));
-            const double yt = juce::jlimit (-0.06, 1.06, (dbTop - db) / (dbTop - dbBot)); // clip off-edge, no flat-top clamp
+            // Internal safe area: the trace saturates just INSIDE the plot so a
+            // deep notch or hot peak never collides with the glass edge.
+            const double yt = juce::jlimit (0.015, 0.985, (dbTop - db) / (dbTop - dbBot));
             // Sub-pixel positions: pixel-snapping staircased every slope and broke the
             // stroke's anti-aliasing. The path keeps float precision; the stroke AA's.
             const float x = plot.getX() + (float) frac * plot.getWidth();
@@ -164,6 +163,25 @@ public:
         }
 
         responsePath = std::move (path);
+
+        // Phosphor persistence: a MOVING curve leaves a brief decaying wake
+        // (real scope phosphor, gone in ~200 ms) — motion becomes visible as a
+        // comet tail, a parked curve leaves nothing. Snapshot only on real
+        // movement so idle redraws don't smear.
+        if (! traceDbs.empty())
+        {
+            float delta = 0.0f;
+            if (! wakes.empty() && wakes.back().dbs.size() == traceDbs.size())
+                for (size_t i = 0; i < traceDbs.size(); ++i)
+                    delta = juce::jmax (delta, std::abs (traceDbs[i] - wakes.back().dbs[i]));
+            if (wakes.empty() || delta > 0.4f)
+            {
+                wakes.push_back ({ traceDbs, 1.0f });
+                if (wakes.size() > 4) wakes.erase (wakes.begin());
+                startTimer (30);
+            }
+        }
+
         repaint();
     }
 
@@ -225,19 +243,52 @@ public:
         juce::Graphics::ScopedSaveState save (g);
         g.reduceClipRegion (face);
 
-        // DO NOT paint any background over the baked burgundy glass of the faceplate!
-        // The glass must stay quiet and show the panel art's own texture.
+        // NO glass bitmap: the plate art's own baked dark recess IS the glass
+        // ("i also dont like the glass overlay", Tyson 2026-07-11). Code draws
+        // only ink — the ruled grid and the trace. No washes, no atmosphere.
+        drawLogGrid (g, screen);
+
         armed = canvasParam != nullptr
                     ? juce::jlimit (0.0f, 1.0f, (canvasParam->getValue() - 0.15f) / 0.60f)
                     : 0.0f;
 
         drawResponseTrace (g);
         drawSlamReadout (g, screen);
-        // No drawn edge either — the art's own bezel carries the seating.
     }
 
 private:
     juce::Rectangle<float> plotBounds() const { return getLocalBounds().toFloat().reduced (6.0f, 5.0f); }
+
+    // Ruled log-frequency grid on the glass: decade majors + in-decade minors
+    // and one line per 10 dB, deep wine, plainly visible. Same 20 Hz..20 kHz
+    // mapping as the trace.
+    void drawLogGrid (juce::Graphics& g, juce::Rectangle<float> screen) const
+    {
+        const auto plot = plotBounds();
+        if (plot.isEmpty())
+            return;
+        const auto ink = t.dashed();
+        const double fLo = 20.0, fHi = 20000.0;
+        const auto xOf = [&] (double f)
+        { return plot.getX() + (float) (std::log (f / fLo) / std::log (fHi / fLo)) * plot.getWidth(); };
+        for (double decade = 10.0; decade < fHi; decade *= 10.0)
+            for (int m = 2; m <= 10; ++m)
+            {
+                const double f = decade * m;
+                if (f <= fLo || f >= fHi)
+                    continue;
+                const bool major = (m == 10);
+                g.setColour (ink.withAlpha (major ? 0.55f : 0.28f));
+                g.drawLine (xOf (f), screen.getY(), xOf (f), screen.getBottom(), major ? 1.1f : 0.7f);
+            }
+        const double dbTop = t.curveDbTop(), dbBot = t.curveDbBottom();
+        for (double db = std::ceil (dbBot / 10.0) * 10.0; db <= dbTop; db += 10.0)
+        {
+            const float y = plot.getY() + (float) ((dbTop - db) / (dbTop - dbBot)) * plot.getHeight();
+            g.setColour (ink.withAlpha (juce::approximatelyEqual (db, 0.0) ? 0.55f : 0.24f));
+            g.drawLine (screen.getX(), y, screen.getRight(), y, 0.7f);
+        }
+    }
 
     float slamVisualAmount() const noexcept
     {
@@ -260,57 +311,6 @@ private:
         return t.curveColour().interpolatedWith (juce::Colour (0xfffff7fa), slamVisualAmount());
     }
 
-    juce::Path displayPathForSlam() const
-    {
-        if (traceXs.empty() || traceXs.size() != traceDbs.size())
-            return responsePath;
-
-        const float s = slamNorm();
-        if (s <= 0.001f)
-            return responsePath;
-
-        const auto plot = plotBounds();
-        if (plot.isEmpty())
-            return responsePath;
-
-        const double dbTop = t.curveDbTop();
-        const double dbBot = t.curveDbBottom();
-        const double ceiling = dbTop - 2.0;
-        const double knee = 12.0;
-        const double kneeStart = ceiling - knee;
-        const double outputGainDb = (double) trench::slamOutputGainDb (s);
-        const double blend = (double) slamVisualAmount();
-
-        auto softLimit = [=] (double db)
-        {
-            if (db <= kneeStart)
-                return db;
-            return kneeStart + knee * (1.0 - std::exp (-(db - kneeStart) / knee));
-        };
-
-        juce::Path p;
-        bool started = false;
-        for (size_t i = 0; i < traceDbs.size(); ++i)
-        {
-            const double cleanDb = (double) traceDbs[i];
-            const double slammedDb = softLimit (cleanDb + outputGainDb);
-            const double db = cleanDb + ((slammedDb - cleanDb) * blend);
-            const double yt = juce::jlimit (-0.06, 1.06, (dbTop - db) / (dbTop - dbBot));
-            const float x = traceXs[i];
-            const float y = plot.getY() + (float) yt * plot.getHeight();
-            if (! started)
-            {
-                p.startNewSubPath (x, y);
-                started = true;
-            }
-            else
-            {
-                p.lineTo (x, y);
-            }
-        }
-        return p;
-    }
-
     // Etched phosphor trace, stroked from the live response Path. The wide pass is
     // only screen wetness; the curve itself stays thin and physical.
     void drawResponseTrace (juce::Graphics& g) const
@@ -321,41 +321,141 @@ private:
             return;
         }
 
-        const auto path = displayPathForSlam();
-        if (path.isEmpty())
-            return;
-
+        // The curve is the true current six-stage body response.  SLAM is
+        // post-filter output pressure, so it may light the trace but must
+        // never reshape it.  MOTION state likewise does not change visibility
+        // of the filter that is actually sounding.
         const float s = slamVisualAmount();
         const auto phos = responseColour();
         const float limit = juce::jlimit (0.0f, 1.0f, slamOutClip);
-        constexpr auto joint = juce::PathStrokeType::curved;
-        constexpr auto cap   = juce::PathStrokeType::rounded;
 
-        // MOTION off -> a faint baseline, not the fully "live" trace: the
-        // curve is still the true current response, just visually quiet
-        // until there's actual motion to preview.
-        const bool motionOn = motionOnParam != nullptr && motionOnParam->getValue() > 0.5f;
-        const float dim = motionOn ? 1.0f : 0.4f;
+        const auto plot = plotBounds();
+        if (traceXs.empty() || traceXs.size() != traceDbs.size() || plot.isEmpty())
+        {
+            if (! responsePath.isEmpty())                 // fallback: smooth stroke
+            {
+                g.setColour (phos.withAlpha (0.98f));
+                g.strokePath (responsePath, { 2.5f, juce::PathStrokeType::curved,
+                                              juce::PathStrokeType::rounded });
+            }
+            return;
+        }
 
-        // One curve only, drawn like a measured trace on hardware glass:
-        // a tiny two-pass phosphor glow, a dark bed for contrast against the
-        // glass texture, then ONE consistent thin phosphor line with a fixed
-        // hot centre. SLAM warms and thickens the same line slightly.
-        g.setColour (phos.withAlpha ((0.045f + 0.05f * s) * dim));      // outer glow — soft, tiny
-        g.strokePath (path, { 4.6f + 0.8f * s, joint, cap });
-        g.setColour (phos.withAlpha ((0.10f + 0.08f * s) * dim));       // inner glow
-        g.strokePath (path, { 2.4f + 0.5f * s, joint, cap });
-        g.setColour (kInk.withAlpha (0.45f * dim));                     // dark bed under the line
-        g.strokePath (path, { 1.9f, joint, cap });
-        g.setColour (phos.withAlpha (0.98f * dim));                     // the phosphor line
-        g.strokePath (path, { 1.15f + 0.20f * s, joint, cap });
+        // Bitmap-crunch trace (the X3-family reference): the response drawn as a
+        // 2px-quantised STAIRCASE, butt caps — a hand-pixelled hardware curve,
+        // not an antialiased vector.
+        const double dbTop = t.curveDbTop(), dbBot = t.curveDbBottom();
+        const float q = 2.0f;                              // pixel-crunch quantum
+        const size_t N = traceXs.size();
+        auto yOf = [&] (size_t i)
+        {
+            const double yt = juce::jlimit (-0.06, 1.06, (dbTop - traceDbs[i]) / (dbTop - dbBot));
+            const float y = plot.getY() + (float) yt * plot.getHeight();
+            return q * std::round (y / q);                 // snap to the crunch grid
+        };
+
+        juce::Path stair, fill;
+        float py = yOf (0);
+        stair.startNewSubPath (traceXs[0], py);
+        fill.startNewSubPath (traceXs[0], plot.getBottom());
+        fill.lineTo (traceXs[0], py);
+        for (size_t i = 1; i < N; ++i)
+        {
+            const float y = yOf (i);
+            if (! juce::approximatelyEqual (y, py))
+                stair.lineTo (traceXs[i], py);             // run, then rise: the staircase
+            stair.lineTo (traceXs[i], y);
+            fill.lineTo (traceXs[i], y);
+            py = y;
+        }
+        fill.lineTo (traceXs[N - 1], plot.getBottom());
+        fill.closeSubPath();
+
+        // Phosphor persistence wake: brief decaying echoes of where the curve
+        // just WAS — a cold comet tail under motion, nothing when parked.
+        for (const auto& w : wakes)
+        {
+            if (w.dbs.size() != N || w.life >= 0.999f)
+                continue;                                  // newest == live curve; skip
+            juce::Path echo;
+            bool first = true;
+            float ey = 0.0f;
+            for (size_t i = 0; i < N; ++i)
+            {
+                const double yt = juce::jlimit (-0.06, 1.06, (dbTop - w.dbs[i]) / (dbTop - dbBot));
+                const float y = q * std::round ((plot.getY() + (float) yt * plot.getHeight()) / q);
+                if (first) { echo.startNewSubPath (traceXs[i], y); first = false; }
+                else
+                {
+                    if (! juce::approximatelyEqual (y, ey)) echo.lineTo (traceXs[i], ey);
+                    echo.lineTo (traceXs[i], y);
+                }
+                ey = y;
+            }
+            g.setColour (juce::Colour (0xffbfc7cc).withAlpha (0.16f * w.life));  // cold echo
+            g.strokePath (echo, { 1.6f, juce::PathStrokeType::mitered,
+                                  juce::PathStrokeType::butt });
+        }
+
+        // Cold plasma flicker: the slam glow carries a whisper of electrical
+        // instability — never a static lamp. Subtle by law (±8%).
+        const float flick = 0.92f + 0.08f * (0.6f * (float) std::sin (flickerPhase)
+                                           + 0.4f * (float) std::sin (flickerPhase * 0.37 + 1.7));
+
+        // SLAM lives UNDER the curve: the trench floods as the drive rises —
+        // near-dark at rest, blazing at full slam. No meters, no bars; the
+        // energy is in the response itself. (Tyson: "much more visually
+        // impactful".)
+        {
+            const float heatA = juce::jmin (1.0f, (0.06f + 0.85f * s + 0.20f * limit) * flick);
+            juce::ColourGradient heat (t.amber().withAlpha (heatA), 0.0f, plot.getY(),
+                                       t.amber().withAlpha (0.04f * s), 0.0f, plot.getBottom(), false);
+            heat.addColour (0.50, t.amber().withAlpha (heatA * 0.45f));
+            g.setGradientFill (heat);
+            g.fillPath (fill);
+        }
+        // ...and the heat radiates FROM the trace: a wide hot halo hugging the
+        // line, swelling with drive — the curve itself is the filament.
+        if (s > 0.01f)
+        {
+            g.setColour (t.amber().withAlpha ((0.18f + 0.42f * s) * flick));
+            g.strokePath (stair, { 5.0f + 9.0f * s, juce::PathStrokeType::mitered,
+                                   juce::PathStrokeType::butt });
+        }
+
+        constexpr auto joint = juce::PathStrokeType::mitered;
+        constexpr auto cap   = juce::PathStrokeType::butt;
+        const float lw = 2.4f + 1.0f * s;
+        g.setColour (juce::Colour (0xff1c1712).withAlpha (0.75f));      // the hard offset bed (dark glass)
+        g.strokePath (stair, { lw + 0.7f, joint, cap },
+                      juce::AffineTransform::translation (1.6f, 2.4f));
+        g.setColour (phos.withAlpha (0.98f));                           // the ember signal
+        g.strokePath (stair, { lw, joint, cap });
         if (limit > 0.001f)
         {
-            g.setColour (juce::Colour (0xfffff7fa).withAlpha ((0.18f + 0.36f * limit) * dim));
-            g.strokePath (path, { 0.8f + 1.3f * limit, joint, cap });
+            g.setColour (juce::Colour (0xfffff0e8).withAlpha (0.16f + 0.34f * limit));
+            g.strokePath (stair, { 0.9f + 1.2f * limit, joint, cap });
         }
-        g.setColour (juce::Colour (0xfffff7fa).withAlpha ((0.34f + 0.30f * s) * dim)); // constant hot centre
-        g.strokePath (path, { 0.55f, joint, cap });
+
+        // Peak crosses (the reference's + ticks): small markers on the mode
+        // crests — the anatomy made visible, not decoration.
+        {
+            g.setColour (juce::Colour (0xfffff0e8).withAlpha (0.80f));
+            int marks = 0;
+            for (size_t i = 2; i + 2 < N && marks < 8; ++i)
+            {
+                const double d = traceDbs[i];
+                if (d > traceDbs[i-1] && d >= traceDbs[i+1]
+                    && d - juce::jmin (traceDbs[i-2], traceDbs[i+2]) > 2.5)
+                {
+                    const float x = q * std::round (traceXs[i] / q), y = yOf (i) - 4.0f;
+                    g.drawLine (x - 3.0f, y, x + 3.0f, y, 1.4f);
+                    g.drawLine (x, y - 3.0f, x, y + 3.0f, 1.4f);
+                    ++marks;
+                    i += 4;                                 // one cross per crest
+                }
+            }
+        }
     }
 
     // SEED's screen feedback: the OLD curve compresses toward a hot ruby
@@ -431,6 +531,10 @@ private:
         if (canvasParam == nullptr)
             return;
 
+        // No permanent riser/meter on the glass — SLAM's visual home is the
+        // ember heat-fill under the curve (drawResponseTrace). Only the
+        // transient value text appears, while interacting. (Tyson 2026-07-11:
+        // "the bar on the right is clutter".)
         const float s = slamNorm();
         const float a = pressing ? 1.0f : juce::jlimit (0.0f, 1.0f, meterAlpha);
         if (a <= 0.02f && s <= 0.001f)
@@ -464,8 +568,6 @@ private:
         g.drawText (line2, r.reduced (6.0f, 0.0f), juce::Justification::centredLeft, false);
     }
 
-    inline static const juce::Colour kInk   { 0xff160710 }; // dark wine under-trace
-
     juce::Image gridImage;
     Theme t;
     juce::Path responsePath;
@@ -479,9 +581,6 @@ private:
     // SLAM on-screen (canvas) control
     juce::RangedAudioParameter* canvasParam = nullptr;
     std::unique_ptr<juce::ParameterAttachment> canvasAtt;
-    // Read live only to dim the curve when MOTION is off — never written here.
-    juce::RangedAudioParameter* motionOnParam = nullptr;
-    std::unique_ptr<juce::ParameterAttachment> motionOnAtt;
     float canvasDefault = 0.0f;
 
     // SEED pulse state. Static/Redraw durations are the direction's exact
@@ -499,6 +598,15 @@ private:
     void timerCallback() override
     {
         meterAlpha = juce::jmax (0.0f, meterAlpha - 0.05f);
+
+        // Cold plasma flicker phase (subtle instability on the slam glow) and
+        // the phosphor wake decay (each snapshot fades out in ~200 ms).
+        flickerPhase += 0.085;
+        for (auto& w : wakes)
+            w.life -= 0.16f;
+        wakes.erase (std::remove_if (wakes.begin(), wakes.end(),
+                                     [] (const WakeSnap& w) { return w.life <= 0.0f; }),
+                     wakes.end());
 
         if (pulsePhase != PulseIdle)
         {
@@ -520,7 +628,9 @@ private:
             }
         }
 
-        if (meterAlpha <= 0.01f && pulsePhase == PulseIdle) stopTimer();
+        if (meterAlpha <= 0.01f && pulsePhase == PulseIdle && wakes.empty()
+            && slamNorm() <= 0.02f)
+            stopTimer();                      // flicker/wake only live while something moves
         repaint();
     }
 
@@ -531,6 +641,9 @@ private:
     float slamOutClip = 0.0f;
     juce::Point<float> dragPos;
     float canvasAtStart = 0.0f;
+    struct WakeSnap { std::vector<float> dbs; float life; };
+    std::vector<WakeSnap> wakes;   // phosphor persistence — brief echoes of the moving curve
+    double flickerPhase = 0.0;     // cold plasma instability on the slam glow
 };
 
 } // namespace trench::ui

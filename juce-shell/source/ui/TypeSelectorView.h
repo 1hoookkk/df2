@@ -25,7 +25,7 @@ public:
         setMouseCursor (juce::MouseCursor::PointingHandCursor);
         selector.setLookAndFeel (&menuLookAndFeel);
         selector.setInterceptsMouseClicks (false, false);
-        selector.setWantsKeyboardFocus (true);
+        selector.setWantsKeyboardFocus (false);   // let keystrokes pass to the host (play notes without clicking out)
         for (auto colourId : { juce::ComboBox::backgroundColourId, juce::ComboBox::outlineColourId,
                                juce::ComboBox::buttonColourId, juce::ComboBox::arrowColourId,
                                juce::ComboBox::textColourId })
@@ -70,12 +70,13 @@ public:
     void paint (juce::Graphics& g) override
     {
         const auto recess = getLocalBounds().toFloat();
-        const auto bar = recess.reduced (3.5f, 3.0f);
+        // Edge-to-edge: the component rect IS the black opening; insets here
+        // read as a dark ring around the bar (Tyson 2026-07-11).
+        const auto bar = recess;
         const bool hot = isMouseOverOrDragging (true) || selector.isPopupActive();
 
-        // NOTHING is painted for the bar face — the shell art's baked cream
-        // selector IS the part (same law as the wheels' wells). We render only
-        // the ink: body name + chevron.
+        // Smoked bone selector bar painted into the machined plate's slot.
+        drawIvoryWell (g, bar, 3.0f, hot, t);
         auto inner = bar.reduced (13.0f, 2.0f);
 
         // The dropdown arrow box is its OWN layout rect, converted to this
@@ -103,13 +104,23 @@ public:
         drawTrackedText (g, typeText, textArea, displayFont (t.fontSize ("typeName", 14.0f), false),
                          hot ? juce::Colour (0xff141210) : t.labelInk(), 0.0f);
 
+        // Engraved divider seam before the arrow segment: a dark cut with a
+        // light catch beside it — a machined groove, not a combo-box border.
+        g.setColour (juce::Colour (0xff2a2419).withAlpha (0.55f));
+        g.drawLine (box.getX() - 4.0f, bar.getY() + 4.0f, box.getX() - 4.0f, bar.getBottom() - 4.0f, 1.0f);
+        g.setColour (juce::Colours::white.withAlpha (0.35f));
+        g.drawLine (box.getX() - 3.0f, bar.getY() + 4.0f, box.getX() - 3.0f, bar.getBottom() - 4.0f, 0.8f);
+
+        // Engraved chevron: light catch below the cut, ink on top — the same
+        // physical depth as the readout digits.
         const auto arrow = box.withSizeKeepingCentre (11.0f, 7.0f).translated (0.0f, 0.5f);
         juce::Path arrowPath;
         arrowPath.startNewSubPath (arrow.getX(), arrow.getY());
         arrowPath.lineTo (arrow.getCentreX(), arrow.getBottom());
         arrowPath.lineTo (arrow.getRight(), arrow.getY());
-
-        // Arrow colour: espresso ink (locked "arrow" token); heavier chevron (5855 read)
+        g.setColour (juce::Colours::white.withAlpha (0.40f));
+        g.strokePath (arrowPath, juce::PathStrokeType (1.5f, juce::PathStrokeType::mitered, juce::PathStrokeType::butt),
+                      juce::AffineTransform::translation (0.0f, 1.0f));
         g.setColour (t.arrow());
         g.strokePath (arrowPath, juce::PathStrokeType (1.5f, juce::PathStrokeType::mitered, juce::PathStrokeType::butt));
     }

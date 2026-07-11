@@ -44,72 +44,72 @@ public:
     static UiLayout defaults()
     {
         UiLayout layout;
-        // Rects measured from the real panel cutouts in df2_panel_shadow.png
-        // (connected-component bounds), inset ~3px so imperfect cut edges hide
-        // behind each control's own bevel.
-        // Wells measured to-the-edge from the baked dark cutouts in df2_panel_shadow.png
-        // (connected-component bounds at lum<70). GROUND TRUTH — the control fills the
-        // dark recess; the faceplate's bevel/shadow just outside it stays as the edge.
-        // Re-measured 2026-07-03: lum<70 caught the outer bezel ring, not the slot —
-        // these are the INNER dark openings (longest lum<30 run at well mid-height),
-        // so the drum seats inside the slot instead of riding the bezel.
-        layout.elements["morphWheel"]   = { { 120.0f, 691.0f, 422.0f, 98.0f },  {}, {} };
-        layout.elements["qWheel"]       = { { 119.0f, 873.0f, 424.0f, 106.0f }, {}, {} };
-        // FLUSH in the measured wells (Tyson 2026-07-02: "have everything sit flush
-        // in the wells with no huge gaps"). Rects = the panel art's cut-out openings,
-        // auto-detected from df2_panel_shadow.png (gray<70 floors, scipy label) and
-        // overlay-verified. Do not hand-nudge; re-measure if the art changes.
-        layout.elements["typeSelector"] = { { 226.0f, 129.0f, 682.0f, 67.0f },  {}, {} };
-        layout.elements["morphReadout"] = { { 589.0f, 714.0f, 178.0f, 63.0f },  18.0f, juce::Colours::black };
-        layout.elements["qReadout"]     = { { 589.0f, 903.0f, 178.0f, 63.0f },  18.0f, juce::Colours::black };
-        layout.elements["spectrumGrid"] = { { 118.0f, 222.0f, 790.0f, 389.0f }, {}, {} }; // the wine shell's glass opening (overlay-verified)
-        layout.elements["slotPad"]      = { { 780.0f, 234.0f, 112.0f, 26.0f }, {}, {} }; // thin 1/2 selector tucked flush into the display's top-right
-        layout.elements["modulateTag"]  = { { 150.0f, 452.0f, 430.0f, 56.0f }, {}, {} }; // clickable word on the glass; hit-test is the visible "Modulation" text only
-        layout.elements["fiveDTag"]     = { { 150.0f, 508.0f, 430.0f, 52.0f }, {}, {} }; // 5D (QSound Space) switch, seated directly below Modulation
-        layout.elements["filterLabel"]  = { { 135.0f, 44.0f, 220.0f, 72.0f },  11.5f, juce::Colour (0xffe2e9f2) };
-        layout.elements["filterLabel"].text = "TRENCH";
-        layout.elements["typeLabel"]    = { { 108.0f, 129.0f, 148.0f, 67.0f },  11.5f, juce::Colour (0xffe2e9f2) };
+        // Wells measured from the recut BEIGE plate (df2_panel_beige.png,
+        // 1010x1557 — connected-component bounds at lum<90, measured
+        // 2026-07-11). GROUND TRUTH — each control fills its dark opening; the
+        // art's bevel just outside stays as the edge. Do not hand-nudge;
+        // re-measure if the art changes. Roller wells are TIGHT (X3 sit): the
+        // wheel frame draws 1:1 and overhangs the black opening inside this rect.
+        // Wheels: lum<90 rect (opening + lip) — the 1:1 frame overhangs the black
+        // opening inside it. Window components (TYPE, readouts): the PURE-BLACK
+        // opening (lum<12) — their faces fill the hole and the art's bevel frames
+        // them; giving them the lip rect makes them paint OVER the bevel and float.
+        layout.elements["morphWheel"]   = { { 114.0f, 684.0f, 434.0f, 98.0f }, {}, {} };
+        layout.elements["qWheel"]       = { { 114.0f, 866.0f, 434.0f, 98.0f }, {}, {} };
+        // Windows pin the PURE-BLACK openings exactly, and the views draw their
+        // faces edge-to-edge (no internal insets) — the face IS the opening,
+        // the art's bevel is the frame. (Third fit iteration: adjusting rects
+        // around baked insets was the wrong method.)
+        layout.elements["typeSelector"] = { { 226.0f, 139.0f, 663.0f, 66.0f },  {}, {} };
+        layout.elements["morphReadout"] = { { 595.0f, 709.0f, 165.0f, 67.0f },  14.5f, juce::Colours::black };
+        layout.elements["qReadout"]     = { { 593.0f, 891.0f, 166.0f, 64.0f },  14.5f, juce::Colours::black };
+        layout.elements["spectrumGrid"] = { { 110.0f, 233.0f, 795.0f, 383.0f }, {}, {} }; // the screen opening
+        layout.elements["slotPad"]      = { { 699.0f, 240.0f, 112.0f, 26.0f }, {}, {} }; // retired pager (hidden)
+        layout.elements["modulateTag"]  = { { 149.0f, 456.0f, 430.0f, 56.0f }, {}, {} }; // clickable word on the glass
+        layout.elements["fiveDTag"]     = { { 149.0f, 511.0f, 430.0f, 52.0f }, {}, {} }; // 5D switch (hidden in V1 face)
+        layout.elements["filterLabel"]  = { { 0.0f, 0.0f, 0.0f, 0.0f },  11.5f, juce::Colour (0xff3a2f22) };
+        layout.elements["filterLabel"].text = "TRENCH";   // hidden — the nameplate carries the identity
+        // TYPE label rides close to the preset bar — near, not hugging.
+        layout.elements["typeLabel"]    = { { 128.0f, 133.0f, 84.0f, 74.0f },  13.5f, juce::Colour (0xff21180f) };
         layout.elements["typeLabel"].text = "TYPE";
-        layout.elements["typeName"]     = { { 252.0f, 130.0f, 530.0f, 65.0f },  12.5f, juce::Colours::black };
-        layout.elements["typeArrow"]    = { { 855.0f, 136.0f, 53.0f,  54.0f },  {}, {} }; // dropdown arrow box (the bar's divided end segment)
-        layout.elements["morphLabel"]   = { { 111.0f, 636.0f, 443.0f, 42.0f },  11.5f, juce::Colour (0xffe2e9f2) };
-        layout.elements["morphLabel"].text = "MORPH (%)";  // upper rail = MORPH on Page 1 (target refs' wording)
-        layout.elements["qLabel"]       = { { 111.0f, 824.0f, 444.0f, 42.0f },  11.0f, juce::Colour (0xffe2e9f2) };
-        layout.elements["qLabel"].text = "Q (%)";          // lower rail = Q on Page 1 (SLAM is the canvas drag)
-        // Faceplate nameplate — REMOVED (Tyson 2026-07-02: "Remove the text at
-        // the top"). Zero rects = hidden; the bare plate carries the identity.
-        layout.elements["brandLabel"]   = { { 0.0f, 0.0f, 0.0f, 0.0f }, 13.0f, juce::Colour (0xff2c2418) };
+        layout.elements["typeName"]     = { { 244.0f, 127.0f, 530.0f, 79.0f },  12.5f, juce::Colours::black };
+        layout.elements["typeArrow"]    = { { 838.0f, 127.0f, 56.0f,  79.0f },  {}, {} }; // dropdown arrow box (the bar's divided end segment)
+        // Rail labels: the SAME measured vertical gap above each wheel well;
+        // darker engraved ink, MORPH clear of the display bezel.
+        layout.elements["morphLabel"]   = { { 114.0f, 640.0f, 434.0f, 38.0f },  14.0f, juce::Colour (0xff170f08) };
+        layout.elements["morphLabel"].text = "MORPH";
+        layout.elements["qLabel"]       = { { 114.0f, 822.0f, 434.0f, 38.0f },  14.0f, juce::Colour (0xff170f08) };
+        layout.elements["qLabel"].text = "Q";
+        // TRENCH alone in the top-left corner; MUSICAL FILTER is a real punched
+        // Dymo tape label stuck on the bare lower body (Tyson's asset,
+        // 2026-07-11) — drawn by FaceplateView, slightly crooked like real tape.
+        layout.elements["brandLabel"]   = { { 114.0f, 58.0f, 230.0f, 40.0f }, 11.5f, juce::Colour (0xff41362a) };
         layout.elements["brandLabel"].text = "TRENCH";
-        layout.elements["brandSub"]     = { { 0.0f, 0.0f, 0.0f, 0.0f }, 7.5f, juce::Colour (0xff574a35) };
-        layout.elements["brandSub"].text = "MUSICAL FILTER";
+        layout.elements["brandTape"]    = { { 330.0f, 1228.0f, 340.0f, 113.0f }, {}, {} };
 
-        // Dark navy panel + wine glass palette (Tyson 2026-07-02 correction brief):
-        // pale rose-white curve, muted amber for the Modulation lamp only, no cyan.
-        layout.colours["wellTop"]     = juce::Colour (0xff9aa2b4); // navy-steel light
-        layout.colours["wellBottom"]  = juce::Colour (0xff6b7386); // navy-steel, darker
-        layout.colours["wellKeyline"] = juce::Colour (0xff3a4152); // navy-steel keyline
-        layout.colours["bevelHi"]     = juce::Colour (0x88e3dcc9);
-        layout.colours["bevelLo"]     = juce::Colour (0x28000000);
-        layout.colours["arrow"]       = juce::Colour (0xff2b2620); // warm dark charcoal
-        layout.colours["rim"]         = juce::Colour (0xff2b2620);
-        layout.colours["accent"]      = juce::Colour (0xffe8ccd5); // dusty rose-white active state
-        layout.colours["curveColour"] = juce::Colour (0xffe8ccd5); // quiet response; SLAM pushes it hotter in GraphDisplay
-        layout.colours["phosphor"]    = juce::Colour (0xff1e0a14); // deep blue-black wine fallback if bitmap is missing
-        layout.colours["amber"]       = juce::Colour (0xffc98a3c); // muted orange — Modulation active lamp only
-        layout.colours["dashed"]      = juce::Colour (0xff2b1321); // low-contrast wine grid tone
-        layout.colours["screenEdge"]  = juce::Colour (0xff0c1018); // blue-black aperture wash, not a red rectangle
-        layout.colours["labelInk"]    = juce::Colour (0xff16130f); // compact black-brown hardware ink
+        // COBALT scheme (2026-07-11, Tyson's call: "Try: cobalt"): SAND plate
+        // (locked art) / cool GRAPHITE darks / ELECTRIC COBALT as the ONLY lit
+        // family. Grid lines visible on the glass, never buried.
+        layout.colours["accent"]      = juce::Colour (0xff7da4ff); // cobalt trace / active text
+        layout.colours["curveColour"] = juce::Colour (0xff7da4ff);
+        layout.colours["phosphor"]    = juce::Colour (0xff26262a); // cool dark glass base (graphite family)
+        layout.colours["amber"]       = juce::Colour (0xff2a5cff); // legacy token name: the hot glow core
+        layout.colours["dashed"]      = juce::Colour (0xff33333a); // cool graphite grid — VISIBLE
+        layout.colours["screenEdge"]  = juce::Colour (0xff131318); // deep glass keyline
+        layout.colours["labelInk"]    = juce::Colour (0xff29251f); // warm near-black charcoal ink (plate family)
 
         layout.params["wellRadius"]        = 9.0;
         layout.params["readoutAliasScale"] = 0.85; // crisper on the dark LED box
         layout.params["typeArrowExtra"]    = 6.0;
         layout.params["curveDbTop"]        = 40.0;   // keep high-Q bodies inside the hardware display
         layout.params["curveDbBottom"]     = -40.0;
-        layout.params["fontBold"]          = 0.0;    // 0 = natural weight (no synthetic bold), 1 = emphasis on
+        layout.params["fontBold"]          = 0.0;    // natural weight — synthetic bold smudges at label sizes (Tyson 2026-07-11: "too bold")
 
         // The whole-UI typeface. Hand-editable live from ui_layout.json
         // ("strings":{"fontFamily":"<any installed font>"}). Choose weight via a
         // weight-named family rather than synthetic bold.
+        // Tahoma at natural weight — the face that never drew a complaint;
+        // Bahnschrift read "typography sucks". Synthetic bold stays off.
         layout.strings["fontFamily"] = "Tahoma";
         return layout;
     }

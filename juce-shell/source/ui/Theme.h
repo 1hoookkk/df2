@@ -7,15 +7,14 @@
 namespace trench::ui
 {
 
-// --- fixed geometry constants (editor + panel source space + filmstrip frame) ---
-inline constexpr int   kEditorWidth        = 470;   // panel aspect (1024:1591), ~90% for a smaller mixer footprint
-inline constexpr int   kEditorHeight       = 730;
-inline constexpr float kPanelSourceWidth   = 1024.0f;   // matches the beige panel art
-inline constexpr float kPanelSourceHeight  = 1591.0f;
-inline constexpr int   kFrameWidth         = 298; // one filmstrip frame (2x: crisp smoked
-inline constexpr int   kFrameHeight        = 80;  // wheel); count is derived from strip width
+// --- fixed geometry constants (editor + panel source space) ---
+// Source space = the BEIGE plate (df2_panel_beige.png), 1010x1557 (2026-07-11 recut).
+inline constexpr int   kEditorWidth        = 470;   // plate aspect (1010:1557)
+inline constexpr int   kEditorHeight       = 724;   // 470 * 1557/1010 — undistorted plate
+inline constexpr float kPanelSourceWidth   = 1010.0f;   // layout rects' source space
+inline constexpr float kPanelSourceHeight  = 1557.0f;
 
-// Map a 1024x1591 panel-source rect into 360x560 editor space.
+// Map a panel-source rect into editor space.
 inline juce::Rectangle<float> sourceRectToEditor (juce::Rectangle<float> s)
 {
     return { s.getX() * kEditorWidth  / kPanelSourceWidth,
@@ -47,7 +46,7 @@ inline bool& uiBoldEnabled()
 
 inline juce::Font displayFont (float height, bool bold = false)
 {
-    const bool useBold = bold && uiBoldEnabled();
+    const bool useBold = bold || uiBoldEnabled();
     return juce::Font (juce::FontOptions (uiFontFamily(), height,
                                           useBold ? juce::Font::bold : juce::Font::plain));
 }
@@ -57,9 +56,9 @@ struct Theme
 {
     const trench::UiLayout& layout;
 
-    // Locked 60:30:10 warm palette (memory `trench-ui-direction-talking-hedz`):
-    // Sand 60% (panel art + wells) / Espresso 30% (ink, bezels, keylines) /
-    // Amber 10% (the one hero accent — curve + active glow). Cyan/teal rejected.
+    // 60:30:10 (2026-07-11): SAND 60 (the plate, locked) / IRON 30 (wheels,
+    // wells, glass) / EMBER 10 (the ONLY lit family: glow, trace, active text).
+    // Values live in UiLayout::defaults() — change them there, not here.
     juce::Colour accent()      const { return layout.colour ("accent",      juce::Colour (0xffefa63c)); }
     juce::Colour curveColour() const { return layout.colour ("curveColour", accent()); }
     juce::Colour amber()       const { return layout.colour ("amber",       juce::Colour (0xffefa63c)); } // legacy name: active glow
@@ -173,6 +172,48 @@ inline void drawWell (juce::Graphics& g, juce::Rectangle<float> b, const Theme& 
     g.drawRoundedRectangle (r.reduced (1.0f), juce::jmax (2.0f, radius - 1.0f), 0.7f);
 }
 
+// A small SEATED hardware push-key (SEED / TAKE): a dark machined cap sunk into a
+// milled recess ring, with an engraved aged-brass legend. Deliberately dark and
+// quiet so it DEFERS to the wheels — the soft brass catch is its only bright note;
+// it must never read as a light utility pill. Light + material only (No-Fake-Layers):
+// the ring is real contact shadow, the cap is a real domed key, nothing floats.
+inline void drawHardwareKey (juce::Graphics& g, juce::Rectangle<float> b,
+                             const juce::String& label, bool hover, bool down, const Theme& t)
+{
+    const float radius = juce::jmax (3.0f, t.wellRadius() - 3.0f);
+    const auto cap = b.reduced (1.5f);
+
+    // Milled recess ring: the key sits DOWN in a pocket in the sand plate.
+    g.setColour (juce::Colours::black.withAlpha (0.45f));
+    g.drawRoundedRectangle (b.reduced (0.5f), radius + 1.0f, 1.4f);
+
+    // Dark machined cap — warm espresso charcoal so it recedes on the sand
+    // plate; the brass legend is its only bright note.
+    const float lift = down ? -0.07f : (hover ? 0.06f : 0.0f);
+    juce::ColourGradient face (juce::Colour (0xff332c24).brighter (lift), 0.0f, cap.getY(),
+                               juce::Colour (0xff1a1610).brighter (lift * 0.5f), 0.0f, cap.getBottom(), false);
+    g.setGradientFill (face);
+    g.fillRoundedRectangle (cap, radius);
+
+    // Top bevel highlight + bottom contact shade = seated depth without a fake layer.
+    g.setColour (juce::Colours::white.withAlpha (down ? 0.05f : 0.11f));
+    g.drawLine (cap.getX() + 3.0f, cap.getY() + 1.0f, cap.getRight() - 3.0f, cap.getY() + 1.0f, 1.0f);
+    g.setColour (juce::Colours::black.withAlpha (0.42f));
+    g.drawLine (cap.getX() + 3.0f, cap.getBottom() - 0.8f, cap.getRight() - 3.0f, cap.getBottom() - 0.8f, 1.0f);
+
+    // Dark keyline seam.
+    g.setColour (juce::Colour (0xff0b0d13).withAlpha (0.9f));
+    g.drawRoundedRectangle (cap, radius, 1.0f);
+
+    // Engraved aged-brass legend — ties to the selector/labels, brighter on hover.
+    const auto area = cap.toNearestInt();
+    g.setFont (displayFont (juce::jmax (8.5f, cap.getHeight() * 0.40f), false));
+    g.setColour (juce::Colours::black.withAlpha (0.55f));
+    g.drawFittedText (label, area.translated (0, 1), juce::Justification::centred, 1);   // deboss shadow
+    g.setColour (juce::Colour (0xffcbb488).withAlpha (down ? 0.75f : (hover ? 1.0f : 0.9f)));
+    g.drawFittedText (label, area, juce::Justification::centred, 1);
+}
+
 // Display WINDOW — the readout/TYPE part: a small aged-ivory hardware display
 // window mounted into the beige plate (material-realism brief, 2026-07-02).
 // Warm cream face — slightly dark and dirty, same family as the plate — with a
@@ -184,10 +225,18 @@ inline void drawIvoryWell (juce::Graphics& g, juce::Rectangle<float> r, float ra
 {
     juce::ignoreUnused (t);
 
-    // Aged warm cream, a step darker/dirtier than a fresh ivory.
-    juce::ColourGradient face (juce::Colour (0xfff0e4cc), 0.0f, r.getY(),
-                               juce::Colour (0xffcbbfa2), 0.0f, r.getBottom(), false);
-    face.addColour (0.55, juce::Colour (0xffe1d5b9));
+    // Hardware display window, cast-metal era: smoked warm ivory (darker than
+    // digital white), tight machined corners, a thin dark surround — an
+    // instrument window with the shell's own dimensionality.
+    radius = juce::jmin (radius, 3.0f);
+    g.setColour (juce::Colours::black.withAlpha (0.22f));
+    g.fillRoundedRectangle (r.translated (0.8f, 1.4f), radius);
+
+    // Smoked warm bone (#E2DBC5 family): clearly lighter than the shell,
+    // aged and physical, never pure white.
+    juce::ColourGradient face (juce::Colour (0xffece5d0), 0.0f, r.getY(),
+                               juce::Colour (0xffd4ccb2), 0.0f, r.getBottom(), false);
+    face.addColour (0.55, juce::Colour (0xffe2dbc5));
     g.setGradientFill (face);
     g.fillRoundedRectangle (r, radius);
 
@@ -197,35 +246,23 @@ inline void drawIvoryWell (juce::Graphics& g, juce::Rectangle<float> r, float ra
         clip.addRoundedRectangle (r, radius);
         g.reduceClipRegion (clip);
 
-        // Soft inset shadow: the panel edge shades the window top...
-        juce::ColourGradient top (juce::Colour (0xff3a3226).withAlpha (isActive ? 0.34f : 0.26f), 0.0f, r.getY(),
-                                  juce::Colours::transparentBlack, 0.0f, r.getY() + 5.5f, false);
+        // Soft inset shadow at the top only — the pill face stays bright.
+        juce::ColourGradient top (juce::Colour (0xff3a3226).withAlpha (isActive ? 0.15f : 0.10f), 0.0f, r.getY(),
+                                  juce::Colours::transparentBlack, 0.0f, r.getY() + 3.5f, false);
         g.setGradientFill (top);
-        g.fillRect (r.getX(), r.getY(), r.getWidth(), 5.5f);
+        g.fillRect (r.getX(), r.getY(), r.getWidth(), 4.5f);
 
-        // ...gentle, slightly uneven side falloff (worn, not machined-perfect),
-        juce::ColourGradient left (juce::Colour (0xff3a3226).withAlpha (0.11f), r.getX(), 0.0f,
-                                   juce::Colours::transparentBlack, r.getX() + 3.0f, 0.0f, false);
-        g.setGradientFill (left);
-        g.fillRect (r.getX(), r.getY(), 3.0f, r.getHeight());
-
-        juce::ColourGradient right (juce::Colours::transparentBlack, r.getRight() - 4.0f, 0.0f,
-                                    juce::Colour (0xff3a3226).withAlpha (0.09f), r.getRight(), 0.0f, false);
-        g.setGradientFill (right);
-        g.fillRect (r.getRight() - 4.0f, r.getY(), 4.0f, r.getHeight());
-
-        // ...and a worn bevel light along the lower edge, faint.
-        g.setColour (juce::Colours::white.withAlpha (0.28f));
-        g.fillRect (r.getX() + 2.0f, r.getBottom() - 1.2f, r.getWidth() - 4.0f, 1.2f);
+        // ...and a worn bevel light along the lower edge, faint (less glow).
+        g.setColour (juce::Colours::white.withAlpha (0.16f));
+        g.fillRect (r.getX() + 2.0f, r.getBottom() - 1.0f, r.getWidth() - 4.0f, 1.0f);
     }
 
-    // Thin warm taupe seam — a material edge, not an outline.
-    g.setColour (isActive ? juce::Colour (0xff262238).withAlpha (0.95f)
-                          : juce::Colour (0xff3c3850).withAlpha (0.80f));
-    g.drawRoundedRectangle (r, radius, isActive ? 1.4f : 1.0f);
+    // Thin warm near-black charcoal surround (#29251F) — framed, not heavy.
+    g.setColour (juce::Colour (0xff29251f).withAlpha (isActive ? 0.98f : 0.92f));
+    g.drawRoundedRectangle (r, radius, isActive ? 1.3f : 1.1f);
 }
 
-// The lit sage-phosphor screen glass — the SAME base treatment the hero GraphDisplay
+// The dark screen glass (t.phosphor() = the iron glass base) — the SAME base treatment the hero GraphDisplay
 // uses (oil-sage base + worn top sheen + settled lower third), factored out so
 // secondary screen surfaces (the variant-bank page) read as the same display rather
 // than a flat green panel. Caller sets/uses its own rounded clip.
@@ -314,7 +351,7 @@ inline void drawReadoutGlass (juce::Graphics& g, juce::Rectangle<float> b, const
         g.setGradientFill (top);                              // recessed top inner shadow
         g.fillRect (r.getX(), r.getY(), r.getWidth(), 5.0f);
 
-        g.setColour (t.curveColour().withAlpha (0.16f)); // faint sage-phosphor bottom inner glow
+        g.setColour (t.curveColour().withAlpha (0.16f)); // faint accent bottom inner glow
         g.fillRect (r.getX(), r.getBottom() - 1.5f, r.getWidth(), 1.5f);
     }
     g.setColour (t.screenEdge());                             // dark keyline = inset into panel

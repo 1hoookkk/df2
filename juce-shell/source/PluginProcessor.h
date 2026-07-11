@@ -97,9 +97,10 @@ public:
 
     // SEED / EXPORT (message thread; invoked from the TYPE-dropdown action items).
     // seedCurrentBody: spawn a legal, certified SIBLING of the body that is actually
-    // playing (may already be a sibling) and audition it live. exportCurrentBody:
-    // write the current body's 240 bytes to Documents/TRENCH/exports/.
-    void seedCurrentBody();
+    // playing (may already be a sibling) and audition it live. Returns false if
+    // no certified sibling was staged. exportCurrentBody: write the current body's
+    // 240 bytes to Documents/TRENCH/exports/.
+    bool seedCurrentBody();
     void exportCurrentBody();
 
     // FORGE (message thread): compile 6 typed cards (42 f64 = 6 x [type, fc_low, fc_high,
@@ -272,6 +273,7 @@ public:
 private:
     float lastRigPanSent = -999.0f;   // force the first send
     std::atomic<float> lastSpaceSent { 0.0f };
+    double spatialOrbitPhase = 0.0;   // 5D: free-running azimuth orbit (radians)
 
     // DEMO MODE (standalone only): when no audio is routed in, synthesize a looping
     // groove as the input so the plugin can be auditioned with nothing plugged in —

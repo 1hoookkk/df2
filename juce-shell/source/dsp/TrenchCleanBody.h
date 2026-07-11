@@ -9,10 +9,9 @@ namespace trench::clean_audio
 {
 // PL-1: the clean-audio gate.
 //
-// Shipping build (TRENCH_PLAYER_EXTRAS undefined): `kEnabled()` is a constexpr
-// returning `true`. Every `if (! kEnabled())` branch is dead-code-eliminated,
-// so the diagnostic-only parameter references (slamDrive, fiveD, teleport*)
-// emit no machine code and cannot crash if those parameters are absent.
+// Shipping/demo player build (TRENCH_PLAYER_EXTRAS undefined): `kEnabled()` is
+// false. Body/Morph/Q/Slam/5D are all real user-facing controls and host state
+// must recall them. Teleport remains extras-only.
 //
 // Diagnostic build (TRENCH_PLAYER_EXTRAS defined): `kEnabled()` reads a
 // runtime atomic, default `true`, so a single binary can be A/B'd between
@@ -25,7 +24,7 @@ namespace detail { inline std::atomic<bool> gEnabled { true }; }
 inline bool kEnabled() noexcept { return detail::gEnabled.load (std::memory_order_relaxed); }
 inline void setEnabled (bool on) noexcept { detail::gEnabled.store (on, std::memory_order_relaxed); }
 #else
-constexpr bool kEnabled() noexcept { return true; }
+constexpr bool kEnabled() noexcept { return false; }
 inline void setEnabled (bool) noexcept {}
 #endif
 

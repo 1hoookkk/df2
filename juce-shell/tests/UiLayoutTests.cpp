@@ -13,12 +13,13 @@ using trench::UiLayout;
 TEST_CASE ("Default layout exposes the shipped element rects")
 {
     const auto d = UiLayout::defaults();
-    // Wells re-measured 2026-07-03 to the art's INNER openings (the old rects
-    // spanned the outer bezel and seated the drums differently per well).
-    REQUIRE (d.sourceRectFor ("morphWheel")   == juce::Rectangle<float> (120, 691, 422, 98));
-    REQUIRE (d.sourceRectFor ("qWheel")       == juce::Rectangle<float> (119, 873, 424, 106));
-    REQUIRE (d.sourceRectFor ("typeSelector") == juce::Rectangle<float> (226, 129, 682, 67));
-    REQUIRE (d.sourceRectFor ("spectrumGrid") == juce::Rectangle<float> (118, 222, 790, 389));
+    // Wells re-measured 2026-07-11 to the recut beige plate (1010x1557).
+    // Wheels pin the lip rect (the 1:1 frame overhangs the black opening);
+    // windows pin the midway seat between opening and lip.
+    REQUIRE (d.sourceRectFor ("morphWheel")   == juce::Rectangle<float> (114, 684, 434, 98));
+    REQUIRE (d.sourceRectFor ("qWheel")       == juce::Rectangle<float> (114, 866, 434, 98));
+    REQUIRE (d.sourceRectFor ("typeSelector") == juce::Rectangle<float> (222, 133, 671, 74));
+    REQUIRE (d.sourceRectFor ("spectrumGrid") == juce::Rectangle<float> (110, 233, 795, 383));
     // An unknown id returns the (empty) fallback, not a garbage rect.
     REQUIRE (d.sourceRectFor ("nope")         == juce::Rectangle<float>());
 }
@@ -31,7 +32,8 @@ TEST_CASE ("Every element id the editor lays out has a default")
                             "typeLabel", "morphLabel", "qLabel" })
         REQUIRE (d.sourceRectFor (id).getWidth() > 0.0f);
 
-    REQUIRE (d.sourceRectFor ("brandLabel").isEmpty());
+    REQUIRE (! d.sourceRectFor ("brandLabel").isEmpty());   // TRENCH engraved top-left
+    REQUIRE (! d.sourceRectFor ("brandTape").isEmpty());    // the MUSICAL FILTER tape
 }
 
 TEST_CASE ("Malformed JSON falls back to the baked defaults")

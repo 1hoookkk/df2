@@ -44,7 +44,7 @@ public:
             if (r.getWidth() < 1.0f || r.getHeight() < 1.0f || fs < 0.5f || text.isEmpty())
                 return;
             drawPanelLabelText (g, text.toUpperCase(), r, displayFont (fs, false),
-                                t.textColour (id, t.labelInk()), fs * 0.10f, centred);
+                                t.textColour (id, t.labelInk()), fs * 0.03f, centred);
         };
 
         draw ("filterLabel", t.text ("filterLabel", ""), false);
@@ -111,10 +111,12 @@ private:
             }
         };
 
-        // Two-pass shadow: a crisp 1px bite plus a soft settle underneath, so the
-        // small caps stay legible against the noisy navy grain at 1:1.
-        drawRun (juce::Colours::black.withAlpha (0.20f), 1.8f);
-        drawRun (juce::Colours::black.withAlpha (0.46f), 1.0f);
+        // Engraving depth that follows the ink: dark ink on a light plate gets
+        // a light catch below; pale ink on a dark plate gets a dark bite.
+        if (colour.getBrightness() < 0.5f)
+            drawRun (juce::Colours::white.withAlpha (0.55f), 1.0f);
+        else
+            drawRun (juce::Colours::black.withAlpha (0.55f), 1.0f);
         drawRun (colour, 0.0f);
     }
 

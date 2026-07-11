@@ -11,20 +11,38 @@ in the shipping audio path.
 
 This builds only the Rust static library needed by the JUCE shell, reuses the
 shared CPM source cache at `%USERPROFILE%\.cache\CPM`, relinks the standalone
-target in parallel, and launches it. JUCE is pinned to the current stable
+target through Ninja, and launches it. JUCE is pinned to the current stable
 release in `CMakeLists.txt`; no workspace-local `JUCE` junction is required.
 
 To build the VST3 for DAW installation:
 
 ```powershell
-.\juce-shell\build-standalone.ps1
-cmake --build juce-shell/build --config Release --target TRENCH_VST3 --parallel
+.\juce-shell\build-standalone.ps1 -Target TRENCH_VST3
 ```
 
 The Release VST3 lands in
 `C:\Program Files\Common Files\VST3\TRENCH.vst3` (admin-elevated auto-copy).
 Manual install fallback: copy from
-`juce-shell/build/TRENCH_artefacts/Release/VST3/` into the same path.
+`juce-shell/build-ninja/TRENCH_artefacts/Release/VST3/` into the same path.
+
+## Dev tools
+
+The editor has a Melatonin Inspector hook when
+`TRENCH_ENABLE_MELATONIN_INSPECTOR=ON` (default). Right-click the faceplate or
+Ctrl-click the faceplate to open the component inspector. `Ctrl+I` on Windows
+or `Cmd+I` on macOS may also work when the editor has keyboard focus.
+For distribution builds, configure CMake with
+`-DTRENCH_ENABLE_MELATONIN_INSPECTOR=OFF`.
+
+After building the VST3, run pluginval:
+
+```powershell
+.\juce-shell\validate-pluginval.ps1
+```
+
+The script downloads the official Windows `pluginval` release zip on first run,
+caches it under `juce-shell/build/tools/pluginval`, and validates the built
+Release VST3 at strictness level 5.
 
 ## Dev-iteration workflow
 

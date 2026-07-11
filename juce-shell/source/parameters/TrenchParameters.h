@@ -24,6 +24,8 @@ namespace ParamID
     // Advanced/host params still exist for experiments, but the faceplate law
     // is Sine -> Morph only and resets phase when armed.
     inline constexpr auto motionOn           = "motionOn";           // bool: arm Motion
+    inline constexpr auto motionTargetM      = "motionTargetM";      // bool: MOVE sweeps the Morph wheel (default on)
+    inline constexpr auto motionTargetQ      = "motionTargetQ";      // bool: MOVE sweeps the Q wheel (default off)
     inline constexpr auto motionTile         = "motionTile";         // choice: Riser,Breathe,Adlib Chop,Wobble
     inline constexpr auto motionAmount        = "motionAmount";       // 0..1 sweep depth around the Morph wheel
     inline constexpr auto motionShape         = "motionShape";        // choice: Sine,Ramp,Square,Random (advanced)

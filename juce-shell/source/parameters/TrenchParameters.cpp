@@ -8,17 +8,26 @@ juce::AudioProcessorValueTreeState::ParameterLayout createParameterLayout()
 {
     juce::AudioProcessorValueTreeState::ParameterLayout layout;
 
+    // A shared 0..1 -> "NN.N %" presentation so the host's automation lanes read
+    // in percent (68.1 %) instead of raw 0.68, and typing "70" sets 0.70.
+    const auto pctAttribs = [] {
+        return juce::AudioParameterFloatAttributes()
+            .withLabel ("%")
+            .withStringFromValueFunction ([] (float v, int) { return juce::String (v * 100.0f, 1); })
+            .withValueFromStringFunction ([] (const juce::String& s) { return s.getFloatValue() / 100.0f; });
+    };
+
     layout.add (std::make_unique<juce::AudioParameterFloat> (
         juce::ParameterID { ParamID::morph, 1 },
         "Morph",
         juce::NormalisableRange<float> { 0.0f, 1.0f, 0.001f },
-        0.5f));  // demo default: useful middle static tone.
+        0.5f, pctAttribs()));  // demo default: useful middle static tone.
 
     layout.add (std::make_unique<juce::AudioParameterFloat> (
         juce::ParameterID { ParamID::q, 1 },
         "Q",
         juce::NormalisableRange<float> { 0.0f, 1.0f, 0.001f },
-        0.0f));
+        0.0f, pctAttribs()));
 
     layout.add (std::make_unique<juce::AudioParameterInt> (
         juce::ParameterID { ParamID::body, 1 },
@@ -40,7 +49,7 @@ juce::AudioProcessorValueTreeState::ParameterLayout createParameterLayout()
         juce::ParameterID { ParamID::amount, 1 },
         "Amount",
         juce::NormalisableRange<float> { 0.0f, 1.0f, 0.001f },
-        1.0f));
+        1.0f, pctAttribs()));
 
     // PL-1: extras parameters live behind TRENCH_PLAYER_EXTRAS.
     //
@@ -85,6 +94,14 @@ juce::AudioProcessorValueTreeState::ParameterLayout createParameterLayout()
         juce::ParameterID { ParamID::motionOn, 1 },
         "Motion",
         false));  // default = Off — no motion until armed.
+
+    // MOVE targets — which wheel(s) the motion sweeps. Morph on by default
+    // (MOVE primarily performs MORPH); Q opt-in. The M/Q lamps toggle these.
+    // Both, either, or neither may be lit; neither = motion armed but silent.
+    layout.add (std::make_unique<juce::AudioParameterBool> (
+        juce::ParameterID { ParamID::motionTargetM, 1 }, "Motion -> Morph", true));
+    layout.add (std::make_unique<juce::AudioParameterBool> (
+        juce::ParameterID { ParamID::motionTargetQ, 1 }, "Motion -> Q", false));
 
     // Explicit tile pick — replaces the old body-name-based auto-selection.
     // Grid position is fixed across all bodies; the curated values behind

@@ -56,12 +56,7 @@ public:
 
     void paint (juce::Graphics& g) override
     {
-        const auto b = getLocalBounds().toFloat();
-        drawWell (g, b, t);
-
-        g.setFont (displayFont (10.0f, false));
-        g.setColour (juce::Colour (0xffe9dfc6).withAlpha (down ? 0.75f : (hover ? 1.0f : 0.9f)));
-        g.drawText ("TAKE", b, juce::Justification::centred, false);
+        drawHardwareKey (g, getLocalBounds().toFloat(), "TAKE", hover, down, t);
     }
 
     // Fired once per drag gesture, past the distance threshold. `this` is
