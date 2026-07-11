@@ -198,6 +198,27 @@ own lanes, then run the copy-risk gate. Packed words are never copied.
 *Forged:* P12 + hedz 1+6 — "It gave it the correct shape", copy-risk 0/28
 flagged (2026-07-10).
 
+**L28 — Extract the positive, compose the negative, optimise last.**
+Tyson's authoring doctrine, verbatim: "Extract the positive acoustic
+structure, compose the negative spectral structure, and optimise only after
+the morph geometry has been deliberately designed."
+  - POLES (the positive structure — resonance) are EXTRACTED: measured
+    tables, physical models, captures. Never invented.
+  - ZEROS (the negative structure — anti-resonance, cliffs, shading) are
+    COMPOSED: a design act, never fitted from a recording's noise. The unit
+    floor zero, matched-flatness zeros, inter-formant shading all live here.
+  - OPTIMISATION (fitters, trajectory programs, error minimisation) runs
+    only INSIDE a deliberately designed morph geometry: lane correspondence
+    and journey shapes are decided first; the optimiser fills them in.
+*Forged:* 2026-07-12, one session, all three clauses: VOICE built from
+extracted Peterson-Barney poles landed 9 cents true; ZAP/VOICE's composed
+unit-zero floor + matched zeros gave cascade-safe flatness by construction;
+and the counterexample — four independently ARMA-fitted corners (optimising
+before geometry) interpolated Schur-UNSTABLE at rho 1.0087 through the
+shipped dll. The next VOICE move is this law applied: the crown-heavy
+balance is uncomposed negative structure (shade F4/F5 with composed zeros),
+not a gain problem.
+
 ---
 
 ## Open cases (laws waiting to be forged)
