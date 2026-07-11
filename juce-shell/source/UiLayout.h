@@ -80,12 +80,10 @@ public:
         layout.elements["morphLabel"].text = "MORPH";
         layout.elements["qLabel"]       = { { 114.0f, 822.0f, 434.0f, 38.0f },  14.0f, juce::Colour (0xff170f08) };
         layout.elements["qLabel"].text = "Q";
-        // TRENCH alone in the top-left corner; MUSICAL FILTER is a real punched
-        // Dymo tape label stuck on the bare lower body (Tyson's asset,
-        // 2026-07-11) — drawn by FaceplateView, slightly crooked like real tape.
+        // TRENCH alone in the top-left corner. No sub-line anywhere — "MUSICAL
+        // FILTER" reads as a second product name (removed, Tyson 2026-07-11).
         layout.elements["brandLabel"]   = { { 114.0f, 58.0f, 230.0f, 40.0f }, 11.5f, juce::Colour (0xff41362a) };
         layout.elements["brandLabel"].text = "TRENCH";
-        layout.elements["brandTape"]    = { { 330.0f, 1228.0f, 340.0f, 113.0f }, {}, {} };
 
         // COBALT scheme (2026-07-11, Tyson's call: "Try: cobalt"): SAND plate
         // (locked art) / cool GRAPHITE darks / ELECTRIC COBALT as the ONLY lit

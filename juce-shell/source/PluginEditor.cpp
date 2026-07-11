@@ -34,10 +34,8 @@ PluginEditor::PluginEditor (PluginProcessor& p)
                                                   BinaryData::trench_roller_strip_pngSize);
     auto grid  = juce::ImageCache::getFromMemory (BinaryData::display_log_grid_png,
                                                   BinaryData::display_log_grid_pngSize);
-    auto tape  = juce::ImageCache::getFromMemory (BinaryData::musical_filter_tape_png,
-                                                  BinaryData::musical_filter_tape_pngSize);
 
-    faceplate    = std::make_unique<FaceplateView> (panel, theme, tape);
+    faceplate    = std::make_unique<FaceplateView> (panel, theme);
     faceplate->setBufferedToImage (true);   // the static plate is cached, not re-rasterized per frame
     graph        = std::make_unique<GraphDisplay> (grid, theme, processor.apvts, ParamID::slamDrive);
     slotPad      = std::make_unique<SlotPad> (theme);

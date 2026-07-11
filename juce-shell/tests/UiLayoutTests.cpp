@@ -33,7 +33,7 @@ TEST_CASE ("Every element id the editor lays out has a default")
         REQUIRE (d.sourceRectFor (id).getWidth() > 0.0f);
 
     REQUIRE (! d.sourceRectFor ("brandLabel").isEmpty());   // TRENCH engraved top-left
-    REQUIRE (! d.sourceRectFor ("brandTape").isEmpty());    // the MUSICAL FILTER tape
+    REQUIRE (d.sourceRectFor ("brandSub").isEmpty());       // no sub-line: TRENCH is the only name
 }
 
 TEST_CASE ("Malformed JSON falls back to the baked defaults")
