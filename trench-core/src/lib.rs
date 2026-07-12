@@ -21,6 +21,7 @@ pub mod qsound_spatial;
 pub mod response;
 pub mod role;
 pub mod seed;
+pub mod stage_law;
 pub mod transition;
 pub mod trench_matrix;
 
@@ -38,3 +39,6 @@ pub use response::{
     audit_kernel_surface, biquad_response_curve, kernel_response_curve, ResponseSurfaceAudit,
 };
 pub use role::Role;
+pub use stage_law::{
+    geometry_from_words, roots_from_words, words_from_roots, RootPair, StageGeometry, StageRoots,
+};
