@@ -10,6 +10,8 @@ pub mod desk_drive;
 pub mod dsp;
 pub mod engine;
 pub mod ffi;
+pub mod heritage;
+pub mod keyframe;
 pub mod letters;
 pub mod lpc;
 pub mod qsound_spatial;
@@ -26,5 +28,6 @@ pub use response::{
     audit_kernel_surface, biquad_response_curve, kernel_response_curve, ResponseSurfaceAudit,
 };
 pub use stage_law::{
-    geometry_from_words, roots_from_words, words_from_roots, RootPair, StageGeometry, StageRoots,
+    geometry_from_words, roots_from_words, words_from_geometry, words_from_roots, RootPair,
+    StageGeometry, StageRoots,
 };

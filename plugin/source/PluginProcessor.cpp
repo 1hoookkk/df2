@@ -741,6 +741,46 @@ void PluginProcessor::processBlock (juce::AudioBuffer<float>& buffer, juce::Midi
     moveGuardForUi.store (mod.guard, std::memory_order_relaxed);
     moveSlamForUi.store (mod.drive, std::memory_order_relaxed);
 
+    // KEYFRAME RECORDER — per-wheel user-authored modulation. When a wheel's
+    // recording is armed it DRIVES that wheel: the pendulum/rise/saw/one-shot
+    // value from trench_keyframe_value replaces the (possibly motion-modulated)
+    // value. Tempo-synced off the host ppq already read above; when the transport
+    // is stopped it holds at A so a paused DAW is not silently sweeping. This is
+    // the intended motion path — it takes precedence over the retiring MOVE/motion.
+    {
+        double kfPpq = 0.0, qnPerBar = 4.0;
+        if (auto* ph = getPlayHead())
+            if (auto pos = ph->getPosition())
+            {
+                if (pos->getIsPlaying())
+                    if (auto p = pos->getPpqPosition()) kfPpq = juce::jmax (0.0, *p);
+                if (auto ts = pos->getTimeSignature())
+                    qnPerBar = trench::quarterNotesPerBar (ts->numerator, ts->denominator);
+            }
+        auto legBars = [] (int idx) -> float {
+            static const float bars[] = { 0.25f, 0.5f, 1.0f, 2.0f, 4.0f, 8.0f, 16.0f };
+            return bars[juce::jlimit (0, 6, idx)];
+        };
+        if (apvts.getRawParameterValue (ParamID::kfMorphOn)->load() > 0.5f)
+        {
+            mod.morph = trench_keyframe_value (
+                apvts.getRawParameterValue (ParamID::kfMorphA)->load(),
+                apvts.getRawParameterValue (ParamID::kfMorphB)->load(),
+                legBars ((int) apvts.getRawParameterValue (ParamID::kfMorphBars)->load()),
+                kfPpq, qnPerBar,
+                (unsigned) apvts.getRawParameterValue (ParamID::kfMorphMode)->load());
+        }
+        if (apvts.getRawParameterValue (ParamID::kfQOn)->load() > 0.5f)
+        {
+            mod.q = trench_keyframe_value (
+                apvts.getRawParameterValue (ParamID::kfQA)->load(),
+                apvts.getRawParameterValue (ParamID::kfQB)->load(),
+                legBars ((int) apvts.getRawParameterValue (ParamID::kfQBars)->load()),
+                kfPpq, qnPerBar,
+                (unsigned) apvts.getRawParameterValue (ParamID::kfQMode)->load());
+        }
+    }
+
     effectiveMorphForUi.store (mod.morph, std::memory_order_relaxed);
     effectiveQForUi.store (mod.q, std::memory_order_relaxed);
     morphModulatedForUi.store (std::abs (mod.morph - smoothedMorph) > 0.0005f,

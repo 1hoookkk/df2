@@ -20,6 +20,23 @@ namespace ParamID
     inline constexpr auto teleportMorphDepth = "teleportMorphDepth"; // 0..1 fraction of amount on Morph
     inline constexpr auto teleportQDepth     = "teleportQDepth";     // 0..1 fraction of amount on Q
 
+    // KEYFRAME RECORDER — the per-wheel user-authored modulation (the one that
+    // actually works). Record A (where the wheel is) and B (where you turned it
+    // to), set a musical rate, pick a shape. Tempo-synced, driven by
+    // trench_keyframe_value. Independent per wheel: morph and q each have their
+    // own recording and clock. This is the intended motion system; the sprawling
+    // motion*/teleport* params below are the retiring path.
+    inline constexpr auto kfMorphOn   = "kfMorphOn";    // bool: MORPH recording armed
+    inline constexpr auto kfMorphA    = "kfMorphA";     // 0..1 endpoint A
+    inline constexpr auto kfMorphB    = "kfMorphB";     // 0..1 endpoint B
+    inline constexpr auto kfMorphBars = "kfMorphBars";  // choice: 1/4,1/2,1,2,4,8,16 bars (one A->B leg)
+    inline constexpr auto kfMorphMode = "kfMorphMode";  // choice: Pendulum,Rise,Saw,OneShot
+    inline constexpr auto kfQOn       = "kfQOn";        // bool: Q recording armed
+    inline constexpr auto kfQA        = "kfQA";         // 0..1 endpoint A
+    inline constexpr auto kfQB        = "kfQB";         // 0..1 endpoint B
+    inline constexpr auto kfQBars     = "kfQBars";      // choice, as kfMorphBars
+    inline constexpr auto kfQMode     = "kfQMode";      // choice, as kfMorphMode
+
     // Motion — user-facing mode is a predictable tempo-synced Morph sweep.
     // Advanced/host params still exist for experiments, but the faceplate law
     // is Sine -> Morph only and resets phase when armed.

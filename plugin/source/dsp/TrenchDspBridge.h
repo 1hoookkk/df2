@@ -38,6 +38,10 @@ extern "C"
     int trench_cartridge_json_to_body (const char* json, unsigned char* outBody);
     // Forge: compile 6 typed cards (42 f64 = 6 x [type, fc_low, fc_high, q_lo, q_hi, gain_db, on]) -> 240 bytes.
     int trench_compile_body_typed (const double* cards, size_t nValues, unsigned char* outBody);
+    // KEYFRAME RECORDER — per-wheel tempo-synced modulation value (one owner in
+    // trench-core::keyframe). mode: 0=Pendulum 1=Rise 2=Saw 3=OneShot.
+    float trench_keyframe_value (float a, float b, float legBars, double ppq,
+                                 double beatsPerBar, unsigned mode);
 }
 
 struct TrenchParams

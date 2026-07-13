@@ -296,6 +296,38 @@ juce::AudioProcessorValueTreeState::ParameterLayout createParameterLayout()
         1.0f));  // full Q-axis depth when active.
 #endif // TRENCH_PLAYER_EXTRAS
 
+    // ── KEYFRAME RECORDER — per-wheel user-authored modulation ──────────────────
+    // Shared choice lists. Bars = one A->B leg; index maps to kKeyframeBars in
+    // PluginProcessor. Modes match trench_keyframe_value (0..3).
+    const juce::StringArray kfBarsChoices { "1/4", "1/2", "1 bar", "2 bar", "4 bar", "8 bar", "16 bar" };
+    const juce::StringArray kfModeChoices { "Pendulum", "Rise", "Saw", "OneShot" };
+
+    layout.add (std::make_unique<juce::AudioParameterBool>  (
+        juce::ParameterID { ParamID::kfMorphOn, 1 }, "Rec Morph", false));
+    layout.add (std::make_unique<juce::AudioParameterFloat> (
+        juce::ParameterID { ParamID::kfMorphA, 1 }, "Morph A",
+        juce::NormalisableRange<float> { 0.0f, 1.0f, 0.001f }, 0.0f));
+    layout.add (std::make_unique<juce::AudioParameterFloat> (
+        juce::ParameterID { ParamID::kfMorphB, 1 }, "Morph B",
+        juce::NormalisableRange<float> { 0.0f, 1.0f, 0.001f }, 1.0f));
+    layout.add (std::make_unique<juce::AudioParameterChoice> (
+        juce::ParameterID { ParamID::kfMorphBars, 1 }, "Morph Rate", kfBarsChoices, 3)); // 2 bar
+    layout.add (std::make_unique<juce::AudioParameterChoice> (
+        juce::ParameterID { ParamID::kfMorphMode, 1 }, "Morph Shape", kfModeChoices, 0));
+
+    layout.add (std::make_unique<juce::AudioParameterBool>  (
+        juce::ParameterID { ParamID::kfQOn, 1 }, "Rec Q", false));
+    layout.add (std::make_unique<juce::AudioParameterFloat> (
+        juce::ParameterID { ParamID::kfQA, 1 }, "Q A",
+        juce::NormalisableRange<float> { 0.0f, 1.0f, 0.001f }, 0.0f));
+    layout.add (std::make_unique<juce::AudioParameterFloat> (
+        juce::ParameterID { ParamID::kfQB, 1 }, "Q B",
+        juce::NormalisableRange<float> { 0.0f, 1.0f, 0.001f }, 1.0f));
+    layout.add (std::make_unique<juce::AudioParameterChoice> (
+        juce::ParameterID { ParamID::kfQBars, 1 }, "Q Rate", kfBarsChoices, 3));
+    layout.add (std::make_unique<juce::AudioParameterChoice> (
+        juce::ParameterID { ParamID::kfQMode, 1 }, "Q Shape", kfModeChoices, 0));
+
     return layout;
 }
 

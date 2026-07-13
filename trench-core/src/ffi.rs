@@ -1055,3 +1055,33 @@ pub unsafe extern "C" fn trench_desk_saturate_stereo(
         *x = crate::desk_drive::mackity_saturate((*x * drive) as f64) as f32;
     }
 }
+
+/// Keyframe-recorder value — the per-wheel user-authored modulation.
+///
+/// Tempo-synced pendulum between two recorded points. C++ calls this so the
+/// button and the audio share one shape (see `keyframe::keyframe_loop_value`).
+/// Returns `a` for a zero/invalid length rather than NaN.
+///
+/// `a`,`b`: endpoints (0..1). `leg_bars`: musical length of one A→B leg.
+/// `ppq`: host quarter-note position. `beats_per_bar`: host time signature.
+///
+/// `mode`: 0 = pendulum (texture), 1 = rise+hold (riser), 2 = saw (repeated
+/// build), 3 = one-shot (drum/transient).
+#[no_mangle]
+pub extern "C" fn trench_keyframe_value(
+    a: f32,
+    b: f32,
+    leg_bars: f32,
+    ppq: f64,
+    beats_per_bar: f64,
+    mode: u32,
+) -> f32 {
+    crate::keyframe::keyframe_loop_value_mode(
+        a,
+        b,
+        leg_bars,
+        ppq,
+        beats_per_bar,
+        crate::keyframe::LoopMode::from_u32(mode),
+    )
+}
