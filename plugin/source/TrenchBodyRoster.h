@@ -50,9 +50,18 @@ struct BodyBehavior
 };
 
 inline constexpr const char* kAuditionBase = "@audition";
-inline constexpr int kDefaultBodyIndex = 0;
-inline constexpr int kNoFilterIndex = -1;
-inline constexpr const char* kNoFilterName = "No Filter";
+
+// NO FILTER is roster slot 0, backed by the baked `identity.body240`. That body
+// is an EXACT identity cascade (nulls at -240 dBFS), so this is a real bypass,
+// not a nearly-flat body — and it is the default the plug-in opens on.
+//
+// It used to also exist as a phantom index -1. That never worked: `wrapBodyIndex(-1)`
+// wraps to `count - 1`, so "No Filter" silently loaded the LAST body in the
+// library, and `forceCleanAudioUiState()` did the same. One concept now, and it
+// is the one that is actually flat.
+inline constexpr int kNoFilterIndex = 0;
+inline constexpr int kDefaultBodyIndex = kNoFilterIndex;
+inline constexpr const char* kNoFilterName = "NO FILTER";
 
 inline juce::File auditionSlotFile() noexcept
 {
@@ -93,7 +102,7 @@ inline RosterStore& rosterStore()
     if (! built)
     {
         built = true;
-        store.names.push_back ("Identity");
+        store.names.push_back (kNoFilterName);
         store.bases.push_back ("identity");
         store.categories.push_back ("SYSTEM");
 
@@ -130,7 +139,7 @@ inline RosterStore& rosterStore()
 inline const BodyEntry* bakedRoster (int& countOut) noexcept
 {
     static const BodyEntry entries[] = {
-        { "Identity", "identity", "SYSTEM", (int) TypeBehavior::Static },
+        { kNoFilterName, "identity", "SYSTEM", (int) TypeBehavior::Static },
     };
     countOut = 1;
     return entries;
@@ -159,7 +168,7 @@ inline int wrapBodyIndex (int index) noexcept
     return index < 0 ? index + count : index;
 }
 
-inline bool bodyIsNoFilter (int index) noexcept { return index == kNoFilterIndex; }
+inline bool bodyIsNoFilter (int index) noexcept { return wrapBodyIndex (index) == kNoFilterIndex; }
 
 inline bool bodyIsAudition (int) noexcept { return false; }
 

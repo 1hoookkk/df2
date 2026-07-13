@@ -113,24 +113,48 @@ impl Default for DebugToggles {
     }
 }
 
-/// Output soft-limiter — the final safety stage.
+/// Output soft-limiter knee. Below this the stage is exactly transparent.
+const SATURATE_KNEE: f32 = 0.9;
+
+/// The AGC curve's first reduction tooth.
 ///
-/// The AGC index wraps (`& 0xf`, faithful to the hardware `FUN_1802c04e0`): a ring
-/// transient that drives `gain·|x|` past 16 wraps back into the no-reduction zone,
-/// so the limiter momentarily fails and a spike passes ungained. With output boost
-/// (~×4) that reaches ~18× full scale and the host hard-clips it — the audible
-/// "distortion". This bounds the output to ±1 while staying **transparent below the
-/// knee** (normal level passes untouched), turning those spikes into clean limiting
-/// instead of digital clip. Gated by `saturation_enabled`, which until now was
-/// declared but wired to nothing.
+/// `BASE_AGC_TABLE[0]` and `[1]` are both 1.0001 (recovery) — the first value
+/// below unity is at index 2. The index is `(gain·|x|) as int`, so the leveler
+/// physically cannot reduce until `|x| >= 2.0`: **+6 dBFS**.
+///
+/// In a float engine where full scale is 1.0, that sits 6.9 dB *above*
+/// `SATURATE_KNEE`. The leveler therefore handed the tanh a signal it had no
+/// way to bring under the knee, and the tanh ended up doing all the level
+/// control. Measured in `diag_limiter_handoff` on a real resonant body: the
+/// curve alone distorts at -22.7 dBc, but curve+tanh distorts at -12.3 dBc —
+/// the "safety net" was *adding* 10.4 dB of distortion, at the post-filter
+/// output, which is precisely the stage that must stay clean.
+const AGC_FIRST_TOOTH: f32 = 2.0;
+
+/// Pre-AGC scale that lands the curve's first tooth **on** the saturator's knee.
+///
+/// Derived, not voiced: with this scale the verified leveler owns steady-state
+/// level, and the saturator is left doing only what its docs claim — catching
+/// the leveler's attack overshoot (a feedback leveler has no lookahead;
+/// measured 1.64x on ring-in). `diag_limiter_handoff` shows this is the
+/// optimum: distortion has already fallen to the curve's own floor and the peak
+/// is as loud as it can be (0.92) without waking the tanh. Larger values (the
+/// repo's old 3.0-4.0 voicing) only make bodies quieter for no further benefit.
+pub const AGC_DRIVE: f32 = AGC_FIRST_TOOTH / SATURATE_KNEE; // 2.222...
+
+/// Output soft-limiter — the safety net for the AGC's attack overshoot.
+///
+/// Transparent below the knee. It is NOT a level control: if this stage is
+/// working continuously, the gain structure upstream is wrong (see `AGC_DRIVE`).
 #[inline]
 fn saturate(x: f32) -> f32 {
-    const KNEE: f32 = 0.9;
     let a = x.abs();
-    if a <= KNEE {
+    if a <= SATURATE_KNEE {
         x
     } else {
-        x.signum() * (KNEE + (1.0 - KNEE) * ((a - KNEE) / (1.0 - KNEE)).tanh())
+        x.signum()
+            * (SATURATE_KNEE
+                + (1.0 - SATURATE_KNEE) * ((a - SATURATE_KNEE) / (1.0 - SATURATE_KNEE)).tanh())
     }
 }
 
@@ -167,13 +191,10 @@ pub struct FilterEngine {
     agc_mix: f32,
     active_agc_table: [f32; 16],
     /// Pre-AGC scale: the cascade output is multiplied by this BEFORE `agc_step`
-    /// and divided back after. The AGC table is indexed by `(gain·|x|) as int &
-    /// 0xF`, so in the float domain (|x| < 1) it floors to index 0 and never
-    /// engages — the curve is a no-op. Scaling into the chip's integer-magnitude
-    /// domain (~×4 puts a unity-peak cascade at the table's 0.50 tooth) is what
-    /// makes the verified curve actually compress. Default **1.0 = identity**
-    /// (no behavior change / null parity preserved); a higher value engages the
-    /// character. Measured in `diag_pre_agc_scaling`.
+    /// and divided back after — it moves the signal into the integer-magnitude
+    /// domain the verified table is indexed in, without altering the curve.
+    /// Defaults to `AGC_DRIVE`, which lands the curve's first tooth on the
+    /// saturator's knee so the leveler (not the tanh) owns steady-state level.
     agc_drive: f32,
     dc_blocker_l: DcBlocker,
     dc_blocker_r: DcBlocker,
@@ -223,7 +244,7 @@ impl FilterEngine {
             agc_gain: 1.0,
             agc_mix: 1.0,
             active_agc_table: active_agc_table(sr),
-            agc_drive: 1.0,
+            agc_drive: AGC_DRIVE,
             dc_blocker_l: DcBlocker::new(sr),
             dc_blocker_r: DcBlocker::new(sr),
             spatial: QSoundSpatial::new(sr as f32),
@@ -1146,6 +1167,387 @@ mod tests {
                 .collect();
             let red_db = 20.0 * (rms(&out) / cas_rms).max(1e-9).log10();
             println!("  x{scale:<6} -> {red_db:>7.2} dB   min_gain={min_gain:.4}");
+        }
+    }
+
+    /// Diagnostic: the limiter handoff.
+    ///
+    /// `BASE_AGC_TABLE[0..=1]` are both 1.0001 — the table's first reduction
+    /// tooth is index 2, so the AGC curve cannot engage below |x| = 2.0 (+6
+    /// dBFS). `saturate()`'s knee is 0.9 (-0.9 dBFS). The two limiters disagree
+    /// about "loud" by 6.9 dB and the crude one fires first, so the tanh does
+    /// all the level control and the verified curve never gets a turn.
+    ///
+    /// This drives a real resonant body into that gap and reports who is doing
+    /// the limiting and what it costs. `resid` is everything that is not the
+    /// fundamental (harmonics + fold products) relative to it.
+    ///   cargo test -p trench-core --lib diag_limiter_handoff -- --ignored --nocapture
+    #[test]
+    #[ignore = "diagnostic: which limiter is doing the work"]
+    fn diag_limiter_handoff() {
+        const SR: f64 = 39_062.5;
+        const TAIL: usize = 12_288;
+
+        let run = |cycles: f64, drive: f32, agc: bool, sat: bool, amp: f32| -> Probe {
+            probe_body(cycles, Some(drive), agc, sat, amp)
+        };
+
+        // Find where this body is actually hot — that is where the limiters meet.
+        let mut best = (0.0f64, 0.0f32);
+        for k in 1..600 {
+            let c = k as f64 * 4.0;
+            let p = run(c, 1.0, false, false, 1.0).peak;
+            if p > best.1 {
+                best = (c, p);
+            }
+        }
+        let (cyc, hot_peak) = best;
+        println!("\n=== who is limiting? (real body, q=1, island rate) ===");
+        println!("AGC first tooth = |x| >= 2.0 (+6.0 dBFS)   saturate() knee = 0.9 (-0.9 dBFS)");
+        println!(
+            "body resonance at {:.0} Hz: full-scale input -> raw peak {:.3} (+{:.1} dBFS)\n",
+            SR * cyc / TAIL as f64,
+            hot_peak,
+            20.0 * hot_peak.log10()
+        );
+        println!("  in    raw_peak | STOCK (agc+sat)                | AGC only  | sat only");
+        println!("                 | peak    rms    resid    agc_g  | resid     | resid");
+        for &amp in &[0.4f32, 0.6, 0.8, 0.9, 1.0] {
+            let raw = run(cyc, 1.0, false, false, amp).peak;
+            let s = run(cyc, 1.0, true, true, amp);
+            let d_agc = run(cyc, 1.0, true, false, amp).resid_dbc;
+            let d_sat = run(cyc, 1.0, false, true, amp).resid_dbc;
+            println!(
+                "  {amp:.1}   {raw:6.3}  | {:6.3} {:6.3} {:7.1}dBc {:6.4} | {d_agc:6.1}dBc | {d_sat:6.1}dBc",
+                s.peak, s.rms, s.resid_dbc, s.agc_gain
+            );
+        }
+
+        // `attack` is measured with the saturator OFF, so it shows what the AGC
+        // alone lets through during ring-in — a feedback leveler has no
+        // lookahead, so this is the overshoot the saturator legitimately exists
+        // to catch.
+        println!("\n=== agc_drive sweep at full-scale input ===");
+        println!("  drive   peak    rms    resid     agc_gain | attack peak (AGC alone, sat off)");
+        for &drive in &[1.0f32, 1.5, 2.0, AGC_DRIVE, 3.0, 4.0] {
+            let s = run(cyc, drive, true, true, 1.0);
+            let attack = run(cyc, drive, true, false, 1.0).attack;
+            println!(
+                "  x{drive:<5.2}  {:6.3} {:6.3} {:7.1}dBc {:6.4} | {attack:8.3}",
+                s.peak, s.rms, s.resid_dbc, s.agc_gain
+            );
+        }
+    }
+
+    /// The AGC is the verified 16-value curve, and `AGC_DRIVE` does not replace
+    /// it — it only moves the signal into the integer-magnitude domain the table
+    /// is indexed in. Proof: the active table at the island rate is
+    /// `BASE_AGC_TABLE` value-for-value, and the shipped drive lands the signal
+    /// on the table's real teeth (indices 2+) instead of the two 1.0001
+    /// no-reduction entries it used to be stuck on.
+    ///   cargo test -p trench-core --lib diag_agc_curve -- --ignored --nocapture
+    #[test]
+    #[ignore = "diagnostic: which of the 16 AGC teeth the shipped drive uses"]
+    fn diag_agc_curve() {
+        use crate::agc::active_agc_table;
+        use crate::dsp::BASE_AGC_TABLE;
+
+        const SR: f64 = 39_062.5;
+        let table = active_agc_table(SR);
+        assert_eq!(
+            table, BASE_AGC_TABLE,
+            "island rate must use the verified 16 values unmodified"
+        );
+
+        println!("\n=== the AGC curve in use at {SR} Hz (16 values, verified) ===");
+        for (i, v) in table.iter().enumerate() {
+            let tag = if *v >= 1.0 { "no reduction" } else { "REDUCES" };
+            println!("  [{i:2}] {v:.4}   {tag}");
+        }
+        println!("\nindex = (agc_gain * |x| * AGC_DRIVE) as int & 0xF");
+        println!("AGC_DRIVE = AGC_FIRST_TOOTH / SATURATE_KNEE = {AGC_FIRST_TOOTH} / {SATURATE_KNEE} = {AGC_DRIVE:.4}\n");
+
+        // The curve is identical in both cases. What changes is WHERE the leveler
+        // settles on it — and therefore whether the tanh downstream has to finish
+        // the job. A feedback leveler correctly spends most of its life in the
+        // no-reduction zone, tapping tooth 2 just often enough to hold its gain;
+        // the number that matters is the peak it hands to the saturator.
+        const HOT_CYCLES: f64 = 964.0; // ~3064 Hz — this body's resonance, +36 dBFS raw
+        println!("what the leveler hands to the saturator (knee = {SATURATE_KNEE}):");
+        for &(label, drive) in &[("OLD  (drive 1.0)", 1.0f32), ("SHIPPED", AGC_DRIVE)] {
+            let leveller = probe_body(HOT_CYCLES, Some(drive), true, false, 1.0);
+            let shipped = probe_body(HOT_CYCLES, Some(drive), true, true, 1.0);
+            // The honest test is not the raw peak but whether the tanh actually
+            // changes anything once it sees the signal.
+            let verdict = if shipped.resid_dbc > leveller.resid_dbc + 1.0 {
+                "-> tanh must finish the job, and it distorts doing it"
+            } else {
+                "-> tanh idle, the curve owns the level"
+            };
+            println!(
+                "  {label:16} settles at peak {:.3}  {verdict}\n{:18}distortion: {:.1} dBc leveller alone -> {:.1} dBc with the tanh",
+                leveller.peak, "", leveller.resid_dbc, shipped.resid_dbc
+            );
+        }
+    }
+
+    /// Diagnostic: why a morph sweep went from inert to musical.
+    ///
+    /// A morph sweep drags a resonant peak across the source's spectrum, so it is
+    /// a violent LEVEL gesture by nature. The question is what rides that ride.
+    ///
+    /// A clipper is memoryless: it kills the PEAK and keeps the sustain — it eats
+    /// exactly the bloom that carries a filter's character — and it pins every
+    /// morph position to the same ceiling, so the sweep has no dynamic contour at
+    /// all. A leveler has TIME: the bloom passes through before the gain catches
+    /// up, then it ducks and releases. That is the opposite dynamic shape, and it
+    /// is the one the hardware had.
+    ///
+    /// Crest factor is the tell. 3.01 dB = a sine. ~1 dB = a square wave.
+    ///   cargo test -p trench-core --lib diag_morph_musicality -- --ignored --nocapture
+    #[test]
+    #[ignore = "diagnostic: why morph became musical"]
+    fn diag_morph_musicality() {
+        use crate::cartridge::Cartridge;
+
+        const SR: f64 = 39_062.5;
+        const N: usize = 8192;
+
+        // Harmonically rich source, so a sweeping resonance always has something
+        // to grab — this is what a morph sweep actually meets in a mix.
+        let saw: Vec<f32> = (0..N)
+            .map(|i| {
+                let ph = (110.0 * i as f64 / SR).fract();
+                ((ph * 2.0 - 1.0) * 0.7) as f32
+            })
+            .collect();
+
+        // (rms, crest dB) at one morph position
+        let at = |drive: f32, morph: f64| -> (f32, f32) {
+            let mut eng = FilterEngine::new();
+            eng.prepare(SR);
+            eng.load_cartridge(
+                Cartridge::from_body_bytes(
+                    "d",
+                    include_bytes!("../tests/fixtures/sf_mouth_frame.body240").as_slice(),
+                    1.0,
+                )
+                .unwrap(),
+            );
+            eng.set_agc_drive(drive);
+            let mut l = saw.clone();
+            let mut r = saw.clone();
+            eng.process_block(&mut l, &mut r, morph, 1.0); // settle
+            let mut l = saw.clone();
+            let mut r = saw.clone();
+            eng.process_block(&mut l, &mut r, morph, 1.0);
+
+            let peak = l.iter().fold(0.0f32, |m, &s| m.max(s.abs()));
+            let rms = ((l.iter().map(|&s| (s as f64).powi(2)).sum::<f64>()) / N as f64).sqrt() as f32;
+            let crest = 20.0 * (peak / rms.max(1e-9)).log10();
+            (rms, crest)
+        };
+
+        println!("\n=== a morph sweep, before and after ===");
+        println!("crest: 3.01 dB = a sine.  ~1 dB = a square wave (fully clipped).\n");
+        println!("  morph |   OLD (drive 1.0)      |   SHIPPED");
+        println!("        |   rms     crest        |   rms     crest");
+        let (mut old_rms, mut new_rms) = (Vec::new(), Vec::new());
+        for k in 0..=10 {
+            let m = k as f64 / 10.0;
+            let (o_r, o_c) = at(1.0, m);
+            let (n_r, n_c) = at(AGC_DRIVE, m);
+            old_rms.push(o_r);
+            new_rms.push(n_r);
+            println!("   {m:.1}   |  {o_r:.3}   {o_c:5.2} dB     |  {n_r:.3}   {n_c:5.2} dB");
+        }
+
+        let spread = |v: &[f32]| {
+            let (lo, hi) = v.iter().fold((f32::MAX, 0.0f32), |(l, h), &x| (l.min(x), h.max(x)));
+            20.0 * (hi / lo.max(1e-9)).log10()
+        };
+        println!(
+            "\nlevel contour across the sweep:  OLD {:.2} dB   SHIPPED {:.2} dB",
+            spread(&old_rms),
+            spread(&new_rms)
+        );
+        println!("(a sweep with no level contour is a sweep you cannot feel)");
+    }
+
+    /// Diagnostic: is the identity body actually a bypass?
+    ///
+    /// The cascade is identity, but the leveler and the saturator are still in
+    /// the chain. The leveler's first tooth now sits at `SATURATE_KNEE`, so ANY
+    /// signal peaking above 0.9 engages it — flat body or not. This measures the
+    /// null residual against the dry input, so "No filter" can be honest about
+    /// what it is.
+    ///   cargo test -p trench-core --lib diag_identity_transparency -- --ignored --nocapture
+    #[test]
+    #[ignore = "diagnostic: is the identity body a true bypass"]
+    fn diag_identity_transparency() {
+        use crate::cartridge::Cartridge;
+
+        const SR: f64 = 39_062.5;
+        const N: usize = 8192;
+        const IDENTITY: &[u8; 240] = include_bytes!("../../plugin/assets/bodies/identity.body240");
+
+        // Null the identity body with each post-cascade stage isolated, so we
+        // learn WHICH stage breaks the bypass rather than just that it is broken.
+        let run = |amp: f32, agc: bool, sat: bool, dc: bool| -> (f32, f64) {
+            let mut eng = FilterEngine::new();
+            eng.prepare(SR);
+            eng.load_cartridge(
+                Cartridge::from_body_bytes("identity", IDENTITY.as_slice(), 1.0).unwrap(),
+            );
+            eng.debug.agc_enabled = agc;
+            eng.debug.saturation_enabled = sat;
+            eng.debug.dc_block_enabled = dc;
+
+            // Harmonically rich, so this is not a best case.
+            let dry: Vec<f32> = (0..N)
+                .map(|i| {
+                    let ph = (220.0 * i as f64 / SR).fract();
+                    (amp as f64 * (ph * 2.0 - 1.0)) as f32
+                })
+                .collect();
+            let mut l = dry.clone();
+            let mut r = dry.clone();
+            eng.process_block(&mut l, &mut r, 0.5, 0.5);
+
+            let resid = (l
+                .iter()
+                .zip(dry.iter())
+                .map(|(&o, &d)| ((o - d) as f64).powi(2))
+                .sum::<f64>()
+                / N as f64)
+                .sqrt();
+            (
+                l.iter().fold(0.0f32, |m, &s| m.max(s.abs())),
+                20.0 * resid.max(1e-12).log10(),
+            )
+        };
+
+        println!("\n=== identity body: is the CASCADE itself identity? ===");
+        println!("(everything after it switched off — this is the packed body alone)");
+        for &amp in &[0.3f32, 1.0] {
+            let (p, d) = run(amp, false, false, false);
+            let v = if d < -100.0 { "EXACT identity" } else { "NOT identity — the body is wrong" };
+            println!("   in {amp:.2} -> peak {p:.4}   null {d:8.1} dBFS   {v}");
+        }
+
+        println!("\n=== which stage breaks the bypass? ===");
+        println!("  in    | cascade only | +DC block | +AGC     | +saturator (full)");
+        for &amp in &[0.3f32, 0.6, 0.9, 1.0] {
+            let a = run(amp, false, false, false).1;
+            let b = run(amp, false, false, true).1;
+            let c = run(amp, true, false, true).1;
+            let d = run(amp, true, true, true).1;
+            println!("  {amp:.2}  | {a:9.1} dB | {b:6.1} dB | {c:6.1} dB | {d:6.1} dB");
+        }
+    }
+
+    /// The saturator is a safety net, not a level control.
+    ///
+    /// The AGC curve cannot reduce until `|x| >= AGC_FIRST_TOOTH` (2.0), but the
+    /// tanh's knee is `SATURATE_KNEE` (0.9). If the pre-AGC scale does not close
+    /// that 6.9 dB gap, the leveler settles ABOVE the knee, the tanh ends up
+    /// doing all the level control, and it *adds* distortion instead of catching
+    /// overshoot — post-filter output clipping, the one thing the E-mu path is
+    /// supposed to avoid.
+    ///
+    /// Measured with the old `agc_drive = 1.0`: -12.3 dBc with both stages
+    /// against -22.7 dBc for the leveler alone — the "net" was 10.4 dB WORSE
+    /// than no net at all. This locks that door.
+    #[test]
+    fn saturator_never_adds_distortion_to_the_leveller() {
+        // ~3064 Hz: this body's resonance, +36 dBFS raw on a full-scale input.
+        const HOT_CYCLES: f64 = 964.0;
+
+        let leveller_only = probe_body(HOT_CYCLES, None, true, false, 1.0);
+        let shipped = probe_body(HOT_CYCLES, None, true, true, 1.0);
+
+        assert!(
+            shipped.resid_dbc <= leveller_only.resid_dbc + 1.0,
+            "the saturator is doing the levelling: {:.1} dBc with it vs {:.1} dBc without \
+             (steady peak {:.3} vs knee {SATURATE_KNEE}). Check AGC_DRIVE.",
+            shipped.resid_dbc,
+            leveller_only.resid_dbc,
+            leveller_only.peak
+        );
+    }
+
+    struct Probe {
+        peak: f32,
+        rms: f32,
+        resid_dbc: f64,
+        agc_gain: f32,
+        /// Worst peak during ring-in, before the leveler has caught up.
+        attack: f32,
+    }
+
+    /// Steady-state probe on the clean-room resonant body at the island rate.
+    /// `cycles` picks a bin-aligned tone (`f = SR * cycles / TAIL`) so the
+    /// fundamental lands exactly on a DFT bin and the residual is not polluted
+    /// by leakage. `drive: None` leaves the engine's shipped default.
+    /// `resid_dbc` is everything that is NOT the fundamental — harmonics, fold
+    /// products, DC — relative to it.
+    fn probe_body(cycles: f64, drive: Option<f32>, agc: bool, sat: bool, amp: f32) -> Probe {
+        use crate::cartridge::Cartridge;
+        use std::f64::consts::PI;
+
+        const BODY: &[u8; 240] = include_bytes!("../tests/fixtures/sf_mouth_frame.body240");
+        const SR: f64 = 39_062.5;
+        const WARMUP: usize = 4096;
+        const TAIL: usize = 12_288;
+
+        let f0 = SR * cycles / TAIL as f64;
+        let mut eng = FilterEngine::new();
+        eng.prepare(SR);
+        eng.load_cartridge(Cartridge::from_body_bytes("d", BODY.as_slice(), 1.0).unwrap());
+        eng.debug.agc_enabled = agc;
+        eng.debug.saturation_enabled = sat;
+        eng.debug.dc_block_enabled = false;
+        if let Some(d) = drive {
+            eng.set_agc_drive(d);
+        }
+
+        let tone = |i: usize| (amp as f64 * (2.0 * PI * f0 * i as f64 / SR).sin()) as f32;
+
+        // Settle: let the corner transition finish and the cascade ring in.
+        let mut sl: Vec<f32> = (0..WARMUP).map(tone).collect();
+        let mut sr_ = sl.clone();
+        eng.process_block(&mut sl, &mut sr_, 0.5, 1.0);
+        let attack = sl.iter().fold(0.0f32, |m, &s| m.max(s.abs()));
+
+        // Measure: TAIL is a whole number of cycles, continuing the tone's phase.
+        let mut l: Vec<f32> = (0..TAIL).map(|i| tone(WARMUP + i)).collect();
+        let mut r = l.clone();
+        eng.process_block(&mut l, &mut r, 0.5, 1.0);
+
+        // Best-fit fundamental by projection; residual = everything else.
+        let (mut cr, mut ci) = (0.0f64, 0.0f64);
+        for (i, &s) in l.iter().enumerate() {
+            let ph = 2.0 * PI * f0 * (WARMUP + i) as f64 / SR;
+            cr += s as f64 * ph.cos();
+            ci += s as f64 * ph.sin();
+        }
+        let (a, b) = (2.0 * cr / TAIL as f64, 2.0 * ci / TAIL as f64);
+        let fund_rms = (a * a + b * b).sqrt() / 2.0f64.sqrt();
+        let mut acc = 0.0f64;
+        for (i, &s) in l.iter().enumerate() {
+            let ph = 2.0 * PI * f0 * (WARMUP + i) as f64 / SR;
+            acc += (s as f64 - (a * ph.cos() + b * ph.sin())).powi(2);
+        }
+
+        Probe {
+            peak: l.iter().fold(0.0f32, |m, &s| m.max(s.abs())),
+            rms: ((l.iter().map(|&s| (s as f64).powi(2)).sum::<f64>()) / TAIL as f64).sqrt() as f32,
+            resid_dbc: 20.0
+                * ((acc / TAIL as f64).sqrt() / fund_rms.max(1e-12))
+                    .max(1e-12)
+                    .log10(),
+            agc_gain: eng.agc_gain,
+            attack,
         }
     }
 }

@@ -106,14 +106,23 @@ private:
     juce::WindowedSincInterpolator inputResamplerL, inputResamplerR;
     juce::WindowedSincInterpolator outputResamplerL, outputResamplerR;
 
-    // Anti-fold guard before the 48k->39062.5 downsample: host-band content
-    // above the E-mu Nyquist (19531 Hz) would alias straight into the band.
-    // 8th-order Butterworth at 19.3 kHz (4 cascaded biquads per channel).
-    // Passband cost: ~-1 dB at 18 kHz — period-correct (the hardware had
-    // nothing above 19.5 kHz either); fold rejection >40 dB by 21 kHz.
-    static constexpr int kGuardStages = 4;
-    juce::dsp::IIR::Filter<float> guardLP[2][kGuardStages];
+    // Anti-fold guard before the downsample into the island: host-band content
+    // above the E-mu Nyquist (19531.25 Hz) folds straight back into the audible
+    // band.
+    //
+    // This was an 8th-order Butterworth cut at 19.3 kHz — a spec no filter can
+    // meet, because it left only 231 Hz of transition before the fold. Measured
+    // leak at 21 kHz was -32.5 dB at 48k and -8.6 dB at 96k (it only ever
+    // "worked" at 44.1/48k, where bilinear warping crams the response against
+    // Nyquist and donates free steepness; at 96k that accident disappears).
+    //
+    // An elliptic with a real transition band (17.5 kHz -> the fold) reaches the
+    // stopband in the distance available. Passband cost is -0.1 dB ripple to
+    // 17.5 kHz — period-correct, the hardware had nothing up there either.
+    // Stage count is chosen by the designer, so it is not fixed.
+    std::vector<juce::dsp::IIR::Filter<float>> guardLP[2];
     std::vector<float> guardScratchL, guardScratchR;
+    bool guardActive = false;
 
     // Intermediate buffer at 39062.5 Hz, sized once in prepare().
     juce::AudioBuffer<float> internalBuffer;

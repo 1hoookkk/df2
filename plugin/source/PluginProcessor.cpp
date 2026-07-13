@@ -593,7 +593,6 @@ void PluginProcessor::processBlock (juce::AudioBuffer<float>& buffer, juce::Midi
         dspBridge.setSpatialMode (kSpatialOff);
         dspBridge.setAgcEnabled (! bodySolo);
         dspBridge.setSaturationEnabled (! bodySolo);
-        dspBridge.setAgcDrive (1.0f);
         lastWorkstationBodySolo = bodySolo;
     }
 
@@ -1000,9 +999,7 @@ void PluginProcessor::parameterChanged (const juce::String& parameterID, float n
     if (parameterID == ParamID::body)
     {
         const int raw = juce::roundToInt (newValue);
-        pendingBodyIndex.store (trench::bodyIsNoFilter (raw) ? trench::kNoFilterIndex
-                                                             : trench::wrapBodyIndex (raw),
-                                std::memory_order_relaxed);
+        pendingBodyIndex.store (trench::wrapBodyIndex (raw), std::memory_order_relaxed);
         triggerAsyncUpdate();
     }
     else if (parameterID == ParamID::motionOn && newValue > 0.5f)
@@ -1194,7 +1191,8 @@ bool PluginProcessor::renderRecipe (const unsigned char* body, float morph, floa
     trench_engine_set_input_mode (pe, 0 /*None*/);
     trench_engine_set_agc_enabled (pe, 1);
     trench_engine_set_saturation_enabled (pe, 1);
-    trench_engine_set_agc_drive (pe, 1.0f);                           // hardware-faithful identity pre-scale (matches live path)
+    // Do NOT pin the AGC pre-scale: trench-core owns it (`engine::AGC_DRIVE`).
+    // Pinning it to 1.0 rendered a chain the live path does not use.
     trench_engine_set_spatial_mode (pe, qsound ? 0 /*QSound*/ : 2 /*Off*/);
     trench_engine_set_parameters (pe, morph, q, 0.0f, qsound ? 1.0f : 0.0f, 1.0f);
 
@@ -1611,10 +1609,10 @@ void PluginProcessor::setParameterDenormalized (const char* parameterID, float v
 
 void PluginProcessor::forceCleanAudioUiState()
 {
-    setParameterDenormalized (ParamID::body, (float) trench::kNoFilterIndex);   // clean = No Filter (bypass)
+    setParameterDenormalized (ParamID::body, (float) trench::kNoFilterIndex);   // clean = NO FILTER (exact identity)
     setParameterDenormalized (ParamID::inputMode, 0.0f);
     setParameterDenormalized (ParamID::output, 0.0f);
-    setParameterDenormalized (ParamID::slamDrive, 0.0f);   // clean; bodies are already at level (faithful AGC)
+    setParameterDenormalized (ParamID::slamDrive, 0.0f);   // clean; SLAM is the desk, opt-in
     setParameterDenormalized (ParamID::fiveD, 0.0f);
     // Motion defaults to off so a clean-audio restore cannot drag in motion.
     setParameterDenormalized (ParamID::motionOn, 0.0f);

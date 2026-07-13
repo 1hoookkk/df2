@@ -77,7 +77,6 @@ public:
             trench_engine_prepare (engine, sampleRate);
             trench_engine_set_agc_enabled (engine, 1);
             trench_engine_set_saturation_enabled (engine, 1);
-            trench_engine_set_agc_drive (engine, musicalAgcDrive);
         }
     }
 
@@ -201,16 +200,11 @@ public:
             return;
 
         // APVTS Morph/Q are already normalised 0..1. Do not divide by 100.
-        // AGC drive = 1.0 (identity pre-scale) is HARDWARE-FAITHFUL: the EmulatorX DLL
-        // feeds the raw cascade straight into the 16-value table — there is NO agc
-        // pre-scale in the observed DLL path (ref/ghidra_extracts/runtime_hacks.md).
-        // The table is the always-on peak/envelope leveler. Final-output SLAM is
-        // deliberately owned by PluginProcessor after this fixed-rate island,
-        // ZAP, MOVE guard, and output gain.
-        // (Measured: at 1.0 the real P2K bodies sit at natural full-scale levels; >1
-        // over-compresses them quieter and duller.)
-        trench_engine_set_agc_drive (engine, musicalAgcDrive);
-
+        // The AGC pre-scale is owned by trench-core (`engine::AGC_DRIVE`): it is
+        // derived from the verified table's first tooth and the saturator knee,
+        // not voiced here. Final-output SLAM is deliberately owned by
+        // PluginProcessor after this fixed-rate island, ZAP, MOVE guard, and
+        // output gain.
         const int n = buffer.getNumSamples();
         // The engine's own desk drive stays OFF (slam param 0). SLAM is applied
         // exactly once at the final host-rate output stage in PluginProcessor.
@@ -326,6 +320,8 @@ public:
             trench_engine_set_agc_enabled (engine, enabled ? 1 : 0);
     }
 
+    // Probe/debug only. The shipped pre-AGC scale is owned by trench-core
+    // (`engine::AGC_DRIVE`); the product path never calls this.
     void setAgcDrive (float drive)
     {
         if (engine != nullptr)
@@ -341,13 +337,6 @@ public:
     void reset() {}
 
 private:
-    // Hardware-faithful AGC pre-scale: 1.0 = identity = feed the raw cascade into the
-    // 16-value table exactly as the EmulatorX DLL does (no pre-scale exists in the
-    // observed DLL path — ref/ghidra_extracts/runtime_hacks.md). Constant; NOT a
-    // function of SLAM. (The repo's old 3.0–4.0 values were an authoring/audition
-    // voicing, not hardware — and they over-compress the real bodies.)
-    static constexpr float musicalAgcDrive = 1.0f;
-
     void* engine = nullptr;
 
     // Lock-free seqlock snapshot: written by the audio thread (publishUiSnapshot),

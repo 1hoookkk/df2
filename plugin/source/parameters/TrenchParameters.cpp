@@ -32,9 +32,9 @@ juce::AudioProcessorValueTreeState::ParameterLayout createParameterLayout()
     layout.add (std::make_unique<juce::AudioParameterInt> (
         juce::ParameterID { ParamID::body, 1 },
         "Body",
-        trench::kNoFilterIndex,                    // -1 = No Filter (true bypass) — the clean default
+        0,                                          // slot 0 = NO FILTER (exact identity, a real bypass)
         juce::jmax (1, trench::bodyCount() - 1),
-        trench::kDefaultBodyIndex));                // open on Bite Static; motion is opt-in through TYPE.
+        trench::kDefaultBodyIndex));                // open on NO FILTER; a body is an explicit choice.
 
     layout.add (std::make_unique<juce::AudioParameterFloat> (
         juce::ParameterID { ParamID::output, 1 },

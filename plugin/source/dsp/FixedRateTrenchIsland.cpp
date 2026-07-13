@@ -11,7 +11,45 @@ namespace
 constexpr int kInterpolatorGuardSamples = 220;
 constexpr int kProcessedFifoMargin = 16;
 constexpr int kSincHalfKernel = 100;          // group delay of the 200-tap sinc
-constexpr double kGuardCutoffHz = 19300.0;    // anti-fold LP, just under emu Nyquist
+
+// Anti-fold guard geometry. Everything above the island's Nyquist folds, so the
+// stopband must START there — the passband edge is the only thing we get to
+// choose, and 17.5 kHz buys enough transition for an elliptic to reach -80 dB.
+constexpr double kGuardPassHz = 17500.0;
+constexpr double kGuardStopHz = TrenchRates::emuInternalRate * 0.5; // 19531.25 Hz — the fold
+constexpr double kGuardPassRippleDb = -0.1;
+constexpr double kGuardStopDb = -80.0;
+
+// The first output block is not always the first maxHostBlock after prepare:
+// the input FIFO must cross the interpolator guard and the processed FIFO must
+// contain one complete host block's worth of internal samples. Mirror that
+// bounded scheduling law here so the host receives the actual startup latency.
+int estimateStartupBlockSamples (double inputRatio, double outputRatio, int blockSize) noexcept
+{
+    const int internalNeeded = (int) std::ceil ((double) blockSize * outputRatio)
+                             + kProcessedFifoMargin;
+    double availableHost = 0.0;
+    int processedInternal = 0;
+
+    for (int processCall = 0; processCall < 4096; ++processCall)
+    {
+        availableHost += (double) blockSize;
+        if (availableHost > (double) kInterpolatorGuardSamples)
+        {
+            const int numInternal = juce::jmax (
+                1, (int) std::floor ((availableHost - (double) kInterpolatorGuardSamples) / inputRatio));
+            availableHost -= (double) numInternal * inputRatio;
+            processedInternal += numInternal;
+        }
+
+        if (processedInternal >= internalNeeded)
+            return juce::jmax (0, processCall * blockSize);
+    }
+
+    // Host rates and block sizes are bounded by the prepared FIFO contract; this
+    // is only a defensive fallback for an invalid caller configuration.
+    return blockSize + kInterpolatorGuardSamples;
+}
 }
 
 FixedRateTrenchIsland::FixedRateTrenchIsland()
@@ -47,6 +85,7 @@ void FixedRateTrenchIsland::prepare (double hostSampleRate, int maxBlockSizeSamp
     // Worst-case scratch sizing for this host rate. `outputRatio` is the number
     // of internal (E-mu rate) samples produced per host sample; it governs both
     // how big a single resampler push can get and the steady-state FIFO depth.
+    const double inputRatio = hostRate / TrenchRates::emuInternalRate;
     const double outputRatio = TrenchRates::emuInternalRate / hostRate;
 
     // The host FIFO holds at most one incoming block plus the small unread guard
@@ -71,30 +110,46 @@ void FixedRateTrenchIsland::prepare (double hostSampleRate, int maxBlockSizeSamp
     processedFifoL.prepare (processedFifoCap);
     processedFifoR.prepare (processedFifoCap);
 
-    // Anti-fold guard: 8th-order Butterworth as 4 cascaded biquads with the
-    // standard maximally-flat Q ladder, only meaningful when the host rate is
-    // above the internal rate (content above 19531 Hz would fold).
-    static const double kButterQ8[kGuardStages] = { 0.50979558, 0.60134489, 0.89997622, 2.5629154 };
-    for (int ch = 0; ch < 2; ++ch)
-        for (int s = 0; s < kGuardStages; ++s)
+    // Anti-fold guard. Only meaningful when the host can actually carry content
+    // above the island's Nyquist — below that rate there is nothing to fold.
+    guardActive = (hostRate * 0.5) > (kGuardStopHz + 100.0);
+    for (auto& ch : guardLP)
+        ch.clear();
+
+    if (guardActive)
+    {
+        // JUCE designs around the transition CENTRE: fp = f - w/2, fs = f + w/2.
+        // Aim fs exactly at the fold so nothing above it survives the downsample.
+        const double centreHz = 0.5 * (kGuardPassHz + kGuardStopHz);
+        const double widthHz = kGuardStopHz - kGuardPassHz;
+
+        auto coeffs = juce::dsp::FilterDesign<float>::designIIRLowpassHighOrderEllipticMethod (
+            (float) centreHz, hostRate, (float) (widthHz / hostRate),
+            (float) kGuardPassRippleDb, (float) kGuardStopDb);
+
+        for (auto& ch : guardLP)
         {
-            guardLP[ch][s].coefficients = juce::dsp::IIR::Coefficients<float>::makeLowPass (
-                hostRate, (float) juce::jmin (kGuardCutoffHz, hostRate * 0.45), (float) kButterQ8[s]);
-            guardLP[ch][s].reset();
+            ch.resize ((size_t) coeffs.size());
+            for (int s = 0; s < coeffs.size(); ++s)
+            {
+                ch[(size_t) s].coefficients = coeffs[s]; // immutable + shared across channels
+                ch[(size_t) s].reset();
+            }
         }
+    }
+
     guardScratchL.assign ((size_t) maxHostBlock, 0.0f);
     guardScratchR.assign ((size_t) maxHostBlock, 0.0f);
 
-    // Honest pipeline latency (host samples): output for a block becomes
-    // available one production round late (≈ one max block), plus the sinc
-    // group delay on both legs (input leg at host rate, output leg at the
-    // internal rate mapped back to host samples). The FIFO guard is kernel
-    // HISTORY, not delay — it sits behind the read cursor. Validated against
-    // the measured best-fit delay in IslandNullTests (736 @ 48k/512).
-    const double outLegHost = (double) kSincHalfKernel * hostRate / TrenchRates::emuInternalRate;
-    latencySamples = maxHostBlock
-                   + kSincHalfKernel
-                   + (int) std::ceil (outLegHost);
+    // Honest pipeline latency (host samples): account for the number of bounded
+    // production rounds needed to cross the input guard and fill one output
+    // block, then add the two sinc legs. The small phase margin covers the
+    // fractional edge of JUCE's 200-tap interpolator at higher downsample ratios.
+    const int startupSamples = estimateStartupBlockSamples (inputRatio, outputRatio, maxHostBlock);
+    const double sincDelay = (double) kSincHalfKernel * (1.0 + inputRatio)
+                           + 1.0
+                           + 3.0 * juce::jmax (0.0, inputRatio - 1.5);
+    latencySamples = startupSamples + (int) std::ceil (sincDelay);
 }
 
 void FixedRateTrenchIsland::process (juce::AudioBuffer<float>& buffer, TrenchDspBridge& bridge, const TrenchParams& params)
@@ -127,10 +182,11 @@ void FixedRateTrenchIsland::process (juce::AudioBuffer<float>& buffer, TrenchDsp
     // Anti-fold guard ahead of the downsample (state persists across blocks).
     float* gL = guardScratchL.data();
     float* gR = guardScratchR.data();
+    const size_t guardStages = guardLP[0].size();
     for (int i = 0; i < numSamplesHost; ++i)
     {
         float l = inL[i], r = inR[i];
-        for (int s = 0; s < kGuardStages; ++s)
+        for (size_t s = 0; s < guardStages; ++s)
         {
             l = guardLP[0][s].processSample (l);
             r = guardLP[1][s].processSample (r);
