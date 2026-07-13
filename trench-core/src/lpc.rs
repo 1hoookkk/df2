@@ -1,7 +1,7 @@
 //! LPC capture: reduce a recorded sound (vowel, metal tube, resonant body) to
 //! its six dominant resonances — the actors of one corner.
 //!
-//! Pure-Rust port of `tools/lpc_extract.py` (the proven reference): resample to
+//! Pure-Rust LPC extraction: resample to
 //! 16 kHz, find the steady-state region, conditional pre-emphasis, Hamming
 //! window, 12th-order autocorrelation LPC (Levinson-Durbin), root the LPC
 //! polynomial (Durand-Kerner), keep the top-6 resonant poles in the formant
@@ -11,7 +11,7 @@
 //! resonances (poles); zeros are left at the origin. No external deps.
 
 use crate::cartridge::CornerData;
-use crate::cascade::{NUM_COEFFS, NUM_STAGES};
+use crate::cascade::NUM_STAGES;
 
 // Analysis spans the full TRENCH actor range (sub→air), not just the voice
 // formant band — so bright material (hats, metal, breath) can populate the

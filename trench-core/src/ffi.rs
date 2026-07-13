@@ -514,41 +514,6 @@ pub unsafe extern "C" fn trench_certify_body(
     })
 }
 
-/// Spawn a LEGAL sibling body (SEED): perturb the source body's real poles/zeros
-/// within bounds and re-encode once, certified over the morph × Q surface. The
-/// faithful in-core port of `sample_mint` — all packed math stays in core. `seed`
-/// makes it deterministic; `amt` scales the spread (1.0 = default); `res`/`r_max`
-/// are the surface gate (e.g. 65 / 0.9999). Writes 240 bytes on success.
-/// Returns 0 ok, -1 null ptr, -4 wrong length, -5 no legal sibling found, -100 panic.
-#[no_mangle]
-pub unsafe extern "C" fn trench_seed_body(
-    in_body: *const u8,
-    len: usize,
-    seed: u64,
-    amt: f64,
-    res: u32,
-    r_max: f64,
-    out_body: *mut u8,
-) -> i32 {
-    ffi_guard(FFI_PANIC, || {
-        if in_body.is_null() || out_body.is_null() {
-            return -1;
-        }
-        if len != BODY_BYTES {
-            return -4;
-        }
-        let slice = unsafe { std::slice::from_raw_parts(in_body, len) };
-        match crate::seed::seed_legal(slice, seed, amt, res, r_max, 24) {
-            Some(b) => {
-                let out = unsafe { std::slice::from_raw_parts_mut(out_body, BODY_BYTES) };
-                out.copy_from_slice(&b);
-                0
-            }
-            None => -5,
-        }
-    })
-}
-
 /// Parse a JSON cartridge and write its canonical 240-byte body — the inverse seam
 /// to `trench_engine_load_cartridge`. Hands the host the raw bytes of the currently
 /// loaded roster/JSON body, to SEED from or EXPORT. `packedWords` are the authority;
@@ -571,10 +536,7 @@ pub unsafe extern "C" fn trench_cartridge_json_to_body(
             Ok(c) => c,
             Err(_) => return -3,
         };
-        let packed = cart
-            .packed
-            .unwrap_or_else(|| PackedCorners::from_corner_data(&cart.corners));
-        let bytes = packed.to_rom_bytes();
+        let bytes = cart.packed.to_rom_bytes();
         let out = unsafe { std::slice::from_raw_parts_mut(out_body, BODY_BYTES) };
         out.copy_from_slice(&bytes);
         0
@@ -822,27 +784,29 @@ pub unsafe extern "C" fn trench_engine_get_coeffs(
 mod tests {
     use super::*;
 
-    const PASSTHROUGH: &str = r#"{
-        "format": "compiled-v1", "name": "pt", "sampleRate": 44100,
-        "keyframes": [
-            {"label":"M0_Q0","morph":0.0,"q":0.0,"boost":1.0,"stages":[
-                {"c0":1,"c1":0,"c2":0,"c3":0,"c4":0},{"c0":1,"c1":0,"c2":0,"c3":0,"c4":0},
-                {"c0":1,"c1":0,"c2":0,"c3":0,"c4":0},{"c0":1,"c1":0,"c2":0,"c3":0,"c4":0},
-                {"c0":1,"c1":0,"c2":0,"c3":0,"c4":0},{"c0":1,"c1":0,"c2":0,"c3":0,"c4":0}]},
-            {"label":"M0_Q100","morph":0.0,"q":1.0,"boost":1.0,"stages":[
-                {"c0":1,"c1":0,"c2":0,"c3":0,"c4":0},{"c0":1,"c1":0,"c2":0,"c3":0,"c4":0},
-                {"c0":1,"c1":0,"c2":0,"c3":0,"c4":0},{"c0":1,"c1":0,"c2":0,"c3":0,"c4":0},
-                {"c0":1,"c1":0,"c2":0,"c3":0,"c4":0},{"c0":1,"c1":0,"c2":0,"c3":0,"c4":0}]},
-            {"label":"M100_Q0","morph":1.0,"q":0.0,"boost":1.0,"stages":[
-                {"c0":1,"c1":0,"c2":0,"c3":0,"c4":0},{"c0":1,"c1":0,"c2":0,"c3":0,"c4":0},
-                {"c0":1,"c1":0,"c2":0,"c3":0,"c4":0},{"c0":1,"c1":0,"c2":0,"c3":0,"c4":0},
-                {"c0":1,"c1":0,"c2":0,"c3":0,"c4":0},{"c0":1,"c1":0,"c2":0,"c3":0,"c4":0}]},
-            {"label":"M100_Q100","morph":1.0,"q":1.0,"boost":1.0,"stages":[
-                {"c0":1,"c1":0,"c2":0,"c3":0,"c4":0},{"c0":1,"c1":0,"c2":0,"c3":0,"c4":0},
-                {"c0":1,"c1":0,"c2":0,"c3":0,"c4":0},{"c0":1,"c1":0,"c2":0,"c3":0,"c4":0},
-                {"c0":1,"c1":0,"c2":0,"c3":0,"c4":0},{"c0":1,"c1":0,"c2":0,"c3":0,"c4":0}]}
-        ]
-    }"#;
+    fn passthrough_json() -> String {
+        let corners = [[[2.0f64, 1.0, 2.0, 1.0, 1.0]; NUM_STAGES]; 4];
+        let packed = PackedCorners::from_corner_data(&corners);
+        let labels = ["M0_Q0", "M100_Q0", "M0_Q100", "M100_Q100"];
+        let keyframes = labels
+            .iter()
+            .enumerate()
+            .map(|(corner_index, label)| {
+                serde_json::json!({
+                    "label": label,
+                    "boost": 1.0,
+                    "packedWords": packed.words[corner_index]
+                })
+            })
+            .collect::<Vec<_>>();
+        serde_json::json!({
+            "format": "compiled-v1",
+            "name": "passthrough",
+            "sampleRate": 44_100.0,
+            "keyframes": keyframes
+        })
+        .to_string()
+    }
 
     /// Null engine pointers must be rejected with an error code, never crash.
     #[test]
@@ -899,7 +863,7 @@ mod tests {
             assert!(!engine.is_null());
             trench_engine_prepare(engine, 44100.0);
 
-            let json = std::ffi::CString::new(PASSTHROUGH).unwrap();
+            let json = std::ffi::CString::new(passthrough_json()).unwrap();
             assert_eq!(trench_engine_load_cartridge(engine, json.as_ptr()), 0);
 
             // First block installs the staged cartridge, then filters.
@@ -935,7 +899,7 @@ mod tests {
         unsafe {
             let engine = trench_engine_create();
             trench_engine_prepare(engine, 44100.0);
-            let json = std::ffi::CString::new(PASSTHROUGH).unwrap();
+            let json = std::ffi::CString::new(passthrough_json()).unwrap();
             for _ in 0..8 {
                 assert_eq!(trench_engine_load_cartridge(engine, json.as_ptr()), 0);
             }
@@ -947,7 +911,7 @@ mod tests {
         }
     }
 
-    // --- Phase 1: SEED support exports (pack-from-words + surface certify) ---
+    // --- Packed-word support exports ---
 
     /// Packing 120 corner words back to bytes must reproduce a body verbatim
     /// (words in -> PackedCorners -> to_rom_bytes == original bytes).
@@ -974,7 +938,11 @@ mod tests {
             trench_pack_body_from_corner_words(words.as_ptr(), words.len(), out.as_mut_ptr())
         };
         assert_eq!(rc, 0);
-        assert_eq!(&out[..], &body[..], "packed bytes must equal the original body");
+        assert_eq!(
+            &out[..],
+            &body[..],
+            "packed bytes must equal the original body"
+        );
     }
 
     #[test]
@@ -996,8 +964,14 @@ mod tests {
         let (mut pass, mut maxr, mut fm, mut fq) = (0i32, 0.0f64, 0.0f64, 0.0f64);
         let rc = unsafe {
             trench_certify_body(
-                body.as_ptr(), body.len(), 33, 0.9999,
-                &mut pass, &mut maxr, &mut fm, &mut fq,
+                body.as_ptr(),
+                body.len(),
+                33,
+                0.9999,
+                &mut pass,
+                &mut maxr,
+                &mut fm,
+                &mut fq,
             )
         };
         assert_eq!(rc, 0);
@@ -1013,8 +987,14 @@ mod tests {
         let (mut pass, mut maxr, mut fm, mut fq) = (1i32, 0.0f64, -1.0f64, -1.0f64);
         let rc = unsafe {
             trench_certify_body(
-                body.as_ptr(), body.len(), 9, 0.9999,
-                &mut pass, &mut maxr, &mut fm, &mut fq,
+                body.as_ptr(),
+                body.len(),
+                9,
+                0.9999,
+                &mut pass,
+                &mut maxr,
+                &mut fm,
+                &mut fq,
             )
         };
         assert_eq!(rc, 0);
@@ -1022,15 +1002,16 @@ mod tests {
         assert!(fm >= 0.0 && fq >= 0.0, "fail coordinate must be reported");
     }
 
-    /// A JSON cartridge round-trips to a valid, loadable 240-byte body (the SEED
-    /// source / EXPORT-body seam). PASSTHROUGH is stage-only, so this also covers
-    /// the legacy derive-from-corners path.
+    /// A packed JSON cartridge round-trips to a valid, loadable 240-byte body.
     #[test]
     fn cartridge_json_to_body_yields_loadable_bytes() {
-        let json = std::ffi::CString::new(PASSTHROUGH).unwrap();
+        let json = std::ffi::CString::new(passthrough_json()).unwrap();
         let mut out = [0u8; BODY_BYTES];
         let rc = unsafe { trench_cartridge_json_to_body(json.as_ptr(), out.as_mut_ptr()) };
         assert_eq!(rc, 0);
-        assert!(PackedCorners::from_body_bytes(&out).is_ok(), "must be a valid 240-byte body");
+        assert!(
+            PackedCorners::from_body_bytes(&out).is_ok(),
+            "must be a valid 240-byte body"
+        );
     }
 }

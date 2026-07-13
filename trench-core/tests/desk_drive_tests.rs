@@ -24,38 +24,12 @@ fn bin_magnitude(signal: &[f32], bin: usize) -> f32 {
 }
 
 fn passthrough_cart_with_drive(input_gain_db: f32) -> Cartridge {
-    let json = format!(
-        r#"{{
-            "format": "compiled-v1",
-            "name": "passthrough",
-            "sampleRate": 44100,
-            "drive": {{ "input_gain_dB": {input_gain_db}, "model": "{model}" }},
-            "keyframes": [
-                {{"label":"M0_Q0","morph":0.0,"q":0.0,"boost":1.0,"stages":[
-                    {{"c0":1,"c1":0,"c2":0,"c3":0,"c4":0}},{{"c0":1,"c1":0,"c2":0,"c3":0,"c4":0}},
-                    {{"c0":1,"c1":0,"c2":0,"c3":0,"c4":0}},{{"c0":1,"c1":0,"c2":0,"c3":0,"c4":0}},
-                    {{"c0":1,"c1":0,"c2":0,"c3":0,"c4":0}},{{"c0":1,"c1":0,"c2":0,"c3":0,"c4":0}}
-                ]}},
-                {{"label":"M0_Q100","morph":0.0,"q":1.0,"boost":1.0,"stages":[
-                    {{"c0":1,"c1":0,"c2":0,"c3":0,"c4":0}},{{"c0":1,"c1":0,"c2":0,"c3":0,"c4":0}},
-                    {{"c0":1,"c1":0,"c2":0,"c3":0,"c4":0}},{{"c0":1,"c1":0,"c2":0,"c3":0,"c4":0}},
-                    {{"c0":1,"c1":0,"c2":0,"c3":0,"c4":0}},{{"c0":1,"c1":0,"c2":0,"c3":0,"c4":0}}
-                ]}},
-                {{"label":"M100_Q0","morph":1.0,"q":0.0,"boost":1.0,"stages":[
-                    {{"c0":1,"c1":0,"c2":0,"c3":0,"c4":0}},{{"c0":1,"c1":0,"c2":0,"c3":0,"c4":0}},
-                    {{"c0":1,"c1":0,"c2":0,"c3":0,"c4":0}},{{"c0":1,"c1":0,"c2":0,"c3":0,"c4":0}},
-                    {{"c0":1,"c1":0,"c2":0,"c3":0,"c4":0}},{{"c0":1,"c1":0,"c2":0,"c3":0,"c4":0}}
-                ]}},
-                {{"label":"M100_Q100","morph":1.0,"q":1.0,"boost":1.0,"stages":[
-                    {{"c0":1,"c1":0,"c2":0,"c3":0,"c4":0}},{{"c0":1,"c1":0,"c2":0,"c3":0,"c4":0}},
-                    {{"c0":1,"c1":0,"c2":0,"c3":0,"c4":0}},{{"c0":1,"c1":0,"c2":0,"c3":0,"c4":0}},
-                    {{"c0":1,"c1":0,"c2":0,"c3":0,"c4":0}},{{"c0":1,"c1":0,"c2":0,"c3":0,"c4":0}}
-                ]}}
-            ]
-        }}"#,
-        model = SUPPORTED_MODEL
-    );
-    Cartridge::from_json(&json).expect("passthrough cart")
+    let corners = [[[2.0f64, 1.0, 2.0, 1.0, 1.0]; 6]; 4];
+    let bytes = trench_core::minifloat::PackedCorners::from_corner_data(&corners).to_rom_bytes();
+    let mut cartridge = Cartridge::from_body_bytes("passthrough", &bytes, 1.0).unwrap();
+    cartridge.drive.input_gain_db = input_gain_db;
+    cartridge.drive.model = SUPPORTED_MODEL.to_string();
+    cartridge
 }
 
 #[test]

@@ -176,7 +176,7 @@ impl PackedCorners {
     /// Layout: 4 corners (A/B/C/D = M0_Q0 / M100_Q0 / M0_Q100 / M100_Q100),
     /// contiguous, 60 bytes each; per corner 30 u16 little-endian, stage-major
     /// (6 stages × 5 words). This is the on-disk layout of
-    /// `dev/tmp/cheat_engine_dump/skin13_corners_rom.bin`.
+    /// the packed-runtime coefficient map.
     ///
     /// Unlike `from_corner_data`, the words are taken verbatim — no decode /
     /// re-encode round-trip — so this ingests true E-mu ROM words.

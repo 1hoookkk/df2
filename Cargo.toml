@@ -1,5 +1,5 @@
 [workspace]
-members = ["trench-core", "forge-clean", "forge-gpu-painter", "forge-zero", "forge-model"]
+members = ["trench-core"]
 resolver = "2"
 
 [profile.dev]
@@ -8,12 +8,7 @@ opt-level = 1
 [profile.dev.package."*"]
 opt-level = 3
 
-# the painter's solver + paint loops are hot; opt-level 1 reads as UI jank
-[profile.dev.package.forge-gpu-painter]
-opt-level = 3
-
-# `package."*"` skips workspace members, so trench-core (pack_body, word lerp,
-# cascade |H|, the 17x17 audit, the audio engine — all the painter's hot math)
-# was compiling at opt-level 1 in dev runs
+# `package."*"` skips workspace members. Keep the packed runtime and audio
+# engine optimized in development builds.
 [profile.dev.package.trench-core]
 opt-level = 3

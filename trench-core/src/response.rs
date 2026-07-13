@@ -180,7 +180,9 @@ pub fn log_frequency_grid(lo_hz: f64, hi_hz: f64, points: usize) -> Vec<f64> {
         .collect()
 }
 
-pub fn compile_root_body_and_audit(params: &[f64]) -> Result<([u8; compiler::BODY_LEN], BodyCascadeAudit), String> {
+pub fn compile_root_body_and_audit(
+    params: &[f64],
+) -> Result<([u8; compiler::BODY_LEN], BodyCascadeAudit), String> {
     if params.len() != compiler::PARAM_LEN {
         return Err(format!(
             "expected {} root-domain params, got {}",
@@ -237,7 +239,11 @@ pub fn audit_body240(bytes: &[u8]) -> Result<BodyCascadeAudit, String> {
 
     let mut failures = Vec::new();
     if bytes.len() != compiler::BODY_LEN {
-        failures.push(format!("body is {} bytes, expected {}", bytes.len(), compiler::BODY_LEN));
+        failures.push(format!(
+            "body is {} bytes, expected {}",
+            bytes.len(),
+            compiler::BODY_LEN
+        ));
     }
     if !finite {
         failures.push("nonfinite response on packed Morph×Q surface".to_owned());
@@ -317,8 +323,19 @@ fn audit_points() -> Vec<(String, f64, f64)> {
         let q = qi as f64 / (AUDIT_GRID - 1) as f64;
         for mi in 0..AUDIT_GRID {
             let m = mi as f64 / (AUDIT_GRID - 1) as f64;
-            if !out.iter().any(|(_, em, eq)| (*em - m).abs() < 1e-9 && (*eq - q).abs() < 1e-9) {
-                out.push((format!("M{:03}_Q{:03}", (m * 100.0).round() as i32, (q * 100.0).round() as i32), m, q));
+            if !out
+                .iter()
+                .any(|(_, em, eq)| (*em - m).abs() < 1e-9 && (*eq - q).abs() < 1e-9)
+            {
+                out.push((
+                    format!(
+                        "M{:03}_Q{:03}",
+                        (m * 100.0).round() as i32,
+                        (q * 100.0).round() as i32
+                    ),
+                    m,
+                    q,
+                ));
             }
         }
     }
@@ -335,7 +352,11 @@ fn audit_sample(
 ) -> BodyAuditSample {
     let mut db = Vec::with_capacity(grid.len());
     for &freq in grid {
-        db.push(rows.iter().map(|row| biquad_stage_mag_db(row, freq, compiler::AUTHORING_SR)).sum::<f64>());
+        db.push(
+            rows.iter()
+                .map(|row| biquad_stage_mag_db(row, freq, compiler::AUTHORING_SR))
+                .sum::<f64>(),
+        );
     }
     let finite = rows.iter().flatten().all(|v| v.is_finite()) && db.iter().all(|v| v.is_finite());
     let mut max_pole_radius = 0.0f64;
@@ -348,16 +369,35 @@ fn audit_sample(
             max_pole_radius = max_pole_radius.max(radius);
             poles.push((hz, radius));
             if radius > 0.995 {
-                warnings.push(warn("near-unit pole", &label, format!("stage {} pole radius {:.6}", si + 1, radius)));
+                warnings.push(warn(
+                    "near-unit pole",
+                    &label,
+                    format!("stage {} pole radius {:.6}", si + 1, radius),
+                ));
             }
         }
         if let Some((zhz, zr)) = zero_center_radius(row) {
             if !(40.0..=16_000.0).contains(&zhz) {
-                warnings.push(warn("remote zero", &label, format!("stage {} zero {:.1} Hz r={:.5}", si + 1, zhz, zr)));
+                warnings.push(warn(
+                    "remote zero",
+                    &label,
+                    format!("stage {} zero {:.1} Hz r={:.5}", si + 1, zhz, zr),
+                ));
             }
             if let Some((phz, pr)) = pole {
                 if (zhz / phz).log2().abs() < 0.06 && (zr - pr).abs() < 0.04 {
-                    warnings.push(warn("near pole-zero cancellation", &label, format!("stage {} pole {:.1} Hz r={:.5}, zero {:.1} Hz r={:.5}", si + 1, phz, pr, zhz, zr)));
+                    warnings.push(warn(
+                        "near pole-zero cancellation",
+                        &label,
+                        format!(
+                            "stage {} pole {:.1} Hz r={:.5}, zero {:.1} Hz r={:.5}",
+                            si + 1,
+                            phz,
+                            pr,
+                            zhz,
+                            zr
+                        ),
+                    ));
                 }
             }
         }
@@ -365,7 +405,11 @@ fn audit_sample(
     poles.sort_by(|a, b| a.0.partial_cmp(&b.0).unwrap_or(std::cmp::Ordering::Equal));
     for pair in poles.windows(2) {
         if pair[1].0 - pair[0].0 < 200.0 {
-            warnings.push(warn("sub-200 Hz collision", &label, format!("{:.1} Hz and {:.1} Hz", pair[0].0, pair[1].0)));
+            warnings.push(warn(
+                "sub-200 Hz collision",
+                &label,
+                format!("{:.1} Hz and {:.1} Hz", pair[0].0, pair[1].0),
+            ));
         }
     }
     let stable = max_pole_radius < 1.0;
@@ -373,7 +417,11 @@ fn audit_sample(
     let floor = db.iter().copied().fold(f64::INFINITY, f64::min);
     let span = crown - floor;
     if span > 90.0 {
-        warnings.push(warn("very high response span", &label, format!("{span:.2} dB")));
+        warnings.push(warn(
+            "very high response span",
+            &label,
+            format!("{span:.2} dB"),
+        ));
     }
     let bands = CascadeBandLevels {
         low_db: band_average(&db, grid, 40.0, 200.0),
@@ -381,7 +429,14 @@ fn audit_sample(
         high_db: band_average(&db, grid, 2_000.0, 16_000.0),
     };
     if bands.low_db > bands.mid_db + 12.0 && bands.low_db > bands.high_db + 12.0 {
-        warnings.push(warn("excessive low-band dominance", &label, format!("low {:.2}, mid {:.2}, high {:.2} dB", bands.low_db, bands.mid_db, bands.high_db)));
+        warnings.push(warn(
+            "excessive low-band dominance",
+            &label,
+            format!(
+                "low {:.2}, mid {:.2}, high {:.2} dB",
+                bands.low_db, bands.mid_db, bands.high_db
+            ),
+        ));
     }
     let (peaks, valleys) = peak_valley_count(&db);
     BodyAuditSample {

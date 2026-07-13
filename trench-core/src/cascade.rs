@@ -4,18 +4,6 @@ pub const NUM_STAGES: usize = 6;
 pub const NUM_COEFFS: usize = 5;
 pub const PASSTHROUGH_COEFFS: [f64; NUM_COEFFS] = [1.0, 0.0, 0.0, 0.0, 0.0];
 
-#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
-#[derive(Debug, Clone, Copy, Default)]
-pub struct EncodedCoeffs {
-    pub c0: f64,
-    pub c1: f64,
-    pub c2: f64,
-    pub c3: f64,
-    pub c4: f64,
-}
-
-/// Total stages in the cascade: 6 active + 6 passthrough.
-pub const TOTAL_STAGES: usize = 12;
 /// Control block size in samples.
 pub const BLOCK_SIZE: usize = 32;
 
@@ -82,10 +70,9 @@ impl BiquadState {
     }
 }
 
-/// The 12-stage serial DF2T cascade.
-/// 6 active stages (interpolated from cartridge) + 6 passthrough stages.
+/// The six-stage serial DF2T cascade stored by one packed body corner.
 pub struct Cascade {
-    stages: [BiquadState; TOTAL_STAGES],
+    stages: [BiquadState; NUM_STAGES],
     /// Current post-cascade boost (linear gain), ramped per sample.
     boost: f64,
     /// Per-sample ramp delta for boost.
@@ -125,35 +112,20 @@ impl Cascade {
     /// all ramp deltas. The dual frozen-cascade transition law
     /// (`transition::DualCascade`) uses this: a frozen cascade never ramps.
     pub fn snap_targets(&mut self, interpolated: &CornerData) {
-        for (stage, coeffs) in self.stages[..NUM_STAGES]
-            .iter_mut()
-            .zip(interpolated.iter())
-        {
+        for (stage, coeffs) in self.stages.iter_mut().zip(interpolated.iter()) {
             stage.coeffs = *coeffs;
             stage.deltas = [0.0; NUM_COEFFS];
         }
-        for i in NUM_STAGES..TOTAL_STAGES {
-            self.stages[i].coeffs = PASSTHROUGH_COEFFS;
-            self.stages[i].deltas = [0.0; NUM_COEFFS];
-        }
     }
 
-    /// Set target coefficients for the 6 active stages from interpolated cartridge data.
-    /// Passthrough stages (6..12) remain identity.
+    /// Set target coefficients for all six stored stages.
     pub fn set_targets(&mut self, interpolated: &CornerData, ramp_samples: usize) {
-        for (stage, coeffs) in self.stages[..NUM_STAGES]
-            .iter_mut()
-            .zip(interpolated.iter())
-        {
+        for (stage, coeffs) in self.stages.iter_mut().zip(interpolated.iter()) {
             stage.set_target(coeffs, ramp_samples);
         }
-        // Passthrough stages always target identity
-        for i in NUM_STAGES..TOTAL_STAGES {
-            self.stages[i].set_target(&PASSTHROUGH_COEFFS, ramp_samples);
-        }
     }
 
-    /// Process a single f32 sample through all 12 stages in series.
+    /// Process a single f32 sample through all six stages in series.
     /// Ramps coefficients and boost per-sample internally.
     #[inline(always)]
     pub fn tick(&mut self, x: f32) -> f32 {
@@ -198,7 +170,7 @@ impl Cascade {
 
     /// Retrieve the current ramped coefficients for the active stages (for UI visualization).
     pub fn get_coeffs(&self, out: &mut [[f64; NUM_COEFFS]; NUM_STAGES]) {
-        for (i, stage) in self.stages[..NUM_STAGES].iter().enumerate() {
+        for (i, stage) in self.stages.iter().enumerate() {
             out[i] = stage.coeffs;
         }
     }

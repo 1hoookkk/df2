@@ -125,7 +125,11 @@ fn make_signals(n: usize) -> Vec<(&'static str, Vec<f32>)> {
 
 fn engine() -> FilterEngine {
     let cart = Cartridge::from_body_bytes("E3 sf_mouth_frame", BODY, 1.0).expect("body load");
-    assert!(cart.packed.is_some(), "must enter packed runtime path");
+    assert_eq!(
+        cart.packed.to_rom_bytes(),
+        *BODY,
+        "must preserve packed bytes"
+    );
     let mut e = FilterEngine::new();
     e.prepare(SR);
     e.debug.agc_enabled = false;

@@ -17,10 +17,10 @@
 use crate::agc::{active_agc_table, agc_step_stereo};
 use crate::cartridge::{Cartridge, CornerData};
 use crate::cascade::{BLOCK_SIZE, NUM_COEFFS, PASSTHROUGH_COEFFS};
-use crate::transition::{DualCascade, TRANSITION_SECONDS};
 use crate::cvsd_input::CvsdInput;
 use crate::desk_drive::{DeskDrive, SUPPORTED_MODEL as DESK_SLAM_MODEL};
 use crate::qsound_spatial::QSoundSpatial;
+use crate::transition::{DualCascade, TRANSITION_SECONDS};
 use crate::trench_matrix::TrenchMatrix;
 use std::ptr;
 use std::sync::atomic::{AtomicPtr, Ordering};
@@ -363,7 +363,7 @@ impl FilterEngine {
             let peak_blended = compute_cascade_peak(&blended, self.sample_rate).max(1.0e-6);
             let expected_db = a as f32 * 20.0 * peak_full.log10();
             let actual_db = 20.0 * peak_blended.log10();
-            boost *= 10.0_f32.powf ((expected_db - actual_db) / 20.0);
+            boost *= 10.0_f32.powf((expected_db - actual_db) / 20.0);
             blended
         } else {
             corner
@@ -419,8 +419,7 @@ impl FilterEngine {
                 let mk = self.debug.agc_makeup_gain;
                 sl += (sl * mk - sl) * self.agc_mix;
                 sr += (sr * mk - sr) * self.agc_mix;
-            } else if self.debug.agc_rate_scale == 1.0
-                && self.debug.agc_max_cut_db == f32::INFINITY
+            } else if self.debug.agc_rate_scale == 1.0 && self.debug.agc_max_cut_db == f32::INFINITY
             {
                 // Stock path (bit-identical to pre-knob behavior).
                 // Scale into the AGC's integer-magnitude domain, apply the curve,
@@ -724,43 +723,23 @@ fn compute_cascade_peak(corner: &CornerData, sample_rate: f64) -> f32 {
 mod tests {
     use super::*;
 
+    fn cartridge_from_corner(name: &str, corner: CornerData) -> Cartridge {
+        let mut word_corner = [[0u16; crate::cascade::NUM_COEFFS]; crate::cascade::NUM_STAGES];
+        for (stage_index, biquad) in corner.iter().enumerate() {
+            word_corner[stage_index] = crate::compiler::biquad_to_words(*biquad);
+        }
+        let packed = crate::minifloat::PackedCorners {
+            words: [word_corner; 4],
+        };
+        Cartridge::from_body_bytes(name, &packed.to_rom_bytes(), 1.0)
+            .expect("packed test cartridge")
+    }
+
     fn make_passthrough_cartridge() -> Cartridge {
-        let json = r#"{
-            "format": "compiled-v1",
-            "name": "passthrough",
-            "sampleRate": 44100,
-            "keyframes": [
-                {"label": "M0_Q0",     "morph": 0.0, "q": 0.0,   "boost": 1.0,
-                 "stages": [{"c0":1,"c1":0,"c2":0,"c3":0,"c4":0},
-                            {"c0":1,"c1":0,"c2":0,"c3":0,"c4":0},
-                            {"c0":1,"c1":0,"c2":0,"c3":0,"c4":0},
-                            {"c0":1,"c1":0,"c2":0,"c3":0,"c4":0},
-                            {"c0":1,"c1":0,"c2":0,"c3":0,"c4":0},
-                            {"c0":1,"c1":0,"c2":0,"c3":0,"c4":0}]},
-                {"label": "M0_Q100",   "morph": 0.0, "q": 1.0,   "boost": 1.0,
-                 "stages": [{"c0":1,"c1":0,"c2":0,"c3":0,"c4":0},
-                            {"c0":1,"c1":0,"c2":0,"c3":0,"c4":0},
-                            {"c0":1,"c1":0,"c2":0,"c3":0,"c4":0},
-                            {"c0":1,"c1":0,"c2":0,"c3":0,"c4":0},
-                            {"c0":1,"c1":0,"c2":0,"c3":0,"c4":0},
-                            {"c0":1,"c1":0,"c2":0,"c3":0,"c4":0}]},
-                {"label": "M100_Q0",   "morph": 1.0, "q": 0.0,   "boost": 1.0,
-                 "stages": [{"c0":1,"c1":0,"c2":0,"c3":0,"c4":0},
-                            {"c0":1,"c1":0,"c2":0,"c3":0,"c4":0},
-                            {"c0":1,"c1":0,"c2":0,"c3":0,"c4":0},
-                            {"c0":1,"c1":0,"c2":0,"c3":0,"c4":0},
-                            {"c0":1,"c1":0,"c2":0,"c3":0,"c4":0},
-                            {"c0":1,"c1":0,"c2":0,"c3":0,"c4":0}]},
-                {"label": "M100_Q100", "morph": 1.0, "q": 1.0,   "boost": 1.0,
-                 "stages": [{"c0":1,"c1":0,"c2":0,"c3":0,"c4":0},
-                            {"c0":1,"c1":0,"c2":0,"c3":0,"c4":0},
-                            {"c0":1,"c1":0,"c2":0,"c3":0,"c4":0},
-                            {"c0":1,"c1":0,"c2":0,"c3":0,"c4":0},
-                            {"c0":1,"c1":0,"c2":0,"c3":0,"c4":0},
-                            {"c0":1,"c1":0,"c2":0,"c3":0,"c4":0}]}
-            ]
-        }"#;
-        Cartridge::from_json(json).expect("passthrough cartridge parses")
+        cartridge_from_corner(
+            "passthrough",
+            [PASSTHROUGH_COEFFS; crate::cascade::NUM_STAGES],
+        )
     }
 
     #[test]
@@ -818,45 +797,11 @@ mod tests {
     }
 
     fn make_resonant_cartridge() -> Cartridge {
-        // One real resonant stage (from cascade.rs's own stability-region test
-        // fixtures), the other 5 stages passthrough. Same response at all 4
-        // corners so morph/q don't matter — only `amount` is under test.
-        let json = r#"{
-            "format": "compiled-v1",
-            "name": "resonant",
-            "sampleRate": 44100,
-            "keyframes": [
-                {"label": "M0_Q0",     "morph": 0.0, "q": 0.0,   "boost": 1.0,
-                 "stages": [{"c0":0.90,"c1":-0.20,"c2":0.08,"c3":-0.72,"c4":0.20},
-                            {"c0":1,"c1":0,"c2":0,"c3":0,"c4":0},
-                            {"c0":1,"c1":0,"c2":0,"c3":0,"c4":0},
-                            {"c0":1,"c1":0,"c2":0,"c3":0,"c4":0},
-                            {"c0":1,"c1":0,"c2":0,"c3":0,"c4":0},
-                            {"c0":1,"c1":0,"c2":0,"c3":0,"c4":0}]},
-                {"label": "M0_Q100",   "morph": 0.0, "q": 1.0,   "boost": 1.0,
-                 "stages": [{"c0":0.90,"c1":-0.20,"c2":0.08,"c3":-0.72,"c4":0.20},
-                            {"c0":1,"c1":0,"c2":0,"c3":0,"c4":0},
-                            {"c0":1,"c1":0,"c2":0,"c3":0,"c4":0},
-                            {"c0":1,"c1":0,"c2":0,"c3":0,"c4":0},
-                            {"c0":1,"c1":0,"c2":0,"c3":0,"c4":0},
-                            {"c0":1,"c1":0,"c2":0,"c3":0,"c4":0}]},
-                {"label": "M100_Q0",   "morph": 1.0, "q": 0.0,   "boost": 1.0,
-                 "stages": [{"c0":0.90,"c1":-0.20,"c2":0.08,"c3":-0.72,"c4":0.20},
-                            {"c0":1,"c1":0,"c2":0,"c3":0,"c4":0},
-                            {"c0":1,"c1":0,"c2":0,"c3":0,"c4":0},
-                            {"c0":1,"c1":0,"c2":0,"c3":0,"c4":0},
-                            {"c0":1,"c1":0,"c2":0,"c3":0,"c4":0},
-                            {"c0":1,"c1":0,"c2":0,"c3":0,"c4":0}]},
-                {"label": "M100_Q100", "morph": 1.0, "q": 1.0,   "boost": 1.0,
-                 "stages": [{"c0":0.90,"c1":-0.20,"c2":0.08,"c3":-0.72,"c4":0.20},
-                            {"c0":1,"c1":0,"c2":0,"c3":0,"c4":0},
-                            {"c0":1,"c1":0,"c2":0,"c3":0,"c4":0},
-                            {"c0":1,"c1":0,"c2":0,"c3":0,"c4":0},
-                            {"c0":1,"c1":0,"c2":0,"c3":0,"c4":0},
-                            {"c0":1,"c1":0,"c2":0,"c3":0,"c4":0}]}
-            ]
-        }"#;
-        Cartridge::from_json(json).expect("resonant cartridge parses")
+        // One resonant kernel row, five passthrough rows. All four corners are
+        // identical so only the engine amount control is under test.
+        let mut corner = [PASSTHROUGH_COEFFS; crate::cascade::NUM_STAGES];
+        corner[0] = [0.90, -0.20, 0.08, -0.72, 0.20];
+        cartridge_from_corner("resonant", corner)
     }
 
     #[test]
@@ -887,7 +832,9 @@ mod tests {
     fn amount_one_leaves_cascade_targets_at_full_strength() {
         let mut engine = FilterEngine::new();
         engine.prepare(44100.0);
-        engine.load_cartridge(make_resonant_cartridge());
+        let cartridge = make_resonant_cartridge();
+        let expected = cartridge.interpolate(0.5, 0.5)[0];
+        engine.load_cartridge(cartridge);
         engine.set_amount(1.0); // default, but explicit for clarity
 
         let mut l = vec![0.0_f32; BLOCK_SIZE * 8];
@@ -896,7 +843,6 @@ mod tests {
 
         let mut coeffs = [[0.0_f64; crate::cascade::NUM_COEFFS]; crate::cascade::NUM_STAGES];
         engine.cascade_l.get_coeffs(&mut coeffs);
-        let expected = [0.90, -0.20, 0.08, -0.72, 0.20];
         for (i, &c) in coeffs[0].iter().enumerate() {
             assert!(
                 (c - expected[i]).abs() < 1e-6,
@@ -939,7 +885,10 @@ mod tests {
             .zip(l0[tail..].iter())
             .map(|(a, b)| (a - b).abs())
             .sum();
-        assert!(diff > 0.5, "amount=1 vs amount=0 output should clearly differ, diff={diff}");
+        assert!(
+            diff > 0.5,
+            "amount=1 vs amount=0 output should clearly differ, diff={diff}"
+        );
         assert!(!full.take_instability_flag());
         assert!(!flat.take_instability_flag());
     }
@@ -969,11 +918,22 @@ mod tests {
             peaks_db.push(20.0 * peak.log10());
         }
 
-        println!("amount -> peak (dB): {:?}", steps.iter().zip(&peaks_db).collect::<Vec<_>>());
+        println!(
+            "amount -> peak (dB): {:?}",
+            steps.iter().zip(&peaks_db).collect::<Vec<_>>()
+        );
 
         // Endpoints: full strength has real resonance (> 0 dB); flat is exactly 0 dB.
-        assert!(peaks_db[0] > 1.0, "amount=1 should show real resonance gain, got {} dB", peaks_db[0]);
-        assert!(peaks_db[4].abs() < 0.01, "amount=0 should be exactly flat (0 dB), got {} dB", peaks_db[4]);
+        assert!(
+            peaks_db[0] > 1.0,
+            "amount=1 should show real resonance gain, got {} dB",
+            peaks_db[0]
+        );
+        assert!(
+            peaks_db[4].abs() < 0.01,
+            "amount=0 should be exactly flat (0 dB), got {} dB",
+            peaks_db[4]
+        );
 
         // Monotonic: each step's peak must be <= the previous (small slack for
         // floating-point noise). This is the actual "tames the curve" claim.
@@ -984,78 +944,6 @@ mod tests {
                 peaks_db
             );
         }
-    }
-
-    // NOTE: `gain_ceiling_clamps_runaway_boost` referenced
-    // `engine.set_gain_ceiling(10.0)` — a method that doesn't exist on the
-    // current `FilterEngine`. The clamp feature was either dropped or never
-    // landed; the test was preserving the spec but not compiling. Disabled
-    // until the feature is added; restore the body verbatim once it is.
-    #[test]
-    #[ignore = "set_gain_ceiling not implemented on FilterEngine"]
-    fn gain_ceiling_clamps_runaway_boost() {
-        // body intentionally empty — see note above.
-    }
-
-    #[cfg(any())] // disabled: references unimplemented set_gain_ceiling and old 3-arg process_block
-    fn _gain_ceiling_clamps_runaway_boost_original() {
-        // A passthrough-coefficient cartridge with a 1000x boost. With
-        // gain_ceiling = 10.0 the engine should clamp the output gain
-        // well under the raw 1000 target.
-        let json = r#"{
-            "format": "compiled-v1",
-            "name": "loud",
-            "sampleRate": 44100,
-            "keyframes": [
-                {"label": "M0_Q0",     "morph": 0.0, "q": 0.0, "boost": 1000.0,
-                 "stages": [{"c0":1,"c1":0,"c2":0,"c3":0,"c4":0},
-                            {"c0":1,"c1":0,"c2":0,"c3":0,"c4":0},
-                            {"c0":1,"c1":0,"c2":0,"c3":0,"c4":0},
-                            {"c0":1,"c1":0,"c2":0,"c3":0,"c4":0},
-                            {"c0":1,"c1":0,"c2":0,"c3":0,"c4":0},
-                            {"c0":1,"c1":0,"c2":0,"c3":0,"c4":0}]},
-                {"label": "M0_Q100",   "morph": 0.0, "q": 1.0, "boost": 1000.0,
-                 "stages": [{"c0":1,"c1":0,"c2":0,"c3":0,"c4":0},
-                            {"c0":1,"c1":0,"c2":0,"c3":0,"c4":0},
-                            {"c0":1,"c1":0,"c2":0,"c3":0,"c4":0},
-                            {"c0":1,"c1":0,"c2":0,"c3":0,"c4":0},
-                            {"c0":1,"c1":0,"c2":0,"c3":0,"c4":0},
-                            {"c0":1,"c1":0,"c2":0,"c3":0,"c4":0}]},
-                {"label": "M100_Q0",   "morph": 1.0, "q": 0.0, "boost": 1000.0,
-                 "stages": [{"c0":1,"c1":0,"c2":0,"c3":0,"c4":0},
-                            {"c0":1,"c1":0,"c2":0,"c3":0,"c4":0},
-                            {"c0":1,"c1":0,"c2":0,"c3":0,"c4":0},
-                            {"c0":1,"c1":0,"c2":0,"c3":0,"c4":0},
-                            {"c0":1,"c1":0,"c2":0,"c3":0,"c4":0},
-                            {"c0":1,"c1":0,"c2":0,"c3":0,"c4":0}]},
-                {"label": "M100_Q100", "morph": 1.0, "q": 1.0, "boost": 1000.0,
-                 "stages": [{"c0":1,"c1":0,"c2":0,"c3":0,"c4":0},
-                            {"c0":1,"c1":0,"c2":0,"c3":0,"c4":0},
-                            {"c0":1,"c1":0,"c2":0,"c3":0,"c4":0},
-                            {"c0":1,"c1":0,"c2":0,"c3":0,"c4":0},
-                            {"c0":1,"c1":0,"c2":0,"c3":0,"c4":0},
-                            {"c0":1,"c1":0,"c2":0,"c3":0,"c4":0}]}
-            ]
-        }"#;
-        let cart = Cartridge::from_json(json).unwrap();
-
-        let mut engine = FilterEngine::new();
-        engine.prepare(44100.0);
-        engine.set_gain_ceiling(10.0);
-        engine.debug.agc_enabled = false;
-        engine.debug.dc_block_enabled = false;
-        engine.load_cartridge(cart);
-
-        let mut buf = vec![0.5_f32; 128];
-        engine.process_block(&mut buf, 0.5, 0.5);
-
-        let peak = buf.iter().map(|s| s.abs()).fold(0.0_f32, f32::max);
-        assert!(
-            peak <= 10.0 + 1e-3,
-            "gain ceiling did not clamp: peak={peak}"
-        );
-        // And raw 0.5 * 1000 = 500 should definitely have been avoided.
-        assert!(peak < 100.0, "peak={peak} too high, clamp not applied");
     }
 
     #[test]
@@ -1097,30 +985,18 @@ mod tests {
 
     /// Render audition WAVs: the SAME body + pink + morph sweep at three
     /// `agc_drive` settings — 1 (dead/clean), 4 (engaged), 8 (heavy) — so the
-    /// AGC's contribution to the character can be A/B'd by ear. Boost is unity
-    /// (killed); `agc_drive` is the only difference. Writes 48 kHz mono WAVs to
-    /// `dev/tmp/agc_audition/`. Run:
+    /// AGC's contribution to the character can be A/B'd by ear. Boost is unity;
+    /// `agc_drive` is the only difference. Uses the declared clean-room body and
+    /// writes 48 kHz mono WAVs under `target/agc_audition/`. Run:
     ///   cargo test -p trench-core render_agc_audition -- --ignored --nocapture
     #[test]
-    #[ignore = "renders audition WAVs to dev/tmp/agc_audition"]
+    #[ignore = "renders audition WAVs to target/agc_audition"]
     fn render_agc_audition() {
         use crate::cartridge::Cartridge;
 
-        let root = std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("..");
-        let dir = std::fs::read_dir(root.join("ref/p2k_variants/P2k_001_megasweepz"))
-            .expect("megasweepz dir")
-            .flatten()
-            .map(|e| e.path())
-            .find(|p| {
-                p.file_name()
-                    .and_then(|n| n.to_str())
-                    .map(|n| n.starts_with("variant_0_") && n.ends_with(".bin"))
-                    .unwrap_or(false)
-            })
-            .expect("megasweepz variant_0");
-        let bytes = std::fs::read(&dir).expect("read body");
-
-        let out = root.join("dev/tmp/agc_audition");
+        const BODY: &[u8; 240] = include_bytes!("../tests/fixtures/sf_mouth_frame.body240");
+        let bytes = BODY.as_slice();
+        let out = std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("target/agc_audition");
         std::fs::create_dir_all(&out).expect("mkdir out");
 
         let sr_emu = 39_062.5f64;
@@ -1155,7 +1031,7 @@ mod tests {
         for &drive in &[1.0f32, 4.0, 8.0] {
             let mut eng = FilterEngine::new();
             eng.prepare(sr_emu);
-            eng.load_cartridge(Cartridge::from_body_bytes("megasweepz", &bytes, 1.0).unwrap());
+            eng.load_cartridge(Cartridge::from_body_bytes("cleanroom", bytes, 1.0).unwrap());
             eng.set_agc_drive(drive);
 
             // Fresh pink seed per drive → identical noise across files (fair A/B).
@@ -1205,7 +1081,7 @@ mod tests {
                 .collect();
 
             let peak = resampled.iter().fold(0.0f32, |m, &s| m.max(s.abs()));
-            let path = out.join(format!("megasweepz_pink_sweep_drive{drive}.wav"));
+            let path = out.join(format!("cleanroom_pink_sweep_drive{drive}.wav"));
             write_wav(&path, &resampled);
             println!("wrote {} (peak {:.3})", path.display(), peak);
         }
@@ -1224,20 +1100,8 @@ mod tests {
         use crate::agc::{active_agc_table, agc_step};
         use crate::cartridge::Cartridge;
 
-        let dir = std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR"))
-            .join("../ref/p2k_variants/P2k_001_megasweepz");
-        let path = std::fs::read_dir(&dir)
-            .expect("megasweepz dir")
-            .flatten()
-            .map(|e| e.path())
-            .find(|p| {
-                p.file_name()
-                    .and_then(|n| n.to_str())
-                    .map(|n| n.starts_with("variant_0_") && n.ends_with(".bin"))
-                    .unwrap_or(false)
-            })
-            .expect("megasweepz variant_0 .bin");
-        let bytes = std::fs::read(&path).expect("read body");
+        const BODY: &[u8; 240] = include_bytes!("../tests/fixtures/sf_mouth_frame.body240");
+        let bytes = BODY.as_slice();
 
         // Raw cascade output: AGC / saturate / DC all OFF, unity boost, q1 (hot).
         let mut eng = FilterEngine::new();
@@ -1263,7 +1127,7 @@ mod tests {
         let peak = |v: &[f32]| v.iter().fold(0.0f32, |m, &s| m.max(s.abs()));
         let cas_rms = rms(cascade);
         println!(
-            "\n=== megasweepz raw cascade (no AGC/sat/DC), q1, in=0.85: peak={:.3} rms={:.3} ===",
+            "\n=== clean-room raw cascade (no AGC/sat/DC), q1, in=0.85: peak={:.3} rms={:.3} ===",
             peak(cascade),
             cas_rms
         );

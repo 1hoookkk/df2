@@ -276,7 +276,7 @@ fn to_quadratics(rs: &[Cx], kind: RootKind) -> Vec<[f64; 3]> {
                 // over-reach). 0.995 ≈ 60 Hz — a musical formant. The captured
                 // corner must not start as a scream at Morph0/Q0; the Q axis
                 // sharpens it from here when the player wants it.
-                const RMAX: f64 = 0.999; // match talking_hedz's razor Q100 poles (0.999)
+                const RMAX: f64 = 0.999;
                 if r >= RMAX {
                     z.scale(RMAX / r.max(1e-12))
                 } else {

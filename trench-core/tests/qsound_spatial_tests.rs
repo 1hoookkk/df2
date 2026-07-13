@@ -1,16 +1,12 @@
 //! Behavioural tests for `trench_core::qsound_spatial`.
 //!
-//! The test targets come from `docs/archive/qsound_spatial_addendum.md`
-//! §"Verification targets for Task 8 tests" — we probe structural invariants
-//! (bypass, symmetry, sign conventions, stability) rather than exact numeric
-//! coefficient values.
+//! We probe structural invariants (bypass, symmetry, sign conventions,
+//! stability) rather than matching a proprietary coefficient table.
 //!
 //! Capture provenance (2026-07-02): the ITD/ILD law coefficients in
 //! `canonical_profile` below are the values re-fit from a CLEAN 31-point
 //! pan-grid capture of the vendor `QMixer.dll` rendered offline by
-//! `Qcreator.exe` (method + residuals: `dev/tmp/qsound_voicing/`). The +90°
-//! render is byte-identical to `ref/canonical/qsound/` (SHA 43a28384…9a42);
-//! the process was verified LINEAR. ITD law units are microseconds; the ILD
+//! `Qcreator.exe`; the process was verified LINEAR. ITD law units are microseconds; the ILD
 //! law is dB; both use six azimuth harmonics `[sin(az)..sin(6az)]`. The
 //! `band_coeffs` here remain a constructed L/R-symmetric fixture (the real
 //! per-ear band law is L/R-independent and lives in the fit report) so the
@@ -21,26 +17,25 @@ use trench_core::qsound_spatial::QSoundSpatial;
 
 const SR: f32 = 48_000.0;
 
-/// Canonical recon coefficients from `docs/archive/qsound_spatial.md`.
-/// Trailing el-cross terms rounded to zero (they're < 1e-15 in the source).
+/// Measurement-fit test profile. Trailing elevation cross-terms round to zero.
 fn canonical_profile(az_rad: f32, distance_m: f32, el_rad: f32) -> SpatialProfile {
     SpatialProfile {
         azimuth: az_rad,
         distance: distance_m,
         elevation: el_rad,
         // Fitted from the clean pan-grid re-capture (microseconds; six
-        // azimuth harmonics). See dev/tmp/qsound_voicing/fit/fit_report.md.
+        // azimuth harmonics).
         itd_coeffs: [
-            -714.271_2, 1275.442_3, -1301.714_0, 891.666_7, -462.902_1, 149.969_9,
+            -714.271_2,
+            1275.442_3,
+            -1301.714_0,
+            891.666_7,
+            -462.902_1,
+            149.969_9,
         ],
         // Fitted ILD law (dB; six azimuth harmonics), MAE 0.78 dB vs measured.
         ild_coeffs: [
-            -712.840_3,
-            1080.508_8,
-            -965.443_6,
-            597.945_7,
-            -249.361_1,
-            53.300_0,
+            -712.840_3, 1080.508_8, -965.443_6, 597.945_7, -249.361_1, 53.300_0,
         ],
         band_coeffs: BandCoeffs {
             l: BandChannelCoeffs {

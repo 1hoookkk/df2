@@ -78,10 +78,8 @@ fn raw_and_json_produce_identical_packed_corners() {
     let raw = Cartridge::from_body_bytes("canonical", &raw_bytes(&words), 1.0).unwrap();
     let json = Cartridge::from_json(&json_with_packed(&words, false)).unwrap();
 
-    let raw_packed = raw.packed.as_ref().expect("raw body must carry packed");
-    let json_packed = json.packed.as_ref().expect("json body must carry packed");
     assert_eq!(
-        raw_packed, json_packed,
+        raw.packed, json.packed,
         "raw .body240 and JSON packedWords must decode to identical PackedCorners"
     );
 }
@@ -117,26 +115,12 @@ fn interpolate_midpoint_identical_raw_vs_json() {
 }
 
 #[test]
-fn bogus_stages_are_ignored_when_packed_present() {
+fn competing_stages_representation_is_rejected() {
     let words = corner_words();
-    // Same words, one with a wildly-wrong `stages` block, one without.
-    let with_bogus = Cartridge::from_json(&json_with_packed(&words, true)).unwrap();
-    let raw = Cartridge::from_body_bytes("canonical", &raw_bytes(&words), 1.0).unwrap();
-
-    // The packed bank — and therefore every interpolated corner — must match
-    // the raw body. If `stages` had been authority, these would diverge.
-    assert_eq!(
-        with_bogus.packed.as_ref().unwrap(),
-        raw.packed.as_ref().unwrap(),
-        "packedWords must win over a bogus stages block"
+    assert!(
+        Cartridge::from_json(&json_with_packed(&words, true)).is_err(),
+        "a cartridge must not carry packedWords and a competing stages representation"
     );
-    for (m, q) in [(0.0, 0.0), (1.0, 1.0), (0.5, 0.5)] {
-        assert_eq!(
-            with_bogus.interpolate(m, q),
-            raw.interpolate(m, q),
-            "stages leaked into coefficients at ({m},{q})"
-        );
-    }
 }
 
 #[test]
@@ -194,7 +178,7 @@ fn packed_on_some_corners_only_is_rejected() {
     .to_string();
     assert!(
         Cartridge::from_json(&json).is_err(),
-        "packedWords on some-but-not-all corners must be rejected"
+        "packedWords are mandatory on all four corners"
     );
 }
 

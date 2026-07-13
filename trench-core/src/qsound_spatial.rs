@@ -1,19 +1,14 @@
 //! Post-cascade QSound-style spatial stage: ITD + ILD + band-law shelves,
 //! crossfaded with the dry signal by a `SPACE` parameter.
 //!
-//! Reference: `docs/archive/qsound_spatial.md` (canonical recon model) and
-//! `docs/archive/qsound_spatial_addendum.md` (engineering recommendations
-//! after the capture defect was identified).
-//!
 //! Re-capture provenance (2026-07-02): the ITD/ILD/shelf-corner constants
 //! below were re-fit from a CLEAN 31-point pan-grid capture of the vendor
 //! `QMixer.dll` (SHA-256 0d3784…b110e) rendered offline by `Qcreator.exe`.
-//! Method + fit residuals: `dev/tmp/qsound_voicing/{REPORT.md,fit/fit_report.md}`.
-//! The +90° render is byte-identical to the canonical fixture
-//! (`ref/canonical/qsound/…`, SHA 43a28384…9a42); the pan process was verified
-//! LINEAR (out@1.0 == 2·out@0.5, −90 dB). Fit gates all pass: ITD 11.2 µs
+//! The pan process was verified LINEAR (out@1.0 == 2·out@0.5, −90 dB).
+//! Fit gates all pass: ITD 11.2 µs
 //! (≤30), ILD 0.78 dB (≤1.0), spectral 0.134 dB (≤1.5). Parameters are fitted
-//! from measurements only — no bytes/tables were lifted from the DLL.
+//! from measurements only — no bytes/tables were lifted from the DLL. Source
+//! capture records remain outside this product branch.
 
 use crate::cartridge::{BandChannelCoeffs, BandLawCoeffs12, LawCoeffs6, SpatialProfile};
 
@@ -25,8 +20,8 @@ const MAX_DELAY_SAMPLES: usize = 128;
 /// Microseconds-to-seconds scale for the ITD law. After the clean QCreator
 /// pan-grid re-capture (2026-07-02) the ITD law `dot6(itd_coeffs, features)`
 /// evaluates directly to MICROSECONDS of inter-aural delay, fit from the
-/// vendor QMixer.dll offline renders over −90..+90° (see
-/// `dev/tmp/qsound_voicing/fit/fit_report.md`; ITD MAE 11.2 µs, gate ≤30 µs).
+/// vendor QMixer.dll offline renders over −90..+90° (ITD MAE 11.2 µs,
+/// gate ≤30 µs).
 /// Converting microseconds to samples is sample-rate dependent, so this
 /// scalar is µs→s and is multiplied by the runtime sample rate in
 /// `recompute` (fixes the sample-rate-independence defect of the old

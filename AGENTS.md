@@ -1,123 +1,100 @@
-# DF2 Agent Contract
+# TRENCH Workstation Agent Contract
 
-Keep this file short. Its job is to prevent context loss, not to create new
-doctrine.
-
-## Current Task Focus
-
-The locked direction is **evidence-derived Morph Designer authoring** — four
-authored poses (Q AMENDMENT 2026-07-10, Tyson "we need law"; LAWS.md L23-L27):
+This branch has one job:
 
 ```text
-real evidence (LPC / physical models / measured tables / clean-room grammar)
-  -> FOUR authored corner poses (M0/M100 x Q0/Q100): six pole+zero lanes each
-     (frame anatomy: crown @1, floor + unit zero @6, talkers 2-5 — L23)
-  -> Q100 = an authored SECOND SCENE, one named verb per body:
-     BLOOM / SPREAD / SCREAM / FLIP (L25 — measured 8/8 on true ROM bytes)
-  -> packed .body240 -> trench_core Morph x Q audit -> plot + audio -> Tyson keep/kill
+typed grammar / LPC / measured evidence
+  -> four authored poses
+  -> six registered pole-zero lanes per pose
+  -> exact packed .body240
+  -> packed-runtime response + audio
+  -> sampled stability/audibility certification
+  -> reproducible body + session + proof bundle
 ```
 
-Q100 corners are hand-authored like any pose. Do not turn this into free
-random-corner painting, a coefficient editor, a prompt-first body writer, or a
-new production-training workflow — corners stay KIN (the same instrument in
-four poses), never four unrelated filters.
+Do not restore deleted Forge applications, production-training systems, study
+corpora, sidecar editors, or plugin UI from Git history unless Tyson explicitly
+asks. Build the workstation from the retained runtime contracts.
 
-**Superseded — study/background only, never the active direction:** Law Author
-(`docs/FORGE_LAW_AUTHOR.md`), the `gpt55-pro-*` reports, and free per-corner
-editing of the four corners.
+## Runtime facts
 
-## UI / Visual Rule: No Fake Layers
+- A body is exactly 240 bytes: 4 corners × 6 stages × 5 u16 words × 2 bytes.
+- Corner order is `M0_Q0`, `M100_Q0`, `M0_Q100`, `M100_Q100`.
+- All four corners are authored. Q100 is a second pose, never derived.
+- Stage index is sacred correspondence across corners; never sort lanes per pose.
+- Packed-u16 Morph-first, then Q interpolation is runtime authority.
+- Runtime decode produces direct `[b0,b1,b2,a1,a2]` DF2T sections.
+- The six sections run as a serial cascade.
 
-For plugin UI work, **doing nothing is better than adding a fake layer**.
+`trench-core` is the only packing, interpolation, response, certification, and
+audio-engine owner. Do not create a second kernel or compiler.
 
-Do not add a shadow, glow, bevel, decal, perspective trick, glass layer, or
-overlay if it reads as a separate graphic object. TRENCH should read as one
-physical faceplate with real seated parts, not a stack of visible effects.
+## Stage authoring law
 
-If a fix would become "that black thing," "that teal thing," or an obvious
-perspective illusion, stop. Fix source asset, measured geometry, material,
-spacing, or typography instead. Preserve the object first.
+Every corner/lane exposes:
 
-## Runtime Facts
-
-- A body is exactly `240 bytes = 4 corners x 6 stages x 5 packed words x 2`.
-- The packed runtime has **six stages total** per corner.
-- Do not infer a hidden seventh stage from diagrams such as
-  `1 lowpass + 6 parametric EQ sections`.
-- Stage index is runtime correspondence across corners. It is not proof of a
-  fixed musical role or low-to-high order.
-- Zeros are first-class: every authored stage must expose pole Hz/radius, zero
-  Hz/radius, and gain.
-- `.body240` plus compiled cartridge JSON is the runtime artifact. Plots and
-  auditions must be generated from packed/runtime-probed data.
-
-## The core model (locked)
-
-A df2 body = **four authored poses of one instrument** (Q amendment 2026-07-10).
-
-- A **frame** = six pole+zero lanes (pole Hz/radius, zero Hz/radius, gain). Lane
-  *i* of LOW morphs into lane *i* of HIGH — section index is the morph pairing,
-  sacred.
-- **Poles trace to real evidence** — LPC capture, physical models (tube / vowel
-  tract / cavity), measured tables, or clean-room P2K grammar. Never invented or
-  random.
-- **Secondary/Q is authored, never derived** (L25 — supersedes the old
-  derived-pressure invariant, which is REJECTED against ROM ground truth:
-  Q moves centers in every measured reference). Q100 is a second scene of
-  the same instrument; centers MAY move; lane correspondence MAY NOT.
-- **Corners:** `C0 = M0.Q0`, `C1 = M100.Q0`, `C2 = M0.Q100`, `C3 = M100.Q100`.
-  Four stored corners; all four authored.
-
-### The invariant that proves the model
-
-Lane *i* is the same mode in all four poses (correspondence is sacred), and
-the four poses read as ONE instrument — a Q100 that is a different filter
-rather than a second pose of the same one is a kinship failure, not a style.
-`forge-gpu-painter`'s `pressurize()` (radius/gain-only Q) is now a BLOOM-verb
-helper, not the law; `forge-zero` edits all four poses directly.
-
-### Roles of the machine room (evidence, not the product surface)
-
-- `tools/three_layer_acoustic_forge.py`, `dev/tmp/real_source_surface_rack/` —
-  evidence quarry / teacher surfaces. Mine frames from them; do **not** ship
-  their direct fits as master bodies.
-- QD search (`train.py model=v1`) — overnight candidate finder and audit stress
-  test, not the creative center.
-- `forge-gpu-painter` — the surface that enforces the locked model.
-
-## Required Verification
-
-A body is real only after its packed **240-byte** artifact passes the
-`trench_core` Morph x Q grid audit: 240 bytes exactly, zero unstable and zero
-nonfinite rows, every plot and audition generated from packed/runtime-probed
-data. Do not claim success until the body is packed and probed through
-`trench_core`.
-
-## Boundaries
-
-Production authoring remains separate:
-
-```powershell
-python train.py model=v1
-python scripts/export.py <verified-run-directory>
-python scripts/verify_run.py <verified-run-directory> --promotion-dir <promotion-directory>
+```text
+pole geometry
+zero geometry
+SCALE = b0
+identity/active state
+evidence provenance
 ```
 
-Do not use production training files to justify Forge behavior unless the task
-explicitly asks about production authoring.
+Conjugate roots use Hz/radius. Independent real-root pairs remain explicit and
+must never be clamped into conjugate controls. Inactive means the exact identity
+biquad; there is no packed on/off bit.
 
-Reference bodies and P2K material are study evidence only. Study shapes and
-derive laws; do not copy protected bytes, names, coefficient tables, or preset
-tables into shipping bodies.
+No hidden normalization, Q derivation, reordering, smoothing, gain correction,
+or smart repair. Every selected action must report exactly which corners, lanes,
+and packed words changed.
 
-## Communication
+## Evidence boundary
 
-Use evidence labels when claims are uncertain:
+`C:\Users\hooki\trench-filters` is external and read-only. A source session may
+store its repository commit, relative path, file hash, and extracted evidence.
+Do not copy its compiler code or promote its prose into runtime law.
 
-- `OBSERVED`: file, test, plot, or runtime output proves it.
-- `INFERRED`: likely and useful, but not proven.
-- `UNKNOWN`: not known yet.
-- `REJECTED`: contradicted by current evidence.
+P2K/reference material is study evidence only. Do not copy protected bytes,
+names, coefficient rows, tables, or presets into this branch.
 
-Prefer short answers and concrete next steps. If the issue is a missing plot,
-broken path, stale build, or bad assumption, fix that before writing more theory.
+## Required product modes
+
+- Default: packed response, four-pose selector, selected lane controls.
+- Inspect: z-plane, all lanes, packed words, decoded coefficients, quantization
+  diffs, per-corner diffs, and Morph×Q certification.
+- BODY SOLO: cascade-only audio at unity I/O.
+- PRODUCT: full retained `FilterEngine` path.
+
+Technical data is available on demand, not used as decorative jargon.
+
+## Proof gates
+
+Before UI implementation, prove:
+
+- no-op load/save is byte-identical;
+- a declared edit changes only declared words/corners;
+- raw body and JSON `packedWords` converge to identical packed corners;
+- real-root rows cannot enter the conjugate editor silently;
+- plots use packed/runtime-decoded coefficients and a shared dB scale;
+- raw audio is not replaced by per-render normalization;
+- body/cart parity is mandatory;
+- zero unstable and zero nonfinite sampled rows;
+- sessions and proof bundles are versioned and reproducible.
+
+Call grid results sampled certification, never continuum proof.
+
+## Work discipline
+
+Inspect Git state and concurrent processes before editing. Work only in
+`C:\Users\hooki\df2-workstation`. Keep one scoped change per verification step.
+Do not modify model memory, lockfiles, docs, or unrelated files as a side effect.
+
+Use claim labels when needed:
+
+- `OBSERVED`: file, test, artifact, or runtime probe proves it.
+- `INFERRED`: useful but not proven.
+- `UNKNOWN`: evidence is missing.
+- `REJECTED`: current evidence contradicts it.
+
+Prefer probes, diffs, plots, and audio over additional doctrine.

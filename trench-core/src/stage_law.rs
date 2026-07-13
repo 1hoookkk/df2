@@ -86,10 +86,7 @@ impl StageRoots {
 
     /// The a0-normalized DF2T row `[b0,b1,b2,a1,a2]` this law defines.
     pub fn biquad(&self) -> [f64; 5] {
-        let (wz, wp) = (
-            TAU * self.zero_hz / STAGE_SR,
-            TAU * self.pole_hz / STAGE_SR,
-        );
+        let (wz, wp) = (TAU * self.zero_hz / STAGE_SR, TAU * self.pole_hz / STAGE_SR);
         let k = self.scale;
         [
             k,
@@ -298,9 +295,15 @@ mod tests {
             "stage_law quantization: resonant(r≥.95) {max_resonant:.2}c · mid(r≥.85,f≥200) {max_mid:.2}c · high-freq(f≥440) {max_high_freq:.2}c · radius {max_dr:.2e} · scale {max_scale_db:.5} dB"
         );
         println!("angle-collapsed-to-DC roots (low r · low hz): {collapses:?}");
-        assert!(max_resonant < 10.0, "resonant roots above 10 cents: {max_resonant}");
+        assert!(
+            max_resonant < 10.0,
+            "resonant roots above 10 cents: {max_resonant}"
+        );
         assert!(max_mid < 5.0, "mid-radius roots above 5 cents: {max_mid}");
-        assert!(max_high_freq < 3.0, "≥440 Hz roots above 3 cents: {max_high_freq}");
+        assert!(
+            max_high_freq < 3.0,
+            "≥440 Hz roots above 3 cents: {max_high_freq}"
+        );
         assert!(max_dr < 5e-4, "radius quantization above 5e-4");
         assert!(max_scale_db < 0.01, "scale quantization above 0.01 dB");
         // every collapse must be a genuinely near-DC, low-radius root
@@ -381,8 +384,16 @@ mod tests {
         match geometry_from_words(w_real).zero {
             RootPair::RealPair { root_a, root_b } => {
                 // roots of z² + 1.55·z + 0.25 (up to minifloat grid)
-                assert!((root_a * root_b - 0.25).abs() < 1e-3, "product {}", root_a * root_b);
-                assert!((root_a + root_b + 1.55).abs() < 1e-3, "sum {}", root_a + root_b);
+                assert!(
+                    (root_a * root_b - 0.25).abs() < 1e-3,
+                    "product {}",
+                    root_a * root_b
+                );
+                assert!(
+                    (root_a + root_b + 1.55).abs() < 1e-3,
+                    "sum {}",
+                    root_a + root_b
+                );
             }
             other => panic!("expected RealPair, got {other:?}"),
         }
@@ -396,107 +407,43 @@ mod tests {
         assert!(roots_from_words(w_conj).is_some());
     }
 
-    // ── corpus gate: every packed body and cartridge in the repo ────────────
+    // ── deterministic packed-geometry gate ──────────────────────────────────
 
-    fn repo_root() -> std::path::PathBuf {
-        std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
-            .parent()
-            .unwrap()
-            .to_path_buf()
-    }
-
-    fn walk(dir: &std::path::Path, out: &mut Vec<std::path::PathBuf>) {
-        let Ok(rd) = std::fs::read_dir(dir) else { return };
-        for e in rd.flatten() {
-            let p = e.path();
-            if p.is_dir() {
-                let name = p.file_name().and_then(|n| n.to_str()).unwrap_or("");
-                if matches!(name, "target" | ".git" | "node_modules" | "__pycache__") {
-                    continue;
-                }
-                walk(&p, out);
-            } else {
-                out.push(p);
+    fn declared_stage_rows() -> Vec<([u16; 5], String)> {
+        // The real fixture is clean-room and local to trench-core. The packed
+        // sweep makes coverage independent of whatever old bodies or JSON
+        // happen to exist elsewhere in the checkout.
+        const BODY: &[u8; 240] = include_bytes!("../tests/fixtures/sf_mouth_frame.body240");
+        let mut rows = Vec::with_capacity(65_560);
+        for (row_index, chunk) in BODY.chunks_exact(10).enumerate() {
+            let mut words = [0u16; 5];
+            for (word_index, bytes) in chunk.chunks_exact(2).enumerate() {
+                words[word_index] = u16::from_le_bytes([bytes[0], bytes[1]]);
             }
+            rows.push((words, format!("cleanroom-body#{row_index}")));
         }
-    }
 
-    fn corpus_stage_rows() -> Vec<([u16; 5], String)> {
-        let mut files = Vec::new();
-        walk(&repo_root(), &mut files);
-        let mut rows = Vec::new();
-        for p in &files {
-            let name = p.file_name().and_then(|n| n.to_str()).unwrap_or("");
-            if name.ends_with(".body240") {
-                if let Ok(bytes) = std::fs::read(p) {
-                    if bytes.len() == 240 {
-                        for (i, chunk) in bytes.chunks_exact(10).enumerate() {
-                            let mut w = [0u16; 5];
-                            for (k, b) in chunk.chunks_exact(2).enumerate() {
-                                w[k] = u16::from_le_bytes([b[0], b[1]]);
-                            }
-                            rows.push((w, format!("{}#{}", p.display(), i)));
-                        }
-                    }
-                }
-            } else if name.ends_with(".json") {
-                // cartridges are small; skip big data JSONs for walk speed
-                if p.metadata().map(|m| m.len() > 4_000_000).unwrap_or(true) {
-                    continue;
-                }
-                let Ok(text) = std::fs::read_to_string(p) else { continue };
-                if !text.contains("packedWords") {
-                    continue;
-                }
-                let Ok(v) = serde_json::from_str::<serde_json::Value>(&text) else {
-                    continue;
-                };
-                let Some(kfs) = v.get("keyframes").and_then(|k| k.as_array()) else {
-                    continue;
-                };
-                for (ki, kf) in kfs.iter().enumerate() {
-                    let Some(stages) = kf.get("packedWords").and_then(|w| w.as_array()) else {
-                        continue;
-                    };
-                    for (si, stage) in stages.iter().enumerate() {
-                        let Some(ws) = stage.as_array() else { continue };
-                        if ws.len() != 5 {
-                            continue;
-                        }
-                        let mut w = [0u16; 5];
-                        let mut ok = true;
-                        for (k, x) in ws.iter().enumerate() {
-                            match x.as_u64() {
-                                Some(u) if u <= 0xFFFF => w[k] = u as u16,
-                                _ => {
-                                    ok = false;
-                                    break;
-                                }
-                            }
-                        }
-                        if ok {
-                            rows.push((w, format!("{}@kf{ki}s{si}", p.display())));
-                        }
-                    }
-                }
+        let mut state = 0x6D2B_79F5u32;
+        for row_index in 0..65_536usize {
+            let mut words = [0u16; 5];
+            for word in &mut words {
+                state = state.wrapping_mul(1_664_525).wrapping_add(1_013_904_223);
+                *word = (state >> 16) as u16;
             }
+            rows.push((words, format!("packed-sweep#{row_index}")));
         }
         rows
     }
 
-    /// CORPUS GATE over every `.body240` and every packed cartridge in the
-    /// repo:
+    /// DETERMINISTIC GATE over one declared clean-room `.body240` fixture and
+    /// 65,536 packed rows sampled across the full u16 word domain:
     ///   · conjugate row → roots → words must be WORD-IDENTICAL
     ///   · real-root row → conjugate reader refuses (exact inspection only)
     ///   · no row is silently approximated
     #[test]
-    fn corpus_round_trip() {
-        let rows = corpus_stage_rows();
-        assert!(
-            rows.len() >= 24 * 50,
-            "corpus too small ({}) — walker broken?",
-            rows.len()
-        );
+    fn declared_geometry_round_trip() {
+        let rows = declared_stage_rows();
+        assert_eq!(rows.len(), 65_560, "declared packed sweep changed");
         let mut conjugate = 0usize;
         let mut real = 0usize;
         let mut mismatches = Vec::new();
@@ -520,7 +467,7 @@ mod tests {
             }
         }
         println!(
-            "corpus: {} stage rows · {conjugate} conjugate · {real} real-root (refused) · {} round-trip mismatches",
+            "declared geometry: {} stage rows · {conjugate} conjugate · {real} real-root (refused) · {} round-trip mismatches",
             rows.len(),
             mismatches.len()
         );

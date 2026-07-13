@@ -1,0 +1,611 @@
+#pragma once
+
+#include "Theme.h"
+#include "ParamInteraction.h"
+#include "../parameters/TrenchParameters.h"
+#include "BinaryData.h"
+
+#include <juce_audio_processors/juce_audio_processors.h>
+
+#include <cmath>
+#include <complex>
+#include <memory>
+#include <vector>
+
+namespace trench::ui
+{
+
+// Precision-fitted display plus the live cascade response. The rear substrate
+// and grid are the baked display_log_grid.png asset; code draws only the live
+// signal and the physical reveal in front of it.
+//
+// SLAM remains a secondary FINAL-output control (not a rail). Its compact
+// upper-right hit region is retained without diagnostic text on the display.
+//
+// Preview-only: curve, nothing else. MOTION/TIME are picked and shown in
+// their own compact row below the screen (MotionTimeRow) — this view never
+// draws text of its own for them.
+class GraphDisplay : public juce::Component,
+                     public juce::SettableTooltipClient,
+                     private juce::Timer
+{
+public:
+    // SEED's on-screen feedback: a controlled sibling-mutation pulse, not a
+    // randomize/loading animation. Compress -> brief static tear -> redraw
+    // into the new (post-seed) curve. No seed numbers, no spinner, no
+    // warning colour -- see playSeedPulse().
+    void playSeedPulse()
+    {
+        if (traceXs.empty() || traceDbs.size() != traceXs.size())
+            return; // no curve to animate from yet
+        pulseOldDbs = traceDbs;
+        pulsePhase = PulseCompress;
+        pulseElapsedMs = 0.0;
+        startTimer (30);
+        repaint();
+    }
+
+
+    GraphDisplay (const Theme& theme,
+                  juce::AudioProcessorValueTreeState& apvts, const juce::String& canvasParamId)
+        : t (theme)
+    {
+        displayBack = juce::ImageCache::getFromMemory (BinaryData::display_log_grid_png,
+                                                       BinaryData::display_log_grid_pngSize);
+        jassert (displayBack.isValid());
+
+        canvasParam = apvts.getParameter (canvasParamId);
+        if (canvasParam != nullptr)
+        {
+            canvasAtt = std::make_unique<juce::ParameterAttachment> (*canvasParam, [this] (float)
+            {
+                repaint();
+            });
+            canvasDefault = canvasParam->getDefaultValue();
+            canvasAtt->sendInitialUpdate();
+
+            setTitle ("SLAM");
+            setHelpText ("SLAM - final output pressure. Drag the upper-right of the display up/down; Shift for fine control; double-click to reset.");
+            setTooltip ("SLAM: final output pressure - upper-right display area, drag/wheel, double-click reset");
+        }
+        setMouseCursor (juce::MouseCursor::NormalCursor);
+        setWantsKeyboardFocus (true);
+        // The graph still receives hover/mouse events, but adjustment begins
+        // only inside slamHitBounds(); the plotted response is safe to inspect.
+        setInterceptsMouseClicks (canvasParam != nullptr, false);
+    }
+
+    // Rebuild the response Path from the engine's live biquad coefficients. No-op
+    // when nothing changed, so an idle UI does no work.
+    void updateFromCoeffs (const float coeffs[30], float boost, double sr)
+    {
+        bool same = juce::approximatelyEqual (sr, lastSr) && juce::approximatelyEqual (boost, lastBoost);
+        for (int i = 0; same && i < 30; ++i)
+            same = juce::approximatelyEqual (coeffs[i], lastCoeffs[i]);
+        if (same && haveCurve)
+            return;
+
+        for (int i = 0; i < 30; ++i) lastCoeffs[i] = coeffs[i];
+        lastBoost = boost; lastSr = sr; haveCurve = true;
+
+        const auto plot = plotBounds();
+        if (plot.isEmpty())
+            return;
+
+        const double dbTop = t.curveDbTop(), dbBot = t.curveDbBottom();
+        const double fLo = 20.0, fHi = juce::jmin (20000.0, sr * 0.5 - 1.0);
+
+        // Pixel-snapped sampling: enough points to resolve resonances, but still
+        // crude like an old utility display rather than a smooth DAW graph.
+        constexpr int N = 190;
+        juce::Path path;
+        bool started = false;
+        traceXs.clear();
+        traceDbs.clear();
+        traceXs.reserve (N);
+        traceDbs.reserve (N);
+        for (int i = 0; i < N; ++i)
+        {
+            const double frac = (double) i / (double) (N - 1);
+            const double f = fLo * std::pow (fHi / fLo, frac);
+            const double w = 2.0 * juce::MathConstants<double>::pi * f / sr;
+            const std::complex<double> zinv = std::exp (std::complex<double> (0.0, -w));
+
+            double mag = (double) boost; bool ok = true;
+            for (int s = 0; s < 6; ++s)
+            {
+                const double b0 = coeffs[s*5+0], b1 = coeffs[s*5+1], b2 = coeffs[s*5+2];
+                const double a1 = coeffs[s*5+3], a2 = coeffs[s*5+4];
+                const auto num = b0 + b1*zinv + b2*zinv*zinv;
+                const auto den = 1.0 + a1*zinv + a2*zinv*zinv;
+                const double da = std::abs (den);
+                if (! std::isfinite (da) || da < 1.0e-9) { ok = false; break; }
+                mag *= std::abs (num) / da;
+            }
+            if (! ok || ! std::isfinite (mag)) continue;
+
+            const double db = 20.0 * std::log10 (juce::jmax (mag, 1.0e-6));
+            // Internal safe area: the trace saturates just INSIDE the plot so a
+            // deep notch or hot peak never collides with the glass edge.
+            const double yt = juce::jlimit (0.015, 0.985, (dbTop - db) / (dbTop - dbBot));
+            // Sub-pixel positions: pixel-snapping staircased every slope and broke the
+            // stroke's anti-aliasing. The path keeps float precision; the stroke AA's.
+            const float x = plot.getX() + (float) frac * plot.getWidth();
+            const float y = plot.getY() + (float) yt * plot.getHeight();
+            if (! started)
+            {
+                path.startNewSubPath (x, y);
+                started = true;
+            }
+            else
+            {
+                path.lineTo (x, y);   // smooth segments — cleaner/more authoritative than the old staircase
+            }
+            traceXs.push_back (x);
+            traceDbs.push_back ((float) db);
+        }
+
+        responsePath = std::move (path);
+        repaint();
+    }
+
+    // --- SLAM: the fixed readout is the control; the graph itself is not. -----
+    void mouseEnter (const juce::MouseEvent& e) override { updateSlamHover (e.position); }
+    void mouseMove  (const juce::MouseEvent& e) override { updateSlamHover (e.position); }
+    void mouseExit  (const juce::MouseEvent&) override
+    {
+        hoveringSlam = false;
+        if (! pressing)
+            setMouseCursor (juce::MouseCursor::NormalCursor);
+        repaint (slamHitBounds().getSmallestIntegerContainer());
+    }
+
+    void mouseDown (const juce::MouseEvent& e) override
+    {
+        if (canvasParam == nullptr || ! slamHitBounds().contains (e.position))
+            return;
+        if (e.mods.isPopupMenu())
+        {
+            showParamContextMenu (*this, canvasParam);
+            return;
+        }
+
+        pressing = true;
+        grabKeyboardFocus();
+        dragStartY = e.position.y;
+        canvasAtStart = canvasParam->getValue();
+        if (canvasAtt != nullptr)
+            canvasAtt->beginGesture();
+        repaint (slamHitBounds().getSmallestIntegerContainer());
+    }
+
+    void mouseDrag (const juce::MouseEvent& e) override
+    {
+        if (! pressing || canvasParam == nullptr || canvasAtt == nullptr)
+            return;
+
+        const float travel = juce::jmax (120.0f, (float) getHeight() * 0.72f);
+        const float scale = e.mods.isShiftDown() ? 0.2f : 1.0f;
+        const float raw = canvasAtStart - ((e.position.y - dragStartY) / travel) * scale;
+        const float next = snapSlamValue (juce::jlimit (0.0f, 1.0f, raw));
+        canvasAtt->setValueAsPartOfGesture (canvasParam->convertFrom0to1 (next));
+        repaint (slamHitBounds().getSmallestIntegerContainer());
+    }
+
+    void mouseUp (const juce::MouseEvent& e) override
+    {
+        if (! pressing || canvasParam == nullptr)
+            return;
+        pressing = false;
+        if (canvasAtt != nullptr)
+            canvasAtt->endGesture();
+        updateSlamHover (e.position);
+        repaint (slamHitBounds().getSmallestIntegerContainer());
+    }
+
+    void mouseDoubleClick (const juce::MouseEvent& e) override
+    {
+        if (canvasAtt != nullptr && slamHitBounds().contains (e.position))
+            canvasAtt->setValueAsCompleteGesture (canvasParam->convertFrom0to1 (canvasDefault));
+    }
+
+    void mouseWheelMove (const juce::MouseEvent& e, const juce::MouseWheelDetails& w) override
+    {
+        if (canvasParam == nullptr || canvasAtt == nullptr || ! slamHitBounds().contains (e.position))
+            return;
+        setSlamFromUi (canvasParam->getValue() + w.deltaY * 0.05f);
+    }
+
+    bool keyPressed (const juce::KeyPress& key) override
+    {
+        if (canvasParam == nullptr || canvasAtt == nullptr)
+            return false;
+
+        const int code = key.getKeyCode();
+        if (code == juce::KeyPress::homeKey) { setSlamFromUi (0.0f); return true; }
+        if (code == juce::KeyPress::endKey)  { setSlamFromUi (1.0f); return true; }
+
+        float direction = 0.0f;
+        float step = key.getModifiers().isShiftDown() ? 0.001f : 0.01f;
+        if (code == juce::KeyPress::upKey || code == juce::KeyPress::rightKey)
+            direction = 1.0f;
+        else if (code == juce::KeyPress::downKey || code == juce::KeyPress::leftKey)
+            direction = -1.0f;
+        else if (code == juce::KeyPress::pageUpKey)
+            direction = 10.0f;
+        else if (code == juce::KeyPress::pageDownKey)
+            direction = -10.0f;
+        else
+            return false;
+
+        setSlamFromUi (canvasParam->getValue() + direction * step);
+        return true;
+    }
+
+    void paint (juce::Graphics& g) override
+    {
+        const float rad = 9.0f;
+        const auto aperture = getLocalBounds().toFloat();
+        constexpr float reveal = 1.95f;
+        const auto glass = aperture.reduced (reveal);
+        const float glassRad = rad - reveal;
+
+        // 1.95 px blackened-nickel reveal. It exposes enough of the precision
+        // backing plate to separate the glass without becoming a chunky bezel.
+        // It is not a chrome border or an outer shadow.
+        {
+            juce::ColourGradient nickel (juce::Colour (0xff24211d), aperture.getX(), aperture.getY(),
+                                         juce::Colour (0xff080a0c), aperture.getRight(), aperture.getBottom(), false);
+            nickel.addColour (0.38, juce::Colour (0xff111316));
+            g.setGradientFill (nickel);
+            g.fillRoundedRectangle (aperture, rad);
+
+            g.setColour (juce::Colours::black.withAlpha (0.72f));
+            g.drawRoundedRectangle (aperture.reduced (0.35f), rad - 0.25f, 0.75f);
+
+            // Warm nickel responds only along the lit half of the top edge.
+            juce::ColourGradient catchLight (juce::Colour (0xffb69a70).withAlpha (0.16f),
+                                             aperture.getX() + rad, 0.0f,
+                                             juce::Colours::transparentBlack,
+                                             aperture.getX() + aperture.getWidth() * 0.72f, 0.0f, false);
+            g.setGradientFill (catchLight);
+            g.fillRect (aperture.getX() + rad, aperture.getY() + 0.45f,
+                        aperture.getWidth() - 2.0f * rad, 0.70f);
+        }
+
+        {
+            juce::Path face;
+            face.addRoundedRectangle (glass, glassRad);
+            juce::Graphics::ScopedSaveState save (g);
+            g.reduceClipRegion (face);
+
+            if (displayBack.isValid())
+            {
+                g.setImageResamplingQuality (juce::Graphics::mediumResamplingQuality);
+                g.drawImage (displayBack, glass, juce::RectanglePlacement::stretchToFit);
+            }
+            else
+            {
+                g.setColour (juce::Colour (0xff3a3c42));
+                g.fillRect (glass);
+            }
+
+            drawResponseTrace (g);
+        }
+
+        // Hairline inner seam: the glass meets the reveal with zero visible lift.
+        g.setColour (juce::Colours::black.withAlpha (0.68f));
+        g.drawRoundedRectangle (glass, glassRad, 0.75f);
+    }
+
+private:
+    juce::Rectangle<float> plotBounds() const { return getLocalBounds().toFloat().reduced (6.0f, 5.0f); }
+
+    juce::Rectangle<float> slamControlBounds (juce::Rectangle<float> screen) const
+    {
+        const float width = juce::jmin (176.0f, juce::jmax (118.0f, screen.getWidth() - 16.0f));
+        return { screen.getRight() - width - 8.0f, screen.getY() + 7.0f, width, 32.0f };
+    }
+
+    juce::Rectangle<float> slamHitBounds() const
+    {
+        return slamControlBounds (getLocalBounds().toFloat().reduced (1.95f)).expanded (5.0f, 4.0f);
+    }
+
+    static float snapSlamValue (float value) noexcept
+    {
+        value = juce::jlimit (0.0f, 1.0f, value);
+        constexpr float anchors[] = { 0.0f, 0.25f, 0.50f, 0.75f, 1.0f };
+        for (float anchor : anchors)
+            if (std::abs (value - anchor) <= 0.0125f)
+                return anchor;
+        return value;
+    }
+
+    void setSlamFromUi (float value)
+    {
+        if (canvasParam == nullptr || canvasAtt == nullptr)
+            return;
+        const float next = snapSlamValue (value);
+        canvasAtt->setValueAsCompleteGesture (canvasParam->convertFrom0to1 (next));
+        repaint (slamHitBounds().getSmallestIntegerContainer());
+    }
+
+    void updateSlamHover (juce::Point<float> position)
+    {
+        const bool next = canvasParam != nullptr && slamHitBounds().contains (position);
+        if (next == hoveringSlam)
+            return;
+        hoveringSlam = next;
+        if (! pressing)
+            setMouseCursor (hoveringSlam ? juce::MouseCursor::UpDownResizeCursor
+                                        : juce::MouseCursor::NormalCursor);
+        repaint (slamHitBounds().getSmallestIntegerContainer());
+    }
+
+    // The response trace belongs to the filter body, not the final output stage.
+    // SLAM therefore never recolours, thickens, outlines, or glows the curve.
+    juce::Colour responseColour() const
+    {
+        return t.curveColour();
+    }
+
+    // Etched phosphor trace, stroked from the live response Path. The wide pass is
+    // only screen wetness; the curve itself stays thin and physical.
+    void drawResponseTrace (juce::Graphics& g) const
+    {
+        if (pulsePhase != PulseIdle)
+        {
+            drawSeedPulseTrace (g);
+            return;
+        }
+
+        // The curve is the true current six-stage body response. SLAM is final
+        // output pressure and does not alter this display trace. MOTION state
+        // likewise does not change visibility of the filter that is sounding.
+        const auto phos = responseColour();
+
+        const auto plot = plotBounds();
+        if (traceXs.empty() || traceXs.size() != traceDbs.size() || plot.isEmpty())
+        {
+            if (! responsePath.isEmpty())                 // fallback: smooth stroke
+            {
+                g.setColour (phos.withAlpha (0.98f));
+                g.strokePath (responsePath, { 2.5f, juce::PathStrokeType::curved,
+                                              juce::PathStrokeType::rounded });
+            }
+            return;
+        }
+
+        // Bitmap-crunch trace (the X3-family reference): the response drawn as a
+        // 2px-quantised STAIRCASE, butt caps — a hand-pixelled hardware curve,
+        // not an antialiased vector.
+        const double dbTop = t.curveDbTop(), dbBot = t.curveDbBottom();
+        const float q = 2.0f;                              // pixel-crunch quantum
+        const size_t N = traceXs.size();
+        auto yOf = [&] (size_t i)
+        {
+            const double yt = juce::jlimit (-0.06, 1.06, (dbTop - traceDbs[i]) / (dbTop - dbBot));
+            const float y = plot.getY() + (float) yt * plot.getHeight();
+            return q * std::round (y / q);                 // snap to the crunch grid
+        };
+
+        juce::Path stair;
+        juce::Path edgeCatch;
+        float px = traceXs[0];
+        float py = yOf (0);
+        stair.startNewSubPath (px, py);
+
+        bool catchPenDown = false;
+        juce::Point<float> catchEnd;
+        const auto appendEdgeCatch = [&] (float x0, float y0, float x1, float y1)
+        {
+            if (std::abs (x1 - x0) + std::abs (y1 - y0) < 0.1f)
+                return;
+
+            // Fixed, irregular 10px bands: enough interruption to feel like a
+            // dry phosphor/print catch, never a regular dashed software line.
+            const int band = juce::jmax (0, (int) std::floor ((0.5f * (x0 + x1) - plot.getX()) / 10.0f));
+            const int signature = (band * 7 + 5) % 19;
+            const bool visible = signature != 0 && signature != 4 && signature != 11;
+            if (! visible)
+            {
+                catchPenDown = false;
+                return;
+            }
+
+            const juce::Point<float> start { x0, y0 };
+            if (! catchPenDown || catchEnd.getDistanceFrom (start) > 0.1f)
+                edgeCatch.startNewSubPath (start);
+            edgeCatch.lineTo (x1, y1);
+            catchEnd = { x1, y1 };
+            catchPenDown = true;
+        };
+
+        for (size_t i = 1; i < N; ++i)
+        {
+            const float x = traceXs[i];
+            const float y = yOf (i);
+            if (! juce::approximatelyEqual (y, py))
+            {
+                stair.lineTo (x, py);                      // run, then rise: the staircase
+                appendEdgeCatch (px, py, x, py);
+                stair.lineTo (x, y);
+                appendEdgeCatch (x, py, x, y);
+            }
+            else
+            {
+                stair.lineTo (x, y);
+                appendEdgeCatch (px, py, x, y);
+            }
+            px = x;
+            py = y;
+        }
+
+        // LOW SIGNAL by design: a slightly starved beam — dimmer, thinner,
+        // the analog read of a weak trace on old glass.
+        constexpr auto joint = juce::PathStrokeType::mitered;
+        constexpr auto cap   = juce::PathStrokeType::butt;
+        constexpr float lw = 2.0f;
+        g.setColour (juce::Colour (0xff15151a).withAlpha (0.55f));      // soft offset bed (dark glass)
+        g.strokePath (stair, { lw + 0.7f, joint, cap },
+                      juce::AffineTransform::translation (1.2f, 1.8f));
+        g.setColour (phos.withAlpha (0.66f));                           // the starved signal
+        g.strokePath (stair, { lw, joint, cap });
+
+        // Broken warm-bone edge catch: a fractional-pixel registration lift on
+        // the upper-left edge of the crude staircase. It replaces the old full
+        // centre highlight, so it reads as material finesse rather than glow.
+        g.setColour (t.curveHighlight().withAlpha (0.12f));
+        g.strokePath (edgeCatch, { 0.65f, joint, cap },
+                      juce::AffineTransform::translation (-0.25f, -0.75f));
+
+        // Peak crosses (the reference's + ticks): small markers on the mode
+        // crests — the anatomy made visible, not decoration.
+        {
+            g.setColour (t.curveHighlight().withAlpha (0.58f));
+            int marks = 0;
+            for (size_t i = 2; i + 2 < N && marks < 8; ++i)
+            {
+                const double d = traceDbs[i];
+                if (d > traceDbs[i-1] && d >= traceDbs[i+1]
+                    && d - juce::jmin (traceDbs[i-2], traceDbs[i+2]) > 2.5)
+                {
+                    const float x = q * std::round (traceXs[i] / q), y = yOf (i) - 4.0f;
+                    g.drawLine (x - 3.0f, y, x + 3.0f, y, 1.4f);
+                    g.drawLine (x, y - 3.0f, x, y + 3.0f, 1.4f);
+                    ++marks;
+                    i += 4;                                 // one cross per crest
+                }
+            }
+        }
+    }
+
+    // SEED's screen feedback: the OLD curve compresses toward a hot ruby
+    // scanline, tears with a few frames of quiet static, then the same
+    // scanline unfurls into the NEW (already-seeded) curve. No slam-warp
+    // during the pulse -- it is a brief, self-contained transition.
+    void drawSeedPulseTrace (juce::Graphics& g) const
+    {
+        if (traceXs.empty() || traceXs.size() != traceDbs.size() || traceXs.size() != pulseOldDbs.size())
+            return;
+
+        const auto plot = plotBounds();
+        if (plot.isEmpty())
+            return;
+
+        const double dbTop = t.curveDbTop(), dbBot = t.curveDbBottom();
+        const float centreY = plot.getY() + plot.getHeight() * 0.5f;
+        const size_t N = traceXs.size();
+
+        float squash = 1.0f;         // 1 = normal shape, ~0.06 = collapsed scanline
+        float progress = 0.0f;       // 0..1 within the current phase
+        bool jitter = false;
+
+        if (pulsePhase == PulseCompress)
+        {
+            progress = (float) juce::jlimit (0.0, 1.0, pulseElapsedMs / kPulseCompressMs);
+            squash = juce::jmap (progress, 1.0f, 0.06f);
+        }
+        else if (pulsePhase == PulseStatic)
+        {
+            squash = 0.06f;
+            jitter = true;
+        }
+        else // PulseRedraw
+        {
+            progress = (float) juce::jlimit (0.0, 1.0, pulseElapsedMs / kPulseRedrawMs);
+            squash = juce::jmap (progress, 0.06f, 1.0f);
+        }
+
+        juce::Path path;
+        for (size_t i = 0; i < N; ++i)
+        {
+            double db = pulseOldDbs[i];
+            if (pulsePhase == PulseRedraw)
+                db = pulseOldDbs[i] + (traceDbs[i] - pulseOldDbs[i]) * progress;
+
+            double yt = juce::jlimit (-0.06, 1.06, (dbTop - db) / (dbTop - dbBot));
+            float y = plot.getY() + (float) yt * plot.getHeight();
+            y = centreY + (y - centreY) * squash;
+            if (jitter)
+                y += pulseRng.nextFloat() * 3.0f - 1.5f; // quiet tear, not a chaotic glitch
+
+            if (i == 0) path.startNewSubPath (traceXs[i], y);
+            else        path.lineTo (traceXs[i], y);
+        }
+
+        // Bright indigo catch during compress/static; cools back toward the
+        // normal smoked-cobalt trace as the redraw completes.
+        const float heat = pulsePhase == PulseRedraw ? (1.0f - progress) : 1.0f;
+        const auto col = t.curveColour().interpolatedWith (t.curveHighlight(), heat);
+        constexpr auto joint = juce::PathStrokeType::curved;
+        constexpr auto cap   = juce::PathStrokeType::rounded;
+
+        g.setColour (col.withAlpha (0.10f));
+        g.strokePath (path, { 3.2f, joint, cap });
+        g.setColour (col.withAlpha (0.95f));
+        g.strokePath (path, { 1.2f, joint, cap });
+    }
+
+    Theme t;
+    juce::Image displayBack;
+    juce::Path responsePath;
+    std::vector<float> traceXs;
+    std::vector<float> traceDbs;
+    float lastCoeffs[30] = {};
+    float lastBoost = -1.0f;
+    double lastSr = 0.0;
+    bool haveCurve = false;
+
+    // Compact SLAM screen hit region; no diagnostic copy is painted.
+    juce::RangedAudioParameter* canvasParam = nullptr;
+    std::unique_ptr<juce::ParameterAttachment> canvasAtt;
+    float canvasDefault = 0.0f;
+
+    // SEED pulse state. Static/Redraw durations are the direction's exact
+    // numbers (~80ms/~100ms); Compress has no given duration, 60ms is a
+    // reasonable choice, not a measured constant.
+    enum PulsePhase { PulseIdle, PulseCompress, PulseStatic, PulseRedraw };
+    PulsePhase pulsePhase = PulseIdle;
+    double pulseElapsedMs = 0.0;
+    std::vector<float> pulseOldDbs;
+    mutable juce::Random pulseRng;
+    static constexpr double kPulseCompressMs = 60.0;
+    static constexpr double kPulseStaticMs   = 80.0;
+    static constexpr double kPulseRedrawMs   = 100.0;
+
+    void timerCallback() override
+    {
+        if (pulsePhase != PulseIdle)
+        {
+            pulseElapsedMs += 30.0;
+            if (pulsePhase == PulseCompress && pulseElapsedMs >= kPulseCompressMs)
+            {
+                pulsePhase = PulseStatic;
+                pulseElapsedMs = 0.0;
+            }
+            else if (pulsePhase == PulseStatic && pulseElapsedMs >= kPulseStaticMs)
+            {
+                pulsePhase = PulseRedraw;
+                pulseElapsedMs = 0.0;
+            }
+            else if (pulsePhase == PulseRedraw && pulseElapsedMs >= kPulseRedrawMs)
+            {
+                pulsePhase = PulseIdle;
+                pulseOldDbs.clear();
+            }
+        }
+
+        if (pulsePhase == PulseIdle)
+            stopTimer();
+        repaint();
+    }
+
+    bool pressing = false;
+    bool hoveringSlam = false;
+    float dragStartY = 0.0f;
+    float canvasAtStart = 0.0f;
+};
+
+} // namespace trench::ui
