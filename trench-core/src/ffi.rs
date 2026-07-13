@@ -1015,3 +1015,43 @@ mod tests {
         );
     }
 }
+
+/// SLAM — the Mackie desk at the output.
+///
+/// Applies `drive` then the measured desk curve (`desk_drive::mackity_saturate`:
+/// `x - x^5 * 0.1768`), in place, on interleaved-free stereo.
+///
+/// The curve lives in `trench-core` and ONLY here — the plug-in used to carry its
+/// own generic tanh knee, which meant TRENCH's "Mackie desk" was not actually the
+/// Mackie model that was already sitting in `desk_drive.rs`. One owner.
+///
+/// Runs at HOST rate, last in the chain: the desk is the finish line, outside the
+/// box. Heritage-correct, and deliberately NOT inside the 39062.5 island.
+///
+/// # Safety
+/// `left`/`right` must be valid for `num_samples` f32 writes, or null (no-op).
+#[no_mangle]
+pub unsafe extern "C" fn trench_desk_saturate_stereo(
+    left: *mut f32,
+    right: *mut f32,
+    num_samples: i32,
+    drive: f32,
+) {
+    if left.is_null() || num_samples <= 0 {
+        return;
+    }
+    let n = num_samples as usize;
+    let l = std::slice::from_raw_parts_mut(left, n);
+    for x in l.iter_mut() {
+        *x = crate::desk_drive::mackity_saturate((*x * drive) as f64) as f32;
+    }
+    // `right == null` (or aliasing `left`) means a mono host — do not run the
+    // curve over the same memory twice.
+    if right.is_null() || std::ptr::eq(right, left) {
+        return;
+    }
+    let r = std::slice::from_raw_parts_mut(right, n);
+    for x in r.iter_mut() {
+        *x = crate::desk_drive::mackity_saturate((*x * drive) as f64) as f32;
+    }
+}

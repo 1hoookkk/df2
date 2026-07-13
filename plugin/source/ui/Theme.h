@@ -85,8 +85,13 @@ struct Theme
     float  componentRadius()   const { return (float) layout.param ("componentRadius", 2.5); }
     float  readoutAliasScale() const { return (float) juce::jlimit (0.3, 1.0, layout.param ("readoutAliasScale", 0.72)); }
     float  typeArrowExtra()    const { return (float) layout.param ("typeArrowExtra", 6.0); }
-    double curveDbTop()        const { return layout.param ("curveDbTop", 18.0); }
-    double curveDbBottom()     const { return layout.param ("curveDbBottom", -30.0); }
+    // The old window (+18 / -30) could not draw the roster. A Q100 body reaches
+    // +45 dB (CAVL_mason_jar_to_stone_pipe peaks at +45.3), so the trace clamped
+    // flat against the ceiling and the graph silently lied about the loudest,
+    // most important part of the filter. Symmetric +/-48 puts 0 dB dead centre
+    // and leaves headroom for the hottest bodies in the library.
+    double curveDbTop()        const { return layout.param ("curveDbTop", 48.0); }
+    double curveDbBottom()     const { return layout.param ("curveDbBottom", -48.0); }
 
     juce::Rectangle<float> rect (const juce::String& id) const
     {
@@ -327,8 +332,10 @@ inline void paintScreenAtmosphere (juce::Graphics& g, juce::Rectangle<float> scr
 // green overlay.
 inline void drawReadoutGlass (juce::Graphics& g, juce::Rectangle<float> b, const Theme& t)
 {
-    const auto r = b.reduced (1.0f);
-    const auto radius = t.wellRadius();
+    // The component bounds are the measured recess mouth. Paint to that edge;
+    // an extra software inset leaves an obvious black halo in the baked well.
+    const auto r = b;
+    const auto radius = b.getHeight() * 0.17f;
     {
         juce::Graphics::ScopedSaveState save (g);
         juce::Path clip;

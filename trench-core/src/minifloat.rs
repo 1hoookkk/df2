@@ -522,3 +522,509 @@ mod unit_tests {
         );
     }
 }
+
+#[cfg(test)]
+mod order_probe {
+    use super::*;
+
+    /// Q-first bilinear — the OTHER order. Not shipped; used only to measure how
+    /// much the (unsourced) axis-order choice actually costs.
+    fn interpolate_q_first(pc: &PackedCorners, morph: f32, q: f32) -> [[u16; NUM_COEFFS]; NUM_STAGES] {
+        let mut out = [[0u16; NUM_COEFFS]; NUM_STAGES];
+        for si in 0..NUM_STAGES {
+            let (a, b, c, d) = (pc.words[0][si], pc.words[1][si], pc.words[2][si], pc.words[3][si]);
+            for wi in 0..NUM_COEFFS {
+                let edge0 = lerp_u16(a[wi], c[wi], q);   // M0_Q0 -> M0_Q100   along Q
+                let edge1 = lerp_u16(b[wi], d[wi], q);   // M100_Q0 -> M100_Q100
+                out[si][wi] = lerp_u16(edge0, edge1, morph);
+            }
+        }
+        out
+    }
+
+    fn interpolate_morph_first(pc: &PackedCorners, morph: f32, q: f32) -> [[u16; NUM_COEFFS]; NUM_STAGES] {
+        let mut out = [[0u16; NUM_COEFFS]; NUM_STAGES];
+        for si in 0..NUM_STAGES {
+            let (a, b, c, d) = (pc.words[0][si], pc.words[1][si], pc.words[2][si], pc.words[3][si]);
+            for wi in 0..NUM_COEFFS {
+                let edge0 = lerp_u16(a[wi], b[wi], morph);
+                let edge1 = lerp_u16(c[wi], d[wi], morph);
+                out[si][wi] = lerp_u16(edge0, edge1, q);
+            }
+        }
+        out
+    }
+
+    /// Does the (unsourced) bilinear axis order actually change the bits, and by
+    /// how much, on the REAL shipping roster?
+    ///   cargo test -p trench-core --lib order_probe -- --ignored --nocapture
+    #[test]
+    #[ignore = "diagnostic: morph-first vs Q-first bilinear on the real roster"]
+    fn bilinear_axis_order_sensitivity() {
+        let dir = std::path::Path::new("../filters/bodies");
+        let mut files: Vec<_> = std::fs::read_dir(dir)
+            .expect("filters/bodies")
+            .filter_map(|e| e.ok().map(|e| e.path()))
+            .filter(|p| p.extension().map(|x| x == "body240").unwrap_or(false))
+            .collect();
+        files.sort();
+
+        let (mut total, mut differ) = (0u64, 0u64);
+        let mut max_delta = 0i32;
+        let mut worst = String::new();
+        let mut bodies_affected = 0;
+
+        for f in &files {
+            let bytes = std::fs::read(f).unwrap();
+            let pc = match PackedCorners::from_body_bytes(&bytes) {
+                Ok(p) => p,
+                Err(_) => continue,
+            };
+            let mut this_body_differs = false;
+            for mi in 0..=10 {
+                for qi in 0..=10 {
+                    let (m, q) = (mi as f32 / 10.0, qi as f32 / 10.0);
+                    let a = interpolate_morph_first(&pc, m, q);
+                    let b = interpolate_q_first(&pc, m, q);
+                    for si in 0..NUM_STAGES {
+                        for wi in 0..NUM_COEFFS {
+                            total += 1;
+                            let d = a[si][wi] as i32 - b[si][wi] as i32;
+                            if d != 0 {
+                                differ += 1;
+                                this_body_differs = true;
+                                if d.abs() > max_delta {
+                                    max_delta = d.abs();
+                                    worst = format!(
+                                        "{} m={m:.1} q={q:.1} stage{si} word{wi}: {} vs {}",
+                                        f.file_name().unwrap().to_string_lossy(),
+                                        a[si][wi], b[si][wi]
+                                    );
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+            if this_body_differs {
+                bodies_affected += 1;
+            }
+        }
+
+        println!("\n=== bilinear axis order: morph-first (SHIPPED) vs Q-first ===");
+        println!("roster: {} bodies, 11x11 morph/Q grid, all 6 stages x 5 words\n", files.len());
+        println!("  words compared      : {total}");
+        println!("  words that DIFFER   : {differ}  ({:.2}%)", 100.0 * differ as f64 / total as f64);
+        println!("  bodies affected     : {bodies_affected} / {}", files.len());
+        println!("  max |delta| (packed): {max_delta} LSB");
+        if !worst.is_empty() {
+            println!("  worst               : {worst}");
+        }
+        if differ == 0 {
+            println!("\n  -> the order is IRRELEVANT. Both give identical bits. Non-issue.");
+        } else {
+            println!("\n  -> the orders differ in BITS. But is that AUDIBLE? Decode and compare in dB.");
+        }
+
+        // Differing bits is not the question — audibility is. A packed word is a
+        // minifloat, so 1-2 LSB is a small RELATIVE step. Decode both orders to
+        // biquad coefficients and compare the actual magnitude response.
+        const SR: f64 = 39_062.5;
+        let mut max_db = 0.0f64;
+        let mut where_db = String::new();
+        let mut all: Vec<f64> = Vec::new();
+        for f in &files {
+            let bytes = std::fs::read(f).unwrap();
+            let pc = match PackedCorners::from_body_bytes(&bytes) {
+                Ok(p) => p,
+                Err(_) => continue,
+            };
+            for mi in 0..=10 {
+                for qi in 0..=10 {
+                    let (m, q) = (mi as f32 / 10.0, qi as f32 / 10.0);
+                    let wa = interpolate_morph_first(&pc, m, q);
+                    let wb = interpolate_q_first(&pc, m, q);
+                    let ka: Vec<[f64; NUM_COEFFS]> =
+                        (0..NUM_STAGES).map(|si| kernel_to_biquad(stage_words_to_kernel(wa[si]))).collect();
+                    let kb: Vec<[f64; NUM_COEFFS]> =
+                        (0..NUM_STAGES).map(|si| kernel_to_biquad(stage_words_to_kernel(wb[si]))).collect();
+
+                    let mag = |rows: &Vec<[f64; NUM_COEFFS]>, w: f64| -> f64 {
+                        let (cw, sw) = (w.cos(), w.sin());
+                        let (c2w, s2w) = ((2.0 * w).cos(), (2.0 * w).sin());
+                        let mut acc = 1.0f64;
+                        for r in rows {
+                            let (b0, b1, b2, a1, a2) = (r[0], r[1], r[2], r[3], r[4]);
+                            let nr = b0 + b1 * cw + b2 * c2w;
+                            let ni = -(b1 * sw + b2 * s2w);
+                            let dr = 1.0 + a1 * cw + a2 * c2w;
+                            let di = -(a1 * sw + a2 * s2w);
+                            let n = (nr * nr + ni * ni).sqrt();
+                            let d = (dr * dr + di * di).sqrt().max(1e-12);
+                            acc *= n / d;
+                        }
+                        acc.max(1e-12)
+                    };
+
+                    for k in 0..200 {
+                        let hz = 20.0 * (19_000.0f64 / 20.0).powf(k as f64 / 199.0);
+                        let w = 2.0 * std::f64::consts::PI * hz / SR;
+                        let d = 20.0 * (mag(&ka, w) / mag(&kb, w)).log10();
+                        all.push(d.abs());
+                        if d.abs() > max_db {
+                            max_db = d.abs();
+                            where_db = format!(
+                                "{} m={m:.1} q={q:.1} @ {hz:.0} Hz",
+                                f.file_name().unwrap().to_string_lossy()
+                            );
+                        }
+                    }
+                }
+            }
+        }
+        all.sort_by(|x, y| x.partial_cmp(y).unwrap());
+        let pct = |p: f64| all[((all.len() - 1) as f64 * p) as usize];
+        println!("\n=== the same question, in dB — what your ear actually gets ===");
+        println!("  {} response points compared\n", all.len());
+        println!("    median   {:.4} dB", pct(0.50));
+        println!("    p90      {:.4} dB", pct(0.90));
+        println!("    p99      {:.4} dB", pct(0.99));
+        println!("    p99.9    {:.4} dB", pct(0.999));
+        println!("    max      {:.4} dB   <- {where_db}", max_db);
+        println!(
+            "\n  (dB blows up near a notch even when little changed — judge on the\n   median/p99, not the max, which lands on a notch body by construction.)"
+        );
+        if pct(0.99) < 0.1 {
+            println!("\n  -> Typical difference is INAUDIBLE. The axis order is a non-issue in practice,");
+            println!("     but it remains UNSOURCED — worth settling if you ever null against a real X3.");
+        } else {
+            println!("\n  -> AUDIBLE at the typical case. The unsourced axis order is changing the sound.");
+        }
+    }
+}
+
+#[cfg(test)]
+mod x3_groundtruth {
+    use super::*;
+
+    /// Dump our packed-bilinear response at the 4 corners + the midpoint, so it
+    /// can be nulled against real X3 renders of the same preset.
+    ///
+    /// The reference body is read from df2 AT RUNTIME (never vendored) — P2K
+    /// material is study evidence and no protected bytes enter this repo.
+    ///   cargo test -p trench-core --lib dump_hedz_response -- --ignored --nocapture
+    #[test]
+    #[ignore = "ground truth: dump our response for nulling against X3 renders"]
+    fn dump_hedz_response() {
+        const SR: f64 = 39_062.5;
+        let p = "C:/Users/hooki/df2/desk/finishing/REF_013_talking_hedz.body240";
+        let bytes = std::fs::read(p).expect("reference body (evidence, external)");
+        let pc = PackedCorners::from_body_bytes(&bytes).expect("240 bytes");
+
+        let pts = [
+            ("m0q0", 0.0f32, 0.0f32),
+            ("m0q1", 0.0, 1.0),
+            ("m1q0", 1.0, 0.0),
+            ("m1q1", 1.0, 1.0),
+            ("m50q50", 0.5, 0.5),
+        ];
+
+        let mut out = String::from("hz");
+        for (n, _, _) in &pts {
+            out.push('\t');
+            out.push_str(n);
+        }
+        out.push('\n');
+
+        for k in 0..512 {
+            let hz = 20.0 * (19_000.0f64 / 20.0).powf(k as f64 / 511.0);
+            let w = 2.0 * std::f64::consts::PI * hz / SR;
+            let (cw, sw) = (w.cos(), w.sin());
+            let (c2w, s2w) = ((2.0 * w).cos(), (2.0 * w).sin());
+            out.push_str(&format!("{hz:.3}"));
+            for (_, m, q) in &pts {
+                let rows = pc.interpolate_biquad(*m, *q);
+                let mut acc = 1.0f64;
+                for r in rows.iter() {
+                    let (b0, b1, b2, a1, a2) = (r[0], r[1], r[2], r[3], r[4]);
+                    let nr = b0 + b1 * cw + b2 * c2w;
+                    let ni = -(b1 * sw + b2 * s2w);
+                    let dr = 1.0 + a1 * cw + a2 * c2w;
+                    let di = -(a1 * sw + a2 * s2w);
+                    acc *= (nr * nr + ni * ni).sqrt() / (dr * dr + di * di).sqrt().max(1e-12);
+                }
+                out.push_str(&format!("\t{:.6}", 20.0 * acc.max(1e-12).log10()));
+            }
+            out.push('\n');
+        }
+        let dst = "C:/WINDOWS/TEMP/claude/C--Users-hooki-df2-workstation/c08ea51b-7464-4c34-82ce-729142ff350c/scratchpad/ours_hedz.tsv";
+        std::fs::write(dst, out).unwrap();
+        println!("wrote {dst}");
+    }
+}
+
+#[cfg(test)]
+mod interp_law {
+    use super::*;
+
+    /// Which interpolation law does the real machine use?
+    ///
+    /// Emits the midpoint response under two competing laws, from the SAME body:
+    ///   A: lerp the packed u16 WORDS, then decode   (what we ship)
+    ///   B: decode the corners, then lerp the COEFFICIENTS
+    /// Plus the four corners. A third candidate (lerp the response in dB) is
+    /// computed downstream in Python from the corners.
+    ///   cargo test -p trench-core --lib dump_interp_laws -- --ignored --nocapture
+    #[test]
+    #[ignore = "ground truth: which interpolation law does the X3 use"]
+    fn dump_interp_laws() {
+        const SR: f64 = 39_062.5;
+        let p = "C:/Users/hooki/df2/desk/finishing/REF_013_talking_hedz.body240";
+        let bytes = std::fs::read(p).expect("reference body (external evidence)");
+        let pc = PackedCorners::from_body_bytes(&bytes).unwrap();
+
+        let resp = |rows: &[[f64; NUM_COEFFS]; NUM_STAGES], hz: f64| -> f64 {
+            let w = 2.0 * std::f64::consts::PI * hz / SR;
+            let (cw, sw) = (w.cos(), w.sin());
+            let (c2w, s2w) = ((2.0 * w).cos(), (2.0 * w).sin());
+            let mut acc = 1.0f64;
+            for r in rows.iter() {
+                let (b0, b1, b2, a1, a2) = (r[0], r[1], r[2], r[3], r[4]);
+                let nr = b0 + b1 * cw + b2 * c2w;
+                let ni = -(b1 * sw + b2 * s2w);
+                let dr = 1.0 + a1 * cw + a2 * c2w;
+                let di = -(a1 * sw + a2 * s2w);
+                acc *= (nr * nr + ni * ni).sqrt() / (dr * dr + di * di).sqrt().max(1e-12);
+            }
+            20.0 * acc.max(1e-12).log10()
+        };
+
+        // A: shipped — lerp packed words at (0.5, 0.5), then decode.
+        let mid_packed = pc.interpolate_biquad(0.5, 0.5);
+
+        // B: decode all four corners first, then bilinear the COEFFICIENTS.
+        let c: Vec<[[f64; NUM_COEFFS]; NUM_STAGES]> =
+            (0..4).map(|ci| {
+                let mut rows = [[0.0f64; NUM_COEFFS]; NUM_STAGES];
+                for si in 0..NUM_STAGES {
+                    rows[si] = kernel_to_biquad(stage_words_to_kernel(pc.words[ci][si]));
+                }
+                rows
+            }).collect();
+        let mut mid_coeff = [[0.0f64; NUM_COEFFS]; NUM_STAGES];
+        for si in 0..NUM_STAGES {
+            for k in 0..NUM_COEFFS {
+                // corners: 0=M0Q0 1=M100Q0 2=M0Q100 3=M100Q100
+                let e0 = 0.5 * (c[0][si][k] + c[1][si][k]); // along morph @ q0
+                let e1 = 0.5 * (c[2][si][k] + c[3][si][k]); // along morph @ q1
+                mid_coeff[si][k] = 0.5 * (e0 + e1);         // along q
+            }
+        }
+
+        let corners: Vec<_> = (0..4).map(|ci| {
+            let mut rows = [[0.0f64; NUM_COEFFS]; NUM_STAGES];
+            for si in 0..NUM_STAGES {
+                rows[si] = kernel_to_biquad(stage_words_to_kernel(pc.words[ci][si]));
+            }
+            rows
+        }).collect();
+
+        let mut out = String::from("hz\tc_m0q0\tc_m1q0\tc_m0q1\tc_m1q1\tA_packed\tB_coeff\n");
+        for k in 0..512 {
+            let hz = 20.0 * (19_000.0f64 / 20.0).powf(k as f64 / 511.0);
+            out.push_str(&format!("{hz:.3}"));
+            for ci in 0..4 {
+                out.push_str(&format!("\t{:.6}", resp(&corners[ci], hz)));
+            }
+            out.push_str(&format!("\t{:.6}", resp(&mid_packed, hz)));
+            out.push_str(&format!("\t{:.6}\n", resp(&mid_coeff, hz)));
+        }
+        let dst = "C:/WINDOWS/TEMP/claude/C--Users-hooki-df2-workstation/c08ea51b-7464-4c34-82ce-729142ff350c/scratchpad/interp_laws.tsv";
+        std::fs::write(dst, out).unwrap();
+        println!("wrote {dst}");
+    }
+}
+
+#[cfg(test)]
+mod interp_law_audio {
+    use super::*;
+    use crate::cascade::Cascade;
+
+    /// Render a pink-noise MORPH SWEEP under both interpolation laws, so the
+    /// difference can be heard rather than argued about.
+    ///
+    ///   A: lerp packed u16 WORDS, then decode  (shipped)
+    ///   B: decode corners, then lerp COEFFICIENTS
+    ///
+    /// Cascade only — no AGC, no saturator — so nothing but the interpolation law
+    /// differs. Both are peak-normalised to the same level: judge character, not
+    /// loudness.
+    ///   cargo test -p trench-core --lib render_interp_law_ab -- --ignored --nocapture
+    #[test]
+    #[ignore = "renders A/B morph-sweep wavs for the interpolation law"]
+    fn render_interp_law_ab() {
+        const SR: f64 = 39_062.5;
+        const OUT_SR: u32 = 44_100;
+        const SECS: f64 = 8.0;
+        const BLOCK: usize = 32;
+
+        let p = "C:/Users/hooki/df2/desk/finishing/REF_013_talking_hedz.body240";
+        let pc = PackedCorners::from_body_bytes(&std::fs::read(p).unwrap()).unwrap();
+
+        // decoded corners, for law B
+        let dc: Vec<CornerData> = (0..4)
+            .map(|ci| {
+                let mut rows = [[0.0f64; NUM_COEFFS]; NUM_STAGES];
+                for si in 0..NUM_STAGES {
+                    rows[si] = kernel_to_biquad(stage_words_to_kernel(pc.words[ci][si]));
+                }
+                rows
+            })
+            .collect();
+
+        let law_b = |m: f64, q: f64| -> CornerData {
+            let mut out = [[0.0f64; NUM_COEFFS]; NUM_STAGES];
+            for si in 0..NUM_STAGES {
+                for k in 0..NUM_COEFFS {
+                    let e0 = dc[0][si][k] + (dc[1][si][k] - dc[0][si][k]) * m; // morph @ q0
+                    let e1 = dc[2][si][k] + (dc[3][si][k] - dc[2][si][k]) * m; // morph @ q1
+                    out[si][k] = e0 + (e1 - e0) * q;
+                }
+            }
+            out
+        };
+
+        let n = (SECS * SR) as usize;
+        let render = |packed_law: bool| -> Vec<f32> {
+            let mut casc = Cascade::new();
+            let mut rng = 0x2545_F491_4F6C_DD1Du64;
+            let mut pb = [0f64; 7];
+            let mut out = Vec::with_capacity(n);
+            let mut i = 0;
+            while i < n {
+                let len = BLOCK.min(n - i);
+                let m = i as f64 / n as f64; // morph sweeps 0 -> 1
+                let q = 1.0; // max bloom: where the laws diverge most
+                let corner = if packed_law {
+                    pc.interpolate_biquad(m as f32, q as f32)
+                } else {
+                    law_b(m, q)
+                };
+                casc.set_targets(&corner, len);
+                let mut buf: Vec<f32> = (0..len)
+                    .map(|_| {
+                        rng = rng.wrapping_mul(6364136223846793005).wrapping_add(1442695040888963407);
+                        let w = ((rng >> 40) as f64 / (1u64 << 23) as f64) - 1.0;
+                        pb[0] = 0.99886 * pb[0] + w * 0.0555179;
+                        pb[1] = 0.99332 * pb[1] + w * 0.0750759;
+                        pb[2] = 0.96900 * pb[2] + w * 0.1538520;
+                        pb[3] = 0.86650 * pb[3] + w * 0.3104856;
+                        pb[4] = 0.55000 * pb[4] + w * 0.5329522;
+                        pb[5] = -0.7616 * pb[5] - w * 0.0168980;
+                        let s = (pb[0]+pb[1]+pb[2]+pb[3]+pb[4]+pb[5]+pb[6] + w*0.5362) * 0.11;
+                        pb[6] = w * 0.115926;
+                        (s * 0.5) as f32
+                    })
+                    .collect();
+                casc.process_block_mono(&mut buf);
+                out.extend_from_slice(&buf);
+                i += len;
+            }
+            out
+        };
+
+        let write_wav = |path: &str, s: &[f32]| {
+            // resample to 44.1k, peak-normalise to -6 dBFS so the A/B is level-matched
+            let ratio = SR / OUT_SR as f64;
+            let on = (s.len() as f64 / ratio) as usize;
+            let mut r: Vec<f32> = (0..on)
+                .map(|i| {
+                    let pos = i as f64 * ratio;
+                    let i0 = pos.floor() as usize;
+                    let fr = (pos - i0 as f64) as f32;
+                    let a = s.get(i0).copied().unwrap_or(0.0);
+                    let b = s.get(i0 + 1).copied().unwrap_or(a);
+                    a + (b - a) * fr
+                })
+                .collect();
+            let pk = r.iter().fold(0.0f32, |m, &x| m.max(x.abs())).max(1e-9);
+            let g = 0.5012 / pk; // -6 dBFS
+            for x in r.iter_mut() { *x *= g; }
+            let mut b = Vec::new();
+            let dl = (r.len() * 2) as u32;
+            b.extend_from_slice(b"RIFF");
+            b.extend_from_slice(&(36 + dl).to_le_bytes());
+            b.extend_from_slice(b"WAVEfmt ");
+            b.extend_from_slice(&16u32.to_le_bytes());
+            b.extend_from_slice(&1u16.to_le_bytes());
+            b.extend_from_slice(&1u16.to_le_bytes());
+            b.extend_from_slice(&OUT_SR.to_le_bytes());
+            b.extend_from_slice(&(OUT_SR * 2).to_le_bytes());
+            b.extend_from_slice(&2u16.to_le_bytes());
+            b.extend_from_slice(&16u16.to_le_bytes());
+            b.extend_from_slice(b"data");
+            b.extend_from_slice(&dl.to_le_bytes());
+            for &x in &r {
+                b.extend_from_slice(&((x.clamp(-1.0, 1.0) * 32767.0) as i16).to_le_bytes());
+            }
+            std::fs::write(path, b).unwrap();
+            println!("  wrote {path}  (peak-normalised to -6 dBFS)");
+        };
+
+        let dir = "C:/Users/hooki/df2-workstation/out/interp_law_ab";
+        std::fs::create_dir_all(dir).unwrap();
+        println!("\nTalking Hedz, q=1 (max bloom), morph sweeping 0 -> 1 over 8 s, pink noise.");
+        println!("Cascade only. No AGC, no saturator. Level-matched.\n");
+        write_wav(&format!("{dir}/A_packed_words_SHIPPED.wav"), &render(true));
+        write_wav(&format!("{dir}/B_coefficients.wav"), &render(false));
+    }
+}
+
+#[cfg(test)]
+mod curve_check {
+    use super::*;
+    /// Is the UI curve telling the truth? Compute the real response of the body
+    /// on screen at the exact morph/Q shown.
+    ///   cargo test -p trench-core --lib check_mason_jar -- --ignored --nocapture
+    #[test]
+    #[ignore = "diagnostic: verify the on-screen curve against the real response"]
+    fn check_mason_jar() {
+        const SR: f64 = 39_062.5;
+        let p = "../filters/bodies/CAVL_mason_jar_to_stone_pipe.body240";
+        let pc = PackedCorners::from_body_bytes(&std::fs::read(p).expect(p)).unwrap();
+        let rows = pc.interpolate_biquad(0.0, 1.0); // MORPH 0, Q 100 — as on screen
+
+        let mag = |hz: f64| -> f64 {
+            let w = 2.0 * std::f64::consts::PI * hz / SR;
+            let (cw, sw) = (w.cos(), w.sin());
+            let (c2, s2) = ((2.0 * w).cos(), (2.0 * w).sin());
+            let mut acc = 1.0f64;
+            for r in rows.iter() {
+                let (b0, b1, b2, a1, a2) = (r[0], r[1], r[2], r[3], r[4]);
+                let nr = b0 + b1 * cw + b2 * c2;
+                let ni = -(b1 * sw + b2 * s2);
+                let dr = 1.0 + a1 * cw + a2 * c2;
+                let di = -(a1 * sw + a2 * s2);
+                acc *= (nr * nr + ni * ni).sqrt() / (dr * dr + di * di).sqrt().max(1e-12);
+            }
+            20.0 * acc.max(1e-12).log10()
+        };
+
+        // find every resonance
+        let n = 4000;
+        let f: Vec<f64> = (0..n).map(|k| 20.0 * (19_000.0f64 / 20.0).powf(k as f64 / (n - 1) as f64)).collect();
+        let d: Vec<f64> = f.iter().map(|&hz| mag(hz)).collect();
+        println!("\n=== CAVL_mason_jar_to_stone_pipe @ MORPH 0, Q 100 (what is on your screen) ===\n");
+        println!("  peaks the BODY actually has:");
+        for i in 1..n - 1 {
+            if d[i] > d[i - 1] && d[i] > d[i + 1] && d[i] > -25.0 {
+                println!("    {:8.0} Hz   {:+7.1} dB", f[i], d[i]);
+            }
+        }
+        println!("\n  stage pole radii (Q) — how sharp each is:");
+        for (si, r) in rows.iter().enumerate() {
+            let rad = pole_radius(r[3], r[4]);
+            println!("    stage {si}: radius {rad:.5}{}", if rad > 0.9995 { "   <-- RAZOR (near-unstable)" } else { "" });
+        }
+    }
+}

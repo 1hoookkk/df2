@@ -16,11 +16,10 @@
 
 use crate::agc::{active_agc_table, agc_step_stereo};
 use crate::cartridge::{Cartridge, CornerData};
-use crate::cascade::{BLOCK_SIZE, NUM_COEFFS, PASSTHROUGH_COEFFS};
+use crate::cascade::{Cascade, BLOCK_SIZE, NUM_COEFFS, PASSTHROUGH_COEFFS};
 use crate::cvsd_input::CvsdInput;
 use crate::desk_drive::{DeskDrive, SUPPORTED_MODEL as DESK_SLAM_MODEL};
 use crate::qsound_spatial::QSoundSpatial;
-use crate::transition::{DualCascade, TRANSITION_SECONDS};
 use crate::trench_matrix::TrenchMatrix;
 use std::ptr;
 use std::sync::atomic::{AtomicPtr, Ordering};
@@ -113,6 +112,61 @@ impl Default for DebugToggles {
     }
 }
 
+/// WIDTH GUARD band — the spatial stage may only widen INSIDE this range.
+///
+/// Below 2 kHz the QSound width collapses the mono fold-down by 14-15 dB; above
+/// 1 kHz it is already mono-clean. 2 kHz keeps a margin while preserving the
+/// 1-4 kHz band where human localisation actually lives, so the effect stays
+/// dramatic and stops being mono-suicidal. See `apply_width_guard`.
+pub const WIDTH_GUARD_LO_HZ: f64 = 2_000.0;
+/// Upper edge, just under the island's 19531 Hz Nyquist.
+pub const WIDTH_GUARD_HI_HZ: f64 = 18_980.0;
+
+/// Minimal RBJ biquad, used only by the width guard.
+#[derive(Debug, Clone, Copy, Default)]
+struct GuardBiquad {
+    b0: f32, b1: f32, b2: f32, a1: f32, a2: f32, w1: f32, w2: f32,
+}
+
+impl GuardBiquad {
+    fn high_pass(hz: f64, sr: f64) -> Self {
+        let w0 = 2.0 * std::f64::consts::PI * hz.min(sr * 0.45) / sr;
+        let (c, s) = (w0.cos(), w0.sin());
+        let al = s / std::f64::consts::SQRT_2;
+        let a0 = 1.0 + al;
+        Self {
+            b0: (((1.0 + c) * 0.5) / a0) as f32,
+            b1: ((-(1.0 + c)) / a0) as f32,
+            b2: (((1.0 + c) * 0.5) / a0) as f32,
+            a1: ((-2.0 * c) / a0) as f32,
+            a2: ((1.0 - al) / a0) as f32,
+            w1: 0.0, w2: 0.0,
+        }
+    }
+    fn low_pass(hz: f64, sr: f64) -> Self {
+        let w0 = 2.0 * std::f64::consts::PI * hz.min(sr * 0.45) / sr;
+        let (c, s) = (w0.cos(), w0.sin());
+        let al = s / std::f64::consts::SQRT_2;
+        let a0 = 1.0 + al;
+        Self {
+            b0: (((1.0 - c) * 0.5) / a0) as f32,
+            b1: (((1.0 - c)) / a0) as f32,
+            b2: (((1.0 - c) * 0.5) / a0) as f32,
+            a1: ((-2.0 * c) / a0) as f32,
+            a2: ((1.0 - al) / a0) as f32,
+            w1: 0.0, w2: 0.0,
+        }
+    }
+    #[inline]
+    fn process(&mut self, x: f32) -> f32 {
+        let y = self.b0 * x + self.w1;
+        self.w1 = self.b1 * x - self.a1 * y + self.w2;
+        self.w2 = self.b2 * x - self.a2 * y;
+        if y.is_finite() { y } else { self.w1 = 0.0; self.w2 = 0.0; 0.0 }
+    }
+    fn reset(&mut self) { self.w1 = 0.0; self.w2 = 0.0; }
+}
+
 /// Output soft-limiter knee. Below this the stage is exactly transparent.
 const SATURATE_KNEE: f32 = 0.9;
 
@@ -142,6 +196,51 @@ const AGC_FIRST_TOOTH: f32 = 2.0;
 /// repo's old 3.0-4.0 voicing) only make bodies quieter for no further benefit.
 pub const AGC_DRIVE: f32 = AGC_FIRST_TOOTH / SATURATE_KNEE; // 2.222...
 
+/// How long the coefficients take to reach a new corner.
+///
+/// Ghidra confirms the X3 ramps coefficients per sample, and the deltas are
+/// recomputed each control block. If the ramp length EQUALS the control block
+/// (32 samples ≈ 0.8 ms at the island rate) the coefficients land exactly on
+/// target every block — a hard, fast, linear snap.
+///
+/// Making the ramp LONGER than the control block turns it into an exponential
+/// approach: each 32-sample block closes `BLOCK_SIZE / ramp` of the remaining
+/// distance, because the deltas are recomputed from the CURRENT coefficients.
+/// That is what an analog control lag actually feels like — and it is the
+/// difference between a morph that steps and a morph that glides.
+///
+/// It also smooths the host's morph quantisation for free: a DAW only hands us
+/// one morph value per buffer, so at 512 samples the morph itself updates at
+/// ~86 Hz. A ramp longer than that interval turns those steps into a slide.
+///
+/// 80 ms is DERIVED, not tuned — it is set by the resonators themselves.
+///
+/// A pole at radius r rings with a time constant `tau = -1 / (fs * ln r)`. The
+/// shipping roster's Q100 stages sit at r ~ 0.9989, so **tau = 23.3 ms** (median
+/// AND p90 — the bodies share a Q law; worst case 39.9 ms). That is how long the
+/// filter's stored energy takes to decay, and therefore how fast the filter can
+/// physically respond to anything at all.
+///
+/// Move the coefficients FASTER than tau and the ring cannot follow: the old
+/// resonance decays while a new one builds elsewhere, and you hear a crossfade
+/// between two static filters. That is exactly what the dual frozen cascade did
+/// explicitly, and what a one-control-block snap does implicitly — same failure,
+/// different mechanism.
+///
+/// Move them SLOWER than tau and the stored energy is CARRIED: the pole drags the
+/// ringing with it and shifts its pitch on the way. That is what a physical
+/// resonator does when it changes shape — a bottle filling, a tube lengthening.
+/// The air inside does not stop and restart. It glides.
+///
+/// 80 ms = 3.44 x tau. Tyson picked it by ear from a level-matched A/B of
+/// 0.8/5/10/20/40/80 ms before any of this was computed. The ear found the
+/// physics. `render_ramp_taste` regenerates that A/B.
+///
+/// The onset is still immediate (the approach is exponential, so it starts moving
+/// on the first sample) — this lengthens the SETTLE, not the attack, so a ZAP-style
+/// morph swipe still hits.
+pub const COEFF_RAMP_SECONDS: f64 = 0.080;
+
 /// Output soft-limiter — the safety net for the AGC's attack overshoot.
 ///
 /// Transparent below the knee. It is NOT a level control: if this stage is
@@ -160,8 +259,27 @@ fn saturate(x: f32) -> f32 {
 
 /// Stereo Filter Engine — handles dual cascades, Mackie saturation, and QSound.
 pub struct FilterEngine {
-    cascade_l: DualCascade,
-    cascade_r: DualCascade,
+    cascade_l: Cascade,
+    cascade_r: Cascade,
+    /// Coefficient ramp length in samples (see `COEFF_RAMP_SECONDS`). Longer
+    /// than `BLOCK_SIZE` = an exponential glide toward each new corner.
+    coeff_ramp_samples: usize,
+    /// Phase within the fixed 32-sample control grid, CONTINUOUS across host
+    /// blocks. This is the real E3 fix.
+    ///
+    /// E3 correctly found that coefficient ramping was block-size dependent —
+    /// but the cause was ramping over the HOST block length, so a 512-sample
+    /// buffer and a 16-sample buffer ramped over different distances. The
+    /// response was to delete the ramp and crossfade two frozen cascades
+    /// instead. That is NOT what the machine does: Ghidra confirms the X3 does
+    /// "per-sample additive coefficient ramping" (5 deltas added to each stage's
+    /// coefficients after every sample). Deleting it is why a moving morph
+    /// stepped instead of glided.
+    ///
+    /// Ramping over a FIXED 32-sample grid whose phase survives block
+    /// boundaries is deterministic by construction — faithful AND buffer-
+    /// independent. `BLOCK_SIZE` was already 32 and already unused.
+    control_phase: usize,
     // Audio-thread-owned. New bodies arrive via `CartridgeMailbox` (a sibling
     // field of `EngineHandle`, never inside this `&mut`-borrowed struct) and are
     // installed at a block boundary; the displaced box is handed back to the
@@ -203,6 +321,13 @@ pub struct FilterEngine {
     spatial: QSoundSpatial,
     pub trench_matrix: TrenchMatrix,
     spatial_mode: SpatialMode,
+    // WIDTH GUARD — band-limits what the spatial stage ADDS (see apply_width_guard).
+    width_dry_l: Vec<f32>,
+    width_dry_r: Vec<f32>,
+    width_hp_l: GuardBiquad,
+    width_lp_l: GuardBiquad,
+    width_hp_r: GuardBiquad,
+    width_lp_r: GuardBiquad,
     space: f32,
 
     /// AMOUNT — the honest dose. 1.0 = full body, 0.0 = flat/identity. Applied
@@ -224,8 +349,10 @@ impl FilterEngine {
     pub fn new() -> Self {
         let sr = 44100.0;
         Self {
-            cascade_l: DualCascade::new(),
-            cascade_r: DualCascade::new(),
+            cascade_l: Cascade::new(),
+            cascade_r: Cascade::new(),
+            coeff_ramp_samples: BLOCK_SIZE,
+            control_phase: 0,
             cartridge: None,
             sample_rate: sr,
             output_gain: 1.0,
@@ -250,6 +377,12 @@ impl FilterEngine {
             spatial: QSoundSpatial::new(sr as f32),
             trench_matrix: TrenchMatrix::new(sr as f32),
             spatial_mode: SpatialMode::Off,
+            width_dry_l: Vec::new(),
+            width_dry_r: Vec::new(),
+            width_hp_l: GuardBiquad::default(),
+            width_lp_l: GuardBiquad::default(),
+            width_hp_r: GuardBiquad::default(),
+            width_lp_r: GuardBiquad::default(),
             space: 0.0,
             amount: 1.0,
             debug: DebugToggles::default(),
@@ -258,11 +391,20 @@ impl FilterEngine {
 
     pub fn prepare(&mut self, sample_rate: f64) {
         self.sample_rate = sample_rate;
-        let fade = (TRANSITION_SECONDS * sample_rate).round() as usize;
-        self.cascade_l.set_fade_len(fade);
-        self.cascade_r.set_fade_len(fade);
+        self.control_phase = 0;
+        // Never shorter than one control block, or the ramp would overshoot.
+        self.coeff_ramp_samples =
+            ((COEFF_RAMP_SECONDS * sample_rate).round() as usize).max(BLOCK_SIZE);
         self.cascade_l.reset();
         self.cascade_r.reset();
+        self.width_hp_l = GuardBiquad::high_pass(WIDTH_GUARD_LO_HZ, sample_rate);
+        self.width_hp_r = GuardBiquad::high_pass(WIDTH_GUARD_LO_HZ, sample_rate);
+        self.width_lp_l = GuardBiquad::low_pass(WIDTH_GUARD_HI_HZ, sample_rate);
+        self.width_lp_r = GuardBiquad::low_pass(WIDTH_GUARD_HI_HZ, sample_rate);
+        self.width_hp_l.reset();
+        self.width_hp_r.reset();
+        self.width_lp_l.reset();
+        self.width_lp_r.reset();
         self.output_gain = 1.0;
         self.target_output_gain = 1.0;
         self.delta_output_gain = 0.0;
@@ -390,16 +532,25 @@ impl FilterEngine {
             corner
         };
 
-        // Dual frozen-cascade law: the transition owns its own sample-counted
-        // timing, so there is no per-chunk coefficient ramp any more (the
-        // `coeff_ramp_scale` debug knob is inert). Equal corners are a no-op.
-        self.cascade_l.set_target(&corner);
-        self.cascade_r.set_target(&corner);
+        // Per-sample additive coefficient ramping — the X3's control law, from
+        // Ghidra: "after each sample, 5 delta values are added to each active
+        // stage's 5 coefficients." The deltas are recomputed from the CURRENT
+        // coefficients every control block, so any float drift self-corrects.
+        //
+        // Stability is free: the direct-form (a1,a2) region is the convex
+        // triangle |a2|<1, a1<1+a2, a1>-(1+a2). A straight line between two
+        // stable corners cannot leave a convex set, so the ramp is stable at
+        // every intermediate sample.
+        // Everything at control rate glides on the same lag — coefficients, body
+        // gain and SLAM. A machine where one of them snaps while the others slide
+        // reads as cheap; moving them together is what feels expensive.
+        let ramp = chunk_size.max(BLOCK_SIZE);
+        self.cascade_l.set_targets(&corner, ramp);
+        self.cascade_r.set_targets(&corner, ramp);
 
         self.target_output_gain = boost;
-        self.delta_output_gain = (boost - self.output_gain) / chunk_size.max(1) as f32;
-        self.delta_slam_drive =
-            (self.target_slam_drive - self.slam_drive) / chunk_size.max(1) as f32;
+        self.delta_output_gain = (boost - self.output_gain) / ramp as f32;
+        self.delta_slam_drive = (self.target_slam_drive - self.slam_drive) / ramp as f32;
     }
 
     #[inline]
@@ -513,29 +664,46 @@ impl FilterEngine {
         }
 
         let len = left.len().min(right.len());
-        let mut offset = 0;
 
-        while offset < len {
-            let remaining = len - offset;
-            let chunk = remaining.min(BLOCK_SIZE);
-
-            self.set_parameters(morph, q, chunk);
-            if self.input_mode == InputMode::MackieDeskSlam {
-                self.configure_desk_drive();
+        // Fixed 32-sample control grid, phase-CONTINUOUS across host blocks.
+        //
+        // The old loop restarted the grid at every process_block call and ramped
+        // over `remaining.min(BLOCK_SIZE)` — so a host block of, say, 100 samples
+        // produced chunks of 32/32/32/4, and the 4-sample chunk ramped four times
+        // faster. THAT is what made the ramp block-size dependent (E3), not the
+        // ramp itself. Carrying the phase across calls means every control block
+        // is exactly BLOCK_SIZE samples regardless of what the host hands us, so
+        // the output is identical at any buffer size.
+        for i in 0..len {
+            if self.control_phase == 0 {
+                // Deltas are recomputed from the CURRENT state every control
+                // block, so the approach is exponential and self-correcting —
+                // no snapping, and float drift can never accumulate.
+                self.set_parameters(morph, q, self.coeff_ramp_samples);
+                if self.input_mode == InputMode::MackieDeskSlam {
+                    self.configure_desk_drive();
+                }
             }
 
-            for i in 0..chunk {
-                let (out_l, out_r) = self.process_sample_inner(left[offset + i], right[offset + i]);
-                left[offset + i] = out_l;
-                right[offset + i] = out_r;
-            }
+            let (out_l, out_r) = self.process_sample_inner(left[i], right[i]);
+            left[i] = out_l;
+            right[i] = out_r;
 
-            self.snap_to_target();
-            offset += chunk;
+            self.control_phase += 1;
+            if self.control_phase >= BLOCK_SIZE {
+                self.control_phase = 0;
+            }
         }
 
         // 7. Spatial Stage (Final payload) — selectable.
-        if self.debug.spatial_enabled {
+        if self.debug.spatial_enabled && self.spatial_mode != SpatialMode::Off {
+            // Snapshot the pre-spatial signal so the WIDTH GUARD below can isolate
+            // exactly what the spatial stage added.
+            self.width_dry_l.clear();
+            self.width_dry_r.clear();
+            self.width_dry_l.extend_from_slice(left);
+            self.width_dry_r.extend_from_slice(right);
+
             match self.spatial_mode {
                 SpatialMode::QSound => {
                     self.spatial.set_space(self.space);
@@ -547,6 +715,38 @@ impl FilterEngine {
                 }
                 SpatialMode::Off => {}
             }
+
+            self.apply_width_guard(left, right);
+        }
+    }
+
+    /// WIDTH GUARD — keeps the spatial stage from destroying the mono fold-down.
+    ///
+    /// Measured on real decorrelated stereo, QSound at full space collapsed the
+    /// mono sum by 14-15 dB from 20 Hz to 500 Hz (and 9 dB to 1 kHz), while being
+    /// perfectly mono-clean above 1 kHz. All the cancellation lived in the low
+    /// end; none of the effect needs to. Left alone it would gut ORBIT on a club
+    /// rig, a phone, or any mono bus.
+    ///
+    /// This runs OUTSIDE `qsound_spatial` on purpose. That model is a null-verified
+    /// re-capture of the real thing and must stay byte-exact — band-limiting inside
+    /// it broke its own azimuth/bounds tests. So the guard sits here, as a product
+    /// safety layer, and the model underneath is untouched.
+    ///
+    /// It filters ONLY what the spatial stage ADDED (`wet - dry`). The dry signal
+    /// passes through at every frequency, so the SOURCE's own stereo image survives
+    /// intact — band-limiting the total side channel instead would have collapsed
+    /// the user's own low-end stereo, a worse bug than the one being fixed.
+    fn apply_width_guard(&mut self, left: &mut [f32], right: &mut [f32]) {
+        let n = left.len().min(right.len()).min(self.width_dry_l.len());
+        for i in 0..n {
+            let (dry_l, dry_r) = (self.width_dry_l[i], self.width_dry_r[i]);
+            let add_l = left[i] - dry_l;
+            let add_r = right[i] - dry_r;
+            let band_l = self.width_lp_l.process(self.width_hp_l.process(add_l));
+            let band_r = self.width_lp_r.process(self.width_hp_r.process(add_r));
+            left[i] = dry_l + band_l;
+            right[i] = dry_r + band_r;
         }
     }
 
@@ -858,8 +1058,12 @@ mod tests {
         engine.load_cartridge(cartridge);
         engine.set_amount(1.0); // default, but explicit for clarity
 
-        let mut l = vec![0.0_f32; BLOCK_SIZE * 8];
-        let mut r = vec![0.0_f32; BLOCK_SIZE * 8];
+        // Coefficients now GLIDE to their target over COEFF_RAMP_SECONDS rather
+        // than snapping (see `COEFF_RAMP_SECONDS` — the X3 ramps per sample).
+        // Run long enough for the exponential approach to settle before reading
+        // them, or we would be asserting against a coefficient still in flight.
+        let mut l = vec![0.0_f32; BLOCK_SIZE * 2048];
+        let mut r = vec![0.0_f32; BLOCK_SIZE * 2048];
         engine.process_block(&mut l, &mut r, 0.5, 0.5);
 
         let mut coeffs = [[0.0_f64; crate::cascade::NUM_COEFFS]; crate::cascade::NUM_STAGES];
@@ -929,8 +1133,10 @@ mod tests {
             engine.load_cartridge(make_resonant_cartridge());
             engine.set_amount(amt);
 
-            let mut l = vec![0.0_f32; BLOCK_SIZE * 8];
-            let mut r = vec![0.0_f32; BLOCK_SIZE * 8];
+            // Long enough for the coefficient glide to settle — see the note in
+            // `amount_one_leaves_cascade_targets_at_full_strength`.
+            let mut l = vec![0.0_f32; BLOCK_SIZE * 2048];
+            let mut r = vec![0.0_f32; BLOCK_SIZE * 2048];
             engine.process_block(&mut l, &mut r, 0.5, 0.5);
 
             let mut coeffs = [[0.0_f64; NUM_COEFFS]; crate::cascade::NUM_STAGES];
@@ -1446,6 +1652,72 @@ mod tests {
         }
     }
 
+    /// E3 REGRESSION GUARD — a moving morph must be bit-identical at any buffer size.
+    ///
+    /// E3 (2026-07) found coefficient ramping was host-block dependent (worst
+    /// 512-vs-16 null: -2.6 dBFS) and the response was to delete the ramp and
+    /// crossfade two frozen cascades. But Ghidra says the X3 DOES ramp
+    /// per-sample, and deleting it is what made a moving morph step instead of
+    /// glide.
+    ///
+    /// The actual bug was ramping over the HOST block: a 100-sample buffer gave
+    /// chunks of 32/32/32/4, and the 4-sample chunk ramped 8x faster. The fix is
+    /// a fixed 32-sample control grid whose phase survives block boundaries — so
+    /// the ramp is faithful AND deterministic. This locks that door.
+    #[test]
+    fn moving_morph_is_identical_at_any_buffer_size() {
+        use crate::cartridge::Cartridge;
+        const BODY: &[u8; 240] = include_bytes!("../tests/fixtures/sf_mouth_frame.body240");
+        const N: usize = 8192;
+
+        // The morph value is held CONSTANT. That is deliberate: the host hands us
+        // one morph value per buffer, so a MOVING morph is quantised to the host
+        // block rate by the API itself — a 16-sample buffer genuinely receives
+        // different automation than a 512-sample one, and no engine can null
+        // across that. What must be block-size independent is the RAMP: the
+        // cascade starts at identity and glides to the corner, and that glide
+        // must be identical no matter how the host chops the audio.
+        let render = |block: usize| -> Vec<f32> {
+            let mut eng = FilterEngine::new();
+            eng.prepare(39_062.5);
+            eng.load_cartridge(Cartridge::from_body_bytes("d", BODY.as_slice(), 1.0).unwrap());
+            let src: Vec<f32> = (0..N)
+                .map(|i| ((i as f64 * 0.013).sin() * 0.4) as f32)
+                .collect();
+            let mut out = Vec::with_capacity(N);
+            let mut off = 0;
+            while off < N {
+                let n = block.min(N - off);
+                let mut l = src[off..off + n].to_vec();
+                let mut r = l.clone();
+                eng.process_block(&mut l, &mut r, 0.5, 1.0);
+                out.extend_from_slice(&l);
+                off += n;
+            }
+            out
+        };
+
+        let reference = render(512);
+        for &block in &[16usize, 32, 64, 100, 128, 333, 1024] {
+            let other = render(block);
+            let peak = reference
+                .iter()
+                .zip(other.iter())
+                .map(|(a, b)| (a - b).abs())
+                .fold(0.0f32, f32::max);
+            let db = if peak <= 0.0 {
+                -300.0
+            } else {
+                20.0 * (peak as f64).log10()
+            };
+            assert!(
+                db < -120.0,
+                "block {block} vs 512: peak residual {db:.1} dBFS — the ramp is block-size \
+                 dependent again (E3). The control grid phase must survive block boundaries."
+            );
+        }
+    }
+
     /// The saturator is a safety net, not a level control.
     ///
     /// The AGC curve cannot reduce until `|x| >= AGC_FIRST_TOOTH` (2.0), but the
@@ -1549,5 +1821,250 @@ mod tests {
             agc_gain: eng.agc_gain,
             attack,
         }
+    }
+}
+
+#[cfg(test)]
+mod ramp_taste {
+    use super::*;
+    use crate::cartridge::Cartridge;
+
+    /// Render the SAME morph sweep at several coefficient-ramp lengths so the
+    /// ramp time can be chosen by ear instead of by my guess.
+    ///
+    /// 0.8 ms  = the X3's own hard snap (ramp == one control block)
+    /// 20 ms   = current default
+    /// 80 ms   = slow, expensive, syrupy
+    ///
+    /// Level-matched. Nothing else differs.
+    ///   cargo test -p trench-core --lib render_ramp_taste -- --ignored --nocapture
+    #[test]
+    #[ignore = "renders the ramp-time A/B for Tyson's ear"]
+    fn render_ramp_taste() {
+        const SR: f64 = 39_062.5;
+        const OUT_SR: u32 = 44_100;
+        const SECS: f64 = 6.0;
+        const HOST_BLOCK: usize = 256;
+
+        let body = std::fs::read("../filters/bodies/CAVL_mason_jar_to_stone_pipe.body240")
+            .expect("roster body");
+        let n = (SECS * SR) as usize;
+
+        let render = |ramp_ms: f64| -> Vec<f32> {
+            let mut eng = FilterEngine::new();
+            eng.prepare(SR);
+            eng.load_cartridge(Cartridge::from_body_bytes("d", &body, 1.0).unwrap());
+            // override the ramp for this take
+            eng.coeff_ramp_samples =
+                (((ramp_ms / 1000.0) * SR).round() as usize).max(BLOCK_SIZE);
+
+            let mut rng = 0x2545_F491_4F6C_DD1Du64;
+            let mut pb = [0f64; 7];
+            let mut out = Vec::with_capacity(n);
+            let mut off = 0;
+            while off < n {
+                let len = HOST_BLOCK.min(n - off);
+                let mut l: Vec<f32> = (0..len)
+                    .map(|_| {
+                        rng = rng.wrapping_mul(6364136223846793005).wrapping_add(1442695040888963407);
+                        let w = ((rng >> 40) as f64 / (1u64 << 23) as f64) - 1.0;
+                        pb[0] = 0.99886 * pb[0] + w * 0.0555179;
+                        pb[1] = 0.99332 * pb[1] + w * 0.0750759;
+                        pb[2] = 0.96900 * pb[2] + w * 0.1538520;
+                        pb[3] = 0.86650 * pb[3] + w * 0.3104856;
+                        pb[4] = 0.55000 * pb[4] + w * 0.5329522;
+                        pb[5] = -0.7616 * pb[5] - w * 0.0168980;
+                        let s = (pb[0]+pb[1]+pb[2]+pb[3]+pb[4]+pb[5]+pb[6] + w*0.5362) * 0.11;
+                        pb[6] = w * 0.115926;
+                        (s * 0.6) as f32
+                    })
+                    .collect();
+                let mut r = l.clone();
+                // morph sweeps 0 -> 1 -> 0 so the ramp is exercised both ways
+                let t = (off + len / 2) as f64 / n as f64;
+                let morph = 1.0 - (2.0 * t - 1.0).abs();
+                eng.process_block(&mut l, &mut r, morph, 1.0);
+                out.extend_from_slice(&l);
+                off += len;
+            }
+            out
+        };
+
+        let dir = "C:/Users/hooki/df2-workstation/out/ramp_taste";
+        std::fs::create_dir_all(dir).unwrap();
+        println!("\nCAVL_mason_jar_to_stone_pipe, Q100, morph sweeping 0->1->0 over 6 s, pink noise.");
+        println!("Only the coefficient ramp time differs. All level-matched to -6 dBFS.\n");
+
+        for &ms in &[0.8f64, 5.0, 10.0, 20.0, 40.0, 80.0] {
+            let s = render(ms);
+            // resample -> 44.1k, peak-normalise so the A/B is honest
+            let ratio = SR / OUT_SR as f64;
+            let on = (s.len() as f64 / ratio) as usize;
+            let mut v: Vec<f32> = (0..on)
+                .map(|i| {
+                    let p = i as f64 * ratio;
+                    let i0 = p.floor() as usize;
+                    let fr = (p - i0 as f64) as f32;
+                    let a = s.get(i0).copied().unwrap_or(0.0);
+                    let b = s.get(i0 + 1).copied().unwrap_or(a);
+                    a + (b - a) * fr
+                })
+                .collect();
+            let pk = v.iter().fold(0.0f32, |m, &x| m.max(x.abs())).max(1e-9);
+            let g = 0.5012 / pk;
+            for x in v.iter_mut() { *x *= g; }
+
+            let mut b = Vec::new();
+            let dl = (v.len() * 2) as u32;
+            b.extend_from_slice(b"RIFF");
+            b.extend_from_slice(&(36 + dl).to_le_bytes());
+            b.extend_from_slice(b"WAVEfmt ");
+            b.extend_from_slice(&16u32.to_le_bytes());
+            b.extend_from_slice(&1u16.to_le_bytes());
+            b.extend_from_slice(&1u16.to_le_bytes());
+            b.extend_from_slice(&OUT_SR.to_le_bytes());
+            b.extend_from_slice(&(OUT_SR * 2).to_le_bytes());
+            b.extend_from_slice(&2u16.to_le_bytes());
+            b.extend_from_slice(&16u16.to_le_bytes());
+            b.extend_from_slice(b"data");
+            b.extend_from_slice(&dl.to_le_bytes());
+            for &x in &v { b.extend_from_slice(&((x.clamp(-1.0,1.0) * 32767.0) as i16).to_le_bytes()); }
+            let name = format!("{dir}/ramp_{:0>5.1}ms.wav", ms);
+            std::fs::write(&name, b).unwrap();
+            println!("  {name}");
+        }
+    }
+}
+
+#[cfg(test)]
+mod stage_taste {
+    use super::*;
+    use crate::cartridge::Cartridge;
+    use crate::desk_drive::mackity_saturate;
+
+    /// Render the stages Tyson has never heard: SLAM and QSound.
+    ///
+    /// SLAM lives in C++ (`SlamStage.h`) so its law is mirrored here for the
+    /// audition ONLY — drive = 10^(12*s/20), then a HARD clip at +/-1.0. Not
+    /// shipped code; the plug-in still owns the real one.
+    ///
+    /// Also renders `mackity_saturate` — the soft Mackie desk model that already
+    /// exists in `desk_drive.rs` and is wired to an input mode that is hard-wired
+    /// off. It is the curve SLAM arguably should be.
+    ///   cargo test -p trench-core --lib render_stage_taste -- --ignored --nocapture
+    #[test]
+    #[ignore = "renders SLAM / QSound / soft-desk auditions"]
+    fn render_stage_taste() {
+        const SR: f64 = 39_062.5;
+        const OUT: u32 = 44_100;
+        const SECS: f64 = 6.0;
+        const HB: usize = 256;
+
+        let body = std::fs::read("../filters/bodies/CAVL_mason_jar_to_stone_pipe.body240").unwrap();
+        let n = (SECS * SR) as usize;
+
+        // slam: 0 = off. `hard` = the shipped C++ law; false = the soft Mackie curve.
+        let render = |slam: f32, hard: bool, qsound: bool| -> (Vec<f32>, Vec<f32>) {
+            let mut eng = FilterEngine::new();
+            eng.prepare(SR);
+            eng.load_cartridge(Cartridge::from_body_bytes("d", &body, 1.0).unwrap());
+            eng.set_spatial_mode(if qsound { SpatialMode::QSound } else { SpatialMode::Off });
+            if qsound { eng.set_space(1.0); }
+
+            let mut rng = 0x2545_F491_4F6C_DD1Du64;
+            let mut pb = [0f64; 7];
+            let mut pr = [0f64; 7];   // independent pink state for the RIGHT channel
+            let (mut ol, mut or_) = (Vec::with_capacity(n), Vec::with_capacity(n));
+            let mut off = 0;
+            while off < n {
+                let len = HB.min(n - off);
+                let mut l: Vec<f32> = (0..len).map(|_| {
+                    rng = rng.wrapping_mul(6364136223846793005).wrapping_add(1442695040888963407);
+                    let w = ((rng >> 40) as f64 / (1u64 << 23) as f64) - 1.0;
+                    pb[0]=0.99886*pb[0]+w*0.0555179; pb[1]=0.99332*pb[1]+w*0.0750759;
+                    pb[2]=0.96900*pb[2]+w*0.1538520; pb[3]=0.86650*pb[3]+w*0.3104856;
+                    pb[4]=0.55000*pb[4]+w*0.5329522; pb[5]=-0.7616*pb[5]-w*0.0168980;
+                    let s=(pb[0]+pb[1]+pb[2]+pb[3]+pb[4]+pb[5]+pb[6]+w*0.5362)*0.11;
+                    pb[6]=w*0.115926;
+                    (s*0.6) as f32
+                }).collect();
+                // DECORRELATED right channel - the old harness cloned left, so every
+                // render came out mono and the QSound reading was measured against a
+                // mono source (a far harsher test than real material).
+                let mut r: Vec<f32> = (0..len).map(|_| {
+                    rng = rng.wrapping_mul(6364136223846793005).wrapping_add(1442695040888963407);
+                    let w = ((rng >> 40) as f64 / (1u64 << 23) as f64) - 1.0;
+                    pr[0]=0.99886*pr[0]+w*0.0555179; pr[1]=0.99332*pr[1]+w*0.0750759;
+                    pr[2]=0.96900*pr[2]+w*0.1538520; pr[3]=0.86650*pr[3]+w*0.3104856;
+                    pr[4]=0.55000*pr[4]+w*0.5329522; pr[5]=-0.7616*pr[5]-w*0.0168980;
+                    let s=(pr[0]+pr[1]+pr[2]+pr[3]+pr[4]+pr[5]+pr[6]+w*0.5362)*0.11;
+                    pr[6]=w*0.115926;
+                    (s*0.6) as f32
+                }).collect();
+                let t = (off + len/2) as f64 / n as f64;
+                let morph = 1.0 - (2.0*t - 1.0).abs();
+                eng.process_block(&mut l, &mut r, morph, 1.0);
+
+                if slam > 1e-4 {
+                    let drive = 10f32.powf(12.0 * slam / 20.0);   // SlamStage.h: 0..+12 dB
+                    for v in l.iter_mut().chain(r.iter_mut()) {
+                        let x = *v * drive;
+                        *v = if hard {
+                            x.clamp(-1.0, 1.0)                     // shipped: HARD clip
+                        } else {
+                            mackity_saturate(x as f64) as f32      // the soft desk curve
+                        };
+                    }
+                }
+                ol.extend_from_slice(&l);
+                or_.extend_from_slice(&r);
+                off += len;
+            }
+            (ol, or_)
+        };
+
+        let dir = "C:/Users/hooki/df2-workstation/out/stage_taste";
+        std::fs::create_dir_all(dir).unwrap();
+
+        let write = |name: &str, l: &[f32], r: &[f32]| {
+            let ratio = SR / OUT as f64;
+            let on = (l.len() as f64 / ratio) as usize;
+            let rs = |s: &[f32]| -> Vec<f32> {
+                (0..on).map(|i| {
+                    let p = i as f64 * ratio; let i0 = p.floor() as usize;
+                    let f = (p - i0 as f64) as f32;
+                    let a = s.get(i0).copied().unwrap_or(0.0);
+                    let b = s.get(i0+1).copied().unwrap_or(a);
+                    a + (b-a)*f
+                }).collect()
+            };
+            let (mut a, mut b) = (rs(l), rs(r));
+            let pk = a.iter().chain(b.iter()).fold(0.0f32,|m,&x| m.max(x.abs())).max(1e-9);
+            let g = 0.5012 / pk;                       // level-match every take to -6 dBFS
+            for x in a.iter_mut().chain(b.iter_mut()) { *x *= g; }
+            let mut w = Vec::new();
+            let dl = (a.len()*4) as u32;
+            w.extend_from_slice(b"RIFF"); w.extend_from_slice(&(36+dl).to_le_bytes());
+            w.extend_from_slice(b"WAVEfmt "); w.extend_from_slice(&16u32.to_le_bytes());
+            w.extend_from_slice(&1u16.to_le_bytes()); w.extend_from_slice(&2u16.to_le_bytes());
+            w.extend_from_slice(&OUT.to_le_bytes()); w.extend_from_slice(&(OUT*4).to_le_bytes());
+            w.extend_from_slice(&4u16.to_le_bytes()); w.extend_from_slice(&16u16.to_le_bytes());
+            w.extend_from_slice(b"data"); w.extend_from_slice(&dl.to_le_bytes());
+            for i in 0..a.len() {
+                w.extend_from_slice(&((a[i].clamp(-1.0,1.0)*32767.0) as i16).to_le_bytes());
+                w.extend_from_slice(&((b[i].clamp(-1.0,1.0)*32767.0) as i16).to_le_bytes());
+            }
+            let p = format!("{dir}/{name}.wav");
+            std::fs::write(&p, w).unwrap();
+            println!("  {p}");
+        };
+
+        println!("\nmason_jar -> stone_pipe, Q100, morph 0->1->0, 80 ms ramp. Level-matched.\n");
+        let (l,r) = render(0.0, true, false);  write("1_baseline_clean", &l, &r);
+        let (l,r) = render(0.5, true, false);  write("2_SLAM_50_hardclip_SHIPPED", &l, &r);
+        let (l,r) = render(1.0, true, false);  write("3_SLAM_100_hardclip_SHIPPED", &l, &r);
+        let (l,r) = render(0.5, false, false); write("4_SLAM_50_soft_mackie_UNUSED", &l, &r);
+        let (l,r) = render(1.0, false, false); write("5_SLAM_100_soft_mackie_UNUSED", &l, &r);
+        let (l,r) = render(0.0, true, true);   write("6_QSOUND", &l, &r);
     }
 }

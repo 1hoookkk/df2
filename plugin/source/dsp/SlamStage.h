@@ -97,6 +97,9 @@ inline float slamOutputGainDb (float slamNorm) noexcept
 
 constexpr float kSlamPressureKnee = 0.72f;
 
+// The desk curve itself lives in trench-core (see `desk_drive::mackity_saturate`).
+extern "C" void trench_desk_saturate_stereo (float* left, float* right, int numSamples, float drive);
+
 inline float slamRoundedLimit (float x) noexcept
 {
     const float a = std::fabs (x);
@@ -120,19 +123,29 @@ inline float slamOutputPressureBlock (float* data, int n, float slamNorm) noexce
         return 0.0f;
 
     const float drive = std::pow (10.0f, slamOutputGainDb (s) / 20.0f);
+
     int limited = 0;
     for (int i = 0; i < n; ++i)
-    {
-        const float driven = data[i] * drive;
-        if (std::fabs (driven) > kSlamPressureKnee)
+        if (std::fabs (data[i] * drive) > kSlamPressureKnee)
             ++limited;
-        data[i] = slamRoundedLimit (driven);
-    }
+
+    trench_desk_saturate_stereo (data, nullptr, n, drive);   // null right = mono
 
     return (float) limited / (float) n;
 }
 
 // Final plug-in stage: SLAM affects only the completely rendered stereo output.
+//
+// SLAM IS THE MACKIE DESK. It runs at host rate, last in the chain — the desk is
+// the finish line, outside the box, exactly as the E-mu signal path has it. The
+// curve is `desk_drive::mackity_saturate` (x - x^5 * 0.1768), the measured model
+// that was already sitting in trench-core wired to an input mode that is
+// hard-wired off. It is owned there and nowhere else.
+//
+// This used to be `slamRoundedLimit` — a generic tanh knee at 0.72. It sounded
+// fine, but it meant TRENCH's "Mackie desk" was not the Mackie model. The desk
+// curve stays near-linear far longer and then compresses hard, which is what a
+// real preamp does; a tanh starts leaning on the signal from 0.72 upward.
 inline float slamOutputPressureBlockStereo (float* left, float* right, int n, float slamNorm) noexcept
 {
     if (left == nullptr || right == nullptr || n <= 0)
@@ -145,18 +158,15 @@ inline float slamOutputPressureBlockStereo (float* left, float* right, int n, fl
         return 0.0f;
 
     const float drive = std::pow (10.0f, slamOutputGainDb (s) / 20.0f);
+
+    // Metering only — count how hard the desk is being pushed, before it acts.
     int limited = 0;
     for (int i = 0; i < n; ++i)
-    {
-        float l = left[i] * drive;
-        float r = right[i] * drive;
-
-        if (std::fabs (l) > kSlamPressureKnee || std::fabs (r) > kSlamPressureKnee)
+        if (std::fabs (left[i] * drive) > kSlamPressureKnee
+            || std::fabs (right[i] * drive) > kSlamPressureKnee)
             ++limited;
 
-        left[i] = slamRoundedLimit (l);
-        right[i] = slamRoundedLimit (r);
-    }
+    trench_desk_saturate_stereo (left, right, n, drive);
 
     return (float) limited / (float) n;
 }

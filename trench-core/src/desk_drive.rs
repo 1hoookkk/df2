@@ -158,7 +158,7 @@ impl Biquad {
 }
 
 #[inline(always)]
-fn mackity_saturate(sample: f64) -> f64 {
+pub fn mackity_saturate(sample: f64) -> f64 {
     let clipped = sample.clamp(-1.0, 1.0);
     clipped - clipped.powi(5) * MACKITY_CURVE
 }

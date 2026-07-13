@@ -856,8 +856,8 @@ void PluginProcessor::processBlock (juce::AudioBuffer<float>& buffer, juce::Midi
     // smoothing needed.
     params.amount = juce::jlimit (0.0f, 1.0f, apvts.getRawParameterValue (ParamID::amount)->load());
 
-    if (! trench::bodyIsNoFilter (loadedBodyIndex.load (std::memory_order_relaxed)))
-        fixedRateIsland.process (buffer, dspBridge, params);
+    // Always. NO FILTER is a body (exact identity), not a bypass — see loadBody().
+    fixedRateIsland.process (buffer, dspBridge, params);
 
     // GUARD — MOVE output safety/compensation. The gesture's GUARD lane ducks the wet
     // output (up to kGuardMaxDb) at the gesture's peak so a build/suck/pulse cannot throw
@@ -1016,17 +1016,15 @@ void PluginProcessor::handleAsyncUpdate()
 
     lastLoadOk.store (false, std::memory_order_release);
 
-    if (trench::bodyIsNoFilter (want))   // No Filter = true bypass: load nothing; processBlock passes through
-    {
-        currentBodyBytes.setSize (0);
-        rosterBodyBytes.setSize (0);
-        lastLoadOk.store (true, std::memory_order_release);
-        controlSmoothersPrimed = false;
-        loadedBodyIndex.store (want, std::memory_order_relaxed);
-        juce::Logger::writeToLog ("body switch -> No Filter (bypass)");
-        return;
-    }
-
+    // NO FILTER is a BODY, not a bypass. It loads `identity.body240` (an exact
+    // identity cascade) and runs the full chain — island, SRC, DC blocker,
+    // leveller, saturator — like any other preset.
+    //
+    // It used to short-circuit the whole DSP path instead. That made it a
+    // different DEVICE, not a reference: switching off it changed the sample
+    // rate, the bandwidth and the gain structure all at once, so A/B-ing TYPE
+    // compared plug-in-vs-no-plug-in rather than filter-vs-no-filter. NO FILTER
+    // is now "the machine with a flat filter", which is the honest reference.
     juce::MemoryBlock raw;
     juce::String json;
     bool ok;
