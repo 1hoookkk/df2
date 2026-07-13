@@ -187,13 +187,23 @@ const AGC_FIRST_TOOTH: f32 = 2.0;
 
 /// Pre-AGC scale that lands the curve's first tooth **on** the saturator's knee.
 ///
-/// Derived, not voiced: with this scale the verified leveler owns steady-state
-/// level, and the saturator is left doing only what its docs claim — catching
-/// the leveler's attack overshoot (a feedback leveler has no lookahead;
-/// measured 1.64x on ring-in). `diag_limiter_handoff` shows this is the
-/// optimum: distortion has already fallen to the curve's own floor and the peak
-/// is as loud as it can be (0.92) without waking the tanh. Larger values (the
-/// repo's old 3.0-4.0 voicing) only make bodies quieter for no further benefit.
+/// IMPORTANT — this is NOT a ROM constant. The EmulatorX.dll AGC
+/// (`FUN_1802c04e0`, read from trench_re_vault) indexes the table with
+/// `(int)(|sample| * agc_gain) & 0xf` — the raw sample, no pre-scale. The binary
+/// needs none because its samples already sit in an integer-magnitude domain
+/// where `|x|` reaches the table's teeth (2..15). Our float engine normalises to
+/// +/-1.0, so without a bridge `|x|*gain` floors to index 0/1 (the two 1.0001
+/// no-reduction teeth) and the verified curve never engages — see
+/// `diag_pre_agc_scaling`.
+///
+/// So AGC_DRIVE is a clean-room DOMAIN ADAPTATION, and the value is a voicing
+/// choice: it lands the curve's first tooth on the saturator knee, so the
+/// verified leveler owns steady-state level and the saturator only catches the
+/// leveler's attack overshoot (no lookahead; measured 1.64x on ring-in).
+/// `diag_limiter_handoff` shows this is the optimum — distortion at the curve's
+/// own floor, peak as loud as possible (0.92) without waking the tanh. The AGC
+/// MATH itself is bit-exact to the binary (verified line-by-line); only this
+/// pre-scale is ours.
 pub const AGC_DRIVE: f32 = AGC_FIRST_TOOTH / SATURATE_KNEE; // 2.222...
 
 /// How long the coefficients take to reach a new corner.
