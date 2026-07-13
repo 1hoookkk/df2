@@ -1,0 +1,107 @@
+{
+  "format": "exact-skeleton-independent-verification-v1",
+  "generated_at_utc": "2026-06-11T11:59:19.544390+00:00",
+  "source": "tables\\exact_skeletons.json",
+  "runtime": "C:\\Users\\hooki\\df2\\target\\release\\trench_core.dll",
+  "method": "fresh scipy reference; table JSON compiled through trench_core.compile_body and checked through packed_probe",
+  "thresholds": {
+    "passband_max_db": 0.25,
+    "body_max_db": 3.0,
+    "grid": 17
+  },
+  "skeletons": [
+    {
+      "key": "butterworth",
+      "label": "butterworth-12 sweep (maximally flat)",
+      "verdict": "PASS",
+      "passband_max_db": 0.013642254735115426,
+      "body_max_db": 0.09929368155798102,
+      "grid": {
+        "grid": 17,
+        "max_pole_radius": 0.998387467111273,
+        "unstable_cells": 0,
+        "nonfinite_cells": 0
+      },
+      "frames": {
+        "lo": {
+          "cutoff_hz": 220.0,
+          "passband_max_db": 0.0066552169894414735,
+          "body_max_db": 0.0066552169894414735,
+          "max_pole_radius": 0.995392676078061,
+          "unstable_mask": 0,
+          "nonfinite_mask": 0
+        },
+        "hi": {
+          "cutoff_hz": 3520.0,
+          "passband_max_db": 0.013642254735115426,
+          "body_max_db": 0.09929368155798102,
+          "max_pole_radius": 0.9322771181360187,
+          "unstable_mask": 0,
+          "nonfinite_mask": 0
+        }
+      }
+    },
+    {
+      "key": "cheby2",
+      "label": "chebyshev-II-12 sweep (equiripple stopband, 60 dB)",
+      "verdict": "FAIL",
+      "passband_max_db": 0.7347348808180296,
+      "body_max_db": 7.138303658219193,
+      "grid": {
+        "grid": 17,
+        "max_pole_radius": 0.999241660588415,
+        "unstable_cells": 0,
+        "nonfinite_cells": 0
+      },
+      "frames": {
+        "lo": {
+          "cutoff_hz": 220.0,
+          "passband_max_db": 0.03910225762635289,
+          "body_max_db": 7.138303658219193,
+          "max_pole_radius": 0.9978332888202478,
+          "unstable_mask": 0,
+          "nonfinite_mask": 0
+        },
+        "hi": {
+          "cutoff_hz": 3520.0,
+          "passband_max_db": 0.7347348808180296,
+          "body_max_db": 3.084769085383769,
+          "max_pole_radius": 0.9668659224080982,
+          "unstable_mask": 0,
+          "nonfinite_mask": 0
+        }
+      }
+    },
+    {
+      "key": "elliptic",
+      "label": "elliptic-12 sweep (optimal transition, 1/60 dB)",
+      "verdict": "FAIL",
+      "passband_max_db": 0.10720167425775995,
+      "body_max_db": 22.026449165730867,
+      "grid": {
+        "grid": 17,
+        "max_pole_radius": 0.9997199977828692,
+        "unstable_cells": 0,
+        "nonfinite_cells": 0
+      },
+      "frames": {
+        "lo": {
+          "cutoff_hz": 220.0,
+          "passband_max_db": 0.10720167425775995,
+          "body_max_db": 22.026449165730867,
+          "max_pole_radius": 0.9992000241049771,
+          "unstable_mask": 0,
+          "nonfinite_mask": 0
+        },
+        "hi": {
+          "cutoff_hz": 3520.0,
+          "passband_max_db": 0.002757479964710874,
+          "body_max_db": 1.358038796326646,
+          "max_pole_radius": 0.9991923885730536,
+          "unstable_mask": 0,
+          "nonfinite_mask": 0
+        }
+      }
+    }
+  ]
+}

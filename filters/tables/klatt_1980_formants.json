@@ -1,0 +1,42 @@
+{
+  "format": "vowel-formants-v1",
+  "description": "Second reference table — Klatt 1980 + Mullen 2006 vowel formants for /a/, /e/, /o/, /u/. Captured from NotebookLM Q&A 2026-05-28 against the cited primary sources. Complements tables/vowel_formants.json (Peterson-Barney 1952) — use whichever calibration the ear says is right. Do NOT auto-replace VOWELS in forge/src/main.rs without explicit go-ahead; the existing 'FROZEN' comment there is load-bearing.",
+  "sources": {
+    "klatt_1980": "Dennis H. Klatt, 'Software for a cascade/parallel formant synthesizer', JASA 67(3):971-995, 1980. Klatt holds F4 (and F5) constant at 3300 Hz across vowels — 'higher-frequency resonators do not vary as much and could be held constant with little decrement in output sound quality.'",
+    "mullen_2006": "Jack Mullen, 'Physical modelling of the vocal tract with the 2D digital waveguide mesh', PhD thesis, University of York, 2006. Per-vowel F4 values; adult-male averages.",
+    "peterson_barney_1952": "See tables/vowel_formants.json — the current code base uses this. Adult-male averages. F4 not provided in that table."
+  },
+  "units": "Hz",
+  "note_on_F4": "Klatt held F4=3300 constant. Mullen measured per-vowel F4. The Forge's VOWELS constant is F1/F2/F3 only; if F4 is wired in later, prefer Klatt's 3300 constant unless the ear says otherwise.",
+  "vowels": [
+    {
+      "ipa": "a",
+      "example": "bard / father",
+      "klatt": { "f1": 700, "f2": 1220, "f3": 2600, "f4": 3300 },
+      "mullen": { "f1": 673, "f2": 1097, "f3": 2457, "f4": 3464 }
+    },
+    {
+      "ipa": "e",
+      "example": "bed / bet (Klatt [e^y] offglide; Mullen /E/)",
+      "klatt": { "f1": 490, "f2": 1720, "f3": 2520, "f4": 3300 },
+      "mullen": { "f1": 542, "f2": 1690, "f3": 2456, "f4": 3511 }
+    },
+    {
+      "ipa": "o",
+      "example": "bought (Klatt [o^w] offglide; Mullen /O/)",
+      "klatt": { "f1": 540, "f2": 1100, "f3": 2300, "f4": 3300 },
+      "mullen": { "f1": 615, "f2": 990, "f3": 2465, "f4": 3408 }
+    },
+    {
+      "ipa": "u",
+      "example": "boot",
+      "klatt": { "f1": 350, "f2": 1250, "f3": 2200, "f4": 3300 },
+      "mullen": { "f1": 342, "f2": 1067, "f3": 2219, "f4": 3342 }
+    }
+  ],
+  "phonetic_mapping_notes": "English vowel labels are slippery. The Forge's 'Ee' is the high front /i/ (as in 'see'), NOT /e/ (as in 'bed'). The 'Oo' is /u/ (as in 'boot'), NOT /o/ (as in 'bought'). When wiring this table into UI overlays, surface the IPA + example word, not just an English-sound nickname.",
+  "linked_memories": [
+    "notebooklm-trusted-sources",
+    "armadillo-morphing-rules"
+  ]
+}

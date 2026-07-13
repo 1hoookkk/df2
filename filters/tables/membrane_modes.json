@@ -1,0 +1,34 @@
+{
+  "format": "membrane-modes-v1",
+  "description": "Ideal circular membrane (drumhead) modal frequencies. INHARMONIC, like metal, but with its own signature spacing. Multiply each ratio by a chosen fundamental (the (0,1) mode) and place a resonance there. A real drum adds air loading and a kettle, but these ideal ratios are the recognizable skeleton.",
+  "source": "Standard membrane vibration theory: mode (m,n) frequency = (alpha_mn / alpha_01) * f0, where alpha_mn is the n-th zero of the Bessel function J_m. Rossing & Fletcher, 'The Physics of Musical Instruments', ch. on membranes/timpani.",
+  "units": "ratio (multiply by fundamental_hz of the (0,1) mode)",
+  "q_guidance": {
+    "note": "A free membrane rings moderately; a damped/loaded drumhead is short. Bandwidth sets the ring.",
+    "typical_bandwidth_hz": { "ringing_head": 15, "tuned_timpani": 30, "dead_head": 120 },
+    "radius_hint": "r = exp(-pi*BW/39062.5)"
+  },
+  "objects": [
+    {
+      "key": "ideal_membrane",
+      "name": "ideal circular membrane (uniform tension, no air load)",
+      "modes": ["(0,1)", "(1,1)", "(2,1)", "(0,2)", "(3,1)", "(1,2)", "(4,1)", "(2,2)", "(0,3)", "(5,1)"],
+      "ratios": [1.000, 1.593, 2.136, 2.295, 2.653, 2.917, 3.155, 3.500, 3.598, 3.647],
+      "fundamental_hint_hz": 110,
+      "example_at_110_hz": [110, 175, 235, 252, 292, 321, 347, 385, 396, 401],
+      "note": "dense, NON-harmonic, no clear pitch — the 'untuned drum' skeleton"
+    },
+    {
+      "key": "timpani_like",
+      "name": "kettledrum-style (air-loaded; lowest modes pulled toward a near-harmonic 2:3:4:5)",
+      "modes": ["(1,1)", "(2,1)", "(3,1)", "(4,1)", "(5,1)"],
+      "ratios": [1.000, 1.504, 1.998, 2.495, 2.993],
+      "fundamental_hint_hz": 150,
+      "example_at_150_hz": [150, 226, 300, 374, 449],
+      "note": "air loading shifts the principal (m,1) modes to ~1:1.5:2:2.5:3 -> the timpani's sense of pitch lives here"
+    }
+  ],
+  "morph_pairs": [
+    { "name": "ideal -> timpani", "from": "ideal_membrane", "to": "timpani_like", "motion": "dense inharmonic cluster pulls toward the near-harmonic timpani spacing as air loading engages" }
+  ]
+}

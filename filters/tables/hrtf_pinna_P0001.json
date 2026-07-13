@@ -1,0 +1,598 @@
+{
+  "format": "hrtf-pinna-rails-v1",
+  "source": "SONICOM HRTF dataset, subject P0001, FreeFieldComp 48kHz, LEFT ear. Measured (not modelled).",
+  "method": "rfft magnitude per direction; pinna notch = deepest dip 5-12kHz; concha peak = max 3-6kHz. Raw measured magnitude, no fit/gain/AGC.",
+  "note": "The morph is a MEASURED physical trajectory: as direction moves, the notch/peak sweep. P2K could not do this.",
+  "median_plane_az0_elevation_sweep": [
+    {
+      "el_deg": -45,
+      "pinna_notch_hz": 8690,
+      "notch_db": -12.5,
+      "concha_peak_hz": 3565,
+      "peak_db": 9.6
+    },
+    {
+      "el_deg": -30,
+      "pinna_notch_hz": 9681,
+      "notch_db": -10.4,
+      "concha_peak_hz": 4081,
+      "peak_db": 7.2
+    },
+    {
+      "el_deg": -20,
+      "pinna_notch_hz": 8458,
+      "notch_db": -5.6,
+      "concha_peak_hz": 3763,
+      "peak_db": 10.2
+    },
+    {
+      "el_deg": -10,
+      "pinna_notch_hz": 8458,
+      "notch_db": -7.2,
+      "concha_peak_hz": 3565,
+      "peak_db": 11.7
+    },
+    {
+      "el_deg": 0,
+      "pinna_notch_hz": 8927,
+      "notch_db": -8.6,
+      "concha_peak_hz": 3972,
+      "peak_db": 11.6
+    },
+    {
+      "el_deg": 10,
+      "pinna_notch_hz": 7800,
+      "notch_db": -9.9,
+      "concha_peak_hz": 4307,
+      "peak_db": 11.0
+    },
+    {
+      "el_deg": 20,
+      "pinna_notch_hz": 8233,
+      "notch_db": -12.6,
+      "concha_peak_hz": 3763,
+      "peak_db": 12.2
+    },
+    {
+      "el_deg": 30,
+      "pinna_notch_hz": 8927,
+      "notch_db": -9.9,
+      "concha_peak_hz": 3763,
+      "peak_db": 13.3
+    },
+    {
+      "el_deg": 45,
+      "pinna_notch_hz": 8233,
+      "notch_db": -4.4,
+      "concha_peak_hz": 4307,
+      "peak_db": 13.0
+    },
+    {
+      "el_deg": 60,
+      "pinna_notch_hz": 8014,
+      "notch_db": -0.2,
+      "concha_peak_hz": 4192,
+      "peak_db": 11.8
+    },
+    {
+      "el_deg": 75,
+      "pinna_notch_hz": 8458,
+      "notch_db": -0.2,
+      "concha_peak_hz": 3972,
+      "peak_db": 10.8
+    },
+    {
+      "el_deg": 90,
+      "pinna_notch_hz": 8927,
+      "notch_db": -1.7,
+      "concha_peak_hz": 3866,
+      "peak_db": 8.3
+    }
+  ],
+  "horizontal_plane_el0_azimuth_sweep": [
+    {
+      "az_deg": 0,
+      "pinna_notch_hz": 8927,
+      "notch_db": -8.6,
+      "concha_peak_hz": 3972,
+      "peak_db": 11.6
+    },
+    {
+      "az_deg": 5,
+      "pinna_notch_hz": 8927,
+      "notch_db": -6.9,
+      "concha_peak_hz": 3565,
+      "peak_db": 11.2
+    },
+    {
+      "az_deg": 10,
+      "pinna_notch_hz": 8690,
+      "notch_db": -6.6,
+      "concha_peak_hz": 3565,
+      "peak_db": 11.7
+    },
+    {
+      "az_deg": 15,
+      "pinna_notch_hz": 8927,
+      "notch_db": -5.9,
+      "concha_peak_hz": 4546,
+      "peak_db": 11.9
+    },
+    {
+      "az_deg": 20,
+      "pinna_notch_hz": 7193,
+      "notch_db": -6.5,
+      "concha_peak_hz": 4546,
+      "peak_db": 11.7
+    },
+    {
+      "az_deg": 25,
+      "pinna_notch_hz": 7800,
+      "notch_db": -6.1,
+      "concha_peak_hz": 4670,
+      "peak_db": 11.6
+    },
+    {
+      "az_deg": 30,
+      "pinna_notch_hz": 7002,
+      "notch_db": -9.2,
+      "concha_peak_hz": 3763,
+      "peak_db": 12.5
+    },
+    {
+      "az_deg": 35,
+      "pinna_notch_hz": 7002,
+      "notch_db": -14.9,
+      "concha_peak_hz": 3663,
+      "peak_db": 12.4
+    },
+    {
+      "az_deg": 40,
+      "pinna_notch_hz": 7193,
+      "notch_db": -10.1,
+      "concha_peak_hz": 3866,
+      "peak_db": 12.0
+    },
+    {
+      "az_deg": 45,
+      "pinna_notch_hz": 7390,
+      "notch_db": -17.4,
+      "concha_peak_hz": 4546,
+      "peak_db": 12.0
+    },
+    {
+      "az_deg": 50,
+      "pinna_notch_hz": 7390,
+      "notch_db": -17.1,
+      "concha_peak_hz": 4546,
+      "peak_db": 12.6
+    },
+    {
+      "az_deg": 55,
+      "pinna_notch_hz": 7800,
+      "notch_db": -15.1,
+      "concha_peak_hz": 4546,
+      "peak_db": 13.0
+    },
+    {
+      "az_deg": 60,
+      "pinna_notch_hz": 8233,
+      "notch_db": -9.5,
+      "concha_peak_hz": 4546,
+      "peak_db": 12.8
+    },
+    {
+      "az_deg": 65,
+      "pinna_notch_hz": 7390,
+      "notch_db": -11.5,
+      "concha_peak_hz": 4546,
+      "peak_db": 12.3
+    },
+    {
+      "az_deg": 70,
+      "pinna_notch_hz": 7800,
+      "notch_db": -10.6,
+      "concha_peak_hz": 5345,
+      "peak_db": 12.0
+    },
+    {
+      "az_deg": 75,
+      "pinna_notch_hz": 7800,
+      "notch_db": -12.0,
+      "concha_peak_hz": 5345,
+      "peak_db": 11.8
+    },
+    {
+      "az_deg": 80,
+      "pinna_notch_hz": 8014,
+      "notch_db": -10.5,
+      "concha_peak_hz": 5345,
+      "peak_db": 11.4
+    },
+    {
+      "az_deg": 85,
+      "pinna_notch_hz": 8233,
+      "notch_db": -9.5,
+      "concha_peak_hz": 5491,
+      "peak_db": 11.2
+    },
+    {
+      "az_deg": 90,
+      "pinna_notch_hz": 8458,
+      "notch_db": -8.2,
+      "concha_peak_hz": 5491,
+      "peak_db": 10.9
+    },
+    {
+      "az_deg": 95,
+      "pinna_notch_hz": 8690,
+      "notch_db": -7.7,
+      "concha_peak_hz": 5491,
+      "peak_db": 10.4
+    },
+    {
+      "az_deg": 100,
+      "pinna_notch_hz": 8690,
+      "notch_db": -7.7,
+      "concha_peak_hz": 5491,
+      "peak_db": 9.9
+    },
+    {
+      "az_deg": 105,
+      "pinna_notch_hz": 8690,
+      "notch_db": -7.2,
+      "concha_peak_hz": 5491,
+      "peak_db": 9.5
+    },
+    {
+      "az_deg": 110,
+      "pinna_notch_hz": 8014,
+      "notch_db": -6.9,
+      "concha_peak_hz": 5491,
+      "peak_db": 8.7
+    },
+    {
+      "az_deg": 115,
+      "pinna_notch_hz": 8233,
+      "notch_db": -7.4,
+      "concha_peak_hz": 5491,
+      "peak_db": 7.8
+    },
+    {
+      "az_deg": 120,
+      "pinna_notch_hz": 8014,
+      "notch_db": -8.1,
+      "concha_peak_hz": 5955,
+      "peak_db": 7.2
+    },
+    {
+      "az_deg": 125,
+      "pinna_notch_hz": 8014,
+      "notch_db": -9.3,
+      "concha_peak_hz": 5955,
+      "peak_db": 6.3
+    },
+    {
+      "az_deg": 130,
+      "pinna_notch_hz": 7800,
+      "notch_db": -11.4,
+      "concha_peak_hz": 5955,
+      "peak_db": 5.3
+    },
+    {
+      "az_deg": 135,
+      "pinna_notch_hz": 8014,
+      "notch_db": -13.1,
+      "concha_peak_hz": 5955,
+      "peak_db": 4.0
+    },
+    {
+      "az_deg": 140,
+      "pinna_notch_hz": 7800,
+      "notch_db": -15.0,
+      "concha_peak_hz": 3663,
+      "peak_db": 3.9
+    },
+    {
+      "az_deg": 145,
+      "pinna_notch_hz": 7800,
+      "notch_db": -17.6,
+      "concha_peak_hz": 3866,
+      "peak_db": 4.7
+    },
+    {
+      "az_deg": 150,
+      "pinna_notch_hz": 7800,
+      "notch_db": -19.3,
+      "concha_peak_hz": 3866,
+      "peak_db": 5.9
+    },
+    {
+      "az_deg": 155,
+      "pinna_notch_hz": 7800,
+      "notch_db": -22.0,
+      "concha_peak_hz": 3866,
+      "peak_db": 6.8
+    },
+    {
+      "az_deg": 160,
+      "pinna_notch_hz": 8014,
+      "notch_db": -21.9,
+      "concha_peak_hz": 3866,
+      "peak_db": 7.0
+    },
+    {
+      "az_deg": 165,
+      "pinna_notch_hz": 8014,
+      "notch_db": -19.7,
+      "concha_peak_hz": 4425,
+      "peak_db": 7.1
+    },
+    {
+      "az_deg": 170,
+      "pinna_notch_hz": 8014,
+      "notch_db": -28.1,
+      "concha_peak_hz": 4546,
+      "peak_db": 7.8
+    },
+    {
+      "az_deg": 175,
+      "pinna_notch_hz": 8014,
+      "notch_db": -26.4,
+      "concha_peak_hz": 4546,
+      "peak_db": 8.4
+    },
+    {
+      "az_deg": 180,
+      "pinna_notch_hz": 8014,
+      "notch_db": -21.3,
+      "concha_peak_hz": 4546,
+      "peak_db": 8.4
+    },
+    {
+      "az_deg": 185,
+      "pinna_notch_hz": 8233,
+      "notch_db": -13.0,
+      "concha_peak_hz": 3866,
+      "peak_db": 8.6
+    },
+    {
+      "az_deg": 190,
+      "pinna_notch_hz": 7193,
+      "notch_db": -16.8,
+      "concha_peak_hz": 4081,
+      "peak_db": 8.6
+    },
+    {
+      "az_deg": 195,
+      "pinna_notch_hz": 7193,
+      "notch_db": -26.4,
+      "concha_peak_hz": 4425,
+      "peak_db": 8.4
+    },
+    {
+      "az_deg": 200,
+      "pinna_notch_hz": 7193,
+      "notch_db": -27.6,
+      "concha_peak_hz": 4546,
+      "peak_db": 7.6
+    },
+    {
+      "az_deg": 205,
+      "pinna_notch_hz": 7002,
+      "notch_db": -19.8,
+      "concha_peak_hz": 3763,
+      "peak_db": 6.4
+    },
+    {
+      "az_deg": 210,
+      "pinna_notch_hz": 11694,
+      "notch_db": -18.2,
+      "concha_peak_hz": 3763,
+      "peak_db": 5.9
+    },
+    {
+      "az_deg": 215,
+      "pinna_notch_hz": 11694,
+      "notch_db": -17.7,
+      "concha_peak_hz": 3972,
+      "peak_db": 4.5
+    },
+    {
+      "az_deg": 220,
+      "pinna_notch_hz": 6634,
+      "notch_db": -18.7,
+      "concha_peak_hz": 4425,
+      "peak_db": 2.7
+    },
+    {
+      "az_deg": 225,
+      "pinna_notch_hz": 11383,
+      "notch_db": -22.4,
+      "concha_peak_hz": 4546,
+      "peak_db": 0.3
+    },
+    {
+      "az_deg": 230,
+      "pinna_notch_hz": 11079,
+      "notch_db": -16.9,
+      "concha_peak_hz": 3032,
+      "peak_db": 0.3
+    },
+    {
+      "az_deg": 235,
+      "pinna_notch_hz": 6118,
+      "notch_db": -18.3,
+      "concha_peak_hz": 3663,
+      "peak_db": 1.3
+    },
+    {
+      "az_deg": 240,
+      "pinna_notch_hz": 5955,
+      "notch_db": -34.9,
+      "concha_peak_hz": 3763,
+      "peak_db": 1.2
+    },
+    {
+      "az_deg": 245,
+      "pinna_notch_hz": 11383,
+      "notch_db": -20.6,
+      "concha_peak_hz": 4081,
+      "peak_db": -0.7
+    },
+    {
+      "az_deg": 250,
+      "pinna_notch_hz": 10497,
+      "notch_db": -32.7,
+      "concha_peak_hz": 4546,
+      "peak_db": -5.1
+    },
+    {
+      "az_deg": 255,
+      "pinna_notch_hz": 9423,
+      "notch_db": -32.0,
+      "concha_peak_hz": 3032,
+      "peak_db": -5.8
+    },
+    {
+      "az_deg": 260,
+      "pinna_notch_hz": 5345,
+      "notch_db": -28.5,
+      "concha_peak_hz": 3032,
+      "peak_db": -2.4
+    },
+    {
+      "az_deg": 265,
+      "pinna_notch_hz": 6815,
+      "notch_db": -28.9,
+      "concha_peak_hz": 3972,
+      "peak_db": -0.8
+    },
+    {
+      "az_deg": 270,
+      "pinna_notch_hz": 9423,
+      "notch_db": -27.7,
+      "concha_peak_hz": 3972,
+      "peak_db": -0.7
+    },
+    {
+      "az_deg": 275,
+      "pinna_notch_hz": 8458,
+      "notch_db": -35.1,
+      "concha_peak_hz": 3565,
+      "peak_db": -0.9
+    },
+    {
+      "az_deg": 280,
+      "pinna_notch_hz": 6815,
+      "notch_db": -27.2,
+      "concha_peak_hz": 3565,
+      "peak_db": -0.2
+    },
+    {
+      "az_deg": 285,
+      "pinna_notch_hz": 8014,
+      "notch_db": -26.7,
+      "concha_peak_hz": 3565,
+      "peak_db": 0.1
+    },
+    {
+      "az_deg": 290,
+      "pinna_notch_hz": 6815,
+      "notch_db": -28.6,
+      "concha_peak_hz": 3032,
+      "peak_db": 0.9
+    },
+    {
+      "az_deg": 295,
+      "pinna_notch_hz": 8014,
+      "notch_db": -34.0,
+      "concha_peak_hz": 3032,
+      "peak_db": 1.3
+    },
+    {
+      "az_deg": 300,
+      "pinna_notch_hz": 8458,
+      "notch_db": -27.1,
+      "concha_peak_hz": 3972,
+      "peak_db": 1.4
+    },
+    {
+      "az_deg": 305,
+      "pinna_notch_hz": 8458,
+      "notch_db": -29.4,
+      "concha_peak_hz": 3972,
+      "peak_db": 2.9
+    },
+    {
+      "az_deg": 310,
+      "pinna_notch_hz": 9172,
+      "notch_db": -29.6,
+      "concha_peak_hz": 3565,
+      "peak_db": 4.1
+    },
+    {
+      "az_deg": 315,
+      "pinna_notch_hz": 9172,
+      "notch_db": -23.3,
+      "concha_peak_hz": 4081,
+      "peak_db": 5.5
+    },
+    {
+      "az_deg": 320,
+      "pinna_notch_hz": 6457,
+      "notch_db": -22.7,
+      "concha_peak_hz": 3663,
+      "peak_db": 7.3
+    },
+    {
+      "az_deg": 325,
+      "pinna_notch_hz": 8690,
+      "notch_db": -20.6,
+      "concha_peak_hz": 3763,
+      "peak_db": 8.5
+    },
+    {
+      "az_deg": 330,
+      "pinna_notch_hz": 8927,
+      "notch_db": -18.7,
+      "concha_peak_hz": 3763,
+      "peak_db": 9.0
+    },
+    {
+      "az_deg": 335,
+      "pinna_notch_hz": 7390,
+      "notch_db": -28.4,
+      "concha_peak_hz": 3866,
+      "peak_db": 10.1
+    },
+    {
+      "az_deg": 340,
+      "pinna_notch_hz": 8690,
+      "notch_db": -12.8,
+      "concha_peak_hz": 3866,
+      "peak_db": 10.5
+    },
+    {
+      "az_deg": 345,
+      "pinna_notch_hz": 7592,
+      "notch_db": -14.6,
+      "concha_peak_hz": 3972,
+      "peak_db": 10.7
+    },
+    {
+      "az_deg": 350,
+      "pinna_notch_hz": 8927,
+      "notch_db": -10.6,
+      "concha_peak_hz": 3972,
+      "peak_db": 11.8
+    },
+    {
+      "az_deg": 355,
+      "pinna_notch_hz": 9172,
+      "notch_db": -9.3,
+      "concha_peak_hz": 3972,
+      "peak_db": 12.2
+    }
+  ]
+}

@@ -1,0 +1,21 @@
+{
+  "format": "p2k-vocal-law-v1",
+  "description": "Vocal authoring LAW extracted (clean-room, structure only) from 5 named P2K reference bodies. Carries Hz bounds + behavioral laws, NOT coefficients. Use to seat Forge vocal pole/zero authoring in the same spirit as the references, without copying their data.",
+  "reference_pool": ["multi q vox", "talking hedz", "ooh to eee", "eeh to aah", "ubu orator"],
+  "provenance": "Decoded ref/p2k_variants/<preset>/variant_0 frames via the shipped trench_core.dll (packed_probe). Structural extraction only. NOTE: multi_q_vox/eeh_to_aah and ooh_to_eee/ubu_orator share static pole frames — same filter bank, different morph routing.",
+
+  "pole_hz_bounds": [199, 580],
+  "pole_hz_bounds_note": "Stage 1 (Throat / F1) across the 5 reference frames. min=199 (talking hedz), max=580 (ubu orator). Both from distinct presets, so robust to the shared-frame anomaly. multi_q_vox/eeh_to_aah F1=225, ooh_to_eee F1=541.",
+
+  "overlay_zero_target": "canyon",
+  "overlay_zero_evidence": "Every stage carries a zero, and the deepest in each of the 5 sits AT the unit circle (radius -> 1.00: multi_q 6282 Hz, talking 6396 Hz, eeh 3951 Hz, ooh/ubu 17961 Hz). Unit-circle radius = true null = a deep canyon, one anti-resonance per formant. They sit beside each pole, so they track the formant as it moves (canyon depth, tear-like travel).",
+
+  "motion_law": "slide",
+  "motion_law_evidence": "Vowel morphs glide without rank-swapping: in ooh->eee, F2 climbs 870->2290 Hz but stays BELOW F3 (2240->3010) the whole way — it approaches but never crosses. eeh->aah: F1 rises, F2 falls, they converge but do not swap order. No pole crosses a neighbour; the constellation slides.",
+
+  "authoring_hints": {
+    "stage1_throat_hz": "200-580",
+    "zero_per_formant": "deep (radius 0.9-1.0) anti-resonance beside each pole",
+    "morph": "log-slide the whole constellation; do not rank-swap formants for vocal bodies"
+  }
+}
