@@ -82,16 +82,17 @@ public:
         layout.elements["brandLabel"]   = { { 114.0f, 84.0f, 230.0f, 40.0f }, 16.5f, juce::Colour (0xff2a2722) };
         layout.elements["brandLabel"].text = "TRENCH";
 
-        // Smoked indigo-cobalt: warm putty body / charcoal display / restrained
-        // blue signal family. Exact role colours are kept separate so the trace,
-        // markers, telemetry and roller lamp do not collapse into one neon accent.
-        layout.colours["accent"]            = juce::Colour (0xff667394); // telemetry/general active state
-        layout.colours["curveColour"]       = juce::Colour (0xff7888ae); // live response trace
-        layout.colours["curveHighlight"]    = juce::Colour (0xffa7b2ca); // trace catches + peak markers
-        layout.colours["telemetry"]         = juce::Colour (0xff667394); // screen status copy
-        layout.colours["rollerIllumination"] = juce::Colour (0xff354c88); // baked wheel lamp target
+        // Confident ultramarine-violet: warm putty body / charcoal display /
+        // one saturated signal family. Aubergine owns the active state,
+        // ultraviolet carries the trace, and pale lilac is used only for catches.
+        // The roller remains the proven 257-frame deep-cobalt X3 strip.
+        layout.colours["accent"]            = juce::Colour (0xff6650a2);
+        layout.colours["curveColour"]       = juce::Colour (0xff9580d2);
+        layout.colours["curveHighlight"]    = juce::Colour (0xffd5c6f2);
+        layout.colours["telemetry"]         = juce::Colour (0xff8068b8);
+        layout.colours["rollerIllumination"] = juce::Colour (0xff354c88);
         layout.colours["phosphor"]    = juce::Colour (0xff26231f); // espresso glass
-        layout.colours["amber"]       = juce::Colour (0xffa7b2ca); // legacy token name: bright signal state
+        layout.colours["amber"]       = juce::Colour (0xffd5c6f2); // legacy token name: bright signal state
         layout.colours["dashed"]      = juce::Colour (0xff4a4640); // warm charcoal grid
         layout.colours["screenEdge"]  = juce::Colour (0xff151311); // espresso keyline
         layout.colours["labelInk"]    = juce::Colour (0xff2a2722); // warm charcoal type

@@ -42,6 +42,17 @@ extern "C"
     // trench-core::keyframe). mode: 0=Pendulum 1=Rise 2=Saw 3=OneShot.
     float trench_keyframe_value (float a, float b, float legBars, double ppq,
                                  double beatsPerBar, unsigned mode);
+    // MOTION TAKE prototype — one shared Morph/Q sampled path. `points` is an
+    // interleaved array of normalized deltas; trench-core owns interpolation.
+    int trench_motion_path_value (const float* points, size_t pointCount, double phase,
+                                  int closed, float baseMorph, float baseQ, float amount,
+                                  float* outMorph, float* outQ);
+    // Time-preserving Motion Take path. `points` is
+    // [normalized_time, morph_delta, q_delta] per point. gridSteps == 0 keeps
+    // human timing; positive values snap only the internal event times.
+    int trench_motion_path_value_timed (const float* points, size_t pointCount, double phase,
+                                        int closed, size_t gridSteps, float baseMorph, float baseQ,
+                                        float amount, float* outMorph, float* outQ);
 }
 
 struct TrenchParams

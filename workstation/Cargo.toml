@@ -1,0 +1,28 @@
+[package]
+name = "trench-workstation"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+trench-core = { path = "../trench-core" }
+
+[lib]
+name = "trench_workstation"
+path = "src/lib.rs"
+crate-type = ["rlib", "staticlib"]
+
+[[bin]]
+name = "proof-slice"
+path = "src/bin/proof_slice.rs"
+
+[[bin]]
+name = "recipe-proof"
+path = "src/bin/recipe_proof.rs"
+
+[[bin]]
+name = "build-bank"
+path = "src/bin/build_bank.rs"
+
+[workspace]

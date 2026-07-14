@@ -63,6 +63,12 @@ public:
     static constexpr int kScopeLen = 512;
     int copyScopeSamples (float* outL, float* outR, int count) const noexcept;
 
+    // LIMIT readout (0..1): how hot the FINAL output is running — i.e. how hard you are
+    // driving it into the saturator. Replaces the old clipper's clip-fraction, which no
+    // longer exists now the leveller owns level. See processBlock for why "count the
+    // clipped samples" cannot work here.
+    float getOutClipForUi() const noexcept { return outClipForUi.load (std::memory_order_relaxed); }
+
     // Motion pattern access (message-thread safe). The UI edits the pattern
     // via setMotionPattern; the audio thread snapshots it under patternLock.
     trench::MotionPattern getMotionPattern() const;
@@ -75,7 +81,15 @@ public:
     // thread already reads. See MOVE chip's "USER" state.
     void beginUserMotionRecording();
     void addUserMotionSample (float morphValue);
+    // Backend entry point for a true joint Morph×Q take. The editor remains
+    // responsible for deciding how its two wheel gestures feed this method.
+    void addUserMotionSample2D (float morphValue, float qValue);
     void endUserMotionRecording();
+
+    // Hidden capture policy: zero preserves human timing; a positive value
+    // snaps internal take events to that many subdivisions. No new faceplate
+    // control is required for the default/free case.
+    void setMotionTakeGridSteps (int steps);
 
     // Status readout for the FX pane: which body is loaded and whether the last
     // load (body switch or authoring-slot hot-reload) parsed cleanly.
@@ -245,6 +259,7 @@ private:
     bool controlSmoothersPrimed = false;
     std::atomic<float> inputMeterL { 0.0f };
     std::atomic<float> inputMeterR { 0.0f };
+    std::atomic<float> outClipForUi { 0.0f };   // LIMIT: final output pinned at the ceiling
     std::atomic<bool>  moveArmedWaitingForUi { false };  // ARM waiting for next bar -> "FIRES NEXT BAR"
     std::atomic<float> moveGuardForUi { 0.0f };          // GUARD lane level for the status bar
     std::atomic<float> moveSlamForUi { 0.0f };           // SLAM lane level for the status bar
@@ -261,13 +276,29 @@ private:
     trench::MotionPattern patternSnapshot;
     std::atomic<bool> motionResetRequested { false };
     std::atomic<int> motionStepForUi { 0 };
+    // Fixed-size scratch for the Rust-owned, time-preserving Motion Take
+    // sampler. The stored path is message-thread-owned and copied under
+    // motionPathLock before the audio thread calls the FFI kernel.
+    mutable juce::SpinLock motionPathLock;
+    std::array<float, trench::MotionEngine::kSteps * 3> motionTimedPathPoints {};
+    int motionTimedPathPointCount = 0;
+    std::array<float, trench::MotionEngine::kSteps * 3> motionPathEvalPoints {};
+    std::atomic<int> motionTakeGridSteps { 0 };
+    double motionPathPhase = 0.0;
     void refreshPatternSnapshotFromState();
 
     // USER motion recording scratch state (message thread only -- mouse
     // events, never touched by the audio thread).
-    std::vector<std::pair<double, float>> userRecordingBuffer; // (elapsed ms, morph delta)
+    struct UserMotionSample
+    {
+        double elapsedMs = 0.0;
+        float morphDelta = 0.0f;
+        float qDelta = 0.0f;
+    };
+    std::vector<UserMotionSample> userRecordingBuffer;
     double userRecordingStartMs = -1.0;
     float  userRecordingStartMorph = 0.0f;
+    float  userRecordingStartQ = 0.0f;
 
     // Smart Motion: the per-body curated motion the Modulation button plays. Cached
     // on the audio thread, recomputed only when the loaded body changes (no lock).

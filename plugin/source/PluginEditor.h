@@ -19,6 +19,16 @@
 #include "ui/TypeSelectorView.h"
 #include "ui/LabelsLayer.h"
 #include "ui/DecalsLayer.h"
+// The dev-only panels (voicing rig, authoring lab, FORGE) do not exist on this
+// branch — the clean product checkout dropped them, and FORGE never ships. Every
+// USE of them below is already inside these same guards.
+#ifdef TRENCH_PLAYER_DIAGNOSTICS
+ #include "ui/RigPanel.h"
+ #include "ui/AuthorView.h"
+#endif
+#ifdef TRENCH_FORGE
+ #include "ui/ForgeView.h"
+#endif
 
 #include <juce_audio_processors/juce_audio_processors.h>
 #include <juce_gui_basics/juce_gui_basics.h>
@@ -60,6 +70,11 @@ private:
     std::unique_ptr<trench::ui::MoveChip>         moveChip; // curated MOVE status chip, inside the screen
     std::unique_ptr<trench::ui::TakeView>         takeView;
     std::unique_ptr<trench::ui::MoveView>         moveView;   // Page 2 — MOVE / PLAY (V1)
+   #ifdef TRENCH_PLAYER_DIAGNOSTICS
+    std::unique_ptr<trench::ui::RigPanel>         rigPanel;   // dev-only voicing rig (QSound SPACE/PAN)
+    std::unique_ptr<trench::ui::AuthorView>       authorView; // dev-only authoring lab (floating window)
+    std::unique_ptr<trench::ui::LabWindow>        labWindow;  // its own panel, toggled by the rig
+   #endif
     int currentPage = 0;
     std::vector<PluginProcessor::VariantPreview>  tray;   // the 12 versions on Page 2
     std::unique_ptr<trench::ui::TypeSelectorView> typeSelector;
@@ -73,6 +88,12 @@ private:
     std::unique_ptr<trench::ui::FiveDButton>      fiveDButton;   // 5D: latch the extreme spatial orbit
     std::unique_ptr<trench::ui::LabelsLayer>      labels;
     std::unique_ptr<trench::ui::DecalsLayer>      decalsLayer;
+
+    // FORGE dev panel (diagnostics builds only): null in release. forgeBtn toggles it.
+   #ifdef TRENCH_FORGE
+    std::unique_ptr<trench::ui::ForgeView>        forge;
+    std::unique_ptr<juce::TextButton>             forgeBtn;
+   #endif
 
     JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR (PluginEditor)
 };

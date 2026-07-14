@@ -23,9 +23,11 @@ inline juce::Rectangle<float> sourceRectToEditor (juce::Rectangle<float> s)
              s.getHeight() * kEditorHeight / kPanelSourceHeight };
 }
 
-// Sweet-spot typography: neutral regular copy with selective commercial weight.
-inline const char* const kUiFontName = "Arial";
-inline const char* const kUiEmphasisFontName = "Arial";
+// Gill Sans gives the plate a humanist/editorial voice: distinctive enough to
+// own the product, open enough for small values, and much less severe than a
+// condensed grotesk. Hierarchy comes from size and spacing, not blanket bold.
+inline const char* const kUiFontName = "Gill Sans MT";
+inline const char* const kUiEmphasisFontName = "Gill Sans MT";
 
 inline juce::String& uiFontFamily()
 {
@@ -60,13 +62,13 @@ struct Theme
 {
     const trench::UiLayout& layout;
 
-    // 60:30:10: WARM PUTTY 60 (plate) / BLACKENED GRAPHITE 30 (wheels,
-    // type, display) / SMOKED INDIGO-COBALT 10 (trace, telemetry, lamp).
+    // 60:30:10: WARM PUTTY 60 (the plate, locked) / BLACKENED GRAPHITE 30
+    // (wheels, type, glass) / ULTRAMARINE-VIOLET 10 (trace and active state).
     // Values live in UiLayout::defaults() — change them there, not here.
-    juce::Colour accent()      const { return layout.colour ("accent",      juce::Colour (0xff667394)); }
+    juce::Colour accent()      const { return layout.colour ("accent",      juce::Colour (0xff6650a2)); }
     juce::Colour curveColour() const { return layout.colour ("curveColour", accent()); }
-    juce::Colour curveHighlight() const { return layout.colour ("curveHighlight", juce::Colour (0xffa7b2ca)); }
-    juce::Colour telemetry()   const { return layout.colour ("telemetry",   juce::Colour (0xff667394)); }
+    juce::Colour curveHighlight() const { return layout.colour ("curveHighlight", juce::Colour (0xffd5c6f2)); }
+    juce::Colour telemetry()   const { return layout.colour ("telemetry",   juce::Colour (0xff8068b8)); }
     juce::Colour rollerIllumination() const { return layout.colour ("rollerIllumination", juce::Colour (0xff354c88)); }
     juce::Colour amber()       const { return layout.colour ("amber",       curveHighlight()); } // legacy name: bright signal state
     juce::Colour wellTop()     const { return layout.colour ("wellTop",     juce::Colour (0xffe7dec9)); }
@@ -77,21 +79,16 @@ struct Theme
     juce::Colour arrow()       const { return layout.colour ("arrow",       juce::Colour (0xff241e15)); }
     juce::Colour rim()         const { return layout.colour ("rim",         juce::Colour (0xff241e15)); }
     juce::Colour dashed()      const { return layout.colour ("dashed",      juce::Colour (0xff4a4640)); }
-    juce::Colour screenEdge()  const { return layout.colour ("screenEdge",  juce::Colour (0xff0e1012)); }
-    juce::Colour labelInk()    const { return layout.colour ("labelInk",    juce::Colour (0xff24231f)); }
-    juce::Colour phosphor()    const { return layout.colour ("phosphor",    juce::Colour (0xff1a1c1f)); }
+    juce::Colour screenEdge()  const { return layout.colour ("screenEdge",  juce::Colour (0xff151311)); }
+    juce::Colour labelInk()    const { return layout.colour ("labelInk",    juce::Colour (0xff2a2722)); }
+    juce::Colour phosphor()    const { return layout.colour ("phosphor",    juce::Colour (0xff26231f)); }
 
     float  wellRadius()        const { return (float) layout.param ("wellRadius", 9.0); }
     float  componentRadius()   const { return (float) layout.param ("componentRadius", 2.5); }
     float  readoutAliasScale() const { return (float) juce::jlimit (0.3, 1.0, layout.param ("readoutAliasScale", 0.72)); }
     float  typeArrowExtra()    const { return (float) layout.param ("typeArrowExtra", 6.0); }
-    // The old window (+18 / -30) could not draw the roster. A Q100 body reaches
-    // +45 dB (CAVL_mason_jar_to_stone_pipe peaks at +45.3), so the trace clamped
-    // flat against the ceiling and the graph silently lied about the loudest,
-    // most important part of the filter. Symmetric +/-48 puts 0 dB dead centre
-    // and leaves headroom for the hottest bodies in the library.
-    double curveDbTop()        const { return layout.param ("curveDbTop", 48.0); }
-    double curveDbBottom()     const { return layout.param ("curveDbBottom", -48.0); }
+    double curveDbTop()        const { return layout.param ("curveDbTop", 18.0); }
+    double curveDbBottom()     const { return layout.param ("curveDbBottom", -30.0); }
 
     juce::Rectangle<float> rect (const juce::String& id) const
     {
@@ -332,10 +329,8 @@ inline void paintScreenAtmosphere (juce::Graphics& g, juce::Rectangle<float> scr
 // green overlay.
 inline void drawReadoutGlass (juce::Graphics& g, juce::Rectangle<float> b, const Theme& t)
 {
-    // The component bounds are the measured recess mouth. Paint to that edge;
-    // an extra software inset leaves an obvious black halo in the baked well.
-    const auto r = b;
-    const auto radius = b.getHeight() * 0.17f;
+    const auto r = b.reduced (1.0f);
+    const auto radius = t.wellRadius();
     {
         juce::Graphics::ScopedSaveState save (g);
         juce::Path clip;

@@ -836,6 +836,48 @@ mod tests {
             trench_engine_get_coeffs(ptr::null_mut(), coeffs.as_mut_ptr(), &mut boost);
             assert_eq!(boost, 1.0, "null engine must report unity boost");
         }
+        let mut morph = 0.0f32;
+        let mut q = 0.0f32;
+        assert_eq!(
+            trench_motion_path_value_timed(
+                std::ptr::null(),
+                2,
+                0.5,
+                0,
+                0,
+                0.2,
+                0.3,
+                1.0,
+                &mut morph,
+                &mut q,
+            ),
+            -1
+        );
+    }
+
+    #[test]
+    fn timed_motion_ffi_matches_the_core_sampler() {
+        let points = [
+            0.0f32, 0.0, 0.0, 0.2, 0.8, 0.4, 0.7, 0.1, 0.9, 1.0, 0.0, 0.0,
+        ];
+        let expected = crate::motion::path_value_timed(&points, 0.2, false, 0.1, 0.1, 1.0, 4);
+        let mut morph = 0.0f32;
+        let mut q = 0.0f32;
+        let rc = trench_motion_path_value_timed(
+            points.as_ptr(),
+            4,
+            0.2,
+            0,
+            4,
+            0.1,
+            0.1,
+            1.0,
+            &mut morph,
+            &mut q,
+        );
+        assert_eq!(rc, 0);
+        assert!((morph - expected.0).abs() < 1.0e-6);
+        assert!((q - expected.1).abs() < 1.0e-6);
     }
 
     /// Wrong-length body is rejected before any decode work.
@@ -1084,4 +1126,106 @@ pub extern "C" fn trench_keyframe_value(
         beats_per_bar,
         crate::keyframe::LoopMode::from_u32(mode),
     )
+}
+
+/// Sampled Motion Take value — one shared Morph/Q path, owned by trench-core.
+///
+/// `points` is an interleaved array of normalized deltas:
+/// `[morph_delta_0, q_delta_0, morph_delta_1, q_delta_1, ...]`.
+/// `phase` is musical path position; closed takes wrap and open takes hold at
+/// their final point. Returns non-zero for invalid output pointers or a path
+/// with no complete point.
+#[no_mangle]
+pub extern "C" fn trench_motion_path_value(
+    points: *const f32,
+    point_count: usize,
+    phase: f64,
+    closed: i32,
+    base_morph: f32,
+    base_q: f32,
+    amount: f32,
+    out_morph: *mut f32,
+    out_q: *mut f32,
+) -> i32 {
+    if out_morph.is_null() || out_q.is_null() || point_count == 0 {
+        return -1;
+    }
+    if points.is_null() {
+        return -1;
+    }
+
+    // The processor owns the fixed-size scratch array and never passes more
+    // than MAX_PATH_POINTS pairs. Clamp here as an FFI safety boundary too.
+    let count = point_count.min(crate::motion::MAX_PATH_POINTS);
+    let values = unsafe { std::slice::from_raw_parts(points, count * 2) };
+    let (morph, q) =
+        crate::motion::path_value(values, phase, closed != 0, base_morph, base_q, amount);
+    unsafe {
+        *out_morph = morph;
+        *out_q = q;
+    }
+    0
+}
+
+/// Time-preserving Motion Take sampler. `points` is interleaved
+/// `[normalized_time, morph_delta, q_delta]` triples. `grid_steps == 0` keeps
+/// the recorded human timing; a positive value snaps only those times to the
+/// requested number of subdivisions.
+#[no_mangle]
+pub extern "C" fn trench_motion_path_value_timed(
+    points: *const f32,
+    point_count: usize,
+    phase: f64,
+    closed: i32,
+    grid_steps: usize,
+    base_morph: f32,
+    base_q: f32,
+    amount: f32,
+    out_morph: *mut f32,
+    out_q: *mut f32,
+) -> i32 {
+    if out_morph.is_null() || out_q.is_null() || point_count == 0 {
+        return -1;
+    }
+    if points.is_null() {
+        return -1;
+    }
+
+    let count = point_count.min(crate::motion::MAX_PATH_POINTS);
+    let values =
+        unsafe { std::slice::from_raw_parts(points, count * crate::motion::TIMED_POINT_STRIDE) };
+    let (morph, q) = crate::motion::path_value_timed(
+        values,
+        phase,
+        closed != 0,
+        base_morph,
+        base_q,
+        amount,
+        grid_steps,
+    );
+    unsafe {
+        *out_morph = morph;
+        *out_q = q;
+    }
+    0
+}
+
+/// The typed letter compiler, for the offline fitter (tools/fit_body.py). Exposes
+/// `compiler::section_biquad` so Python drives the REAL alphabet instead of a second
+/// hand-rolled copy of it. Writes [b0,b1,b2,a1,a2].
+#[no_mangle]
+pub extern "C" fn trench_section_biquad(
+    type_id: i32,
+    fc: f64,
+    q: f64,
+    gain_db: f64,
+    out: *mut f64,
+) {
+    if out.is_null() {
+        return;
+    }
+    let bq = crate::compiler::section_biquad(type_id, fc, q, gain_db);
+    unsafe {
+        core::ptr::copy_nonoverlapping(bq.as_ptr(), out, 5);
+    }
 }

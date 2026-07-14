@@ -29,6 +29,77 @@ inline float applyMotionWarp (int warp, float p) noexcept
         default: return p;                                      // Off — linear
     }
 }
+
+inline double motionPathDurationQuarterNotes (int divisionIndex, double quarterNotesPerBar) noexcept
+{
+    // The first seven entries are note lengths in quarter notes. The final
+    // three are 1/2/4-bar multiples as they appear in MotionEngine's legacy
+    // division list; resolve those against the host meter here.
+    static constexpr double kQuarterNotes[] = {
+        1.0, 0.5, 0.375, 0.25, 0.1875, 0.125, 2.0, 4.0, 8.0, 16.0
+    };
+    const int i = juce::jlimit (0, 9, divisionIndex);
+    const double meter = juce::jmax (1.0, quarterNotesPerBar);
+    const double beats = i >= 7 ? kQuarterNotes[i] * meter / 4.0 : kQuarterNotes[i];
+    return juce::jmax (1.0e-6, beats);
+}
+
+constexpr juce::uint8 kMotionTakePathVersion = 1u;
+
+juce::String encodeMotionTakePath (
+    const std::array<float, trench::MotionEngine::kSteps * 3>& points,
+    int pointCount)
+{
+    const int count = juce::jlimit (0, trench::MotionEngine::kSteps, pointCount);
+    juce::MemoryBlock mb;
+    mb.append (&kMotionTakePathVersion, sizeof (kMotionTakePathVersion));
+    const auto countByte = (juce::uint8) count;
+    mb.append (&countByte, sizeof (countByte));
+    if (count > 0)
+        mb.append (points.data(), (size_t) count * 3u * sizeof (float));
+    return mb.toBase64Encoding();
+}
+
+bool decodeMotionTakePath (
+    const juce::String& encoded,
+    std::array<float, trench::MotionEngine::kSteps * 3>& points,
+    int& pointCount)
+{
+    points.fill (0.0f);
+    pointCount = 0;
+    if (encoded.isEmpty())
+        return false;
+
+    juce::MemoryBlock mb;
+    mb.fromBase64Encoding (encoded);
+    if (mb.getSize() < 2u)
+        return false;
+
+    const auto* bytes = static_cast<const juce::uint8*> (mb.getData());
+    if (bytes[0] != kMotionTakePathVersion)
+        return false;
+    const int count = juce::jlimit (0, trench::MotionEngine::kSteps, (int) bytes[1]);
+    const size_t expected = 2u + (size_t) count * 3u * sizeof (float);
+    if (mb.getSize() != expected)
+        return false;
+
+    if (count > 0)
+        std::memcpy (points.data(), bytes + 2, (size_t) count * 3u * sizeof (float));
+
+    float previousTime = 0.0f;
+    for (int i = 0; i < count; ++i)
+    {
+        const float time = points[(size_t) i * 3u];
+        if (! std::isfinite (time) || time < previousTime || time < 0.0f || time > 1.0f
+            || ! std::isfinite (points[(size_t) i * 3u + 1u])
+            || ! std::isfinite (points[(size_t) i * 3u + 2u]))
+            return false;
+        previousTime = time;
+    }
+
+    pointCount = count;
+    return count > 0;
+}
 }
 
 //==============================================================================
@@ -264,8 +335,24 @@ void PluginProcessor::refreshPatternSnapshotFromState()
 {
     const auto blob = apvts.state.getProperty ("motionPattern").toString();
     const auto p = trench::decodeMotionPattern (blob);
-    const juce::SpinLock::ScopedLockType sl (patternLock);
-    patternSnapshot = p;
+    {
+        const juce::SpinLock::ScopedLockType sl (patternLock);
+        patternSnapshot = p;
+    }
+
+    std::array<float, trench::MotionEngine::kSteps * 3> path {};
+    int pointCount = 0;
+    decodeMotionTakePath (apvts.state.getProperty ("motionTakePath").toString(),
+                          path, pointCount);
+    {
+        const juce::SpinLock::ScopedLockType sl (motionPathLock);
+        motionTimedPathPoints = path;
+        motionTimedPathPointCount = pointCount;
+    }
+
+    const int gridSteps = juce::jlimit (
+        0, 256, (int) apvts.state.getProperty ("motionTakeGridSteps", 0));
+    motionTakeGridSteps.store (gridSteps, std::memory_order_relaxed);
 }
 
 void PluginProcessor::beginUserMotionRecording()
@@ -273,14 +360,30 @@ void PluginProcessor::beginUserMotionRecording()
     userRecordingBuffer.clear();
     userRecordingStartMs = juce::Time::getMillisecondCounterHiRes();
     userRecordingStartMorph = juce::jlimit (0.0f, 1.0f, apvts.getRawParameterValue (ParamID::morph)->load());
+    userRecordingStartQ = juce::jlimit (0.0f, 1.0f, apvts.getRawParameterValue (ParamID::q)->load());
 }
 
 void PluginProcessor::addUserMotionSample (float morphValue)
 {
+    const float qValue = apvts.getRawParameterValue (ParamID::q)->load();
+    addUserMotionSample2D (morphValue, qValue);
+}
+
+void PluginProcessor::addUserMotionSample2D (float morphValue, float qValue)
+{
     if (userRecordingStartMs < 0.0)
         return;
     const double elapsedMs = juce::Time::getMillisecondCounterHiRes() - userRecordingStartMs;
-    userRecordingBuffer.push_back ({ elapsedMs, morphValue - userRecordingStartMorph });
+    userRecordingBuffer.push_back ({ elapsedMs,
+                                     morphValue - userRecordingStartMorph,
+                                     qValue - userRecordingStartQ });
+}
+
+void PluginProcessor::setMotionTakeGridSteps (int steps)
+{
+    const int clamped = juce::jlimit (0, 256, steps);
+    motionTakeGridSteps.store (clamped, std::memory_order_relaxed);
+    apvts.state.setProperty ("motionTakeGridSteps", clamped, nullptr);
 }
 
 void PluginProcessor::endUserMotionRecording()
@@ -288,31 +391,73 @@ void PluginProcessor::endUserMotionRecording()
     // Too short/thin to be a real taught gesture -- leave the previous
     // recording (if any) in place rather than overwrite it with noise.
     constexpr double kMinDurationMs = 60.0;
-    if (userRecordingBuffer.size() < 2 || userRecordingBuffer.back().first < kMinDurationMs)
+    if (userRecordingBuffer.size() < 2 || userRecordingBuffer.back().elapsedMs < kMinDurationMs)
     {
         userRecordingBuffer.clear();
         userRecordingStartMs = -1.0;
         return;
     }
 
-    const double totalMs = userRecordingBuffer.back().first;
+    const double totalMs = userRecordingBuffer.back().elapsedMs;
     trench::MotionPattern p;
     constexpr int N = trench::MotionEngine::kSteps;
-    size_t cursor = 1;
+
+    auto sampleAt = [&] (double targetMs)
+    {
+        if (targetMs <= userRecordingBuffer.front().elapsedMs)
+            return userRecordingBuffer.front();
+
+        size_t cursor = 1;
+        while (cursor < userRecordingBuffer.size()
+               && userRecordingBuffer[cursor].elapsedMs < targetMs)
+            ++cursor;
+        if (cursor >= userRecordingBuffer.size())
+            return userRecordingBuffer.back();
+
+        const auto& a = userRecordingBuffer[cursor - 1];
+        const auto& b = userRecordingBuffer[cursor];
+        const double span = juce::jmax (1.0e-6, b.elapsedMs - a.elapsedMs);
+        const float frac = (float) juce::jlimit (0.0, 1.0, (targetMs - a.elapsedMs) / span);
+        return UserMotionSample { targetMs,
+                                  a.morphDelta + (b.morphDelta - a.morphDelta) * frac,
+                                  a.qDelta + (b.qDelta - a.qDelta) * frac };
+    };
+
     for (int i = 0; i < N; ++i)
     {
         const double targetMs = totalMs * (double) i / (double) (N - 1);
-        while (cursor < userRecordingBuffer.size() - 1 && userRecordingBuffer[cursor].first < targetMs)
-            ++cursor;
-        const auto& a = userRecordingBuffer[cursor - 1];
-        const auto& b = userRecordingBuffer[cursor];
-        const double span = juce::jmax (1.0e-6, b.first - a.first);
-        const double frac = juce::jlimit (0.0, 1.0, (targetMs - a.first) / span);
-        const float v = (float) (a.second + (b.second - a.second) * frac);
+        const auto sample = sampleAt (targetMs);
         // Same bipolar-offset convention as the curated tiles' patterns
         // (sineValues/wobbleValues in SmartMotion.h): [-1,1] -> [-64,64].
-        p.values[(size_t) i] = (juce::int8) juce::jlimit (-64, 64, (int) std::lround ((double) v * 64.0));
+        p.values[(size_t) i] = (juce::int8) juce::jlimit (
+            -64, 64, (int) std::lround ((double) sample.morphDelta * 64.0));
     }
+
+    // Preserve the actual sample times and both wheel deltas for Motion Take.
+    // If the editor supplies more than 64 samples, decimate by sample order so
+    // the authored time coordinates survive; do not resample onto an equal-time
+    // grid as the legacy MotionPattern does.
+    std::array<float, trench::MotionEngine::kSteps * 3> path {};
+    const size_t sourceCount = userRecordingBuffer.size();
+    const int pathCount = (int) juce::jmin ((size_t) N, sourceCount);
+    for (int i = 0; i < pathCount; ++i)
+    {
+        const double sourcePosition = pathCount <= 1
+            ? 0.0
+            : (double) i * (double) (sourceCount - 1) / (double) (pathCount - 1);
+        const size_t sourceIndex = (size_t) std::lround (sourcePosition);
+        const auto& sample = userRecordingBuffer[juce::jmin (sourceIndex, sourceCount - 1)];
+        path[(size_t) i * 3u] = (float) juce::jlimit (0.0, 1.0, sample.elapsedMs / totalMs);
+        path[(size_t) i * 3u + 1u] = sample.morphDelta;
+        path[(size_t) i * 3u + 2u] = sample.qDelta;
+    }
+
+    {
+        const juce::SpinLock::ScopedLockType sl (motionPathLock);
+        motionTimedPathPoints = path;
+        motionTimedPathPointCount = pathCount;
+    }
+    apvts.state.setProperty ("motionTakePath", encodeMotionTakePath (path, pathCount), nullptr);
 
     setMotionPattern (p);
     userRecordingBuffer.clear();
@@ -328,6 +473,7 @@ PluginProcessor::ModulatedControls PluginProcessor::applyMotion (float morph, fl
     if (motionResetRequested.exchange (false, std::memory_order_acq_rel))
     {
         motionEngine.resetPlaybackPosition();
+        motionPathPhase = 0.0;
         motionStepForUi.store (0, std::memory_order_relaxed);
     }
 
@@ -396,6 +542,8 @@ PluginProcessor::ModulatedControls PluginProcessor::applyMotion (float morph, fl
 
     // Read host tempo + transport state once per block.
     double bpm = 0.0;
+    double ppq = -1.0;
+    double qnPerBar = 4.0;
     bool transportPlaying = false;
     bool hasTransport = false;                       // does a host transport exist at all?
     if (auto* ph = getPlayHead())
@@ -404,6 +552,9 @@ PluginProcessor::ModulatedControls PluginProcessor::applyMotion (float morph, fl
         {
             hasTransport = true;
             if (auto b = pos->getBpm()) bpm = *b;
+            if (auto p = pos->getPpqPosition()) ppq = *p;
+            if (auto ts = pos->getTimeSignature())
+                qnPerBar = trench::quarterNotesPerBar (ts->numerator, ts->denominator);
             transportPlaying = pos->getIsPlaying();
         }
     }
@@ -424,6 +575,80 @@ PluginProcessor::ModulatedControls PluginProcessor::applyMotion (float morph, fl
     }
     if (! hasTransport)
         transportPlaying = true;                     // free-run for the engine's own gates
+
+    // MOTION TAKE: one recorded, time-preserving Morph/Q path. The Rust sampler
+    // owns interpolation and the optional hidden grid policy; FilterEngine's
+    // existing coefficient ramp remains the only audio smoothing. The path is
+    // copied under a short lock because capture/state recall happen on the
+    // message thread while this function runs on the audio thread.
+    if (typeBehavior == trench::TypeBehavior::User)
+    {
+        if (amount <= 0.0005f || (tgtM <= 0.0005f && tgtQ <= 0.0005f))
+            return { morph, q, drive };
+
+        int pointCount = 0;
+        {
+            const juce::SpinLock::ScopedLockType sl (motionPathLock);
+            pointCount = juce::jlimit (0, trench::MotionEngine::kSteps, motionTimedPathPointCount);
+            for (int i = 0; i < pointCount; ++i)
+            {
+                motionPathEvalPoints[(size_t) i * 3u] = motionTimedPathPoints[(size_t) i * 3u];
+                motionPathEvalPoints[(size_t) i * 3u + 1u]
+                    = motionTimedPathPoints[(size_t) i * 3u + 1u] * tgtM;
+                motionPathEvalPoints[(size_t) i * 3u + 2u]
+                    = motionTimedPathPoints[(size_t) i * 3u + 2u] * tgtQ;
+            }
+        }
+
+        // Old sessions contain only the 64-value MotionPattern. Keep those
+        // recalls playable as an equal-time compatibility path; new takes use
+        // their recorded timestamps and both wheel deltas above.
+        if (pointCount < 2)
+        {
+            const auto& userPath = cachedSmart.pattern;
+            pointCount = trench::MotionEngine::kSteps;
+            for (int i = 0; i < pointCount; ++i)
+            {
+                const size_t base = (size_t) i * 3u;
+                motionPathEvalPoints[base] = (float) i / (float) (pointCount - 1);
+                motionPathEvalPoints[base + 1u]
+                    = ((float) userPath.values[(size_t) i] / 64.0f) * tgtM;
+                motionPathEvalPoints[base + 2u] = 0.0f;
+            }
+        }
+
+        const double durationBeats = motionPathDurationQuarterNotes (divIdx, qnPerBar);
+        if (ppq >= 0.0)
+            motionPathPhase = juce::jmax (0.0, ppq) / durationBeats;
+        else
+            motionPathPhase += (double) numSamples / juce::jmax (1.0, getSampleRate())
+                             * (bpm / 60.0) / durationBeats;
+
+        const float firstMorph = motionPathEvalPoints[1];
+        const float firstQ = motionPathEvalPoints[2];
+        const size_t lastBase = (size_t) (pointCount - 1) * 3u;
+        const float lastMorph = motionPathEvalPoints[lastBase + 1u];
+        const float lastQ = motionPathEvalPoints[lastBase + 2u];
+        const bool closed = std::abs (firstMorph - lastMorph) <= (1.5f / 64.0f)
+                         && std::abs (firstQ - lastQ) <= (1.5f / 64.0f);
+        float pathMorph = morph;
+        float pathQ = q;
+        const int rc = trench_motion_path_value_timed (
+            motionPathEvalPoints.data(), (size_t) pointCount, motionPathPhase,
+            closed ? 1 : 0,
+            (size_t) motionTakeGridSteps.load (std::memory_order_relaxed),
+            morph, q, amount, &pathMorph, &pathQ);
+        if (rc == 0)
+        {
+            const double uiPhase = closed ? std::fmod (std::max (0.0, motionPathPhase), 1.0)
+                                          : std::min (1.0, std::max (0.0, motionPathPhase));
+            motionStepForUi.store (
+                juce::jlimit (0, pointCount - 1,
+                              (int) std::floor (uiPhase * pointCount)),
+                std::memory_order_relaxed);
+            return { pathMorph, pathQ, drive };
+        }
+    }
 
     const auto r = motionEngine.apply (on, bpmSync, rateHz, divIdx, sync, smooth,
                                        direction, length, mDepth, qDepth,
@@ -542,6 +767,7 @@ void PluginProcessor::prepareToPlay (double sampleRate, int samplesPerBlock)
     morphModulatedForUi.store (false, std::memory_order_relaxed);
     qModulatedForUi.store (false, std::memory_order_relaxed);
     motionInputEnv = 0.0f;
+    motionPathPhase = 0.0;
     controlSmoothersPrimed = true;
 
     captureRing.prepare (sampleRate, kCaptureMaxSeconds);
@@ -939,13 +1165,29 @@ void PluginProcessor::processBlock (juce::AudioBuffer<float>& buffer, juce::Midi
         const auto* postL = buffer.getReadPointer (0);
         const auto* postR = buffer.getNumChannels() > 1 ? buffer.getReadPointer (1) : postL;
         int wp = scopeWritePos.load (std::memory_order_relaxed);
+        float blockPeak = 0.0f;
         for (int i = 0; i < buffer.getNumSamples(); ++i)
         {
             scopeL[(size_t) wp].store (postL[i], std::memory_order_relaxed);
             scopeR[(size_t) wp].store (postR[i], std::memory_order_relaxed);
+            blockPeak = juce::jmax (blockPeak, std::abs (postL[i]), std::abs (postR[i]));
             wp = (wp + 1) & (kScopeLen - 1);
         }
         scopeWritePos.store (wp, std::memory_order_relaxed);
+
+        // The LIMIT readout — how hard the output is being driven, 0..1.
+        //
+        // The old faceplate read this off the CLIPPER's clip fraction. That stage is
+        // gone (the leveller owns level now), which is exactly why the distortion went
+        // invisible. And counting "samples at the ceiling" would read 0% forever: the
+        // leveller HOLDS the output below full scale by design — a 4.0 input lands at
+        // 0.82 peak, never at 1.0. Measured, not assumed.
+        //
+        // So read output HOTNESS instead, which is what actually tracks the drive into
+        // the saturator: quiet program sits near 0.03, a slammed one near 0.82. Peak
+        // with a gentle fall, so the meter breathes rather than flickers.
+        const float prevClip = outClipForUi.load (std::memory_order_relaxed);
+        outClipForUi.store (juce::jmax (blockPeak, prevClip * 0.90f), std::memory_order_relaxed);
 
         // Edison capture: record the FINAL wet output (the same post-everything tap as the
         // scope) into the rolling buffer for captureTake(). FROZEN while Page 2 is open so

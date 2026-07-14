@@ -118,6 +118,34 @@ pub fn words_from_roots(r: &StageRoots) -> [u16; 5] {
     ]
 }
 
+/// Exact root-pair geometry + scale -> five packed words.
+///
+/// Unlike [`words_from_roots`], this accepts independent real-root pairs. It
+/// is the authoring path for an explicit real-pair edit; no pair is silently
+/// projected into conjugate Hz/radius controls.
+pub fn words_from_geometry(g: &StageGeometry) -> [u16; 5] {
+    let (zero_p, zero_q) = pair_coefficients(g.zero);
+    let (pole_p, pole_q) = pair_coefficients(g.pole);
+    [
+        encode((zero_p + 1.0 + zero_q) / 4.0),
+        encode(1.0 - zero_q),
+        encode((pole_p + 1.0 + pole_q) / 4.0),
+        encode(1.0 - pole_q),
+        encode(g.scale / 4.0),
+    ]
+}
+
+fn pair_coefficients(pair: RootPair) -> (f64, f64) {
+    match pair {
+        RootPair::Conjugate { hz, r } => {
+            let angle = TAU * hz / STAGE_SR;
+            (-2.0 * r * angle.cos(), r * r)
+        }
+        RootPair::RealPair { root_a, root_b } => (-(root_a + root_b), root_a * root_b),
+        RootPair::Degenerate => (0.0, 0.0),
+    }
+}
+
 /// five packed words → exact stage geometry. Always succeeds, never
 /// approximates: real-root rows come back as [`RootPair::RealPair`] verbatim.
 pub fn geometry_from_words(words: [u16; 5]) -> StageGeometry {

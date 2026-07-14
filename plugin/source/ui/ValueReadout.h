@@ -27,7 +27,12 @@ public:
         setMouseCursor (p != nullptr ? juce::MouseCursor::UpDownResizeCursor
                                      : juce::MouseCursor::NormalCursor);
         if (p != nullptr)
+        {
+            const auto name = p->getName (24);
+            setTitle (name);
+            setHelpText (name + " - scroll to adjust; double-click to type an exact value; right-click for parameter options.");
             setTooltip (p->getName (24) + " - scroll to adjust, double-click to type, right-click for menu");
+        }
     }
 
     void setNormalised (float v)

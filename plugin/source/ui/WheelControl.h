@@ -167,10 +167,10 @@ public:
             return;
 
         const int last = numFrames - 1;
-        // The rendered drum rolls opposite to parameter travel, like turning a
-        // physical thumbwheel under the fingertip. Interpolate the two nearest
-        // authored frames so fractional parameter movement never reads as clicks.
-        const float framePos = (1.0f - displayNormalised()) * (float) last;
+        // Follow the parameter in the same direction as the finger, then blend
+        // neighbouring authored frames. The 257-frame X3 glow logic remains
+        // entirely in the strip; interpolation only removes frame stepping.
+        const float framePos = displayNormalised() * (float) last;
         const int frameA = juce::jlimit (0, last, (int) std::floor (framePos));
         const int frameB = juce::jmin (last, frameA + 1);
         const float frameBlend = framePos - (float) frameA;

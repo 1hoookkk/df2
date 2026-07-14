@@ -15,6 +15,7 @@ namespace trench::ui
 // APVTS ComboBoxAttachment. We listen only to repaint our custom face when
 // the selection changes (from the user or from host automation).
 class TypeSelectorView : public juce::Component,
+                         public juce::SettableTooltipClient,
                          private juce::ComboBox::Listener
 {
 public:
@@ -23,6 +24,9 @@ public:
     {
         setInterceptsMouseClicks (true, true);
         setMouseCursor (juce::MouseCursor::PointingHandCursor);
+        setTitle ("Type");
+        setHelpText ("Type - choose the filter body.");
+        setTooltip ("TYPE: choose the filter body");
         selector.setLookAndFeel (&menuLookAndFeel);
         selector.setInterceptsMouseClicks (false, false);
         selector.setWantsKeyboardFocus (false);   // let keystrokes pass to the host (play notes without clicking out)

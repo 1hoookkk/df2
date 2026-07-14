@@ -63,6 +63,8 @@ inline constexpr int kNoFilterIndex = 0;
 inline constexpr int kDefaultBodyIndex = kNoFilterIndex;
 inline constexpr const char* kNoFilterName = "NO FILTER";
 
+inline const BodyEntry* bakedRoster (int& countOut) noexcept;
+
 inline juce::File auditionSlotFile() noexcept
 {
     return juce::File::getSpecialLocation (juce::File::userDocumentsDirectory)
@@ -102,9 +104,14 @@ inline RosterStore& rosterStore()
     if (! built)
     {
         built = true;
-        store.names.push_back (kNoFilterName);
-        store.bases.push_back ("identity");
-        store.categories.push_back ("SYSTEM");
+        int bakedCount = 0;
+        const auto* baked = bakedRoster (bakedCount);
+        for (int index = 0; index < bakedCount; ++index)
+        {
+            store.names.emplace_back (baked[index].displayName);
+            store.bases.emplace_back (baked[index].base);
+            store.categories.emplace_back (baked[index].category);
+        }
 
         const auto dir = juce::File::getSpecialLocation (juce::File::userDocumentsDirectory)
                              .getChildFile ("TRENCH")
@@ -140,8 +147,12 @@ inline const BodyEntry* bakedRoster (int& countOut) noexcept
 {
     static const BodyEntry entries[] = {
         { kNoFilterName, "identity", "SYSTEM", (int) TypeBehavior::Static },
+#define TRENCH_PRESET(displayName, resourceStem, categoryName) \
+        { displayName, resourceStem, categoryName, (int) TypeBehavior::Static },
+#include "../presets/PresetRoster.inc"
+#undef TRENCH_PRESET
     };
-    countOut = 1;
+    countOut = (int) (sizeof (entries) / sizeof (entries[0]));
     return entries;
 }
 
@@ -189,13 +200,20 @@ inline bool bodyRawBytes (int index, juce::MemoryBlock& out) noexcept
         return false;
     }
 
-    int size = 0;
-    const auto* data = BinaryData::getNamedResource ((juce::String (entry.base) + "_body240").toRawUTF8(), size);
-    if (data == nullptr || size != 240)
-        return false;
-    out.setSize (240);
-    out.copyFrom (data, 0, 240);
-    return true;
+    const auto wantedFilename = juce::String (entry.base) + ".body240";
+    for (int resource = 0; resource < BinaryData::namedResourceListSize; ++resource)
+    {
+        if (wantedFilename != BinaryData::originalFilenames[resource])
+            continue;
+        int size = 0;
+        const auto* data = BinaryData::getNamedResource (BinaryData::namedResourceList[resource], size);
+        if (data == nullptr || size != 240)
+            return false;
+        out.setSize (240);
+        out.copyFrom (data, 0, 240);
+        return true;
+    }
+    return false;
 }
 
 inline juce::String bodyCartridgeJson (int index) noexcept

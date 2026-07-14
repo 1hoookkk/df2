@@ -271,3 +271,120 @@ mod render {
         }
     }
 }
+
+#[cfg(test)]
+mod strike_proto {
+    use crate::cartridge::Cartridge;
+    use crate::engine::FilterEngine;
+
+    /// STRIKE / EXCITE prototype (Gemini's Invent #1).
+    ///
+    /// The cascade is a resonator with live biquad state that rings ~23 ms. Feed
+    /// it an IMPULSE instead of sustained audio and it rings at the body's own
+    /// resonances — the filter becomes a tuned, struck object. No new DSP: this
+    /// drives the shipping engine with an impulse train, exactly what a
+    /// transient-triggered "strike" would inject.
+    ///
+    /// Takes:
+    ///  1. struck at 1/4 notes, morph STILL      -> the raw tuned resonance
+    ///  2. struck at 1/8 notes, morph SWEEPS      -> the strike's pitch/timbre moves
+    ///  3. a second body struck                    -> a different "instrument"
+    ///   cargo test -p trench-core --lib render_strike_proto -- --ignored --nocapture
+    #[test]
+    #[ignore = "renders the strike/excite prototype"]
+    fn render_strike_proto() {
+        const SR: f64 = 39_062.5;
+        const OUT: u32 = 44_100;
+        const BPM: f64 = 120.0;
+        const BARS: f64 = 4.0;
+        const HB: usize = 64;
+
+        let dir = "C:/Users/hooki/df2-workstation/out/strike_proto";
+        std::fs::create_dir_all(dir).unwrap();
+        println!("\n  STRIKE prototype — {BPM} bpm, impulse-excited resonator\n");
+
+        // (name, body file, strikes-per-beat, morph_a, morph_b [swept if != a], q)
+        // (name, body, strikes/beat, morph_a, morph_b, q, agc_on)
+        // The `agc_on=false` takes ring FREELY — the leveller ducks a struck
+        // resonator's natural decay (it reads the decay as "getting quieter" and
+        // fights it), so a real strike mode must relax the AGC. These prove the
+        // resonator rings; the AGC-on takes show what the current chain does to it.
+        let takes = [
+            ("1_masonjar_quarters_FREE",  "CAVL_mason_jar_to_stone_pipe.body240", 1.0f64, 0.35f32, 0.35f32, 1.0f32, false),
+            ("2_masonjar_eighths_sweep",  "CAVL_mason_jar_to_stone_pipe.body240", 2.0,     0.0,     1.0,     1.0,     false),
+            ("3_beerbottle_quarters_FREE","CAVL_beer_bottle_to_bathtub.body240",  1.0,     0.4,     0.4,     1.0,     false),
+            ("4_masonjar_quarters_AGCon", "CAVL_mason_jar_to_stone_pipe.body240", 1.0,     0.35,    0.35,    1.0,     true),
+        ];
+
+        for (name, file, strikes_per_beat, ma, mb, q, agc_on) in takes {
+            let body = std::fs::read(format!("../filters/bodies/{file}")).unwrap();
+            let mut eng = FilterEngine::new();
+            eng.prepare(SR);
+            eng.load_cartridge(Cartridge::from_body_bytes("d", &body, 1.0).unwrap());
+            eng.debug.agc_enabled = agc_on;
+            eng.debug.saturation_enabled = agc_on;
+
+            let secs = BARS * 4.0 * 60.0 / BPM;
+            let n = (secs * SR) as usize;
+            let strike_period = SR * 60.0 / BPM / strikes_per_beat; // samples between hits
+
+            // A "mallet": a ~2.5 ms exponentially-decaying noise burst. Broadband
+            // energy excites the body's resonances (a single impulse is mostly a
+            // click); the short decay reads as a struck contact, not a tone.
+            let burst_len = (SR * 0.0025) as usize;
+            let mut rng = 0x1234_5678_9abc_def0u64;
+            let burst: Vec<f32> = (0..burst_len).map(|i| {
+                rng = rng.wrapping_mul(6364136223846793005).wrapping_add(1442695040888963407);
+                let w = ((rng >> 40) as f64 / (1u64 << 23) as f64) - 1.0;
+                let env = (-(i as f64) / (burst_len as f64 * 0.35)).exp();
+                (w * env * 0.7) as f32
+            }).collect();
+
+            let mut out: Vec<f32> = Vec::with_capacity(n);
+            let mut off = 0;
+            let mut next_strike = 0.0f64;
+            let mut burst_pos = burst_len; // idle
+            while off < n {
+                let len = HB.min(n - off);
+                let mut l = vec![0.0f32; len];
+                for i in 0..len {
+                    let s = (off + i) as f64;
+                    if s >= next_strike { burst_pos = 0; next_strike += strike_period; }
+                    if burst_pos < burst_len { l[i] = burst[burst_pos]; burst_pos += 1; }
+                }
+                let mut r = l.clone();
+                let t = (off + len / 2) as f64 / n as f64;
+                let morph = (ma as f64 + (mb as f64 - ma as f64) * t) as f64; // still if ma==mb
+                eng.process_block(&mut l, &mut r, morph, q as f64);
+                out.extend_from_slice(&l);
+                off += len;
+            }
+
+            // resample -> 44.1k, normalise to -6 dBFS
+            let ratio = SR / OUT as f64;
+            let on = (out.len() as f64 / ratio) as usize;
+            let mut v: Vec<f32> = (0..on).map(|i| {
+                let p = i as f64 * ratio; let i0 = p.floor() as usize;
+                let f = (p - i0 as f64) as f32;
+                let x = out.get(i0).copied().unwrap_or(0.0);
+                let y = out.get(i0 + 1).copied().unwrap_or(x);
+                x + (y - x) * f
+            }).collect();
+            let pk = v.iter().fold(0.0f32, |m, &x| m.max(x.abs())).max(1e-9);
+            let g = 0.5012 / pk;
+            for x in v.iter_mut() { *x *= g; }
+            let mut w = Vec::new();
+            let dl = (v.len() * 2) as u32;
+            w.extend_from_slice(b"RIFF"); w.extend_from_slice(&(36 + dl).to_le_bytes());
+            w.extend_from_slice(b"WAVEfmt "); w.extend_from_slice(&16u32.to_le_bytes());
+            w.extend_from_slice(&1u16.to_le_bytes()); w.extend_from_slice(&1u16.to_le_bytes());
+            w.extend_from_slice(&OUT.to_le_bytes()); w.extend_from_slice(&(OUT * 2).to_le_bytes());
+            w.extend_from_slice(&2u16.to_le_bytes()); w.extend_from_slice(&16u16.to_le_bytes());
+            w.extend_from_slice(b"data"); w.extend_from_slice(&dl.to_le_bytes());
+            for &x in &v { w.extend_from_slice(&((x.clamp(-1.0,1.0)*32767.0) as i16).to_le_bytes()); }
+            let p = format!("{dir}/{name}.wav");
+            std::fs::write(&p, w).unwrap();
+            println!("  {p}");
+        }
+    }
+}

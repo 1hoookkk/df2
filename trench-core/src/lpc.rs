@@ -30,7 +30,11 @@ const FRAME_MS: f64 = 25.0;
 const HOP_MS: f64 = 10.0;
 const PEAK_RMS_TOL_DB: f64 = 3.0;
 const F_MIN_HZ: f64 = 90.0;
-const F_MAX_HZ: f64 = 10000.0;
+// The packed runtime response and authoring grid both retain measured actors
+// through 16 kHz. Keeping the LPC candidate ceiling at 10 kHz silently drops
+// a real high actor from bright measured sources and makes the six-lane
+// contract impossible to satisfy.
+const F_MAX_HZ: f64 = 16000.0;
 const N_KEEP: usize = 6;
 const PASSTHROUGH: [f64; 5] = [2.0, 1.0, 2.0, 1.0, 1.0];
 

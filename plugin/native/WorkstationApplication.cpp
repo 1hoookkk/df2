@@ -14,7 +14,7 @@ public:
         setUsingNativeTitleBar (true);
         setResizable (true, false);
         setContentOwned (new WorkstationEditor (processor), true);
-        centreWithSize (1240, 760);
+        centreWithSize (1440, 900);
         setVisible (true);
     }
 
@@ -36,14 +36,17 @@ public:
     {
         processor = std::make_unique<PluginProcessor>();
         processor->setWorkstationBodySolo (true);
-
-        const auto result = deviceManager.initialiseWithDefaultDevices (2, 2);
-        if (result.isNotEmpty())
-            juce::Logger::writeToLog ("TRENCH Workstation audio: " + result);
-
-        player.setProcessor (processor.get());
-        deviceManager.addAudioCallback (&player);
         window = std::make_unique<WorkstationWindow> (getApplicationName(), *processor);
+
+        if (juce::SystemStats::getEnvironmentVariable ("TRENCH_WORKSTATION_SKIP_AUDIO", {}) != "1")
+        {
+            const auto result = deviceManager.initialiseWithDefaultDevices (2, 2);
+            if (result.isNotEmpty())
+                juce::Logger::writeToLog ("TRENCH Workstation audio: " + result);
+
+            player.setProcessor (processor.get());
+            deviceManager.addAudioCallback (&player);
+        }
     }
 
     void shutdown() override

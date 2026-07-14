@@ -14,6 +14,7 @@ pub mod heritage;
 pub mod keyframe;
 pub mod letters;
 pub mod lpc;
+pub mod motion;
 pub mod qsound_spatial;
 pub mod response;
 pub mod stage_law;

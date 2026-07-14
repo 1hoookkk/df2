@@ -2,8 +2,8 @@
 
 #include "Theme.h"
 #include "ParamInteraction.h"
+#include "../dsp/SlamStage.h"
 #include "../parameters/TrenchParameters.h"
-#include "BinaryData.h"
 
 #include <juce_audio_processors/juce_audio_processors.h>
 
@@ -15,12 +15,13 @@
 namespace trench::ui
 {
 
-// Precision-fitted display plus the live cascade response. The rear substrate
-// and grid are the baked display_log_grid.png asset; code draws only the live
-// signal and the physical reveal in front of it.
+// The recessed screen: failing dark glass plus the live cascade response. It
+// should feel electrically separate from the cleaner plate controls: dim,
+// uneven, and barely holding together.
 //
-// SLAM remains a secondary FINAL-output control (not a rail). Its compact
-// upper-right hit region is retained without diagnostic text on the display.
+// SLAM is a SECONDARY on-screen control (not a rail): dragging the canvas vertically
+// (or the mouse wheel over the graph) drives SLAM/input-clip, with a transient
+// "SLAM xx.x" overlay. Up = push harder into it. Default is the parameter's own.
 //
 // Preview-only: curve, nothing else. MOTION/TIME are picked and shown in
 // their own compact row below the screen (MotionTimeRow) — this view never
@@ -50,29 +51,49 @@ public:
                   juce::AudioProcessorValueTreeState& apvts, const juce::String& canvasParamId)
         : t (theme)
     {
-        displayBack = juce::ImageCache::getFromMemory (BinaryData::display_log_grid_png,
-                                                       BinaryData::display_log_grid_pngSize);
-        jassert (displayBack.isValid());
-
         canvasParam = apvts.getParameter (canvasParamId);
         if (canvasParam != nullptr)
         {
             canvasAtt = std::make_unique<juce::ParameterAttachment> (*canvasParam, [this] (float)
             {
+                meterAlpha = 1.0f;            // any SLAM change breathes the meter in...
+                if (! pressing) startTimer (30);   // ...and it fades once the value rests
                 repaint();
             });
             canvasDefault = canvasParam->getDefaultValue();
-            canvasAtt->sendInitialUpdate();
-
+            setMouseCursor (juce::MouseCursor::UpDownResizeCursor);
             setTitle ("SLAM");
-            setHelpText ("SLAM - final output pressure. Drag the upper-right of the display up/down; Shift for fine control; double-click to reset.");
-            setTooltip ("SLAM: final output pressure - upper-right display area, drag/wheel, double-click reset");
+            setHelpText ("SLAM - drag the response display up or down; Shift for fine control; mouse-wheel to adjust; double-click to reset.");
+            setTooltip ("SLAM: drag the display up/down, wheel to adjust, double-click to reset");
         }
-        setMouseCursor (juce::MouseCursor::NormalCursor);
-        setWantsKeyboardFocus (true);
-        // The graph still receives hover/mouse events, but adjustment begins
-        // only inside slamHitBounds(); the plotted response is safe to inspect.
+        // The screen takes mouse input to drive SLAM (children like the [1][2]
+        // pad and MOD tag sit on top and still get their own clicks).
         setInterceptsMouseClicks (canvasParam != nullptr, false);
+    }
+
+    void setSlamMeter (float outClipFrac) noexcept
+    {
+        const float v = juce::jlimit (0.0f, 1.0f, outClipFrac);
+        if (juce::approximatelyEqual (slamOutClip, v))
+        {
+            if (v > 0.001f && meterAlpha < 0.72f)
+            {
+                meterAlpha = 0.72f;
+                if (! pressing)
+                    startTimer (30);
+                repaint();
+            }
+            return;
+        }
+
+        slamOutClip = v;
+        if (v > 0.001f)
+        {
+            meterAlpha = juce::jmax (meterAlpha, 0.72f);
+            if (! pressing)
+                startTimer (30);
+        }
+        repaint();
     }
 
     // Rebuild the response Path from the engine's live biquad coefficients. No-op
@@ -149,205 +170,178 @@ public:
         repaint();
     }
 
-    // --- SLAM: the fixed readout is the control; the graph itself is not. -----
-    void mouseEnter (const juce::MouseEvent& e) override { updateSlamHover (e.position); }
-    void mouseMove  (const juce::MouseEvent& e) override { updateSlamHover (e.position); }
-    void mouseExit  (const juce::MouseEvent&) override
-    {
-        hoveringSlam = false;
-        if (! pressing)
-            setMouseCursor (juce::MouseCursor::NormalCursor);
-        repaint (slamHitBounds().getSmallestIntegerContainer());
-    }
-
+    // --- SLAM: vertical drag + wheel drive input-clip/SLAM (up = harder) ------
     void mouseDown (const juce::MouseEvent& e) override
     {
-        if (canvasParam == nullptr || ! slamHitBounds().contains (e.position))
-            return;
+        if (canvasParam == nullptr) return;
         if (e.mods.isPopupMenu())
         {
             showParamContextMenu (*this, canvasParam);
             return;
         }
-
         pressing = true;
-        grabKeyboardFocus();
+        stopTimer();
+        meterAlpha = 1.0f;
         dragStartY = e.position.y;
+        dragPos = e.position;
         canvasAtStart = canvasParam->getValue();
-        if (canvasAtt != nullptr)
-            canvasAtt->beginGesture();
-        repaint (slamHitBounds().getSmallestIntegerContainer());
+        if (canvasAtt != nullptr) canvasAtt->beginGesture();
+        repaint();
     }
 
     void mouseDrag (const juce::MouseEvent& e) override
     {
-        if (! pressing || canvasParam == nullptr || canvasAtt == nullptr)
-            return;
-
-        const float travel = juce::jmax (120.0f, (float) getHeight() * 0.72f);
-        const float scale = e.mods.isShiftDown() ? 0.2f : 1.0f;
-        const float raw = canvasAtStart - ((e.position.y - dragStartY) / travel) * scale;
-        const float next = snapSlamValue (juce::jlimit (0.0f, 1.0f, raw));
+        if (canvasParam == nullptr || canvasAtt == nullptr) return;
+        dragPos = e.position;
+        const float h = juce::jmax (1.0f, (float) getHeight());
+        const float scale = e.mods.isShiftDown() ? 0.25f : 1.0f;       // fine adjust
+        const float next = juce::jlimit (0.0f, 1.0f,
+                                         canvasAtStart - ((e.position.y - dragStartY) / h) * scale); // up = more
         canvasAtt->setValueAsPartOfGesture (canvasParam->convertFrom0to1 (next));
-        repaint (slamHitBounds().getSmallestIntegerContainer());
+        repaint();
     }
 
-    void mouseUp (const juce::MouseEvent& e) override
+    void mouseUp (const juce::MouseEvent&) override
     {
-        if (! pressing || canvasParam == nullptr)
-            return;
+        if (canvasParam == nullptr) return;
         pressing = false;
-        if (canvasAtt != nullptr)
-            canvasAtt->endGesture();
-        updateSlamHover (e.position);
-        repaint (slamHitBounds().getSmallestIntegerContainer());
+        if (canvasAtt != nullptr) canvasAtt->endGesture();
+        startTimer (30);   // let the meter fade out slowly
+        repaint();
     }
 
-    void mouseDoubleClick (const juce::MouseEvent& e) override
+    void mouseDoubleClick (const juce::MouseEvent&) override
     {
-        if (canvasAtt != nullptr && slamHitBounds().contains (e.position))
-            canvasAtt->setValueAsCompleteGesture (canvasParam->convertFrom0to1 (canvasDefault));
+        if (canvasAtt != nullptr) canvasAtt->setValueAsCompleteGesture (canvasDefault);
     }
 
-    void mouseWheelMove (const juce::MouseEvent& e, const juce::MouseWheelDetails& w) override
+    void mouseWheelMove (const juce::MouseEvent&, const juce::MouseWheelDetails& w) override
     {
-        if (canvasParam == nullptr || canvasAtt == nullptr || ! slamHitBounds().contains (e.position))
-            return;
-        setSlamFromUi (canvasParam->getValue() + w.deltaY * 0.05f);
-    }
-
-    bool keyPressed (const juce::KeyPress& key) override
-    {
-        if (canvasParam == nullptr || canvasAtt == nullptr)
-            return false;
-
-        const int code = key.getKeyCode();
-        if (code == juce::KeyPress::homeKey) { setSlamFromUi (0.0f); return true; }
-        if (code == juce::KeyPress::endKey)  { setSlamFromUi (1.0f); return true; }
-
-        float direction = 0.0f;
-        float step = key.getModifiers().isShiftDown() ? 0.001f : 0.01f;
-        if (code == juce::KeyPress::upKey || code == juce::KeyPress::rightKey)
-            direction = 1.0f;
-        else if (code == juce::KeyPress::downKey || code == juce::KeyPress::leftKey)
-            direction = -1.0f;
-        else if (code == juce::KeyPress::pageUpKey)
-            direction = 10.0f;
-        else if (code == juce::KeyPress::pageDownKey)
-            direction = -10.0f;
-        else
-            return false;
-
-        setSlamFromUi (canvasParam->getValue() + direction * step);
-        return true;
+        if (canvasParam == nullptr || canvasAtt == nullptr) return;
+        const float next = juce::jlimit (0.0f, 1.0f, canvasParam->getValue() + w.deltaY * 0.08f);
+        canvasAtt->setValueAsCompleteGesture (canvasParam->convertFrom0to1 (next));
+        repaint();
     }
 
     void paint (juce::Graphics& g) override
     {
         const float rad = 9.0f;
-        const auto aperture = getLocalBounds().toFloat();
-        constexpr float reveal = 1.95f;
-        const auto glass = aperture.reduced (reveal);
-        const float glassRad = rad - reveal;
+        const auto screen = getLocalBounds().toFloat();
 
-        // 1.95 px blackened-nickel reveal. It exposes enough of the precision
-        // backing plate to separate the glass without becoming a chunky bezel.
-        // It is not a chrome border or an outer shadow.
+        juce::Path face;
+        face.addRoundedRectangle (screen, rad);
+        juce::Graphics::ScopedSaveState save (g);
+        g.reduceClipRegion (face);
+
+        drawFailingGlassBed (g, screen);
+
+        // The plate art's own baked dark recess remains the display body. Code
+        // only adds screen-internal decay: ruled grid, weakened trace, dirt and
+        // dropout inside the clipped glass.
+        drawLogGrid (g, screen);
+
+        drawResponseTrace (g);
+        drawSlamReadout (g, screen);
+        drawDisplayDropouts (g, screen);
+
+        // A very subtle pane of glass over the DISPLAY only (Tyson 2026-07-11):
+        // faint diagonal sheen + a whisper of corner vignette — the screen reads
+        // sealed. Whisper-level; never a separate object.
         {
-            juce::ColourGradient nickel (juce::Colour (0xff24211d), aperture.getX(), aperture.getY(),
-                                         juce::Colour (0xff080a0c), aperture.getRight(), aperture.getBottom(), false);
-            nickel.addColour (0.38, juce::Colour (0xff111316));
-            g.setGradientFill (nickel);
-            g.fillRoundedRectangle (aperture, rad);
+            juce::ColourGradient sheen (juce::Colours::white.withAlpha (0.045f),
+                                        screen.getX(), screen.getY(),
+                                        juce::Colours::transparentBlack,
+                                        screen.getX() + screen.getWidth() * 0.5f, screen.getBottom(), false);
+            sheen.addColour (0.35, juce::Colours::white.withAlpha (0.015f));
+            g.setGradientFill (sheen);
+            g.fillRect (screen);
 
-            g.setColour (juce::Colours::black.withAlpha (0.72f));
-            g.drawRoundedRectangle (aperture.reduced (0.35f), rad - 0.25f, 0.75f);
-
-            // Warm nickel responds only along the lit half of the top edge.
-            juce::ColourGradient catchLight (juce::Colour (0xffb69a70).withAlpha (0.16f),
-                                             aperture.getX() + rad, 0.0f,
-                                             juce::Colours::transparentBlack,
-                                             aperture.getX() + aperture.getWidth() * 0.72f, 0.0f, false);
-            g.setGradientFill (catchLight);
-            g.fillRect (aperture.getX() + rad, aperture.getY() + 0.45f,
-                        aperture.getWidth() - 2.0f * rad, 0.70f);
+            juce::ColourGradient vig (juce::Colours::transparentBlack,
+                                      screen.getCentreX(), screen.getCentreY(),
+                                      juce::Colours::black.withAlpha (0.10f),
+                                      screen.getX(), screen.getY(), true);
+            vig.addColour (0.70, juce::Colours::transparentBlack);
+            g.setGradientFill (vig);
+            g.fillRect (screen);
         }
-
-        {
-            juce::Path face;
-            face.addRoundedRectangle (glass, glassRad);
-            juce::Graphics::ScopedSaveState save (g);
-            g.reduceClipRegion (face);
-
-            if (displayBack.isValid())
-            {
-                g.setImageResamplingQuality (juce::Graphics::mediumResamplingQuality);
-                g.drawImage (displayBack, glass, juce::RectanglePlacement::stretchToFit);
-            }
-            else
-            {
-                g.setColour (juce::Colour (0xff3a3c42));
-                g.fillRect (glass);
-            }
-
-            drawResponseTrace (g);
-        }
-
-        // Hairline inner seam: the glass meets the reveal with zero visible lift.
-        g.setColour (juce::Colours::black.withAlpha (0.68f));
-        g.drawRoundedRectangle (glass, glassRad, 0.75f);
     }
 
 private:
     juce::Rectangle<float> plotBounds() const { return getLocalBounds().toFloat().reduced (6.0f, 5.0f); }
 
-    juce::Rectangle<float> slamControlBounds (juce::Rectangle<float> screen) const
+    void drawFailingGlassBed (juce::Graphics& g, juce::Rectangle<float> screen) const
     {
-        const float width = juce::jmin (176.0f, juce::jmax (118.0f, screen.getWidth() - 16.0f));
-        return { screen.getRight() - width - 8.0f, screen.getY() + 7.0f, width, 32.0f };
+        juce::ColourGradient dead (juce::Colours::black.withAlpha (0.34f),
+                                   screen.getX(), screen.getY(),
+                                   juce::Colours::transparentBlack,
+                                   screen.getRight(), screen.getBottom(), false);
+        dead.addColour (0.58, juce::Colour (0xff2e2923).withAlpha (0.18f));
+        g.setGradientFill (dead);
+        g.fillRect (screen);
+
+        // Uneven LCD ageing, deterministic and clipped to the aperture.
+        for (int i = 0; i < 18; ++i)
+        {
+            const float x = screen.getX() + std::fmod (19.0f + (float) i * 47.0f, screen.getWidth());
+            const float a = (i % 4 == 0) ? 0.105f : 0.045f;
+            g.setColour (juce::Colours::black.withAlpha (a));
+            g.drawLine (x, screen.getY(), x - 7.0f, screen.getBottom(), (i % 3 == 0) ? 1.2f : 0.7f);
+        }
+
+        g.setColour (juce::Colours::black.withAlpha (0.11f));
+        for (float y = screen.getY() + 9.0f; y < screen.getBottom(); y += 13.0f)
+            g.drawLine (screen.getX(), y, screen.getRight(), y, 0.55f);
     }
 
-    juce::Rectangle<float> slamHitBounds() const
+    // Ruled log-frequency grid on dying glass: still readable, but not married
+    // to the fresh plate typography.
+    void drawLogGrid (juce::Graphics& g, juce::Rectangle<float> screen) const
     {
-        return slamControlBounds (getLocalBounds().toFloat().reduced (1.95f)).expanded (5.0f, 4.0f);
-    }
-
-    static float snapSlamValue (float value) noexcept
-    {
-        value = juce::jlimit (0.0f, 1.0f, value);
-        constexpr float anchors[] = { 0.0f, 0.25f, 0.50f, 0.75f, 1.0f };
-        for (float anchor : anchors)
-            if (std::abs (value - anchor) <= 0.0125f)
-                return anchor;
-        return value;
-    }
-
-    void setSlamFromUi (float value)
-    {
-        if (canvasParam == nullptr || canvasAtt == nullptr)
+        const auto plot = plotBounds();
+        if (plot.isEmpty())
             return;
-        const float next = snapSlamValue (value);
-        canvasAtt->setValueAsCompleteGesture (canvasParam->convertFrom0to1 (next));
-        repaint (slamHitBounds().getSmallestIntegerContainer());
+        const auto ink = t.dashed();
+        const double fLo = 20.0, fHi = 20000.0;
+        const auto xOf = [&] (double f)
+        { return plot.getX() + (float) (std::log (f / fLo) / std::log (fHi / fLo)) * plot.getWidth(); };
+        for (double decade = 10.0; decade < fHi; decade *= 10.0)
+            for (int m = 2; m <= 10; ++m)
+            {
+                const double f = decade * m;
+                if (f <= fLo || f >= fHi)
+                    continue;
+                const bool major = (m == 10);
+                g.setColour (ink.withAlpha (major ? 0.36f : 0.17f));
+                g.drawLine (xOf (f), screen.getY(), xOf (f), screen.getBottom(), major ? 0.95f : 0.55f);
+            }
+        const double dbTop = t.curveDbTop(), dbBot = t.curveDbBottom();
+        for (double db = std::ceil (dbBot / 10.0) * 10.0; db <= dbTop; db += 10.0)
+        {
+            const float y = plot.getY() + (float) ((dbTop - db) / (dbTop - dbBot)) * plot.getHeight();
+            g.setColour (ink.withAlpha (juce::approximatelyEqual (db, 0.0) ? 0.34f : 0.15f));
+            g.drawLine (screen.getX(), y, screen.getRight(), y, 0.55f);
+        }
     }
 
-    void updateSlamHover (juce::Point<float> position)
+    float slamVisualAmount() const noexcept
     {
-        const bool next = canvasParam != nullptr && slamHitBounds().contains (position);
-        if (next == hoveringSlam)
-            return;
-        hoveringSlam = next;
-        if (! pressing)
-            setMouseCursor (hoveringSlam ? juce::MouseCursor::UpDownResizeCursor
-                                        : juce::MouseCursor::NormalCursor);
-        repaint (slamHitBounds().getSmallestIntegerContainer());
+        const float x = slamNorm();
+        return x * x * (3.0f - 2.0f * x);
     }
 
-    // The response trace belongs to the filter body, not the final output stage.
-    // SLAM therefore never recolours, thickens, outlines, or glows the curve.
+    float slamNorm() const noexcept
+    {
+        if (canvasParam == nullptr)
+            return 0.0f;
+        return juce::jlimit (0.0f, 1.0f, canvasParam->getValue());
+    }
+
+    // Phosphor for the trace: faded malachite at clean output, lifting toward a worn
+    // phosphor white as SLAM pushes the output into gain and limiting. This is a
+    // visual output read, not a claim that SLAM changes the filter body.
     juce::Colour responseColour() const
     {
-        return t.curveColour();
+        return t.curveColour().interpolatedWith (juce::Colour (0xffe7e1d3), slamVisualAmount());
     }
 
     // Etched phosphor trace, stroked from the live response Path. The wide pass is
@@ -360,10 +354,13 @@ private:
             return;
         }
 
-        // The curve is the true current six-stage body response. SLAM is final
-        // output pressure and does not alter this display trace. MOTION state
-        // likewise does not change visibility of the filter that is sounding.
+        // The curve is the true current six-stage body response.  SLAM is
+        // post-filter output pressure, so it may light the trace but must
+        // never reshape it.  MOTION state likewise does not change visibility
+        // of the filter that is actually sounding.
+        const float s = slamVisualAmount();
         const auto phos = responseColour();
+        const float limit = juce::jlimit (0.0f, 1.0f, slamOutClip);
 
         const auto plot = plotBounds();
         if (traceXs.empty() || traceXs.size() != traceDbs.size() || plot.isEmpty())
@@ -391,79 +388,48 @@ private:
         };
 
         juce::Path stair;
-        juce::Path edgeCatch;
-        float px = traceXs[0];
         float py = yOf (0);
-        stair.startNewSubPath (px, py);
-
-        bool catchPenDown = false;
-        juce::Point<float> catchEnd;
-        const auto appendEdgeCatch = [&] (float x0, float y0, float x1, float y1)
-        {
-            if (std::abs (x1 - x0) + std::abs (y1 - y0) < 0.1f)
-                return;
-
-            // Fixed, irregular 10px bands: enough interruption to feel like a
-            // dry phosphor/print catch, never a regular dashed software line.
-            const int band = juce::jmax (0, (int) std::floor ((0.5f * (x0 + x1) - plot.getX()) / 10.0f));
-            const int signature = (band * 7 + 5) % 19;
-            const bool visible = signature != 0 && signature != 4 && signature != 11;
-            if (! visible)
-            {
-                catchPenDown = false;
-                return;
-            }
-
-            const juce::Point<float> start { x0, y0 };
-            if (! catchPenDown || catchEnd.getDistanceFrom (start) > 0.1f)
-                edgeCatch.startNewSubPath (start);
-            edgeCatch.lineTo (x1, y1);
-            catchEnd = { x1, y1 };
-            catchPenDown = true;
-        };
-
+        stair.startNewSubPath (traceXs[0], py);
         for (size_t i = 1; i < N; ++i)
         {
-            const float x = traceXs[i];
             const float y = yOf (i);
             if (! juce::approximatelyEqual (y, py))
-            {
-                stair.lineTo (x, py);                      // run, then rise: the staircase
-                appendEdgeCatch (px, py, x, py);
-                stair.lineTo (x, y);
-                appendEdgeCatch (x, py, x, y);
-            }
-            else
-            {
-                stair.lineTo (x, y);
-                appendEdgeCatch (px, py, x, y);
-            }
-            px = x;
+                stair.lineTo (traceXs[i], py);             // run, then rise: the staircase
+            stair.lineTo (traceXs[i], y);
             py = y;
+        }
+
+        // SLAM lives ON the trace: no fill, no bars — the line itself heats,
+        // thickens, and carries a glow halo that swells with drive.
+        if (s > 0.01f)
+        {
+            g.setColour (t.amber().withAlpha (0.12f + 0.30f * s));
+            g.strokePath (stair, { 4.0f + 6.0f * s, juce::PathStrokeType::mitered,
+                                   juce::PathStrokeType::butt });
         }
 
         // LOW SIGNAL by design: a slightly starved beam — dimmer, thinner,
         // the analog read of a weak trace on old glass.
         constexpr auto joint = juce::PathStrokeType::mitered;
         constexpr auto cap   = juce::PathStrokeType::butt;
-        constexpr float lw = 2.0f;
+        const float lw = 2.0f + 0.7f * s;
         g.setColour (juce::Colour (0xff15151a).withAlpha (0.55f));      // soft offset bed (dark glass)
         g.strokePath (stair, { lw + 0.7f, joint, cap },
                       juce::AffineTransform::translation (1.2f, 1.8f));
-        g.setColour (phos.withAlpha (0.66f));                           // the starved signal
+        g.setColour (phos.withAlpha (0.82f));                           // confident primary signal
         g.strokePath (stair, { lw, joint, cap });
-
-        // Broken warm-bone edge catch: a fractional-pixel registration lift on
-        // the upper-left edge of the crude staircase. It replaces the old full
-        // centre highlight, so it reads as material finesse rather than glow.
-        g.setColour (t.curveHighlight().withAlpha (0.12f));
-        g.strokePath (edgeCatch, { 0.65f, joint, cap },
-                      juce::AffineTransform::translation (-0.25f, -0.75f));
+        g.setColour (t.curveHighlight().withAlpha (0.24f + 0.22f * s));
+        g.strokePath (stair, { 0.75f, joint, cap });
+        if (limit > 0.001f)
+        {
+            g.setColour (juce::Colour (0xffeee7d7).withAlpha (0.12f + 0.28f * limit));
+            g.strokePath (stair, { 0.8f + 1.0f * limit, joint, cap });
+        }
 
         // Peak crosses (the reference's + ticks): small markers on the mode
         // crests — the anatomy made visible, not decoration.
         {
-            g.setColour (t.curveHighlight().withAlpha (0.58f));
+            g.setColour (juce::Colour (0xfffff0e8).withAlpha (0.58f));
             int marks = 0;
             for (size_t i = 2; i + 2 < N && marks < 8; ++i)
             {
@@ -479,6 +445,29 @@ private:
                 }
             }
         }
+    }
+
+    void drawDisplayDropouts (juce::Graphics& g, juce::Rectangle<float> screen) const
+    {
+        g.setColour (juce::Colours::black.withAlpha (0.28f));
+        g.fillRect (screen.getX(), screen.getY(), screen.getWidth(), 1.0f);
+        g.fillRect (screen.getX(), screen.getBottom() - 1.4f, screen.getWidth(), 1.4f);
+
+        const float ys[] = { 31.0f, 74.0f, 126.0f, 211.0f, 287.0f };
+        for (float off : ys)
+        {
+            const float y = screen.getY() + std::fmod (off, screen.getHeight() - 4.0f);
+            const float x0 = screen.getX() + 18.0f + std::fmod (off * 3.7f, screen.getWidth() * 0.28f);
+            const float x1 = screen.getRight() - 24.0f - std::fmod (off * 2.1f, screen.getWidth() * 0.22f);
+            g.setColour (juce::Colours::black.withAlpha (0.16f));
+            g.drawLine (x0, y, x1, y, 0.9f);
+        }
+
+        // Two weak vertical failures at the edges, as if the panel is losing
+        // contact rather than glowing as one clean DAW widget.
+        g.setColour (juce::Colours::black.withAlpha (0.18f));
+        g.fillRect (screen.getX() + screen.getWidth() * 0.055f, screen.getY(), 1.0f, screen.getHeight());
+        g.fillRect (screen.getRight() - screen.getWidth() * 0.082f, screen.getY(), 1.0f, screen.getHeight());
     }
 
     // SEED's screen feedback: the OLD curve compresses toward a hot ruby
@@ -535,10 +524,11 @@ private:
             else        path.lineTo (traceXs[i], y);
         }
 
-        // Bright indigo catch during compress/static; cools back toward the
-        // normal smoked-cobalt trace as the redraw completes.
+        // Hot ruby during compress/static (the "compressed scanline"); cools
+        // back toward the normal phosphor colour as the redraw completes.
         const float heat = pulsePhase == PulseRedraw ? (1.0f - progress) : 1.0f;
-        const auto col = t.curveColour().interpolatedWith (t.curveHighlight(), heat);
+        const auto hot = juce::Colour (0xffe9dfc7).interpolatedWith (juce::Colour (0xffc9853f), 0.38f);
+        const auto col = t.curveColour().interpolatedWith (hot, heat);
         constexpr auto joint = juce::PathStrokeType::curved;
         constexpr auto cap   = juce::PathStrokeType::rounded;
 
@@ -548,8 +538,49 @@ private:
         g.strokePath (path, { 1.2f, joint, cap });
     }
 
+    void drawSlamReadout (juce::Graphics& g, juce::Rectangle<float> screen) const
+    {
+        if (canvasParam == nullptr)
+            return;
+
+        // No permanent riser/meter on the glass — SLAM's visual home is the
+        // phosphor lift under the curve (drawResponseTrace). Only the
+        // transient value text appears, while interacting. (Tyson 2026-07-11:
+        // "the bar on the right is clutter".)
+        const float s = slamNorm();
+        const float a = pressing ? 1.0f : juce::jlimit (0.0f, 1.0f, meterAlpha);
+        if (a <= 0.02f && s <= 0.001f)
+            return;
+
+        const float outDb = trench::slamOutputGainDb (s);
+        const float limitPct = slamOutClip * 100.0f;
+        const auto line1 = "SLAM " + juce::String (s * 100.0f, 1);
+        const auto line2 = "OUT +" + juce::String (outDb, 1) + " dB  LIMIT " + juce::String (limitPct, 0) + "%";
+
+        const float boxW = 132.0f;
+        const float boxH = 30.0f;
+        const float x = pressing
+            ? juce::jlimit (screen.getX() + 5.0f, screen.getRight() - boxW - 5.0f, dragPos.x + 14.0f)
+            : screen.getRight() - boxW - 8.0f;
+        const float y = pressing
+            ? juce::jlimit (screen.getY() + 5.0f, screen.getBottom() - boxH - 5.0f, dragPos.y - boxH - 8.0f)
+            : screen.getY() + 8.0f;
+
+        auto r = juce::Rectangle<float> (x, y, boxW, boxH);
+
+        // Remove the background box and border drawing to avoid fake overlays!
+        // We only draw the text on the glass.
+
+        g.setFont (displayFont (12.5f, true));
+        g.setColour (juce::Colour (0xffe7e1d3).withAlpha (0.95f * a));
+        g.drawText (line1, r.removeFromTop (15.0f).reduced (6.0f, 1.0f),
+                    juce::Justification::centredLeft, false);
+        g.setFont (displayFont (10.5f, false));
+        g.setColour (t.telemetry().withAlpha (0.86f * a));
+        g.drawText (line2, r.reduced (6.0f, 0.0f), juce::Justification::centredLeft, false);
+    }
+
     Theme t;
-    juce::Image displayBack;
     juce::Path responsePath;
     std::vector<float> traceXs;
     std::vector<float> traceDbs;
@@ -558,7 +589,7 @@ private:
     double lastSr = 0.0;
     bool haveCurve = false;
 
-    // Compact SLAM screen hit region; no diagnostic copy is painted.
+    // SLAM on-screen (canvas) control
     juce::RangedAudioParameter* canvasParam = nullptr;
     std::unique_ptr<juce::ParameterAttachment> canvasAtt;
     float canvasDefault = 0.0f;
@@ -577,6 +608,9 @@ private:
 
     void timerCallback() override
     {
+        meterAlpha = juce::jmax (0.0f, meterAlpha - 0.05f);
+
+
         if (pulsePhase != PulseIdle)
         {
             pulseElapsedMs += 30.0;
@@ -597,14 +631,16 @@ private:
             }
         }
 
-        if (pulsePhase == PulseIdle)
+        if (meterAlpha <= 0.01f && pulsePhase == PulseIdle)
             stopTimer();
         repaint();
     }
 
     bool pressing = false;
-    bool hoveringSlam = false;
     float dragStartY = 0.0f;
+    float meterAlpha = 0.0f;
+    float slamOutClip = 0.0f;
+    juce::Point<float> dragPos;
     float canvasAtStart = 0.0f;
 };
 
