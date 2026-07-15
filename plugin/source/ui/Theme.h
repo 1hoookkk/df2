@@ -9,8 +9,8 @@ namespace trench::ui
 
 // --- fixed geometry constants (editor + panel source space) ---
 // Source space = the BEIGE plate (df2_panel_beige.png), 1010x1557 (2026-07-11 recut).
-inline constexpr int   kEditorWidth        = 450;   // slightly smaller DAW footprint; plate aspect retained
-inline constexpr int   kEditorHeight       = 694;   // 450 * 1557/1010 — undistorted plate
+inline constexpr int   kEditorWidth        = 440;   // one restrained step smaller in the DAW
+inline constexpr int   kEditorHeight       = 678;   // 440 * 1557/1010 — plate aspect retained
 inline constexpr float kPanelSourceWidth   = 1010.0f;   // layout rects' source space
 inline constexpr float kPanelSourceHeight  = 1557.0f;
 
