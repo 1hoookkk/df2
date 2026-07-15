@@ -262,18 +262,18 @@ inline void drawIvoryWell (juce::Graphics& g, juce::Rectangle<float> r, float ra
     g.drawRoundedRectangle (r.reduced (1.4f), juce::jmax (2.0f, radius - 1.2f), 0.65f);
 }
 
-// Numeric readouts sit one brightness step below the TYPE field. The muted
-// gold-cream face stays distinct from the khaki plate on a small DAW screen,
-// while avoiding the two isolated white lamps created by the shared ivory face.
-inline void drawGoldCreamReadout (juce::Graphics& g, juce::Rectangle<float> r,
+// Numeric readouts sit one brightness step below the TYPE field. Neutral muted
+// bone stays distinct from the khaki plate on a small DAW screen without reading
+// as either two white lamps or yellow/gold decorative plaques.
+inline void drawMutedBoneReadout (juce::Graphics& g, juce::Rectangle<float> r,
                                   float radius, bool isActive, const Theme& t)
 {
     g.setColour (juce::Colours::black.withAlpha (isActive ? 0.24f : 0.19f));
     g.fillRoundedRectangle (r.translated (0.0f, 1.0f), radius);
 
-    juce::ColourGradient face (juce::Colour (0xffefe4bf), 0.0f, r.getY(),
-                               juce::Colour (0xffcfbd8d), 0.0f, r.getBottom(), false);
-    face.addColour (0.52, juce::Colour (0xffe2d2a5));
+    juce::ColourGradient face (juce::Colour (0xffe8e4da), 0.0f, r.getY(),
+                               juce::Colour (0xffc9c2b5), 0.0f, r.getBottom(), false);
+    face.addColour (0.52, juce::Colour (0xffdcd6ca));
     g.setGradientFill (face);
     g.fillRoundedRectangle (r, radius);
 
@@ -283,16 +283,16 @@ inline void drawGoldCreamReadout (juce::Graphics& g, juce::Rectangle<float> r,
         clip.addRoundedRectangle (r, radius);
         g.reduceClipRegion (clip);
 
-        g.setColour (juce::Colour (0xfffff5d8).withAlpha (0.46f));
+        g.setColour (juce::Colour (0xfff8f5ed).withAlpha (0.44f));
         g.fillRect (r.getX() + 2.0f, r.getY() + 1.0f, r.getWidth() - 4.0f, 1.0f);
-        g.setColour (juce::Colour (0xff6b5b36).withAlpha (0.18f));
+        g.setColour (juce::Colour (0xff625e57).withAlpha (0.17f));
         g.fillRect (r.getX() + 2.0f, r.getBottom() - 1.5f, r.getWidth() - 4.0f, 1.0f);
     }
 
     g.setColour (isActive ? t.accent().withAlpha (0.72f)
-                          : juce::Colour (0xff65583c).withAlpha (0.78f));
+                          : juce::Colour (0xff625e57).withAlpha (0.76f));
     g.drawRoundedRectangle (r.reduced (0.5f), radius, 1.0f);
-    g.setColour (juce::Colour (0xfffff4d3).withAlpha (0.24f));
+    g.setColour (juce::Colour (0xfff8f5ed).withAlpha (0.22f));
     g.drawRoundedRectangle (r.reduced (1.4f), juce::jmax (2.0f, radius - 1.2f), 0.65f);
 }
 
