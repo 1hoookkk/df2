@@ -126,7 +126,7 @@ PluginEditor::PluginEditor (PluginProcessor& p)
     addAndMakeVisible (*takeView);     // page 2 overlay; visibility toggled by setPage
     addChildComponent (*moveView);     // page 2 (MOVE/PLAY) screen; shown by setPage
     addChildComponent (*slotPad);      // pager RETIRED everywhere (Tyson: no pages)
-    addAndMakeVisible (*moveChip); // curated MOVE status chip -- added after graph, paints on top
+    addAndMakeVisible (*moveChip); // MODULATION chip — bottom-left on the glass
     addAndMakeVisible (*typeSelector);
     addAndMakeVisible (*morphWheel);
     addAndMakeVisible (*secondaryWheel);
@@ -377,7 +377,7 @@ void PluginEditor::setPage (int page)
     graph->setVisible (! move);
     moveView->setVisible (move);            // V1: MOVE = PLAY only (ROUTE shelved)
     takeView->setVisible (false);           // Take/variant tray is not a V1 page
-    moveChip->setVisible (true);
+    moveChip->setVisible (! move);          // MODULATION lives on the SOUND face
     slotPad->setActive (currentPage);
 
     // Page-specific rails + labels: SOUND = MORPH + Q/SLAM, MOVE = MOVE/TIME.

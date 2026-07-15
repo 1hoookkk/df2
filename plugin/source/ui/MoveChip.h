@@ -35,6 +35,7 @@ public:
         int divIdx;  // ignored when tile == -1
         bool tgtM;   // the preset PACKS its target: morph always moves...
         bool tgtQ;   // ...Q rides along only on presets where it's musical
+        float fiveD; // QSound SPACE depth 0..1 (0 = none). ORBIT sets it > 0.
     };
 
     // tile: 0=Riser 1=Breathe 2=Chop 3=Wobble 4=User (matches ParamID::motionTile).
@@ -43,37 +44,23 @@ public:
     // tgtM/tgtQ: which wheel(s) this preset sweeps (written to motionTargetM/Q).
     // One authored preset per rate up to 4 bars — the list IS the rate control.
     // Each verb gets its musical rate band; morph always moves, Q rides Wobble.
+    // ONE modulation, selectable per TIME. tile is fixed to a smooth morph
+    // sweep (1=Breathe) as the default shape; recording the Morph slider
+    // overwrites that shape with your own gesture. TIME is the only dimension.
     static constexpr State kStates[] = {
-        { "OFF",                  -1, 0, false, false },
-        // RISE — slow swell
-        { "RISE \xC2\xB7 1 BAR",      0, 7, true,  false },
-        { "RISE \xC2\xB7 2 BAR",      0, 8, true,  false },
-        { "RISE \xC2\xB7 4 BAR",      0, 9, true,  false },
-        // BREATHE — gentle cycle
-        { "BREATHE \xC2\xB7 1/2",     1, 6, true,  false },
-        { "BREATHE \xC2\xB7 1 BAR",   1, 7, true,  false },
-        { "BREATHE \xC2\xB7 2 BAR",   1, 8, true,  false },
-        { "BREATHE \xC2\xB7 4 BAR",   1, 9, true,  false },
-        // CHOP — rhythmic gate
-        { "CHOP \xC2\xB7 1/4",        2, 0, true,  false },
-        { "CHOP \xC2\xB7 1/8",        2, 1, true,  false },
-        { "CHOP \xC2\xB7 1/16",       2, 3, true,  false },
-        { "CHOP \xC2\xB7 1/32",       2, 5, true,  false },
-        // WOBBLE — LFO on morph + Q
-        { "WOBBLE \xC2\xB7 1/4",      3, 0, true,  true  },
-        { "WOBBLE \xC2\xB7 1/8",      3, 1, true,  true  },
-        { "WOBBLE \xC2\xB7 1/16",     3, 3, true,  true  },
-        { "WOBBLE \xC2\xB7 1/32",     3, 5, true,  true  },
-        // USER — your alt-drag "loop" gesture: the FULL rate band (your gesture,
-        // any speed), unlike the authored verbs which keep a curated band.
-        { "USER \xC2\xB7 1/32",       4, 5, true,  false },
-        { "USER \xC2\xB7 1/16",       4, 3, true,  false },
-        { "USER \xC2\xB7 1/8",        4, 1, true,  false },
-        { "USER \xC2\xB7 1/4",        4, 0, true,  false },
-        { "USER \xC2\xB7 1/2",        4, 6, true,  false },
-        { "USER \xC2\xB7 1 BAR",      4, 7, true,  false },
-        { "USER \xC2\xB7 2 BAR",      4, 8, true,  false },
-        { "USER \xC2\xB7 4 BAR",      4, 9, true,  false },
+        { "OFF",     -1, 0, false, false, 0.0f },
+        { "1/32",     1, 5, true,  false, 0.0f },
+        { "1/16",     1, 3, true,  false, 0.0f },
+        { "1/8",      1, 1, true,  false, 0.0f },
+        { "1/4",      1, 0, true,  false, 0.0f },
+        { "1/2",      1, 6, true,  false, 0.0f },
+        { "1 BAR",    1, 7, true,  false, 0.0f },
+        { "2 BAR",    1, 8, true,  false, 0.0f },
+        { "4 BAR",    1, 9, true,  false, 0.0f },
+        // ORBIT — the QSound showcase: a 2-bar morph modulation that ALSO orbits
+        // the head (fiveD engages QSound; pan is tempo-locked in the processor).
+        // The one place QSound is used.
+        { "ORBIT",    1, 8, true,  false, 0.7f },
     };
 
     MoveChip (juce::AudioProcessorValueTreeState& apvts, const Theme& theme)
@@ -84,6 +71,7 @@ public:
         motionDivParam  = apvts.getParameter (ParamID::motionDiv);
         motionTgtMParam = apvts.getParameter (ParamID::motionTargetM);
         motionTgtQParam = apvts.getParameter (ParamID::motionTargetQ);
+        fiveDParam      = apvts.getParameter (ParamID::fiveD);
 
         combo.setLookAndFeel (&lookAndFeel);
         combo.setInterceptsMouseClicks (false, false);
@@ -111,6 +99,9 @@ public:
             tgtMAtt = std::make_unique<juce::ParameterAttachment> (*motionTgtMParam, [] (float) {});
         if (motionTgtQParam != nullptr)
             tgtQAtt = std::make_unique<juce::ParameterAttachment> (*motionTgtQParam, [] (float) {});
+        // ORBIT selection engages QSound via SPACE; re-sync the chip if it changes.
+        if (fiveDParam != nullptr)
+            fiveDAtt = std::make_unique<juce::ParameterAttachment> (*fiveDParam, [this] (float) { syncFromParams(); });
         syncFromParams();
 
         combo.onChange = [this]
@@ -133,13 +124,16 @@ public:
             // Preset packs the M/Q target — write it alongside tile/div/on.
             if (tgtMAtt != nullptr) tgtMAtt->setValueAsCompleteGesture (s.tgtM ? 1.0f : 0.0f);
             if (tgtQAtt != nullptr) tgtQAtt->setValueAsCompleteGesture (s.tgtQ ? 1.0f : 0.0f);
+            // ORBIT engages QSound (SPACE > 0); every other state clears it.
+            if (fiveDAtt != nullptr && fiveDParam != nullptr)
+                fiveDAtt->setValueAsCompleteGesture (fiveDParam->convertTo0to1 (s.fiveD));
             repaint();
         };
 
         setInterceptsMouseClicks (true, false);
         setMouseCursor (juce::MouseCursor::PointingHandCursor);
-        setTitle ("Move");
-        setHelpText ("Pick a curated motion + tempo, or OFF");
+        setTitle ("Modulation");
+        setHelpText ("Pick a modulation time, or OFF");
     }
 
     ~MoveChip() override { combo.setLookAndFeel (nullptr); }
@@ -179,14 +173,26 @@ public:
         g.setColour (juce::Colours::black.withAlpha (0.45f));
         g.drawEllipse (lamp, 0.7f);
 
-        // OFF is the lamp's job, not the text's: dark dot + "MOTION" alone.
-        // When running, the state name earns its place next to the lit lamp.
-        // Faded sage ink on espresso glass; regular weight keeps this subordinate.
-        g.setFont (displayFont (11.5f, false));
-        g.setColour (juce::Colour (0xffc7d3bf).withAlpha ((hover || on) ? 0.94f : 0.76f));
-        g.drawText ((on || showingSibling) ? "MOTION  " + displayText() : "MOTION",
-                    chip.withTrimmedLeft (lampD + 6.0f),
-                    juce::Justification::centredLeft, false);
+        // A live selection ON the glass: lamp + "MODULATION <choice>" + a chevron,
+        // in bright phosphor so it reads as a clickable selector, not a faint label.
+        auto textArea = chip.withTrimmedLeft (lampD + 7.0f);
+        g.setFont (displayFont (12.5f, false));
+        const juce::String label = "MODULATION  " + (showingSibling ? juce::String ("SIBLING") : displayText());
+        g.setColour (t.curveColour().withAlpha (hover ? 1.0f : 0.9f));
+        g.drawText (label, textArea, juce::Justification::centredLeft, false);
+
+        // selection chevron so it reads as a dropdown you can change
+        const float tw = juce::GlyphArrangement::getStringWidth (g.getCurrentFont(), label);
+        const auto chev = juce::Rectangle<float> (textArea.getX() + tw + 6.0f,
+                                                  chip.getCentreY() - 1.5f, 7.0f, 4.0f);
+        if (chev.getRight() <= chip.getRight())
+        {
+            juce::Path p;
+            p.startNewSubPath (chev.getX(), chev.getY());
+            p.lineTo (chev.getCentreX(), chev.getBottom());
+            p.lineTo (chev.getRight(), chev.getY());
+            g.strokePath (p, juce::PathStrokeType (1.2f));
+        }
     }
 
 private:
@@ -199,6 +205,17 @@ private:
 
     void syncFromParams()
     {
+        // ORBIT is the only state that engages QSound (SPACE > 0). Detect it first
+        // so it isn't read as the time entry that shares its tile/div.
+        if (fiveDParam != nullptr && fiveDParam->getValue() > 0.001f)
+        {
+            const int orbitId = (int) std::size (kStates); // ORBIT = last entry
+            if (combo.getSelectedId() != orbitId)
+                combo.setSelectedId (orbitId, juce::dontSendNotification);
+            resized();
+            repaint();
+            return;
+        }
         const bool on = motionOnParam != nullptr && motionOnParam->getValue() > 0.5f;
         int id = 1; // OFF
         if (on && motionTileParam != nullptr && motionDivParam != nullptr)
@@ -246,11 +263,13 @@ private:
     juce::RangedAudioParameter* motionDivParam = nullptr;
     juce::RangedAudioParameter* motionTgtMParam = nullptr;
     juce::RangedAudioParameter* motionTgtQParam = nullptr;
+    juce::RangedAudioParameter* fiveDParam = nullptr;
     std::unique_ptr<juce::ParameterAttachment> onAtt;
     std::unique_ptr<juce::ParameterAttachment> tileAtt;
     std::unique_ptr<juce::ParameterAttachment> divAtt;
     std::unique_ptr<juce::ParameterAttachment> tgtMAtt;
     std::unique_ptr<juce::ParameterAttachment> tgtQAtt;
+    std::unique_ptr<juce::ParameterAttachment> fiveDAtt;
     bool hover = false;
     bool showingSibling = false;
     double siblingElapsedMs = 0.0;

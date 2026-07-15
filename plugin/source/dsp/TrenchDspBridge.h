@@ -223,7 +223,10 @@ public:
         const int n = buffer.getNumSamples();
         // The engine's own desk drive stays OFF (slam param 0). SLAM is applied
         // exactly once at the final host-rate output stage in PluginProcessor.
-        trench_engine_set_parameters (engine, params.morph, params.q, 0.0f, params.fiveD, params.amount);
+        // slamDrive now reaches the engine's pre-cascade desk; the engine IGNORES it
+        // unless the input mode is MackieDeskSlam (the "Into Filter" slam route), so
+        // the default Output route stays byte-unchanged.
+        trench_engine_set_parameters (engine, params.morph, params.q, params.slamDrive, params.fiveD, params.amount);
         trench_engine_process_block (engine,
                                      buffer.getWritePointer (0),
                                      buffer.getWritePointer (1),

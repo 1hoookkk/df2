@@ -65,7 +65,8 @@ juce::AudioProcessorValueTreeState::ParameterLayout createParameterLayout()
         juce::ParameterID { ParamID::inputMode, 1 },
         "Input",
         juce::StringArray { "OFF", "SLAM" },
-        0));  // default = OFF — clean input reaches the selected body directly.
+        0));  // default = OFF — desk at the output (shipped sound). SLAM routes the
+              // desk pre-cascade so it drives INTO the filter (the A/B flavor).
 
     // SLAM is output-only in the plug-in. Slam=0 is clean unity after the body;
     // higher values add post-body rounded pressure without changing filter excitation.

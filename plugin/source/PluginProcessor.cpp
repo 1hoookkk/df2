@@ -12,6 +12,8 @@
 namespace
 {
 constexpr int kCleanInputMode = 0; // None
+constexpr int kMackieDeskSlam = 1; // pre-cascade Mackie desk — drives INTO the filter
+constexpr float kIntoFilterDriveScale = 0.10f; // tame the input desk (it runs at 1 + slam*99)
 constexpr int kSpatialOff = 2;
 
 // Motion Warp — reshape the 0..1 morph trajectory. Abuses the morph
@@ -219,6 +221,7 @@ void PluginProcessor::setCurrentProgram (int index)
     setParameterDenormalized (ParamID::q,           p.q);
     setParameterDenormalized (ParamID::slamDrive,   p.slam);
     setParameterDenormalized (ParamID::output,      p.outputDb);
+    setParameterDenormalized (ParamID::fiveD,       p.fiveD);   // QSound SPACE depth (Orbit engages it)
     setParameterDenormalized (ParamID::moveOn,      p.moveOn ? 1.0f : 0.0f);
     applyModulationBehavior ((trench::TypeBehavior) p.modulation, p.body);
 }
@@ -1021,10 +1024,22 @@ void PluginProcessor::processBlock (juce::AudioBuffer<float>& buffer, juce::Midi
     // own Rust input stage stays CLEAN (None), so SLAM cannot change filter excitation.
     params.slamDrive = mod.drive;
     params.bite = 0.0f;   // BITE RESERVED in V1 — lane is computed (mod.bite) but not applied to audio
-    if (kCleanInputMode != lastInputModeSent)
+
+    // SLAM ROUTE (A/B). Output (0, default) = clean input, desk at the output —
+    // the shipped/beloved sound, byte-unchanged. Into Filter (1) = the pre-cascade
+    // Mackie desk (engine MackieDeskSlam) drives the signal INTO the cascade; the
+    // output desk is then skipped below so the grit is not doubled.
+    auto* inputModeParam = apvts.getRawParameterValue (ParamID::inputMode);
+    const bool slamIntoFilter = (inputModeParam != nullptr && inputModeParam->load() > 0.5f);
+    // The pre-cascade desk runs at 1 + slam*99 — brutal at any real slam. Tame the
+    // drive INTO the filter so it's a usable grit, not an instant fuzz wall.
+    if (slamIntoFilter)
+        params.slamDrive *= kIntoFilterDriveScale;
+    const int desiredInputMode = slamIntoFilter ? kMackieDeskSlam : kCleanInputMode;
+    if (desiredInputMode != lastInputModeSent)
     {
-        dspBridge.setInputMode (kCleanInputMode);
-        lastInputModeSent = kCleanInputMode;
+        dspBridge.setInputMode (desiredInputMode);
+        lastInputModeSent = desiredInputMode;
     }
 
     // Continuous QSound depth (SPACE). 0 = hard bypass (spatial stage Off).
@@ -1048,19 +1063,36 @@ void PluginProcessor::processBlock (juce::AudioBuffer<float>& buffer, juce::Midi
     lastSpaceSent.store (space, std::memory_order_relaxed);
     dspBridge.setSpatialMode (space > 0.001f ? 0 /*QSound*/ : kSpatialOff);
 
-    // 5D EXTREME: when armed, the sound ORBITS the head — sweep the QSound
-    // azimuth in a continuous full circle. Free-running (independent of
-    // transport AND Motion), so it moves whether or not a motion is playing.
-    // Falls back to the dev voicing-rig pose when 5D is off (0 in shipping).
+    // 5D / ORBIT: the sound ORBITS the head — sweep the QSound azimuth in a full
+    // circle. LOCKED to the bar when the host is playing (2 bars per revolution, so
+    // it breathes with the track); free-runs at a fixed rate when the transport is
+    // stopped so it still moves for preview. Only active when SPACE (fiveD) > 0,
+    // which today is the Orbit preset — the one place QSound is used.
     float pan = rigPan.load (std::memory_order_relaxed);
     if (fiveDBase > 0.001f)
     {
-        const double sr = getSampleRate() > 0.0 ? getSampleRate() : 48000.0;
-        constexpr double kOrbitHz = 0.35;   // ~3 s per revolution — dizzying, still musical
-        constexpr double kTwoPi   = 2.0 * juce::MathConstants<double>::pi;
-        spatialOrbitPhase += kTwoPi * kOrbitHz * (double) buffer.getNumSamples() / sr;
-        if (spatialOrbitPhase >= kTwoPi)
-            spatialOrbitPhase -= kTwoPi;
+        constexpr double kTwoPi = 2.0 * juce::MathConstants<double>::pi;
+        double revPpq = -1.0, qnPerBar = 4.0;
+        if (auto* ph = getPlayHead())
+            if (auto pos = ph->getPosition())
+            {
+                if (pos->getIsPlaying())
+                    if (auto p = pos->getPpqPosition()) revPpq = juce::jmax (0.0, *p);
+                if (auto ts = pos->getTimeSignature())
+                    qnPerBar = trench::quarterNotesPerBar (ts->numerator, ts->denominator);
+            }
+        if (revPpq >= 0.0)
+        {
+            const double beatsPerRev = 2.0 * qnPerBar;               // one revolution / 2 bars
+            spatialOrbitPhase = std::fmod (kTwoPi * revPpq / beatsPerRev, kTwoPi);
+        }
+        else
+        {
+            const double sr = getSampleRate() > 0.0 ? getSampleRate() : 48000.0;
+            constexpr double kOrbitHz = 0.35;                        // ~3 s/rev free-run when stopped
+            spatialOrbitPhase += kTwoPi * kOrbitHz * (double) buffer.getNumSamples() / sr;
+            if (spatialOrbitPhase >= kTwoPi) spatialOrbitPhase -= kTwoPi;
+        }
         pan = (float) std::sin (spatialOrbitPhase);   // full -1..+1 azimuth swing
     }
     if (! juce::approximatelyEqual (pan, lastRigPanSent))
@@ -1140,13 +1172,18 @@ void PluginProcessor::processBlock (juce::AudioBuffer<float>& buffer, juce::Midi
     // SLAM is the final audible operation: body -> BITE -> QSound -> MOVE guard
     // -> output gain -> SLAM. Metering, scope and capture below observe this
     // post-SLAM signal but do not alter it.
-    if (buffer.getNumChannels() >= 2)
-        trench::slamOutputPressureBlockStereo (buffer.getWritePointer (0),
-                                                buffer.getWritePointer (1),
-                                                buffer.getNumSamples(), params.slamDrive);
-    else if (buffer.getNumChannels() == 1)
-        trench::slamOutputPressureBlock (buffer.getWritePointer (0),
-                                         buffer.getNumSamples(), params.slamDrive);
+    // Output route only: desk at the very end. In the Into-Filter route the desk
+    // already ran pre-cascade (engine), so skip it here to avoid doubling the grit.
+    if (! slamIntoFilter)
+    {
+        if (buffer.getNumChannels() >= 2)
+            trench::slamOutputPressureBlockStereo (buffer.getWritePointer (0),
+                                                    buffer.getWritePointer (1),
+                                                    buffer.getNumSamples(), params.slamDrive);
+        else if (buffer.getNumChannels() == 1)
+            trench::slamOutputPressureBlock (buffer.getWritePointer (0),
+                                             buffer.getNumSamples(), params.slamDrive);
+    }
 
     // The ONLY place the engine's coefficients are read: publish them into the
     // lock-free UI snapshot from the audio thread. The editor reads the snapshot,
