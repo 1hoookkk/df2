@@ -289,6 +289,8 @@ void PluginEditor::onFrame()
         graph->updateFromCoeffs (coeffs, boost, sr);
         moveView->updateFromCoeffs (coeffs, boost, sr);
     }
+    graph->setSlamMeter (processor.getOutClipForUi());
+
     const auto read = [this] (const char* paramID)
     {
         if (auto* v = processor.apvts.getRawParameterValue (paramID))

@@ -84,11 +84,17 @@ public:
 
         // Sweet-spot 60:30:10: WARM PUTTY / BLACKENED GRAPHITE / COBALT BLUE.
         // The cobalt is confined to live state: trace, roller lamp and activity.
-        layout.colours["accent"]      = juce::Colour (0xff4265c7); // cobalt active ink
-        layout.colours["curveColour"] = juce::Colour (0xff7f9ee9); // faded blue phosphor
-        layout.colours["phosphor"]    = juce::Colour (0xff1a1c1f); // deep smoked glass
-        layout.colours["amber"]       = juce::Colour (0xff3659c0); // legacy token name: cobalt core
-        layout.colours["dashed"]      = juce::Colour (0xff3d424d); // cool graphite grid
+        // The filmstrip's lit pixels resolve around a deep indigo-cobalt. Derive
+        // every live-screen colour from that hue so the roller, trace and text
+        // read as one instrument instead of teal hardware plus a violet plot.
+        layout.colours["accent"]             = juce::Colour (0xff4e63a7); // cobalt active ink
+        layout.colours["curveColour"]        = juce::Colour (0xff7080be); // readable roller-matched trace
+        layout.colours["curveHighlight"]     = juce::Colour (0xffa9b4dc); // hot state, same hue family
+        layout.colours["telemetry"]          = juce::Colour (0xff7080be); // trace-matched screen copy
+        layout.colours["rollerIllumination"] = juce::Colour (0xff3d476e); // measured bright-filmstrip family
+        layout.colours["phosphor"]           = juce::Colour (0xff1a1c1f); // deep smoked glass
+        layout.colours["amber"]              = juce::Colour (0xff4e63a7); // legacy token: cobalt halo
+        layout.colours["dashed"]             = juce::Colour (0xff465064); // cool cobalt-graphite grid
         layout.colours["screenEdge"]  = juce::Colour (0xff0e1012); // blackened nickel reveal
         layout.colours["labelInk"]    = juce::Colour (0xff24231f); // warm charcoal type
 

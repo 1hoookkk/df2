@@ -63,15 +63,15 @@ struct Theme
     // 60:30:10: WARM PUTTY 60 (the plate, locked) / BLACKENED GRAPHITE 30
     // (wheels, type, glass) / COBALT 10 (trace, lamp, active state).
     // Values live in UiLayout::defaults() — change them there, not here.
-    juce::Colour accent()      const { return layout.colour ("accent",      juce::Colour (0xff4265c7)); }
+    juce::Colour accent()      const { return layout.colour ("accent",      juce::Colour (0xff4e63a7)); }
     juce::Colour curveColour() const { return layout.colour ("curveColour", accent()); }
     // Compatibility tokens retained by the workstation shell. The recovered
     // sweet-spot snapshot predates their named accessors, so they resolve into
     // the same cobalt family without altering the photographed display paint.
-    juce::Colour curveHighlight() const { return layout.colour ("curveHighlight", juce::Colour (0xffb7c7f3)); }
+    juce::Colour curveHighlight() const { return layout.colour ("curveHighlight", juce::Colour (0xffa9b4dc)); }
     juce::Colour telemetry() const { return layout.colour ("telemetry", accent()); }
-    juce::Colour rollerIllumination() const { return layout.colour ("rollerIllumination", juce::Colour (0xff3659c0)); }
-    juce::Colour amber()       const { return layout.colour ("amber",       juce::Colour (0xff3659c0)); } // legacy name: active glow
+    juce::Colour rollerIllumination() const { return layout.colour ("rollerIllumination", juce::Colour (0xff3d476e)); }
+    juce::Colour amber()       const { return layout.colour ("amber",       juce::Colour (0xff4e63a7)); } // legacy name: active glow
     juce::Colour wellTop()     const { return layout.colour ("wellTop",     juce::Colour (0xffe7dec9)); }
     juce::Colour wellBottom()  const { return layout.colour ("wellBottom",  juce::Colour (0xffc9c0a8)); }
     juce::Colour wellKeyline() const { return layout.colour ("wellKeyline", juce::Colour (0xff5c4f3a)); }

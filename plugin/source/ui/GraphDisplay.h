@@ -338,14 +338,14 @@ private:
                 if (f <= fLo || f >= fHi)
                     continue;
                 const bool major = (m == 10);
-                g.setColour (ink.withAlpha (major ? 0.36f : 0.17f));
+                g.setColour (ink.withAlpha (major ? 0.48f : 0.23f));
                 g.drawLine (xOf (f), screen.getY(), xOf (f), screen.getBottom(), major ? 0.95f : 0.55f);
             }
         const double dbTop = t.curveDbTop(), dbBot = t.curveDbBottom();
         for (double db = std::ceil (dbBot / 10.0) * 10.0; db <= dbTop; db += 10.0)
         {
             const float y = plot.getY() + (float) ((dbTop - db) / (dbTop - dbBot)) * plot.getHeight();
-            g.setColour (ink.withAlpha (juce::approximatelyEqual (db, 0.0) ? 0.34f : 0.15f));
+            g.setColour (ink.withAlpha (juce::approximatelyEqual (db, 0.0) ? 0.44f : 0.20f));
             g.drawLine (screen.getX(), y, screen.getRight(), y, 0.55f);
         }
     }
@@ -368,7 +368,7 @@ private:
     // visual output read, not a claim that SLAM changes the filter body.
     juce::Colour responseColour() const
     {
-        return t.curveColour().interpolatedWith (juce::Colour (0xffe7e1d3), slamVisualAmount());
+        return t.curveColour().interpolatedWith (t.curveHighlight(), slamVisualAmount());
     }
 
     // Etched phosphor trace, stroked from the live response Path. The wide pass is
@@ -486,22 +486,22 @@ private:
         g.setColour (phos.withAlpha (0.66f));                           // the starved signal
         g.strokePath (stair, { lw, joint, cap });
 
-        // Broken warm-bone edge catch: a fractional-pixel registration lift on
+        // Broken cobalt edge catch: a fractional-pixel registration lift on
         // the upper-left edge of the crude staircase. It replaces the old full
         // centre highlight, so it reads as material finesse rather than glow.
-        g.setColour (juce::Colour (0xffe2d6c0).withAlpha (0.12f + 0.04f * s));
+        g.setColour (t.curveHighlight().withAlpha (0.12f + 0.04f * s));
         g.strokePath (edgeCatch, { 0.65f, joint, cap },
                       juce::AffineTransform::translation (-0.25f, -0.75f));
         if (limit > 0.001f)
         {
-            g.setColour (juce::Colour (0xffeee7d7).withAlpha (0.12f + 0.28f * limit));
+            g.setColour (t.curveHighlight().withAlpha (0.12f + 0.28f * limit));
             g.strokePath (stair, { 0.8f + 1.0f * limit, joint, cap });
         }
 
         // Peak crosses (the reference's + ticks): small markers on the mode
         // crests — the anatomy made visible, not decoration.
         {
-            g.setColour (juce::Colour (0xfffff0e8).withAlpha (0.58f));
+            g.setColour (t.curveHighlight().withAlpha (0.58f));
             int marks = 0;
             for (size_t i = 2; i + 2 < N && marks < 8; ++i)
             {
@@ -617,12 +617,10 @@ private:
 
         // No permanent riser/meter on the glass — SLAM's visual home is the
         // phosphor lift under the curve (drawResponseTrace). Only the
-        // transient value text appears, while interacting. (Tyson 2026-07-11:
-        // "the bar on the right is clutter".)
+        // compact value text remains present at rest. It occupies the dead
+        // upper-right corner without restoring the rejected meter bar.
         const float s = slamNorm();
-        const float a = pressing ? 1.0f : juce::jlimit (0.0f, 1.0f, meterAlpha);
-        if (a <= 0.02f && s <= 0.001f)
-            return;
+        const float a = pressing ? 1.0f : juce::jmax (0.52f, juce::jlimit (0.0f, 1.0f, meterAlpha));
 
         const float outDb = trench::slamOutputGainDb (s);
         const float limitPct = slamOutClip * 100.0f;
@@ -644,11 +642,11 @@ private:
         // We only draw the text on the glass.
 
         g.setFont (displayFont (12.5f, true));
-        g.setColour (juce::Colour (0xffe7e1d3).withAlpha (0.95f * a));
+        g.setColour (t.curveHighlight().withAlpha (0.95f * a));
         g.drawText (line1, r.removeFromTop (15.0f).reduced (6.0f, 1.0f),
                     juce::Justification::centredLeft, false);
         g.setFont (displayFont (10.5f, false));
-        g.setColour (t.curveColour().withAlpha (0.86f * a));
+        g.setColour (t.telemetry().withAlpha (0.86f * a));
         g.drawText (line2, r.reduced (6.0f, 0.0f), juce::Justification::centredLeft, false);
     }
 
