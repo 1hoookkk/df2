@@ -221,7 +221,6 @@ void PluginProcessor::setCurrentProgram (int index)
     setParameterDenormalized (ParamID::q,           p.q);
     setParameterDenormalized (ParamID::slamDrive,   p.slam);
     setParameterDenormalized (ParamID::output,      p.outputDb);
-    setParameterDenormalized (ParamID::fiveD,       p.fiveD);   // QSound SPACE depth (Orbit engages it)
     setParameterDenormalized (ParamID::moveOn,      p.moveOn ? 1.0f : 0.0f);
     applyModulationBehavior ((trench::TypeBehavior) p.modulation, p.body);
 }
@@ -819,6 +818,9 @@ void PluginProcessor::processBlock (juce::AudioBuffer<float>& buffer, juce::Midi
     if (bodySolo != lastWorkstationBodySolo)
     {
         dspBridge.setInputMode (kCleanInputMode);
+        lastInputModeSent = kCleanInputMode;   // keep the SLAM route cache in sync — else returning
+                                               // to PRODUCT with SLAM selected sees desired==cached and
+                                               // never restores MackieDeskSlam (route silently bypassed).
         dspBridge.setSpatialMode (kSpatialOff);
         dspBridge.setAgcEnabled (! bodySolo);
         dspBridge.setSaturationEnabled (! bodySolo);
