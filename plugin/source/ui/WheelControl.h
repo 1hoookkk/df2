@@ -113,6 +113,8 @@ public:
             attachment->beginGesture();
         dragStartX   = e.position.x;
         valueAtStart = currentNormalised();
+        if (! e.mods.isShiftDown())   // Shift = fine drag from the press point, no jump
+            dragAbsolute (e);
         if (altRecording)
         {
             if (onAltDragStart != nullptr) onAltDragStart();
@@ -123,7 +125,19 @@ public:
     {
         if (e.mods.isPopupMenu())
             return;
-        dragRelative (e);
+        if (e.mods.isShiftDown() && attachment != nullptr && param != nullptr)
+        {
+            // Fine, precise drag: scaled delta from the press point.
+            const float w    = juce::jmax (1.0f, (float) getWidth());
+            const float next = juce::jlimit (0.0f, 1.0f,
+                                             valueAtStart + (e.position.x - dragStartX) / w * 0.25f);
+            attachment->setValueAsPartOfGesture (param->convertFrom0to1 (next));
+            repaint();
+        }
+        else
+        {
+            dragAbsolute (e);
+        }
         if (altRecording && onAltDragSample != nullptr)
             onAltDragSample (currentNormalised());
     }
@@ -167,13 +181,7 @@ public:
             return;
 
         const int last = numFrames - 1;
-        // Follow the parameter in the same direction as the finger, then blend
-        // neighbouring authored frames. The 257-frame X3 glow logic remains
-        // entirely in the strip; interpolation only removes frame stepping.
-        const float framePos = displayNormalised() * (float) last;
-        const int frameA = juce::jlimit (0, last, (int) std::floor (framePos));
-        const int frameB = juce::jmin (last, frameA + 1);
-        const float frameBlend = framePos - (float) frameA;
+        const int frame = juce::jlimit (0, last, juce::roundToInt (displayNormalised() * (float) last));
 
         // ACTUAL-SIZE draw: frames are authored at display resolution and drawn
         // 1:1, centred — never resampled, never clipped. The frame's own alpha
@@ -185,13 +193,7 @@ public:
         const int dx = (getWidth()  - fw) / 2;
         const int dy = (getHeight() - fh) / 2;
         g.setOpacity (1.0f);
-        g.drawImage (strip, dx, dy, fw, fh, frameA * fw, 0, fw, fh);
-        if (frameB != frameA && frameBlend > 0.001f)
-        {
-            g.setOpacity (frameBlend);
-            g.drawImage (strip, dx, dy, fw, fh, frameB * fw, 0, fw, fh);
-            g.setOpacity (1.0f);
-        }
+        g.drawImage (strip, dx, dy, fw, fh, frame * fw, 0, fw, fh);
 
         // Hover/drag feedback: the drum catches a touch more light under
         // the cursor — state feedback as light on the object, not a ring.
@@ -220,15 +222,13 @@ private:
         return displayOverrideActive ? displayOverrideValue : currentNormalised();
     }
 
-    void dragRelative (const juce::MouseEvent& e)
+    void dragAbsolute (const juce::MouseEvent& e)
     {
         if (attachment == nullptr || param == nullptr)
             return;
 
-        const float travel = juce::jmax (140.0f, (float) getWidth());
-        const float next = juce::jlimit (0.0f, 1.0f,
-                                         valueAtStart
-                                         + (e.position.x - dragStartX) / travel * fineDragScale (e));
+        const float w = juce::jmax (1.0f, (float) getWidth());
+        const float next = juce::jlimit (0.0f, 1.0f, e.position.x / w);
         attachment->setValueAsPartOfGesture (param->convertFrom0to1 (next));
         repaint();
     }

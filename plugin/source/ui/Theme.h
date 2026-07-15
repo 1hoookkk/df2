@@ -9,8 +9,8 @@ namespace trench::ui
 
 // --- fixed geometry constants (editor + panel source space) ---
 // Source space = the BEIGE plate (df2_panel_beige.png), 1010x1557 (2026-07-11 recut).
-inline constexpr int   kEditorWidth        = 470;   // plate aspect (1010:1557)
-inline constexpr int   kEditorHeight       = 724;   // 470 * 1557/1010 — undistorted plate
+inline constexpr int   kEditorWidth        = 450;   // slightly smaller DAW footprint; plate aspect retained
+inline constexpr int   kEditorHeight       = 694;   // 450 * 1557/1010 — undistorted plate
 inline constexpr float kPanelSourceWidth   = 1010.0f;   // layout rects' source space
 inline constexpr float kPanelSourceHeight  = 1557.0f;
 
@@ -23,11 +23,9 @@ inline juce::Rectangle<float> sourceRectToEditor (juce::Rectangle<float> s)
              s.getHeight() * kEditorHeight / kPanelSourceHeight };
 }
 
-// Gill Sans gives the plate a humanist/editorial voice: distinctive enough to
-// own the product, open enough for small values, and much less severe than a
-// condensed grotesk. Hierarchy comes from size and spacing, not blanket bold.
-inline const char* const kUiFontName = "Gill Sans MT";
-inline const char* const kUiEmphasisFontName = "Gill Sans MT";
+// Sweet-spot typography: neutral regular copy with selective commercial weight.
+inline const char* const kUiFontName = "Arial";
+inline const char* const kUiEmphasisFontName = "Arial";
 
 inline juce::String& uiFontFamily()
 {
@@ -63,14 +61,17 @@ struct Theme
     const trench::UiLayout& layout;
 
     // 60:30:10: WARM PUTTY 60 (the plate, locked) / BLACKENED GRAPHITE 30
-    // (wheels, type, glass) / ULTRAMARINE-VIOLET 10 (trace and active state).
+    // (wheels, type, glass) / COBALT 10 (trace, lamp, active state).
     // Values live in UiLayout::defaults() — change them there, not here.
-    juce::Colour accent()      const { return layout.colour ("accent",      juce::Colour (0xff6650a2)); }
+    juce::Colour accent()      const { return layout.colour ("accent",      juce::Colour (0xff4265c7)); }
     juce::Colour curveColour() const { return layout.colour ("curveColour", accent()); }
-    juce::Colour curveHighlight() const { return layout.colour ("curveHighlight", juce::Colour (0xffd5c6f2)); }
-    juce::Colour telemetry()   const { return layout.colour ("telemetry",   juce::Colour (0xff8068b8)); }
-    juce::Colour rollerIllumination() const { return layout.colour ("rollerIllumination", juce::Colour (0xff354c88)); }
-    juce::Colour amber()       const { return layout.colour ("amber",       curveHighlight()); } // legacy name: bright signal state
+    // Compatibility tokens retained by the workstation shell. The recovered
+    // sweet-spot snapshot predates their named accessors, so they resolve into
+    // the same cobalt family without altering the photographed display paint.
+    juce::Colour curveHighlight() const { return layout.colour ("curveHighlight", juce::Colour (0xffb7c7f3)); }
+    juce::Colour telemetry() const { return layout.colour ("telemetry", accent()); }
+    juce::Colour rollerIllumination() const { return layout.colour ("rollerIllumination", juce::Colour (0xff3659c0)); }
+    juce::Colour amber()       const { return layout.colour ("amber",       juce::Colour (0xff3659c0)); } // legacy name: active glow
     juce::Colour wellTop()     const { return layout.colour ("wellTop",     juce::Colour (0xffe7dec9)); }
     juce::Colour wellBottom()  const { return layout.colour ("wellBottom",  juce::Colour (0xffc9c0a8)); }
     juce::Colour wellKeyline() const { return layout.colour ("wellKeyline", juce::Colour (0xff5c4f3a)); }
@@ -79,9 +80,9 @@ struct Theme
     juce::Colour arrow()       const { return layout.colour ("arrow",       juce::Colour (0xff241e15)); }
     juce::Colour rim()         const { return layout.colour ("rim",         juce::Colour (0xff241e15)); }
     juce::Colour dashed()      const { return layout.colour ("dashed",      juce::Colour (0xff4a4640)); }
-    juce::Colour screenEdge()  const { return layout.colour ("screenEdge",  juce::Colour (0xff151311)); }
-    juce::Colour labelInk()    const { return layout.colour ("labelInk",    juce::Colour (0xff2a2722)); }
-    juce::Colour phosphor()    const { return layout.colour ("phosphor",    juce::Colour (0xff26231f)); }
+    juce::Colour screenEdge()  const { return layout.colour ("screenEdge",  juce::Colour (0xff0e1012)); }
+    juce::Colour labelInk()    const { return layout.colour ("labelInk",    juce::Colour (0xff24231f)); }
+    juce::Colour phosphor()    const { return layout.colour ("phosphor",    juce::Colour (0xff1a1c1f)); }
 
     float  wellRadius()        const { return (float) layout.param ("wellRadius", 9.0); }
     float  componentRadius()   const { return (float) layout.param ("componentRadius", 2.5); }

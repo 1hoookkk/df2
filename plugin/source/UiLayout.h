@@ -79,35 +79,30 @@ public:
         // TRENCH top-left, seated just above the TYPE row like the X3's FILTER
         // badge — part of the content, not floating at the plate rim. No
         // sub-line anywhere ("MUSICAL FILTER" read as a second product name).
-        layout.elements["brandLabel"]   = { { 114.0f, 84.0f, 230.0f, 40.0f }, 16.5f, juce::Colour (0xff2a2722) };
+        layout.elements["brandLabel"]   = { { 114.0f, 78.0f, 230.0f, 40.0f }, 16.5f, juce::Colour (0xff2a2722) };
         layout.elements["brandLabel"].text = "TRENCH";
 
-        // Confident ultramarine-violet: warm putty body / charcoal display /
-        // one saturated signal family. Aubergine owns the active state,
-        // ultraviolet carries the trace, and pale lilac is used only for catches.
-        // The roller remains the proven 257-frame deep-cobalt X3 strip.
-        layout.colours["accent"]            = juce::Colour (0xff6650a2);
-        layout.colours["curveColour"]       = juce::Colour (0xff9580d2);
-        layout.colours["curveHighlight"]    = juce::Colour (0xffd5c6f2);
-        layout.colours["telemetry"]         = juce::Colour (0xff8068b8);
-        layout.colours["rollerIllumination"] = juce::Colour (0xff354c88);
-        layout.colours["phosphor"]    = juce::Colour (0xff26231f); // espresso glass
-        layout.colours["amber"]       = juce::Colour (0xffd5c6f2); // legacy token name: bright signal state
-        layout.colours["dashed"]      = juce::Colour (0xff4a4640); // warm charcoal grid
-        layout.colours["screenEdge"]  = juce::Colour (0xff151311); // espresso keyline
-        layout.colours["labelInk"]    = juce::Colour (0xff2a2722); // warm charcoal type
+        // Sweet-spot 60:30:10: WARM PUTTY / BLACKENED GRAPHITE / COBALT BLUE.
+        // The cobalt is confined to live state: trace, roller lamp and activity.
+        layout.colours["accent"]      = juce::Colour (0xff4265c7); // cobalt active ink
+        layout.colours["curveColour"] = juce::Colour (0xff7f9ee9); // faded blue phosphor
+        layout.colours["phosphor"]    = juce::Colour (0xff1a1c1f); // deep smoked glass
+        layout.colours["amber"]       = juce::Colour (0xff3659c0); // legacy token name: cobalt core
+        layout.colours["dashed"]      = juce::Colour (0xff3d424d); // cool graphite grid
+        layout.colours["screenEdge"]  = juce::Colour (0xff0e1012); // blackened nickel reveal
+        layout.colours["labelInk"]    = juce::Colour (0xff24231f); // warm charcoal type
 
         layout.params["wellRadius"]        = 9.0;
         layout.params["readoutAliasScale"] = 0.85; // crisper on the dark LED box
         layout.params["typeArrowExtra"]    = 6.0;
         layout.params["curveDbTop"]        = 40.0;   // keep high-Q bodies inside the hardware display
         layout.params["curveDbBottom"]     = -40.0;
-        layout.params["fontBold"]          = 0.0;    // named weights only; no synthetic Impact-like bold
+        layout.params["fontBold"]          = 1.0;    // bold only where displayFont asks for emphasis
 
-        // Gill Sans is the strategic counterweight to the distressed machine:
-        // humanist, editorial and readable, without poster-grotesk severity.
-        layout.strings["fontFamily"] = "Gill Sans MT";
-        layout.strings["fontFamilyEmphasis"] = "Gill Sans MT";
+        // Return to the highly legible sweet-spot hierarchy: neutral regular
+        // copy, commercially firm labels and values, no blanket poster weight.
+        layout.strings["fontFamily"] = "Arial";
+        layout.strings["fontFamilyEmphasis"] = "Arial";
         return layout;
     }
 

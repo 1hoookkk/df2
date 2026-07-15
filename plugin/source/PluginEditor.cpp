@@ -4,11 +4,6 @@
 
 using namespace trench::ui;
 
-// FORGE drawer width: opening the Forge EXTENDS the window to the right by this much
-// (a side drawer), instead of overlaying the plugin. Window width is kEditorWidth, or
-// kEditorWidth + kForgeWidth while the Forge is open.
-static constexpr int kForgeWidth = 372;
-
 PluginEditor::PluginEditor (PluginProcessor& p)
     : AudioProcessorEditor (&p),
       processor (p)
@@ -20,6 +15,8 @@ PluginEditor::PluginEditor (PluginProcessor& p)
     // Back-to-beige rewrite (2026-07-10): the plate is Tyson's beige art (its
     // baked recesses ARE the wells); ivory windows + glass are painted in code;
     // the wheels are the real rendered sculpt strip ("these look good").
+    // The CLASSIC BEIGE plate — home. Components paint their bone faces into
+    // its baked wells.
     // The CLASSIC BEIGE plate — home. Components paint their bone faces into
     // its baked wells.
     auto panel = juce::ImageCache::getFromMemory (BinaryData::df2_panel_beige_png,
@@ -126,7 +123,7 @@ PluginEditor::PluginEditor (PluginProcessor& p)
     addAndMakeVisible (*takeView);     // page 2 overlay; visibility toggled by setPage
     addChildComponent (*moveView);     // page 2 (MOVE/PLAY) screen; shown by setPage
     addChildComponent (*slotPad);      // pager RETIRED everywhere (Tyson: no pages)
-    addAndMakeVisible (*moveChip); // MODULATION chip — bottom-left on the glass
+    addAndMakeVisible (*moveChip); // curated MOVE status chip -- added after graph, paints on top
     addAndMakeVisible (*typeSelector);
     addAndMakeVisible (*morphWheel);
     addAndMakeVisible (*secondaryWheel);
@@ -144,27 +141,6 @@ PluginEditor::PluginEditor (PluginProcessor& p)
     addChildComponent (*fiveDButton);
     addAndMakeVisible (*labels);
     addAndMakeVisible (*decalsLayer);   // front-most: free text/boxes/lines
-
-   #ifdef TRENCH_FORGE
-    // FORGE: in-plugin filter builder — DEV-ONLY (TRENCH_FORGE flag, OFF by default so it
-    // NEVER ships). Toggled by the FORGE button; compiles 6 typed table-gated lanes via the
-    // typed compiler and auditions live.
-    forge = std::make_unique<ForgeView>();
-    forge->onAudition = [this] (std::vector<double> cards) { processor.forgeAuditionTyped (cards); };
-    forge->onSave     = [this] (juce::String name) { processor.forgeSaveBody (name); };
-    forge->onClose    = [this] { if (forge) { forge->setVisible (false); setSize (kEditorWidth, kEditorHeight); } };
-    addChildComponent (*forge);   // hidden until toggled
-
-    forgeBtn = std::make_unique<juce::TextButton> ("FORGE");
-    forgeBtn->onClick = [this]
-    {
-        if (forge == nullptr) return;
-        const bool open = ! forge->isVisible();
-        forge->setVisible (open);
-        setSize (open ? kEditorWidth + kForgeWidth : kEditorWidth, kEditorHeight);  // extend the window to the side
-    };
-    addAndMakeVisible (*forgeBtn);
-   #endif
 
     setResizable (false, false);
     setSize (kEditorWidth, kEditorHeight);
@@ -200,9 +176,6 @@ PluginEditor::PluginEditor (PluginProcessor& p)
 
 PluginEditor::~PluginEditor()
 {
-   #ifdef TRENCH_PLAYER_DIAGNOSTICS
-    labWindow.reset();   // close the lab window before its content (authorView) frees
-   #endif
 }
 
 void PluginEditor::reloadLayoutFromDisk()
@@ -243,12 +216,6 @@ void PluginEditor::timerCallback()
 void PluginEditor::resized()
 {
     layoutComponents();
-   #ifdef TRENCH_FORGE
-    if (forgeBtn != nullptr)   // toggle sits at the bottom-right of the MAIN UI (the seam)
-        forgeBtn->setBounds (kEditorWidth - 58, kEditorHeight - 22, 54, 18);
-    if (forge != nullptr && forge->isVisible())   // Forge docks in the right-side drawer strip
-        forge->setBounds (kEditorWidth, 0, getWidth() - kEditorWidth, kEditorHeight);
-   #endif
 }
 
 void PluginEditor::layoutComponents()
@@ -259,9 +226,7 @@ void PluginEditor::layoutComponents()
                                                                 trench::ui::kUiEmphasisFontName);
     trench::ui::uiBoldEnabled() = currentLayout.param ("fontBold", 0.0) > 0.5;
 
-    // The main UI stays in its fixed kEditorWidth region (left); the FORGE drawer extends
-    // the window to the right, so these full-bleed layers must NOT follow getLocalBounds()
-    // (that would stretch the faceplate across the drawer).
+    // The product faceplate stays at its authored size; the workstation is a separate app.
     const juce::Rectangle<int> base { 0, 0, kEditorWidth, kEditorHeight };
     faceplate->setBounds (base);
     labels->setBounds (base);
@@ -324,14 +289,16 @@ void PluginEditor::onFrame()
         graph->updateFromCoeffs (coeffs, boost, sr);
         moveView->updateFromCoeffs (coeffs, boost, sr);
     }
-    graph->setSlamMeter (processor.getOutClipForUi());
-
     const auto read = [this] (const char* paramID)
     {
         if (auto* v = processor.apvts.getRawParameterValue (paramID))
             return juce::jlimit (0.0f, 1.0f, v->load());
         return 0.0f;
     };
+    const bool motionOn = read (ParamID::motionOn) > 0.5f;
+    // GraphDisplay reads motionOn/motionTile/motionDiv live for its own MOTION/TIME
+    // readout — no push needed from here.
+
     if (currentPage == 1)
     {
         // MOVE: upper rail = MOVE, lower rail = TIME (FREE or synced value text).
@@ -377,7 +344,7 @@ void PluginEditor::setPage (int page)
     graph->setVisible (! move);
     moveView->setVisible (move);            // V1: MOVE = PLAY only (ROUTE shelved)
     takeView->setVisible (false);           // Take/variant tray is not a V1 page
-    moveChip->setVisible (! move);          // MODULATION lives on the SOUND face
+    moveChip->setVisible (true);
     slotPad->setActive (currentPage);
 
     // Page-specific rails + labels: SOUND = MORPH + Q/SLAM, MOVE = MOVE/TIME.

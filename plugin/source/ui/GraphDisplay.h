@@ -1,7 +1,6 @@
 #pragma once
 
 #include "Theme.h"
-#include "ParamInteraction.h"
 #include "../dsp/SlamStage.h"
 #include "../parameters/TrenchParameters.h"
 
@@ -15,9 +14,8 @@
 namespace trench::ui
 {
 
-// The recessed screen: failing dark glass plus the live cascade response. It
-// should feel electrically separate from the cleaner plate controls: dim,
-// uneven, and barely holding together.
+// Precision-fitted smoked glass plus the live cascade response. The electronics
+// may still look tired; the glass itself is an optically bonded, machined part.
 //
 // SLAM is a SECONDARY on-screen control (not a rail): dragging the canvas vertically
 // (or the mouse wheel over the graph) drives SLAM/input-clip, with a transient
@@ -27,7 +25,6 @@ namespace trench::ui
 // their own compact row below the screen (MotionTimeRow) — this view never
 // draws text of its own for them.
 class GraphDisplay : public juce::Component,
-                     public juce::SettableTooltipClient,
                      private juce::Timer
 {
 public:
@@ -62,9 +59,6 @@ public:
             });
             canvasDefault = canvasParam->getDefaultValue();
             setMouseCursor (juce::MouseCursor::UpDownResizeCursor);
-            setTitle ("SLAM");
-            setHelpText ("SLAM - drag the response display up or down; Shift for fine control; mouse-wheel to adjust; double-click to reset.");
-            setTooltip ("SLAM: drag the display up/down, wheel to adjust, double-click to reset");
         }
         // The screen takes mouse input to drive SLAM (children like the [1][2]
         // pad and MOD tag sit on top and still get their own clicks).
@@ -174,11 +168,6 @@ public:
     void mouseDown (const juce::MouseEvent& e) override
     {
         if (canvasParam == nullptr) return;
-        if (e.mods.isPopupMenu())
-        {
-            showParamContextMenu (*this, canvasParam);
-            return;
-        }
         pressing = true;
         stopTimer();
         meterAlpha = 1.0f;
@@ -226,44 +215,74 @@ public:
     void paint (juce::Graphics& g) override
     {
         const float rad = 9.0f;
-        const auto screen = getLocalBounds().toFloat();
+        const auto aperture = getLocalBounds().toFloat();
+        constexpr float reveal = 1.95f;
+        const auto glass = aperture.reduced (reveal);
+        const float glassRad = rad - reveal;
 
-        juce::Path face;
-        face.addRoundedRectangle (screen, rad);
-        juce::Graphics::ScopedSaveState save (g);
-        g.reduceClipRegion (face);
-
-        drawFailingGlassBed (g, screen);
-
-        // The plate art's own baked dark recess remains the display body. Code
-        // only adds screen-internal decay: ruled grid, weakened trace, dirt and
-        // dropout inside the clipped glass.
-        drawLogGrid (g, screen);
-
-        drawResponseTrace (g);
-        drawSlamReadout (g, screen);
-        drawDisplayDropouts (g, screen);
-
-        // A very subtle pane of glass over the DISPLAY only (Tyson 2026-07-11):
-        // faint diagonal sheen + a whisper of corner vignette — the screen reads
-        // sealed. Whisper-level; never a separate object.
+        // 1.95 px blackened-nickel reveal. It exposes enough of the precision
+        // backing plate to separate the glass without becoming a chunky bezel.
+        // It is not a chrome border or an outer shadow.
         {
-            juce::ColourGradient sheen (juce::Colours::white.withAlpha (0.045f),
-                                        screen.getX(), screen.getY(),
-                                        juce::Colours::transparentBlack,
-                                        screen.getX() + screen.getWidth() * 0.5f, screen.getBottom(), false);
-            sheen.addColour (0.35, juce::Colours::white.withAlpha (0.015f));
-            g.setGradientFill (sheen);
-            g.fillRect (screen);
+            juce::ColourGradient nickel (juce::Colour (0xff24211d), aperture.getX(), aperture.getY(),
+                                         juce::Colour (0xff080a0c), aperture.getRight(), aperture.getBottom(), false);
+            nickel.addColour (0.38, juce::Colour (0xff111316));
+            g.setGradientFill (nickel);
+            g.fillRoundedRectangle (aperture, rad);
+
+            g.setColour (juce::Colours::black.withAlpha (0.72f));
+            g.drawRoundedRectangle (aperture.reduced (0.35f), rad - 0.25f, 0.75f);
+
+            // Warm nickel responds only along the lit half of the top edge.
+            juce::ColourGradient catchLight (juce::Colour (0xffb69a70).withAlpha (0.16f),
+                                             aperture.getX() + rad, 0.0f,
+                                             juce::Colours::transparentBlack,
+                                             aperture.getX() + aperture.getWidth() * 0.72f, 0.0f, false);
+            g.setGradientFill (catchLight);
+            g.fillRect (aperture.getX() + rad, aperture.getY() + 0.45f,
+                        aperture.getWidth() - 2.0f * rad, 0.70f);
+        }
+
+        {
+            juce::Path face;
+            face.addRoundedRectangle (glass, glassRad);
+            juce::Graphics::ScopedSaveState save (g);
+            g.reduceClipRegion (face);
+
+            drawFailingGlassBed (g, glass);
+            drawLogGrid (g, glass);
+
+            armed = canvasParam != nullptr
+                        ? juce::jlimit (0.0f, 1.0f, (canvasParam->getValue() - 0.15f) / 0.60f)
+                        : 0.0f;
+
+            drawResponseTrace (g);
+            drawSlamReadout (g, glass);
+            drawDisplayDropouts (g, glass);
+
+            // One faint, broad reflection inside the glass. No stripe, glare
+            // decal or perspective trick: just the pane catching room light.
+            juce::ColourGradient reflection (juce::Colour (0xfffff1d8).withAlpha (0.036f),
+                                                 glass.getX() + glass.getWidth() * 0.16f, glass.getY(),
+                                                 juce::Colours::transparentBlack,
+                                                 glass.getX() + glass.getWidth() * 0.72f,
+                                                 glass.getY() + glass.getHeight() * 0.55f, false);
+            reflection.addColour (0.46, juce::Colour (0xfffff1d8).withAlpha (0.014f));
+            g.setGradientFill (reflection);
+            g.fillRect (glass.getX(), glass.getY(), glass.getWidth(), glass.getHeight() * 0.58f);
 
             juce::ColourGradient vig (juce::Colours::transparentBlack,
-                                      screen.getCentreX(), screen.getCentreY(),
-                                      juce::Colours::black.withAlpha (0.10f),
-                                      screen.getX(), screen.getY(), true);
-            vig.addColour (0.70, juce::Colours::transparentBlack);
+                                      glass.getCentreX(), glass.getCentreY(),
+                                      juce::Colours::black.withAlpha (0.13f),
+                                      glass.getX(), glass.getY(), true);
+            vig.addColour (0.73, juce::Colours::transparentBlack);
             g.setGradientFill (vig);
-            g.fillRect (screen);
+            g.fillRect (glass);
         }
+
+        // Hairline inner seam: the glass meets the reveal with zero visible lift.
+        g.setColour (juce::Colours::black.withAlpha (0.68f));
+        g.drawRoundedRectangle (glass, glassRad, 0.75f);
     }
 
 private:
@@ -271,11 +290,19 @@ private:
 
     void drawFailingGlassBed (juce::Graphics& g, juce::Rectangle<float> screen) const
     {
-        juce::ColourGradient dead (juce::Colours::black.withAlpha (0.34f),
+        // Dense neutral smoke: slightly reflective at the crown, optically deep
+        // at the floor. Opaque enough to read as its own fitted material.
+        juce::ColourGradient smoke (juce::Colour (0xff24272a), 0.0f, screen.getY(),
+                                    juce::Colour (0xff0e1012), 0.0f, screen.getBottom(), false);
+        smoke.addColour (0.46, juce::Colour (0xff181b1e));
+        g.setGradientFill (smoke);
+        g.fillRect (screen);
+
+        juce::ColourGradient dead (juce::Colours::black.withAlpha (0.18f),
                                    screen.getX(), screen.getY(),
-                                   juce::Colours::transparentBlack,
-                                   screen.getRight(), screen.getBottom(), false);
-        dead.addColour (0.58, juce::Colour (0xff2e2923).withAlpha (0.18f));
+                                    juce::Colours::transparentBlack,
+                                    screen.getRight(), screen.getBottom(), false);
+        dead.addColour (0.58, juce::Colour (0xff302a23).withAlpha (0.08f));
         g.setGradientFill (dead);
         g.fillRect (screen);
 
@@ -283,12 +310,12 @@ private:
         for (int i = 0; i < 18; ++i)
         {
             const float x = screen.getX() + std::fmod (19.0f + (float) i * 47.0f, screen.getWidth());
-            const float a = (i % 4 == 0) ? 0.105f : 0.045f;
+            const float a = (i % 4 == 0) ? 0.072f : 0.030f;
             g.setColour (juce::Colours::black.withAlpha (a));
             g.drawLine (x, screen.getY(), x - 7.0f, screen.getBottom(), (i % 3 == 0) ? 1.2f : 0.7f);
         }
 
-        g.setColour (juce::Colours::black.withAlpha (0.11f));
+        g.setColour (juce::Colours::black.withAlpha (0.075f));
         for (float y = screen.getY() + 9.0f; y < screen.getBottom(); y += 13.0f)
             g.drawLine (screen.getX(), y, screen.getRight(), y, 0.55f);
     }
@@ -336,7 +363,7 @@ private:
         return juce::jlimit (0.0f, 1.0f, canvasParam->getValue());
     }
 
-    // Phosphor for the trace: faded malachite at clean output, lifting toward a worn
+    // Phosphor for the trace: faded cobalt at clean output, lifting toward a worn
     // phosphor white as SLAM pushes the output into gain and limiting. This is a
     // visual output read, not a claim that SLAM changes the filter body.
     juce::Colour responseColour() const
@@ -388,14 +415,54 @@ private:
         };
 
         juce::Path stair;
+        juce::Path edgeCatch;
+        float px = traceXs[0];
         float py = yOf (0);
-        stair.startNewSubPath (traceXs[0], py);
+        stair.startNewSubPath (px, py);
+
+        bool catchPenDown = false;
+        juce::Point<float> catchEnd;
+        const auto appendEdgeCatch = [&] (float x0, float y0, float x1, float y1)
+        {
+            if (std::abs (x1 - x0) + std::abs (y1 - y0) < 0.1f)
+                return;
+
+            // Fixed, irregular 10px bands: enough interruption to feel like a
+            // dry phosphor/print catch, never a regular dashed software line.
+            const int band = juce::jmax (0, (int) std::floor ((0.5f * (x0 + x1) - plot.getX()) / 10.0f));
+            const int signature = (band * 7 + 5) % 19;
+            const bool visible = signature != 0 && signature != 4 && signature != 11;
+            if (! visible)
+            {
+                catchPenDown = false;
+                return;
+            }
+
+            const juce::Point<float> start { x0, y0 };
+            if (! catchPenDown || catchEnd.getDistanceFrom (start) > 0.1f)
+                edgeCatch.startNewSubPath (start);
+            edgeCatch.lineTo (x1, y1);
+            catchEnd = { x1, y1 };
+            catchPenDown = true;
+        };
+
         for (size_t i = 1; i < N; ++i)
         {
+            const float x = traceXs[i];
             const float y = yOf (i);
             if (! juce::approximatelyEqual (y, py))
-                stair.lineTo (traceXs[i], py);             // run, then rise: the staircase
-            stair.lineTo (traceXs[i], y);
+            {
+                stair.lineTo (x, py);                      // run, then rise: the staircase
+                appendEdgeCatch (px, py, x, py);
+                stair.lineTo (x, y);
+                appendEdgeCatch (x, py, x, y);
+            }
+            else
+            {
+                stair.lineTo (x, y);
+                appendEdgeCatch (px, py, x, y);
+            }
+            px = x;
             py = y;
         }
 
@@ -416,10 +483,15 @@ private:
         g.setColour (juce::Colour (0xff15151a).withAlpha (0.55f));      // soft offset bed (dark glass)
         g.strokePath (stair, { lw + 0.7f, joint, cap },
                       juce::AffineTransform::translation (1.2f, 1.8f));
-        g.setColour (phos.withAlpha (0.82f));                           // confident primary signal
+        g.setColour (phos.withAlpha (0.66f));                           // the starved signal
         g.strokePath (stair, { lw, joint, cap });
-        g.setColour (t.curveHighlight().withAlpha (0.24f + 0.22f * s));
-        g.strokePath (stair, { 0.75f, joint, cap });
+
+        // Broken warm-bone edge catch: a fractional-pixel registration lift on
+        // the upper-left edge of the crude staircase. It replaces the old full
+        // centre highlight, so it reads as material finesse rather than glow.
+        g.setColour (juce::Colour (0xffe2d6c0).withAlpha (0.12f + 0.04f * s));
+        g.strokePath (edgeCatch, { 0.65f, joint, cap },
+                      juce::AffineTransform::translation (-0.25f, -0.75f));
         if (limit > 0.001f)
         {
             g.setColour (juce::Colour (0xffeee7d7).withAlpha (0.12f + 0.28f * limit));
@@ -576,7 +648,7 @@ private:
         g.drawText (line1, r.removeFromTop (15.0f).reduced (6.0f, 1.0f),
                     juce::Justification::centredLeft, false);
         g.setFont (displayFont (10.5f, false));
-        g.setColour (t.telemetry().withAlpha (0.86f * a));
+        g.setColour (t.curveColour().withAlpha (0.86f * a));
         g.drawText (line2, r.reduced (6.0f, 0.0f), juce::Justification::centredLeft, false);
     }
 
@@ -638,6 +710,7 @@ private:
 
     bool pressing = false;
     float dragStartY = 0.0f;
+    float armed = 0.0f;
     float meterAlpha = 0.0f;
     float slamOutClip = 0.0f;
     juce::Point<float> dragPos;
