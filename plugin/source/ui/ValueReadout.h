@@ -85,8 +85,8 @@ public:
         editor = std::make_unique<juce::TextEditor>();
         editor->setBounds (getLocalBounds().reduced (5, 2));
         editor->setJustification (juce::Justification::centred);
-        editor->setFont (displayFont (t.fontSize (id, 20.0f), false));
-        editor->setColour (juce::TextEditor::backgroundColourId, juce::Colour (0xfff0e4cc));
+        editor->setFont (displayFont (t.fontSize (id, 20.0f), true));
+        editor->setColour (juce::TextEditor::backgroundColourId, juce::Colour (0xffe2d2a5));
         editor->setColour (juce::TextEditor::textColourId, t.labelInk());
         editor->setColour (juce::TextEditor::highlightColourId, t.labelInk().withAlpha (0.25f));
         editor->setWantsKeyboardFocus (true);   // this one DOES need keys, briefly
@@ -114,12 +114,12 @@ public:
         // Edge-to-edge: the component rect IS the black opening; any inset here
         // shows as a dark ring around the face ("you see too much of the inner
         // well", Tyson 2026-07-11).
-        drawIvoryWell (g, b, b.getHeight() * 0.17f, isActive, t);
+        drawGoldCreamReadout (g, b, b.getHeight() * 0.17f, isActive, t);
         const auto pct = juce::jlimit (0.0f, 1.0f, value) * 100.0f;
         const auto numeric = textOverride.isNotEmpty() ? textOverride : juce::String (pct, 1);
 
         const float fs = t.fontSize (id, 20.0f);
-        g.setFont (displayFont (fs, false));
+        g.setFont (displayFont (fs, true));
         g.setColour (t.textColour (id, juce::Colour (0xff0b0b0b)));
         g.drawFittedText (numeric, b.reduced (4.0f, 1.0f).toNearestInt(),
                           juce::Justification::centred, 1, 0.92f);

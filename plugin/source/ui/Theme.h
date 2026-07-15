@@ -262,6 +262,40 @@ inline void drawIvoryWell (juce::Graphics& g, juce::Rectangle<float> r, float ra
     g.drawRoundedRectangle (r.reduced (1.4f), juce::jmax (2.0f, radius - 1.2f), 0.65f);
 }
 
+// Numeric readouts sit one brightness step below the TYPE field. The muted
+// gold-cream face stays distinct from the khaki plate on a small DAW screen,
+// while avoiding the two isolated white lamps created by the shared ivory face.
+inline void drawGoldCreamReadout (juce::Graphics& g, juce::Rectangle<float> r,
+                                  float radius, bool isActive, const Theme& t)
+{
+    g.setColour (juce::Colours::black.withAlpha (isActive ? 0.24f : 0.19f));
+    g.fillRoundedRectangle (r.translated (0.0f, 1.0f), radius);
+
+    juce::ColourGradient face (juce::Colour (0xffefe4bf), 0.0f, r.getY(),
+                               juce::Colour (0xffcfbd8d), 0.0f, r.getBottom(), false);
+    face.addColour (0.52, juce::Colour (0xffe2d2a5));
+    g.setGradientFill (face);
+    g.fillRoundedRectangle (r, radius);
+
+    {
+        juce::Graphics::ScopedSaveState save (g);
+        juce::Path clip;
+        clip.addRoundedRectangle (r, radius);
+        g.reduceClipRegion (clip);
+
+        g.setColour (juce::Colour (0xfffff5d8).withAlpha (0.46f));
+        g.fillRect (r.getX() + 2.0f, r.getY() + 1.0f, r.getWidth() - 4.0f, 1.0f);
+        g.setColour (juce::Colour (0xff6b5b36).withAlpha (0.18f));
+        g.fillRect (r.getX() + 2.0f, r.getBottom() - 1.5f, r.getWidth() - 4.0f, 1.0f);
+    }
+
+    g.setColour (isActive ? t.accent().withAlpha (0.72f)
+                          : juce::Colour (0xff65583c).withAlpha (0.78f));
+    g.drawRoundedRectangle (r.reduced (0.5f), radius, 1.0f);
+    g.setColour (juce::Colour (0xfffff4d3).withAlpha (0.24f));
+    g.drawRoundedRectangle (r.reduced (1.4f), juce::jmax (2.0f, radius - 1.2f), 0.65f);
+}
+
 // The dark screen glass (t.phosphor() = the iron glass base) — the SAME base treatment the hero GraphDisplay
 // uses (oil-sage base + worn top sheen + settled lower third), factored out so
 // secondary screen surfaces (the variant-bank page) read as the same display rather
