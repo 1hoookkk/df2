@@ -51,53 +51,57 @@ public:
         // mount their face AT the mouth (edge-to-edge, proportional corner
         // radius), wheels draw their 1:1 frame centred in it. Re-measure with
         // the same probe if the art ever changes; never hand-nudge.
-        layout.elements["morphWheel"]   = { { 115.0f, 688.0f, 428.0f, 92.0f }, {}, {} };
-        layout.elements["qWheel"]       = { { 114.0f, 869.0f, 429.0f, 93.0f }, {}, {} };
+        layout.elements["morphWheel"]   = { { 109.6f, 683.8f, 443.8f, 99.4f }, {}, {} };
+        layout.elements["qWheel"]       = { { 114.0f, 866.0f, 434.0f, 97.0f }, {}, {} };
         // Window edges use the OUTERMOST wall extent (the recesses bow by a few
         // px along their length — a median rect leaves wall showing at the
         // bowed rows; "look at the preset on the right side").
-        layout.elements["typeSelector"] = { { 218.0f, 129.0f, 676.0f, 77.0f },  {}, {} };
-        layout.elements["morphReadout"] = { { 591.0f, 703.0f, 172.0f, 74.0f },  20.0f, juce::Colour (0xff2a2722) };
-        layout.elements["qReadout"]     = { { 591.0f, 885.0f, 172.0f, 71.0f },  20.0f, juce::Colour (0xff2a2722) };
-        layout.elements["spectrumGrid"] = { { 110.0f, 233.0f, 795.0f, 383.0f }, {}, {} }; // the screen opening
+        layout.elements["typeSelector"] = { { 209.5f, 126.0f, 696.0f, 82.0f },  {}, {} };
+        layout.elements["morphReadout"] = { { 588.8f, 700.0f, 177.3f, 77.9f },  21.0f, juce::Colour (0xff0d0b09) };
+        layout.elements["qReadout"]     = { { 590.0f, 882.0f, 174.0f, 75.0f },  21.0f, juce::Colour (0xff0d0b09) };
+        layout.elements["spectrumGrid"] = { { 100.1f, 229.2f, 814.9f, 390.5f }, {}, {} }; // the screen opening
         layout.elements["slotPad"]      = { { 699.0f, 240.0f, 112.0f, 26.0f }, {}, {} }; // retired pager (hidden)
         layout.elements["modulateTag"]  = { { 149.0f, 456.0f, 430.0f, 56.0f }, {}, {} }; // clickable word on the glass
         layout.elements["fiveDTag"]     = { { 149.0f, 511.0f, 430.0f, 52.0f }, {}, {} }; // 5D switch (hidden in V1 face)
         layout.elements["filterLabel"]  = { { 0.0f, 0.0f, 0.0f, 0.0f },  11.5f, juce::Colour (0xff3a2f22) };
         layout.elements["filterLabel"].text = "TRENCH";   // hidden — the nameplate carries the identity
-        // TYPE label rides close to the preset bar — near, not hugging.
-        layout.elements["typeLabel"]    = { { 128.0f, 133.0f, 84.0f, 74.0f },  15.0f, juce::Colour (0xff2a2722) };
+        // TYPE label: clear breathing room before the preset bar.
+        layout.elements["typeLabel"]    = { { 108.0f, 133.0f, 84.0f, 74.0f },  15.0f, juce::Colour (0xff0d0b09) };
         layout.elements["typeLabel"].text = "TYPE";
-        layout.elements["typeName"]     = { { 244.0f, 127.0f, 530.0f, 79.0f },  18.0f, juce::Colour (0xff2a2722) };
+        layout.elements["typeName"]     = { { 244.0f, 127.0f, 530.0f, 79.0f },  18.0f, juce::Colour (0xff0d0b09) };
         layout.elements["typeArrow"]    = { { 838.0f, 127.0f, 56.0f,  79.0f },  {}, {} }; // dropdown arrow box (the bar's divided end segment)
         // Rail labels: the SAME measured vertical gap above each wheel well;
         // darker engraved ink, MORPH clear of the display bezel.
-        layout.elements["morphLabel"]   = { { 114.0f, 640.0f, 434.0f, 38.0f },  15.5f, juce::Colour (0xff2a2722) };
+        layout.elements["morphLabel"]   = { { 114.0f, 637.0f, 434.0f, 38.0f },  17.0f, juce::Colour (0xff0d0b09) };
         layout.elements["morphLabel"].text = "MORPH";
-        layout.elements["qLabel"]       = { { 114.0f, 822.0f, 434.0f, 38.0f },  15.5f, juce::Colour (0xff2a2722) };
+        layout.elements["qLabel"]       = { { 114.0f, 819.0f, 434.0f, 38.0f },  17.0f, juce::Colour (0xff0d0b09) };
         layout.elements["qLabel"].text = "Q";
         // TRENCH top-left, seated just above the TYPE row like the X3's FILTER
         // badge — part of the content, not floating at the plate rim. No
         // sub-line anywhere ("MUSICAL FILTER" read as a second product name).
-        layout.elements["brandLabel"]   = { { 114.0f, 78.0f, 230.0f, 40.0f }, 16.5f, juce::Colour (0xff2a2722) };
+        layout.elements["brandLabel"]   = { { 114.0f, 78.0f, 230.0f, 40.0f }, 16.5f, juce::Colour (0xff0d0b09) };
         layout.elements["brandLabel"].text = "TRENCH";
 
-        // Warm putty / blackened graphite / restrained ember. The live colour
-        // is deliberately dusty rather than neon, matching the earlier red
-        // clean-baseline display without turning the whole panel orange.
-        layout.colours["accent"]             = juce::Colour (0xff9b4f4a);
-        layout.colours["curveColour"]        = juce::Colour (0xffc36b64);
-        layout.colours["curveHighlight"]     = juce::Colour (0xffe9a39b);
-        layout.colours["telemetry"]          = juce::Colour (0xffa78680);
-        layout.colours["rollerIllumination"] = juce::Colour (0xff9b4f4a);
-        layout.colours["phosphor"]           = juce::Colour (0xff1b1715);
+        // Warm desaturated clinical, committed: putty plate, SAGE LCD glass with
+        // ONE warm amber signal (the Millennium reference) — dark ink telemetry
+        // on light glass, sage-ruled grid. The wheels' warm lamp matches the
+        // signal, so the panel keeps a single lit voice.
+        // Palette per the 2026-07-17 direction: oxidized-copper teal display,
+        // one orange signal (#E58A2B), teal active states (#338A80), dark
+        // recesses (#171B19).
+        layout.colours["accent"]             = juce::Colour (0xff2bd8c3);
+        layout.colours["curveColour"]        = juce::Colour (0xffb9ece0);
+        layout.colours["curveHighlight"]     = juce::Colour (0xffeafff9);
+        layout.colours["telemetry"]          = juce::Colour (0xff45523f);
+        layout.colours["rollerIllumination"] = juce::Colour (0xff2bd8c3);
+        layout.colours["phosphor"]           = juce::Colour (0xff8ca487);
         layout.colours["amber"]              = juce::Colour (0xffa9554e);
-        layout.colours["dashed"]             = juce::Colour (0xff514743);
-        layout.colours["screenEdge"]         = juce::Colour (0xff100d0c);
-        layout.colours["labelInk"]    = juce::Colour (0xff24231f); // warm charcoal type
+        layout.colours["dashed"]             = juce::Colour (0xff64785e);
+        layout.colours["screenEdge"]         = juce::Colour (0xff171b19);
+        layout.colours["labelInk"]    = juce::Colour (0xff0d0b09); // warm charcoal type
 
         layout.params["wellRadius"]        = 9.0;
-        layout.params["readoutAliasScale"] = 0.85; // crisper on the dark LED box
+        layout.params["readoutAliasScale"] = 0.92; // crisp digits without visible crunch
         layout.params["typeArrowExtra"]    = 6.0;
         layout.params["curveDbTop"]        = 40.0;   // keep high-Q bodies inside the hardware display
         layout.params["curveDbBottom"]     = -40.0;

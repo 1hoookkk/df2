@@ -21,12 +21,11 @@ PluginEditor::PluginEditor (PluginProcessor& p)
     // its baked wells.
     auto panel = juce::ImageCache::getFromMemory (BinaryData::df2_panel_beige_png,
                                                   BinaryData::df2_panel_beige_pngSize);
-    // The wheels retain the approved Blender-authored 257-frame geometry and
-    // progression. Only the cold glow hue is remapped to the display's muted
-    // ember family; the khaki/graphite material and alpha silhouette stay real.
+    // The wheels retain the approved Blender-authored 257-frame geometry. The
+    // warm travelling position light is baked by the post assembler; runtime
+    // paint only selects the current frame.
     auto strip = juce::ImageCache::getFromMemory (BinaryData::trench_roller_strip_png,
                                                   BinaryData::trench_roller_strip_pngSize);
-    strip = remapColdRollerGlowToEmber (strip);
     faceplate    = std::make_unique<FaceplateView> (panel, theme);
     faceplate->setBufferedToImage (true);   // the static plate is cached, not re-rasterized per frame
     graph        = std::make_unique<GraphDisplay> (theme, processor.apvts, ParamID::slamDrive);
@@ -115,7 +114,9 @@ PluginEditor::PluginEditor (PluginProcessor& p)
     };
     fiveDButton  = std::make_unique<FiveDButton> (processor.apvts, theme);
     labels       = std::make_unique<LabelsLayer> (theme);
+    labels->setBufferedToImage (true);        // static engravings: rasterize once
     decalsLayer  = std::make_unique<DecalsLayer> (theme);
+    decalsLayer->setBufferedToImage (true);
 
     // z-order: faceplate (back) -> screen -> controls -> labels -> decals
     addAndMakeVisible (*faceplate);
@@ -233,7 +234,9 @@ void PluginEditor::layoutComponents()
     labels->toFront (false);
     decalsLayer->toFront (false);
 
-    const auto rectOf = [this] (const char* id) { return theme.rect (id).toNearestInt(); };
+    // Cover the mouth, never undershoot it: nearest-rounding let a half-pixel of
+    // the well's black floor peek out under a face (the marked "68.0" box).
+    const auto rectOf = [this] (const char* id) { return theme.rect (id).getSmallestIntegerContainer(); };
     graph->setBounds (rectOf ("spectrumGrid"));
     takeView->setBounds (rectOf ("spectrumGrid"));
     moveView->setBounds (rectOf ("spectrumGrid"));

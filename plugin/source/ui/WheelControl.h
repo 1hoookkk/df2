@@ -11,47 +11,17 @@
 namespace trench::ui
 {
 
-// Preserve the approved 257-frame geometry and progressive glow positions, but
-// remap only cold blue/cyan light pixels into muted ember. Neutral/khaki wheel
-// material is untouched. This is performed once when the editor loads; both
-// controls then share the transformed image.
-inline juce::Image remapColdRollerGlowToEmber (const juce::Image& source)
-{
-    if (! source.isValid())
-        return source;
-
-    auto result = source.createCopy();
-    juce::Image::BitmapData pixels (result, juce::Image::BitmapData::readWrite);
-    const auto ember = juce::Colour (0xffb35f56);
-
-    for (int y = 0; y < result.getHeight(); ++y)
-        for (int x = 0; x < result.getWidth(); ++x)
-        {
-            const auto c = pixels.getPixelColour (x, y);
-            const int coldLead = juce::jmax ((int) c.getBlue(), (int) c.getGreen()) - (int) c.getRed();
-            if (c.getAlpha() == 0 || coldLead <= 7)
-                continue;
-
-            const float mix = juce::jlimit (0.0f, 0.94f, (coldLead - 7) / 42.0f);
-            const auto target = ember.withBrightness (c.getBrightness()).withAlpha (c.getFloatAlpha());
-            pixels.setPixelColour (x, y, c.interpolatedWith (target, mix));
-        }
-
-    return result;
-}
-
 // One thumbwheel: the iron twin-row roller rendered from the authored filmstrip.
-// Position glow is BAKED into the frames (X3 law — light through the fin
-// gaps, trailing bar). Frames draw 1:1, centred, overhanging the plate's black
-// opening (the recut wells are tighter than the wheel — the well edge crops it,
-// like the hardware). Drag handling reaches the parameter directly through a
+// Position glow is baked into the frames as one continuous travelling packet;
+// the rejected Blender diode-cell pass is not used. Frames draw 1:1, centred
+// in the authored well. Drag handling reaches the parameter directly through a
 // ParameterAttachment (correct begin/end gestures, host-thread-safe value
 // callbacks) — no hidden Slider, no SliderAttachment.
 class WheelControl : public juce::Component,
                      public juce::SettableTooltipClient
 {
 public:
-    static constexpr int kStripFrameWidth = 200;   // actual-size frame (drawn 1:1, never resampled)
+    static constexpr int kStripFrameWidth = 150;   // actual-size frame (drawn 1:1, never resampled)
 
     WheelControl (juce::AudioProcessorValueTreeState& apvts, juce::String paramID,
                   juce::Image filmstrip, const Theme& theme)
@@ -212,23 +182,39 @@ public:
         const int last = numFrames - 1;
         const int frame = juce::jlimit (0, last, juce::roundToInt (displayNormalised() * (float) last));
 
-        // The 200 px source frame is the authority, but the compact 350 px editor
-        // cannot hold it 1:1. Fit it proportionally inside the authored wheel
-        // aperture so the full roller survives instead of being centre-cropped.
-        // The frame's own alpha remains the silhouette. The cobalt position glow is BAKED
-        // into the filmstrip — no code-drawn lamp. NOTHING is painted behind
-        // the wheel: the panel art's baked recess IS the well (any code-drawn
-        // cavity here reads as a fake rectangle; regressed twice, never again).
-        const float fit = juce::jmin (1.0f,
-                                      juce::jmin ((float) getWidth() / (float) fw,
-                                                  (float) getHeight() / (float) fh));
-        const int dw = juce::jmax (1, juce::roundToInt ((float) fw * fit));
-        const int dh = juce::jmax (1, juce::roundToInt ((float) fh * fit));
+        // The frame is authored at the compact editor's true aperture size and
+        // draws 1:1, centred — never resampled (runtime scaling is what made the
+        // wheel mushy). FULL silhouette, never clipped: the frame fits inside the
+        // component, rounded ends and well surround stay visible (WINE_WHEEL law;
+        // cropped caps read as a drum, "the framing is not right at all"). The
+        // frame's own alpha remains the silhouette. The position glow is baked
+        // into the filmstrip as one smooth packet — no code-drawn lamp and no
+        // segmented diode pass. NOTHING is painted behind the wheel: the panel art's
+        // baked recess IS the well (any code-drawn cavity here reads as a fake
+        // rectangle; regressed twice, never again).
+        const int dw = fw;
+        const int dh = fh;
         const int dx = (getWidth()  - dw) / 2;
         const int dy = (getHeight() - dh) / 2;
         g.setOpacity (1.0f);
-        g.setImageResamplingQuality (juce::Graphics::highResamplingQuality);
         g.drawImage (strip, dx, dy, dw, dh, frame * fw, 0, fw, fh);
+
+        // Protrusion: the belly's crown catches the room light — a soft
+        // horizontal band just above the drum's centre — so the cylinder
+        // reads as sticking OUT of the well (with the filled cast shadow
+        // anchoring it below on the plate).
+        {
+            const float crownY = (float) dy + (float) dh * 0.40f;   // the belly's widest line
+            juce::ColourGradient crown (juce::Colours::transparentBlack, 0.0f, (float) dy + (float) dh * 0.16f,
+                                        juce::Colours::white.withAlpha (0.19f), 0.0f, crownY, false);
+            g.setGradientFill (crown);
+            g.fillRect ((float) dx + 3.0f, (float) dy + (float) dh * 0.16f,
+                        (float) dw - 6.0f, crownY - ((float) dy + (float) dh * 0.16f));
+            juce::ColourGradient fall (juce::Colours::white.withAlpha (0.19f), 0.0f, crownY,
+                                       juce::Colours::transparentBlack, 0.0f, (float) dy + (float) dh * 0.66f, false);
+            g.setGradientFill (fall);
+            g.fillRect ((float) dx + 3.0f, crownY, (float) dw - 6.0f, (float) dh * 0.26f);
+        }
 
         // Hover/drag feedback: the drum catches a touch more light under
         // the cursor — state feedback as light on the object, not a ring.

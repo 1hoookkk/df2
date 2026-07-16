@@ -35,7 +35,8 @@ public:
     {
         // Clear software typography over the physical plate: direct dark text,
         // relaxed weight, no engraved catch-light or poster-headline treatment.
-        const auto draw = [this, &g] (const juce::String& id, const juce::String& text, bool centred)
+        const auto draw = [this, &g] (const juce::String& id, const juce::String& text,
+                                      bool centred, bool strong = false)
         {
             const auto r = t.rect (id);
             // A zero-size rect (or zero font) means "hidden" — the layout editor's
@@ -43,7 +44,7 @@ public:
             const float fs = t.fontSize (id, 11.0f);
             if (r.getWidth() < 1.0f || r.getHeight() < 1.0f || fs < 0.5f || text.isEmpty())
                 return;
-            g.setFont (displayFont (fs, false).withExtraKerningFactor (0.025f));
+            g.setFont (displayFont (fs, strong).withExtraKerningFactor (0.025f));
             g.setColour (t.textColour (id, t.labelInk()));
             g.drawFittedText (text.toUpperCase(), r.toNearestInt(),
                               centred ? juce::Justification::centred

@@ -154,16 +154,16 @@ private:
         {
             const auto area = juce::Rectangle<float> (0.0f, 0.0f, (float) width, (float) height);
 
-            // A small hardware cartridge panel opening from the TYPE chip: deep
-            // navy-charcoal body with a subtle vertical falloff and an inset
-            // machined bevel — the same shell material, never a system menu.
-            juce::ColourGradient body (juce::Colour (0xff1d2437), 0.0f, 0.0f,
-                                       juce::Colour (0xff141a2a), 0.0f, (float) height, false);
+            // A small hardware cartridge panel opening from the TYPE chip: warm
+            // graphite body (the machine's own dark family, not the retired navy)
+            // with a subtle vertical falloff and an inset machined bevel.
+            juce::ColourGradient body (juce::Colour (0xff37332c), 0.0f, 0.0f,
+                                       juce::Colour (0xff26231e), 0.0f, (float) height, false);
             g.setGradientFill (body);
             g.fillRect (area);
 
             // inset bevel: light catches the top/left lip, shadow settles bottom/right
-            g.setColour (juce::Colour (0xff3a4560).withAlpha (0.85f));
+            g.setColour (juce::Colour (0xff5a5348).withAlpha (0.85f));
             g.drawLine (1.5f, 1.5f, (float) width - 1.5f, 1.5f, 1.0f);
             g.drawLine (1.5f, 1.5f, 1.5f, (float) height - 1.5f, 1.0f);
             g.setColour (juce::Colours::black.withAlpha (0.55f));
@@ -171,7 +171,7 @@ private:
             g.drawLine ((float) width - 1.5f, 1.5f, (float) width - 1.5f, (float) height - 1.5f, 1.0f);
 
             // outer keyline seats the panel against whatever it opens over
-            g.setColour (juce::Colour (0xff0a0d16));
+            g.setColour (juce::Colour (0xff14120e));
             g.drawRect (area.reduced (0.5f), 1.0f);
         }
 
@@ -188,7 +188,7 @@ private:
                 r = r.reduced (9.0f, 0.0f).withHeight (1.0f).withCentre ({ r.getCentreX(), r.getCentreY() });
                 g.setColour (juce::Colours::black.withAlpha (0.50f));
                 g.fillRect (r);
-                g.setColour (juce::Colour (0xff3a4560).withAlpha (0.40f));
+                g.setColour (juce::Colour (0xff5a5348).withAlpha (0.40f));
                 g.fillRect (r.translated (0.0f, 1.0f));
                 return;
             }
@@ -196,13 +196,13 @@ private:
             const bool action = text.startsWithIgnoreCase ("seed") || text.startsWithIgnoreCase ("export");
             if (isHighlighted && isActive)
             {
-                // warm cream wash + wine rail — the shell's own lamp family
+                // warm cream wash + amber rail — the panel's one signal colour
                 g.setColour (juce::Colour (0xffe9dfc6).withAlpha (0.10f));
                 g.fillRect (r.reduced (2.0f, 1.0f));
 
                 auto rail = r.reduced (2.0f, 1.0f);
                 rail.setWidth (2.0f);
-                g.setColour (juce::Colour (0xffa4263c).withAlpha (0.85f));   // wine
+                g.setColour (juce::Colour (0xffd98a36).withAlpha (0.85f));   // amber signal
                 g.fillRect (rail);
             }
 

@@ -3,6 +3,7 @@
 #include "Theme.h"
 #include "../dsp/SlamStage.h"
 #include "../parameters/TrenchParameters.h"
+#include "BinaryData.h"
 
 #include <juce_audio_processors/juce_audio_processors.h>
 
@@ -18,13 +19,15 @@ namespace trench::ui
 // may still look tired; the glass itself is an optically bonded, machined part.
 //
 // SLAM is a SECONDARY on-screen control (not a rail): dragging the canvas vertically
-// (or the mouse wheel over the graph) drives SLAM/input-clip, with a transient
-// "SLAM xx.x" overlay. Up = push harder into it. Default is the parameter's own.
+// (or the mouse wheel over the graph) drives the Mackie desk stage.  In the shipped
+// route that stage is last in the chain and adds 0..+12 dB before the measured desk
+// curve.  The filter response therefore never bends or clamps when SLAM changes.
 //
 // Preview-only: curve, nothing else. MOTION/TIME are picked and shown in
 // their own compact row below the screen (MotionTimeRow) — this view never
 // draws text of its own for them.
 class GraphDisplay : public juce::Component,
+                     public juce::SettableTooltipClient,
                      private juce::Timer
 {
 public:
@@ -48,6 +51,12 @@ public:
                   juce::AudioProcessorValueTreeState& apvts, const juce::String& canvasParamId)
         : t (theme)
     {
+        // The glass IS the SLAM control. Keep the face clean at rest, but make
+        // the gesture explicit as soon as the pointer enters the display.
+        setTitle ("SLAM");
+        setDescription ("SLAM Mackie desk drive; drag up for more pressure");
+        setTooltip ("SLAM — Mackie desk drive after the body; drag up for more, Shift-drag for fine adjustment, scroll to adjust, double-click to reset");
+        setMouseCursor (juce::MouseCursor::UpDownResizeCursor);
         canvasParam = apvts.getParameter (canvasParamId);
         if (canvasParam != nullptr)
         {
@@ -60,6 +69,10 @@ public:
             canvasDefault = canvasParam->getDefaultValue();
             setMouseCursor (juce::MouseCursor::UpDownResizeCursor);
         }
+        routeParam = apvts.getParameter (ParamID::inputMode);
+        if (routeParam != nullptr)
+            routeAtt = std::make_unique<juce::ParameterAttachment> (*routeParam,
+                                                                    [this] (float) { repaint(); });
         // The screen takes mouse input to drive SLAM (children like the [1][2]
         // pad and MOD tag sit on top and still get their own clicks).
         setInterceptsMouseClicks (canvasParam != nullptr, false);
@@ -110,9 +123,10 @@ public:
         const double dbTop = t.curveDbTop(), dbBot = t.curveDbBottom();
         const double fLo = 20.0, fHi = juce::jmin (20000.0, sr * 0.5 - 1.0);
 
-        // Pixel-snapped sampling: enough points to resolve resonances, but still
-        // crude like an old utility display rather than a smooth DAW graph.
-        constexpr int N = 190;
+        // Sample at four points per native display pixel (with a 768-point
+        // floor). Narrow packed-body resonances therefore survive the small
+        // 350x540 editor without changing the runtime-authoritative response.
+        const int N = juce::jmax (768, juce::roundToInt (plot.getWidth() * 4.0f));
         juce::Path path;
         bool started = false;
         traceXs.clear();
@@ -164,7 +178,19 @@ public:
         repaint();
     }
 
-    // --- SLAM: vertical drag + wheel drive input-clip/SLAM (up = harder) ------
+    // --- SLAM: vertical drag + wheel drive the Mackie stage (up = harder) -----
+    void mouseEnter (const juce::MouseEvent&) override
+    {
+        hovering = true;
+        repaint();
+    }
+
+    void mouseExit (const juce::MouseEvent&) override
+    {
+        hovering = false;
+        repaint();
+    }
+
     void mouseDown (const juce::MouseEvent& e) override
     {
         if (canvasParam == nullptr) return;
@@ -216,7 +242,7 @@ public:
     {
         const float rad = 9.0f;
         const auto aperture = getLocalBounds().toFloat();
-        constexpr float reveal = 1.95f;
+        constexpr float reveal = 1.15f;   // wells do the depth; keep the reveal thin
         const auto glass = aperture.reduced (reveal);
         const float glassRad = rad - reveal;
 
@@ -224,9 +250,9 @@ public:
         // backing plate to separate the glass without becoming a chunky bezel.
         // It is not a chrome border or an outer shadow.
         {
-            juce::ColourGradient nickel (juce::Colour (0xff24211d), aperture.getX(), aperture.getY(),
-                                         juce::Colour (0xff080a0c), aperture.getRight(), aperture.getBottom(), false);
-            nickel.addColour (0.38, juce::Colour (0xff111316));
+            juce::ColourGradient nickel (juce::Colour (0xff222825), aperture.getX(), aperture.getY(),
+                                         juce::Colour (0xff0e110f), aperture.getRight(), aperture.getBottom(), false);
+            nickel.addColour (0.38, juce::Colour (0xff171b19));
             g.setGradientFill (nickel);
             g.fillRoundedRectangle (aperture, rad);
 
@@ -249,16 +275,18 @@ public:
             juce::Graphics::ScopedSaveState save (g);
             g.reduceClipRegion (face);
 
-            drawFailingGlassBed (g, glass);
-            drawLogGrid (g, glass);
-
-            armed = canvasParam != nullptr
-                        ? juce::jlimit (0.0f, 1.0f, (canvasParam->getValue() - 0.15f) / 0.60f)
-                        : 0.0f;
+            // The authentic E-mu display plate (BITMAP4613, 156x69): teal
+            // glass gradient plus the full logarithmic ruling, blitted as the
+            // curated asset itself — bed and grid in one, never redrawn.
+            if (displayPlate.isNull())
+                displayPlate = juce::ImageCache::getFromMemory (BinaryData::display_bitmap4613_png,
+                                                                BinaryData::display_bitmap4613_pngSize);
+            g.setImageResamplingQuality (juce::Graphics::highResamplingQuality);
+            g.drawImage (displayPlate, glass, juce::RectanglePlacement::stretchToFit, false);
 
             drawResponseTrace (g);
-            drawSlamReadout (g, glass);
             drawDisplayDropouts (g, glass);
+            drawSlamHoverCue (g, glass);
 
             // One faint, broad reflection inside the glass. No stripe, glare
             // decal or perspective trick: just the pane catching room light.
@@ -290,11 +318,13 @@ private:
 
     void drawFailingGlassBed (juce::Graphics& g, juce::Rectangle<float> screen) const
     {
-        // Dense neutral smoke: slightly reflective at the crown, optically deep
-        // at the floor. Opaque enough to read as its own fitted material.
-        juce::ColourGradient smoke (juce::Colour (0xff282321), 0.0f, screen.getY(),
-                                    juce::Colour (0xff0f0d0c), 0.0f, screen.getBottom(), false);
-        smoke.addColour (0.46, juce::Colour (0xff1a1715));
+        // The glass bed derives from the phosphor token (sage LCD): slightly
+        // lit at the crown, settling gently toward the floor. Opaque enough to
+        // read as its own fitted material.
+        const auto glassBase = t.phosphor();
+        juce::ColourGradient smoke (glassBase.brighter (0.06f), 0.0f, screen.getY(),
+                                    glassBase.darker (0.16f), 0.0f, screen.getBottom(), false);
+        smoke.addColour (0.46, glassBase.darker (0.04f));
         g.setGradientFill (smoke);
         g.fillRect (screen);
 
@@ -320,40 +350,39 @@ private:
             g.drawLine (screen.getX(), y, screen.getRight(), y, 0.55f);
     }
 
-    // Ruled log-frequency grid on dying glass: still readable, but not married
-    // to the fresh plate typography.
+    // Ruled log grid: the REAL X3-era ruling, measured from the checked-in
+    // display_log_grid.png (column/row delta peaks — 26 log-spaced frequency
+    // rules in three decade clusters + 3 level rules, with per-rule ink
+    // strength). Drawn as clean 1px ink at the measured fractions; per-pixel
+    // extraction of the faint source read as scratches at 350px.
     void drawLogGrid (juce::Graphics& g, juce::Rectangle<float> screen) const
     {
-        const auto plot = plotBounds();
-        if (plot.isEmpty())
-            return;
-        const auto ink = t.dashed();
-        const double fLo = 20.0, fHi = 20000.0;
-        const auto xOf = [&] (double f)
-        { return plot.getX() + (float) (std::log (f / fLo) / std::log (fHi / fLo)) * plot.getWidth(); };
-        for (double decade = 10.0; decade < fHi; decade *= 10.0)
-            for (int m = 2; m <= 10; ++m)
-            {
-                const double f = decade * m;
-                if (f <= fLo || f >= fHi)
-                    continue;
-                const bool major = (m == 10);
-                g.setColour (ink.withAlpha (major ? 0.48f : 0.23f));
-                g.drawLine (xOf (f), screen.getY(), xOf (f), screen.getBottom(), major ? 0.95f : 0.55f);
-            }
-        const double dbTop = t.curveDbTop(), dbBot = t.curveDbBottom();
-        for (double db = std::ceil (dbBot / 10.0) * 10.0; db <= dbTop; db += 10.0)
-        {
-            const float y = plot.getY() + (float) ((dbTop - db) / (dbTop - dbBot)) * plot.getHeight();
-            g.setColour (ink.withAlpha (juce::approximatelyEqual (db, 0.0) ? 0.44f : 0.20f));
-            g.drawLine (screen.getX(), y, screen.getRight(), y, 0.55f);
-        }
-    }
+        static constexpr float rx[] = { 0.0258f, 0.0710f, 0.1097f, 0.1355f, 0.1613f, 0.1806f,
+                                        0.2000f, 0.2194f, 0.3290f, 0.3935f, 0.4387f, 0.4774f,
+                                        0.5032f, 0.5290f, 0.5484f, 0.5677f, 0.5871f, 0.6968f,
+                                        0.7613f, 0.8065f, 0.8452f, 0.8710f, 0.8968f, 0.9226f,
+                                        0.9419f, 0.9613f };
+        static constexpr float rs[] = { 0.98f, 0.99f, 1.0f, 1.0f, 1.0f, 1.0f,
+                                        1.0f,  0.99f, 0.98f, 0.95f, 0.84f, 0.95f,
+                                        0.89f, 0.84f, 0.79f, 0.71f, 0.71f, 0.80f,
+                                        0.71f, 0.77f, 0.67f, 0.67f, 0.68f, 0.68f,
+                                        0.69f, 0.68f };
+        static constexpr float ry[] = { 0.2206f, 0.4853f, 0.7500f };
+        static constexpr float ws[] = { 1.0f, 0.96f, 0.74f };
 
-    float slamVisualAmount() const noexcept
-    {
-        const float x = slamNorm();
-        return x * x * (3.0f - 2.0f * x);
+        const auto ink = t.dashed();
+        for (size_t i = 0; i < std::size (rx); ++i)
+        {
+            const float x = screen.getX() + rx[i] * screen.getWidth();
+            g.setColour (ink.withAlpha (0.12f + 0.30f * rs[i]));
+            g.drawLine (x, screen.getY(), x, screen.getBottom(), 0.8f);
+        }
+        for (size_t i = 0; i < std::size (ry); ++i)
+        {
+            const float y = screen.getY() + ry[i] * screen.getHeight();
+            g.setColour (ink.withAlpha (0.10f + 0.26f * ws[i]));
+            g.drawLine (screen.getX(), y, screen.getRight(), y, 0.7f);
+        }
     }
 
     float slamNorm() const noexcept
@@ -363,12 +392,11 @@ private:
         return juce::jlimit (0.0f, 1.0f, canvasParam->getValue());
     }
 
-    // Phosphor for the trace: faded cobalt at clean output, lifting toward a worn
-    // phosphor white as SLAM pushes the output into gain and limiting. This is a
-    // visual output read, not a claim that SLAM changes the filter body.
+    // The trace is only the packed/runtime-decoded body response. SLAM is a
+    // downstream nonlinear audio stage and must not alter this geometry.
     juce::Colour responseColour() const
     {
-        return t.curveColour().interpolatedWith (t.curveHighlight(), slamVisualAmount());
+        return t.curveColour();
     }
 
     // Etched phosphor trace, stroked from the live response Path. The wide pass is
@@ -381,13 +409,10 @@ private:
             return;
         }
 
-        // The curve is the true current six-stage body response.  SLAM is
-        // post-filter output pressure, so it may light the trace but must
-        // never reshape it.  MOTION state likewise does not change visibility
-        // of the filter that is actually sounding.
-        const float s = slamVisualAmount();
+        // The curve is the true current six-stage body response. SLAM is a
+        // separate nonlinear audio stage, so neither its parameter nor its
+        // signal meter may reshape or relight the response plot.
         const auto phos = responseColour();
-        const float limit = juce::jlimit (0.0f, 1.0f, slamOutClip);
 
         const auto plot = plotBounds();
         if (traceXs.empty() || traceXs.size() != traceDbs.size() || plot.isEmpty())
@@ -401,119 +426,44 @@ private:
             return;
         }
 
-        // Bitmap-crunch trace (the X3-family reference): the response drawn as a
-        // 2px-quantised STAIRCASE, butt caps — a hand-pixelled hardware curve,
-        // not an antialiased vector.
+        // High-fidelity instrument trace. The path retains sub-pixel geometry;
+        // material character comes from restrained optical passes, never by
+        // quantising or falsifying the packed/runtime response.
         const double dbTop = t.curveDbTop(), dbBot = t.curveDbBottom();
-        const float q = 2.0f;                              // pixel-crunch quantum
         const size_t N = traceXs.size();
         auto yOf = [&] (size_t i)
         {
             const double yt = juce::jlimit (-0.06, 1.06, (dbTop - traceDbs[i]) / (dbTop - dbBot));
-            const float y = plot.getY() + (float) yt * plot.getHeight();
-            return q * std::round (y / q);                 // snap to the crunch grid
+            return plot.getY() + (float) yt * plot.getHeight();
         };
 
-        juce::Path stair;
-        juce::Path edgeCatch;
-        float px = traceXs[0];
-        float py = yOf (0);
-        stair.startNewSubPath (px, py);
-
-        bool catchPenDown = false;
-        juce::Point<float> catchEnd;
-        const auto appendEdgeCatch = [&] (float x0, float y0, float x1, float y1)
-        {
-            if (std::abs (x1 - x0) + std::abs (y1 - y0) < 0.1f)
-                return;
-
-            // Fixed, irregular 10px bands: enough interruption to feel like a
-            // dry phosphor/print catch, never a regular dashed software line.
-            const int band = juce::jmax (0, (int) std::floor ((0.5f * (x0 + x1) - plot.getX()) / 10.0f));
-            const int signature = (band * 7 + 5) % 19;
-            const bool visible = signature != 0 && signature != 4 && signature != 11;
-            if (! visible)
-            {
-                catchPenDown = false;
-                return;
-            }
-
-            const juce::Point<float> start { x0, y0 };
-            if (! catchPenDown || catchEnd.getDistanceFrom (start) > 0.1f)
-                edgeCatch.startNewSubPath (start);
-            edgeCatch.lineTo (x1, y1);
-            catchEnd = { x1, y1 };
-            catchPenDown = true;
-        };
-
-        for (size_t i = 1; i < N; ++i)
-        {
-            const float x = traceXs[i];
-            const float y = yOf (i);
-            if (! juce::approximatelyEqual (y, py))
-            {
-                stair.lineTo (x, py);                      // run, then rise: the staircase
-                appendEdgeCatch (px, py, x, py);
-                stair.lineTo (x, y);
-                appendEdgeCatch (x, py, x, y);
-            }
-            else
-            {
-                stair.lineTo (x, y);
-                appendEdgeCatch (px, py, x, y);
-            }
-            px = x;
-            py = y;
-        }
-
-        // SLAM lives ON the trace: no fill, no bars — the line itself heats,
-        // thickens, and carries a glow halo that swells with drive.
-        if (s > 0.01f)
-        {
-            g.setColour (t.amber().withAlpha (0.12f + 0.30f * s));
-            g.strokePath (stair, { 4.0f + 6.0f * s, juce::PathStrokeType::mitered,
-                                   juce::PathStrokeType::butt });
-        }
-
-        // LOW SIGNAL by design: a slightly starved beam — dimmer, thinner,
-        // the analog read of a weak trace on old glass.
-        constexpr auto joint = juce::PathStrokeType::mitered;
-        constexpr auto cap   = juce::PathStrokeType::butt;
-        const float lw = 2.0f + 0.7f * s;
-        g.setColour (juce::Colour (0xff15151a).withAlpha (0.55f));      // soft offset bed (dark glass)
-        g.strokePath (stair, { lw + 0.7f, joint, cap },
-                      juce::AffineTransform::translation (1.2f, 1.8f));
-        g.setColour (phos.withAlpha (0.66f));                           // the starved signal
-        g.strokePath (stair, { lw, joint, cap });
-
-        // Broken cobalt edge catch: a fractional-pixel registration lift on
-        // the upper-left edge of the crude staircase. It replaces the old full
-        // centre highlight, so it reads as material finesse rather than glow.
-        g.setColour (t.curveHighlight().withAlpha (0.12f + 0.04f * s));
-        g.strokePath (edgeCatch, { 0.65f, joint, cap },
-                      juce::AffineTransform::translation (-0.25f, -0.75f));
-        if (limit > 0.001f)
-        {
-            g.setColour (t.curveHighlight().withAlpha (0.12f + 0.28f * limit));
-            g.strokePath (stair, { 0.8f + 1.0f * limit, joint, cap });
-        }
+        constexpr auto joint = juce::PathStrokeType::curved;
+        constexpr auto cap   = juce::PathStrokeType::rounded;
+        // Thin crisp instrument trace (the X3's own line weight): a fine core
+        // with one faint breath of glow — no drop shadow, no fat halo.
+        constexpr float lw = 1.35f;
+        g.setColour (phos.withAlpha (0.20f));
+        g.strokePath (responsePath, { lw + 1.4f, joint, cap });
+        g.setColour (phos);
+        g.strokePath (responsePath, { lw, joint, cap });
 
         // Peak crosses (the reference's + ticks): small markers on the mode
-        // crests — the anatomy made visible, not decoration.
+        // crests — light ink on the dark teal plate, clinical annotation not sparkle.
         {
-            g.setColour (t.curveHighlight().withAlpha (0.58f));
+            g.setColour (juce::Colour (0xffcfe8de).withAlpha (0.75f));
             int marks = 0;
-            for (size_t i = 2; i + 2 < N && marks < 8; ++i)
+            const size_t r = juce::jmax ((size_t) 2, N / (size_t) 95);
+            for (size_t i = r; i + r < N && marks < 8; ++i)
             {
                 const double d = traceDbs[i];
                 if (d > traceDbs[i-1] && d >= traceDbs[i+1]
-                    && d - juce::jmin (traceDbs[i-2], traceDbs[i+2]) > 2.5)
+                    && d - juce::jmin (traceDbs[i-r], traceDbs[i+r]) > 2.5)
                 {
-                    const float x = q * std::round (traceXs[i] / q), y = yOf (i) - 4.0f;
+                    const float x = traceXs[i], y = yOf (i) - 4.0f;
                     g.drawLine (x - 3.0f, y, x + 3.0f, y, 1.4f);
                     g.drawLine (x, y - 3.0f, x, y + 3.0f, 1.4f);
                     ++marks;
-                    i += 4;                                 // one cross per crest
+                    i += r * 2;                              // one cross per crest
                 }
             }
         }
@@ -540,6 +490,42 @@ private:
         g.setColour (juce::Colours::black.withAlpha (0.18f));
         g.fillRect (screen.getX() + screen.getWidth() * 0.055f, screen.getY(), 1.0f, screen.getHeight());
         g.fillRect (screen.getRight() - screen.getWidth() * 0.082f, screen.getY(), 1.0f, screen.getHeight());
+    }
+
+    void drawSlamHoverCue (juce::Graphics& g, juce::Rectangle<float> screen) const
+    {
+        if ((! hovering && ! pressing) || canvasParam == nullptr)
+            return;
+
+        // This component is ~270 px wide in the native 350x540 editor.  The
+        // previous 346 px reference width shrank an 8.5 px cue to ~6.7 px at
+        // the size users actually see.  Author the affordance at true 1x and
+        // only compact it if a future layout makes the screen genuinely smaller.
+        const float compact = juce::jlimit (0.86f, 1.0f, getWidth() / 270.0f);
+        const auto cue = juce::Rectangle<float> (screen.getRight() - 101.0f * compact,
+                                                 screen.getY() + 4.0f * compact,
+                                                 93.0f * compact, 16.0f * compact);
+        const auto textArea = cue.withTrimmedRight (16.0f * compact);
+        g.setFont (telemetryFont (9.8f * compact, false));
+        g.setColour (juce::Colour (0xffcfe8de).withAlpha (0.94f));
+        const bool intoFilter = routeParam != nullptr && routeParam->getValue() > 0.5f;
+        const auto value = intoFilter
+                             ? "SLAM IN " + juce::String (juce::roundToInt (slamNorm() * 100.0f)) + "%"
+                             : "SLAM +" + juce::String (trench::slamOutputGainDb (slamNorm()), 1) + " dB";
+        g.drawText (value, textArea, juce::Justification::centredRight, false);
+
+        // SLAM is monotonic drive, not a bipolar modulation: one large upward
+        // arrow says exactly what the gesture does. Its strength follows the
+        // real post-SLAM output hotness meter; the filter curve stays untouched.
+        const float cx = cue.getRight() - 6.0f * compact;
+        const float cy = cue.getCentreY();
+        const float d = 3.8f * compact;
+        const float tipY = cy - 5.2f * compact;
+        const float hot = juce::jlimit (0.0f, 1.0f, slamOutClip);
+        g.setColour (t.curveColour().withAlpha (0.68f + 0.30f * hot));
+        g.drawLine (cx, cy + 5.0f * compact, cx, tipY, 1.25f * compact);
+        g.drawLine (cx - d, tipY + 3.5f * compact, cx, tipY, 1.25f * compact);
+        g.drawLine (cx, tipY, cx + d, tipY + 3.5f * compact, 1.25f * compact);
     }
 
     // SEED's screen feedback: the OLD curve compresses toward a hot ruby
@@ -610,45 +596,8 @@ private:
         g.strokePath (path, { 1.2f, joint, cap });
     }
 
-    void drawSlamReadout (juce::Graphics& g, juce::Rectangle<float> screen) const
-    {
-        if (canvasParam == nullptr)
-            return;
-
-        // No permanent riser/meter on the glass — SLAM's visual home is the
-        // phosphor lift under the curve (drawResponseTrace). Only the
-        // compact value text remains present at rest. It occupies the dead
-        // upper-right corner without restoring the rejected meter bar.
-        const float s = slamNorm();
-        const float a = pressing ? 1.0f : juce::jmax (0.52f, juce::jlimit (0.0f, 1.0f, meterAlpha));
-
-        const float limitPct = slamOutClip * 100.0f;
-        const auto status = "SLAM " + juce::String (juce::roundToInt (s * 100.0f))
-                          + "   LIMIT " + juce::String (juce::roundToInt (limitPct)) + "%";
-
-        // Scale the compact telemetry with the display aperture. At the 350 px
-        // editor size, retaining the old fixed type crowded the response peaks.
-        const float compact = juce::jlimit (0.72f, 1.0f, getWidth() / 346.0f);
-        const float boxW = 136.0f * compact;
-        const float boxH = 16.0f * compact;
-        const float x = pressing
-            ? juce::jlimit (screen.getX() + 5.0f, screen.getRight() - boxW - 5.0f, dragPos.x + 14.0f)
-            : screen.getRight() - boxW - 8.0f;
-        const float y = pressing
-            ? juce::jlimit (screen.getY() + 5.0f, screen.getBottom() - boxH - 5.0f, dragPos.y - boxH - 8.0f)
-            : screen.getY() + 8.0f;
-
-        auto r = juce::Rectangle<float> (x, y, boxW, boxH);
-
-        // Remove the background box and border drawing to avoid fake overlays!
-        // We only draw the text on the glass.
-
-        g.setFont (telemetryFont (10.8f * compact, false));
-        g.setColour (t.telemetry().withAlpha (0.86f * a));
-        g.drawText (status, r.reduced (4.0f * compact, 0.0f), juce::Justification::centredLeft, false);
-    }
-
     Theme t;
+    mutable juce::Image displayPlate;
     juce::Path responsePath;
     std::vector<float> traceXs;
     std::vector<float> traceDbs;
@@ -660,6 +609,8 @@ private:
     // SLAM on-screen (canvas) control
     juce::RangedAudioParameter* canvasParam = nullptr;
     std::unique_ptr<juce::ParameterAttachment> canvasAtt;
+    juce::RangedAudioParameter* routeParam = nullptr;
+    std::unique_ptr<juce::ParameterAttachment> routeAtt;
     float canvasDefault = 0.0f;
 
     // SEED pulse state. Static/Redraw durations are the direction's exact
@@ -705,8 +656,8 @@ private:
     }
 
     bool pressing = false;
+    bool hovering = false;
     float dragStartY = 0.0f;
-    float armed = 0.0f;
     float meterAlpha = 0.0f;
     float slamOutClip = 0.0f;
     juce::Point<float> dragPos;

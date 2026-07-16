@@ -110,19 +110,19 @@ public:
     {
         const auto b = getLocalBounds().toFloat();
 
-        // Smoked bone display window painted into the machined plate's well.
-        // Edge-to-edge: the component rect IS the black opening; any inset here
-        // shows as a dark ring around the face ("you see too much of the inner
-        // well", Tyson 2026-07-11).
+        // Warm desaturated clinical: the readout is a mechanical counter window
+        // in the plate's own bone family, ink digits — the hero screen stays the
+        // panel's only dark glass. Edge-to-edge: the component rect IS the opening.
         drawMutedBoneReadout (g, b, b.getHeight() * 0.17f, isActive, t);
         const auto pct = juce::jlimit (0.0f, 1.0f, value) * 100.0f;
         const auto numeric = textOverride.isNotEmpty() ? textOverride : juce::String (pct, 1);
 
+        // Slightly-aliased LCD numeral (render small, upscale nearest): crisper
+        // digits at the compact 350px face than antialiased vector type.
         const float fs = t.fontSize (id, 20.0f);
-        g.setFont (displayFont (fs, true));
-        g.setColour (t.textColour (id, juce::Colour (0xff0b0b0b)));
-        g.drawFittedText (numeric, b.reduced (4.0f, 1.0f).toNearestInt(),
-                          juce::Justification::centred, 1, 0.92f);
+        drawAliasedText (g, b.reduced (4.0f, 1.0f), numeric, fs,
+                         t.textColour (id, juce::Colour (0xff2a2722)),
+                         t.readoutAliasScale());
     }
 
 private:

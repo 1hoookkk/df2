@@ -2,7 +2,6 @@
 #include "PluginEditor.h"
 #include "TrenchBodyRoster.h"
 #include "SmartMotion.h"
-#include "parameters/MovePresets.h"
 #include "dsp/SlamStage.h"
 #include "BinaryData.h"
 
@@ -196,47 +195,23 @@ bool PluginProcessor::isMidiEffect() const
 
 double PluginProcessor::getTailLengthSeconds() const { return 0.0; }
 
-int PluginProcessor::getNumPrograms()
-{
-    int n = 1; trench::movePresets (n); return n;
-}
+// The UI IS the product: no factory-program list, so hosts draw no generic
+// preset dropdown/arrows around the face. One mandatory default program only.
+int PluginProcessor::getNumPrograms() { return 1; }
 
-int PluginProcessor::getCurrentProgram() { return currentProgram; }
+int PluginProcessor::getCurrentProgram() { return 0; }
 
-void PluginProcessor::setCurrentProgram (int index)
-{
-    int n = 0;
-    const auto* presets = trench::movePresets (n);
-    if (index < 0 || index >= n)
-        return;
-    currentProgram = index;
-    const auto& p = presets[index];
-
-    setParameterDenormalized (ParamID::body,        (float) p.body);
-    setParameterDenormalized (ParamID::moveShape,   (float) p.shape);
-    setParameterDenormalized (ParamID::moveTime,    (float) p.time);
-    setParameterDenormalized (ParamID::moveMode,    (float) p.mode);
-    setParameterDenormalized (ParamID::moveTension, p.tension);
-    setParameterDenormalized (ParamID::morph,       p.morph);
-    setParameterDenormalized (ParamID::q,           p.q);
-    setParameterDenormalized (ParamID::slamDrive,   p.slam);
-    setParameterDenormalized (ParamID::output,      p.outputDb);
-    setParameterDenormalized (ParamID::moveOn,      p.moveOn ? 1.0f : 0.0f);
-    applyModulationBehavior ((trench::TypeBehavior) p.modulation, p.body);
-}
+void PluginProcessor::setCurrentProgram (int index) { juce::ignoreUnused (index); }
 
 const juce::String PluginProcessor::getProgramName (int index)
 {
-    int n = 0;
-    const auto* presets = trench::movePresets (n);
-    if (index < 0 || index >= n)
-        return {};
-    return presets[index].name;
+    juce::ignoreUnused (index);
+    return "TRENCH";
 }
 
 void PluginProcessor::changeProgramName (int index, const juce::String& newName)
 {
-    juce::ignoreUnused (index, newName);   // factory presets are read-only
+    juce::ignoreUnused (index, newName);
 }
 
 // ── MOVE routing matrix store ─────────────────────────────────────────────────

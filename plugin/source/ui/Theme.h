@@ -236,33 +236,34 @@ inline void drawHardwareKey (juce::Graphics& g, juce::Rectangle<float> b,
     g.drawFittedText (label, area, juce::Justification::centred, 1);
 }
 
-// Moulded control seated in a machined pocket. The dark upper cut and pale lower
-// lip make the surround belong to the plate; the quieter convex insert then reads
-// as fitted hardware instead of a bright rectangle pasted over the faceplate.
-inline void drawRaisedBoneControl (juce::Graphics& g, juce::Rectangle<float> r,
-                                   float radius, bool isActive, const Theme& t,
-                                   bool brighterFace)
+// Frosted sage glass seated in a machined pocket. TYPE and both counters share
+// this exact material so the beige/green/graphite palette stays disciplined.
+inline void drawFrostedGlassControl (juce::Graphics& g, juce::Rectangle<float> r,
+                                     float radius, bool isActive, const Theme& t)
 {
     const auto pocket = r.reduced (0.35f);
 
-    // Recess first: dark at the upper wall, plate-lit at the lower wall. There
-    // is deliberately no exterior drop shadow, so the control cannot float.
-    juce::ColourGradient recess (juce::Colour (0xff413c35), 0.0f, pocket.getY(),
-                                 juce::Colour (0xffb4aa9a), 0.0f, pocket.getBottom(), false);
-    recess.addColour (0.36, juce::Colour (0xff696157));
+    // Recess first: a THIN seat, not a black moat (X3 reference: the bar sits
+    // in a hairline groove — shade at the upper wall, light catch at the lower
+    // lip). There is deliberately no exterior drop shadow, so it cannot float.
+    juce::ColourGradient recess (juce::Colour (0xffa59c8b), 0.0f, pocket.getY(),
+                                 juce::Colour (0xffcfc6b4), 0.0f, pocket.getBottom(), false);
     g.setGradientFill (recess);
     g.fillRoundedRectangle (pocket, radius + 0.35f);
 
-    g.setColour (juce::Colours::black.withAlpha (0.76f));
-    g.drawRoundedRectangle (pocket, radius + 0.35f, 1.0f);
+    g.setColour (juce::Colours::black.withAlpha (0.20f));
+    g.drawRoundedRectangle (pocket, radius + 0.35f, 0.65f);
 
-    const auto face = r.reduced (2.15f).translated (0.0f, 0.35f);
-    const auto top = brighterFace ? juce::Colour (0xffedeae3)
-                                  : juce::Colour (0xffddd8ce);
-    const auto middle = brighterFace ? juce::Colour (0xffd9d4ca)
-                                     : juce::Colour (0xffcdc6ba);
-    const auto bottom = brighterFace ? juce::Colour (0xffbdb6aa)
-                                     : juce::Colour (0xffb4ac9f);
+    // Sides sit flush (the X3 groove reads only above/below); vertical keeps the seat.
+    const auto face = r.reduced (0.6f, 1.25f).translated (0.0f, 0.2f);
+    // One restrained insert material across TYPE and both counters: frosted
+    // glass in the display plate's teal family, cut with the plate's warm
+    // bone (the approved 2026-07-17 material — verified against the
+    // reference capture pixel-for-pixel).
+    const auto warmth = juce::Colour (0xffd8d0bc);
+    const auto top    = juce::Colour (0xffc4d2d0).interpolatedWith (warmth, 0.28f);
+    const auto middle = juce::Colour (0xffafc1bf).interpolatedWith (warmth, 0.24f);
+    const auto bottom = juce::Colour (0xff97acaa).interpolatedWith (warmth, 0.20f);
 
     juce::ColourGradient faceFill (top, 0.0f, face.getY(),
                                     bottom, 0.0f, face.getBottom(), false);
@@ -270,29 +271,39 @@ inline void drawRaisedBoneControl (juce::Graphics& g, juce::Rectangle<float> r,
     g.setGradientFill (faceFill);
     g.fillRoundedRectangle (face, juce::jmax (2.0f, radius - 1.3f));
 
-    // The insert retains a controlled convex roll, but its highlights stop well
-    // inside the cut so it feels fitted rather than outlined in white.
+    // Broad internal haze, not a glossy plastic highlight: light diffuses through
+    // the upper half and disappears before the lower seat.
     {
         juce::Graphics::ScopedSaveState save (g);
         juce::Path clip;
         clip.addRoundedRectangle (face, juce::jmax (2.0f, radius - 1.3f));
         g.reduceClipRegion (clip);
 
-        g.setColour (juce::Colours::white.withAlpha (brighterFace ? 0.54f : 0.38f));
-        g.fillRect (face.getX() + 2.0f, face.getY() + 0.7f,
-                    face.getWidth() - 4.0f, 0.85f);
-        g.setColour (juce::Colour (0xff3e3932).withAlpha (0.32f));
+        // Crisp gloss, not marshmallow: one hard specular line at the top,
+        // then a short tight sheen — no broad soft haze.
+        g.setColour (juce::Colours::white.withAlpha (0.55f));
+        g.fillRect (face.getX() + 2.5f, face.getY() + 1.0f, face.getWidth() - 5.0f, 1.0f);
+        juce::ColourGradient frost (juce::Colours::white.withAlpha (0.18f),
+                                    0.0f, face.getY() + 2.0f,
+                                    juce::Colours::transparentWhite,
+                                    0.0f, face.getY() + face.getHeight() * 0.34f, false);
+        g.setGradientFill (frost);
+        g.fillRoundedRectangle (face.reduced (0.8f),
+                                juce::jmax (1.5f, radius - 2.0f));
+
+        g.setColour (juce::Colour (0xff3e3932).withAlpha (0.09f));
         g.fillRect (face.getX() + 2.0f, face.getBottom() - 1.25f,
                     face.getWidth() - 4.0f, 1.0f);
+
     }
 
     // One decisive seam, plus an almost invisible state tint. Avoid the stacked
     // white outlines that made the previous boxes look like pasted stickers.
-    g.setColour (juce::Colour (0xff514c44).withAlpha (0.88f));
+    g.setColour (juce::Colour (0xff2e2b26).withAlpha (0.80f));
     g.drawRoundedRectangle (face.reduced (0.35f),
                             juce::jmax (2.0f, radius - 1.5f), 0.9f);
     g.setColour (isActive ? t.accent().withAlpha (0.36f)
-                          : juce::Colours::white.withAlpha (0.12f));
+                          : juce::Colours::white.withAlpha (0.06f));
     g.drawRoundedRectangle (face.reduced (1.05f),
                             juce::jmax (1.6f, radius - 2.1f), 0.55f);
 }
@@ -300,15 +311,14 @@ inline void drawRaisedBoneControl (juce::Graphics& g, juce::Rectangle<float> r,
 inline void drawIvoryWell (juce::Graphics& g, juce::Rectangle<float> r,
                            float radius, bool isActive, const Theme& t)
 {
-    drawRaisedBoneControl (g, r, radius, isActive, t, true);
+    drawFrostedGlassControl (g, r, radius, isActive, t);
 }
 
-// Numeric readouts use the same bevel, one brightness step below TYPE. The face
-// remains neutral bone, not the rejected white-lamp or gold-cream treatment.
+// Numeric readouts use the exact same insert material as TYPE.
 inline void drawMutedBoneReadout (juce::Graphics& g, juce::Rectangle<float> r,
                                   float radius, bool isActive, const Theme& t)
 {
-    drawRaisedBoneControl (g, r, radius, isActive, t, false);
+    drawFrostedGlassControl (g, r, radius, isActive, t);
 }
 
 // The dark screen glass (t.phosphor() = the iron glass base) — the SAME base treatment the hero GraphDisplay
@@ -319,9 +329,9 @@ inline void fillPhosphorGlass (juce::Graphics& g, juce::Rectangle<float> screen,
 {
     g.setColour (t.phosphor());
     g.fillRect (screen);
-    g.setColour (juce::Colour (0xfff0e3cc).withAlpha (0.045f)); // warm reflection on charcoal glass
+    g.setColour (juce::Colour (0xfff0e3cc).withAlpha (0.045f)); // warm reflection on the glass
     g.fillRect (screen);
-    g.setColour (juce::Colour (0xff171411).withAlpha (0.34f)); // espresso lower depth
+    g.setColour (juce::Colour (0xff171411).withAlpha (0.08f)); // settled lower depth (light LCD: keep faint)
     auto lower = screen;
     g.fillRect (lower.removeFromBottom (lower.getHeight() * 0.34f));
 }
@@ -469,6 +479,7 @@ inline void drawAliasedText (juce::Graphics& g, juce::Rectangle<float> b, const 
         tg.setColour (colour);
         tg.drawFittedText (text, img.getBounds(), juce::Justification::centred, 1);
     }
+    g.setOpacity (1.0f);   // drawImage is modulated by leftover colour alpha — the documented killer
     g.setImageResamplingQuality (juce::Graphics::lowResamplingQuality);
     g.drawImage (img, b, juce::RectanglePlacement::stretchToFit);
 }

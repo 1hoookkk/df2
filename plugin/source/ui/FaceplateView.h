@@ -34,10 +34,15 @@ public:
         // the plate asset itself (df2_panel_beige_shadow.png), so the grain
         // shades with it like the X3 reference.
 
-        // X3-style wheel contact shadows: small curved half-moons that attach
-        // the roller tips to the faceplate.  They stay tight to the aperture
-        // and never reach the labels, so they read as real cast light rather
-        // than a separate black graphic object.
+        // Hairline shadow bezel wrapping each raised insert — very small, all
+        // around, nothing spreading onto the plate.
+        drawHairlineBezel (g, t.rect ("typeSelector"));
+        drawHairlineBezel (g, t.rect ("morphReadout"));
+        drawHairlineBezel (g, t.rect ("qReadout"));
+
+        // X3 faceplate shadows (close-up reference 2026-07-17): a broad, SOFT
+        // half-ellipse on the plate under each wheel capsule — visibly lighter
+        // than a contact shadow, nearly the capsule's full width.
         drawWheelContactShadow (g, t.rect ("morphWheel"));
         drawWheelContactShadow (g, t.rect ("qWheel"));
 
@@ -48,6 +53,16 @@ public:
     }
 
 private:
+    // A 1px-scale soft dark ring hugging the control's edge on ALL sides.
+    static void drawHairlineBezel (juce::Graphics& g, juce::Rectangle<float> r)
+    {
+        if (r.isEmpty())
+            return;
+        const float rad = 5.0f;
+        g.setColour (juce::Colours::black.withAlpha (0.10f));
+        g.drawRoundedRectangle (r.expanded (0.6f), rad + 0.6f, 1.0f);
+    }
+
     static void drawWheelContactShadow (juce::Graphics& g, juce::Rectangle<float> well)
     {
         if (well.isEmpty())
@@ -57,22 +72,25 @@ private:
         // point — dark under the drum's belly, fading smoothly down AND toward
         // the sides. No drawn outline anywhere (a hard-edged ellipse read as
         // "a black thing", Tyson 2026-07-11). Clipped short of the label text.
-        const float castH = 12.0f;   // the machined layout leaves more plate below
+        // The X3's broad soft half-ellipse: nearly the capsule's full width,
+        // clearly LIGHTER than a contact shadow (the plugin's were too dark).
+        // A THIN, defined half-oval: an actual ellipse under the capsule,
+        // dark at the contact line, softening just enough not to be a decal.
+        const float castH = 9.0f;                    // thin vertical reach
         const float cx = well.getCentreX();
         const float cy = well.getBottom();
-        const float rx = well.getWidth() * 0.40f;   // horizontal reach
-        const float ry = castH + 2.0f;              // vertical reach
+        const float rx = well.getWidth() * 0.46f;
 
         juce::Graphics::ScopedSaveState save (g);
         g.reduceClipRegion (juce::Rectangle<int> ((int) well.getX(), (int) well.getBottom(),
                                                   (int) well.getWidth(), (int) castH));
-        // Squash the space so a circular radial gradient becomes the oval.
-        g.addTransform (juce::AffineTransform::scale (1.0f, ry / rx, cx, cy));
-        juce::ColourGradient sh (juce::Colours::black.withAlpha (0.62f), cx, cy,
+        g.addTransform (juce::AffineTransform::scale (1.0f, castH / rx, cx, cy));
+        juce::ColourGradient sh (juce::Colours::black.withAlpha (0.74f), cx, cy,
                                  juce::Colours::transparentBlack, cx + rx, cy, true);
-        sh.addColour (0.35, juce::Colours::black.withAlpha (0.40f));
+        sh.addColour (0.50, juce::Colours::black.withAlpha (0.50f));   // filled body...
+        sh.addColour (0.82, juce::Colours::black.withAlpha (0.18f));   // ...short soft edge
         g.setGradientFill (sh);
-        g.fillRect (juce::Rectangle<float> (cx - rx, cy - rx, rx * 2.0f, rx * 2.0f));
+        g.fillEllipse (cx - rx, cy - rx, rx * 2.0f, rx * 2.0f);
     }
 
     juce::Image panelImage;

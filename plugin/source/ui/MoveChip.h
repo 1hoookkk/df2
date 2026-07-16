@@ -180,14 +180,16 @@ public:
         g.setColour (juce::Colours::black.withAlpha (0.45f));
         g.drawEllipse (lamp, 0.7f);
 
-        // OFF is the lamp's job, not the text's: dark dot + "MOTION" alone.
+        // OFF is the lamp's job, not the text's: dark dot + "Modulation" alone.
         // When running, the state name earns its place next to the lit lamp.
-        // Match the compact hardware telemetry face used by the display status.
-        g.setFont (telemetryFont (9.2f, false));
-        g.setColour (t.telemetry().withAlpha ((hover || on) ? 0.94f : 0.76f));
-        g.drawText ((on || showingSibling) ? "MOTION  " + displayText() : "MOTION",
-                    chip.withTrimmedLeft (lampD + 6.0f),
-                    juce::Justification::centredLeft, false);
+        // Draw this as clean face printing at the native 1x size.  The former
+        // six-pass phosphor halo made the small word look soft and accidental.
+        g.setFont (displayFont (9.6f, false).withExtraKerningFactor (0.018f));
+        const auto text = (on || showingSibling) ? "Modulation  " + displayText() : juce::String ("Modulation");
+        const auto area = chip.withTrimmedLeft (lampD + 6.0f);
+        // Light ink: the tag prints on the dark teal display plate now.
+        g.setColour (juce::Colour (0xffe4f2ec).withAlpha ((hover || on) ? 1.0f : 0.92f));
+        g.drawText (text, area, juce::Justification::centredLeft, false);
     }
 
 private:
