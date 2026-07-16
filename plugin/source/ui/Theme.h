@@ -236,76 +236,78 @@ inline void drawHardwareKey (juce::Graphics& g, juce::Rectangle<float> b,
     g.drawFittedText (label, area, juce::Justification::centred, 1);
 }
 
-// Shared TYPE/readout box: a clean software control seated on the plate. The
-// face is light and quiet, with one restrained contact shadow, a thin warm-grey
-// seam and a small inner highlight. It keeps the physical context without
-// turning every value into a miniature piece of industrial hardware.
-inline void drawIvoryWell (juce::Graphics& g, juce::Rectangle<float> r, float radius, bool isActive, const Theme& t)
+// Raised moulded control from the hardware reference: a close contact shadow,
+// bright rim, darker lower wall and a gently convex inset face. The geometry is
+// shared so the TYPE field and readouts belong to one physical control family.
+inline void drawRaisedBoneControl (juce::Graphics& g, juce::Rectangle<float> r,
+                                   float radius, bool isActive, const Theme& t,
+                                   bool brighterFace)
 {
-    juce::ignoreUnused (t);
+    // The shadow hugs the lower edge instead of becoming a large floating halo.
+    g.setColour (juce::Colours::black.withAlpha (isActive ? 0.34f : 0.28f));
+    g.fillRoundedRectangle (r.translated (0.0f, 1.4f), radius + 0.5f);
 
-    // One soft contact shadow, kept close to the control.
-    g.setColour (juce::Colours::black.withAlpha (isActive ? 0.22f : 0.17f));
-    g.fillRoundedRectangle (r.translated (0.0f, 1.0f), radius);
-
-    // Refined warm-white face: brighter than the plate, never stark white.
-    juce::ColourGradient face (juce::Colour (0xfff6f2e8), 0.0f, r.getY(),
-                               juce::Colour (0xffddd6c7), 0.0f, r.getBottom(), false);
-    face.addColour (0.52, juce::Colour (0xffeee8da));
-    g.setGradientFill (face);
+    // Outer moulded rim. Its high top and dark lower wall are what make the box
+    // read at the plugin's small in-DAW size.
+    juce::ColourGradient rim (juce::Colour (0xfffbfaf5), 0.0f, r.getY(),
+                              juce::Colour (0xff8f8a81), 0.0f, r.getBottom(), false);
+    rim.addColour (0.40, juce::Colour (0xffddd9d0));
+    g.setGradientFill (rim);
     g.fillRoundedRectangle (r, radius);
 
+    g.setColour (juce::Colour (0xff4f4b45).withAlpha (0.88f));
+    g.drawRoundedRectangle (r.reduced (0.45f), radius, 0.9f);
+
+    const auto face = r.reduced (2.0f).translated (0.0f, -0.15f);
+    const auto top = brighterFace ? juce::Colour (0xfff7f5ef)
+                                  : juce::Colour (0xffeeeae2);
+    const auto middle = brighterFace ? juce::Colour (0xffe8e5de)
+                                     : juce::Colour (0xffdedad1);
+    const auto bottom = brighterFace ? juce::Colour (0xffcbc8c1)
+                                     : juce::Colour (0xffc6c1b8);
+
+    juce::ColourGradient faceFill (top, 0.0f, face.getY(),
+                                    bottom, 0.0f, face.getBottom(), false);
+    faceFill.addColour (0.43, middle);
+    g.setGradientFill (faceFill);
+    g.fillRoundedRectangle (face, juce::jmax (2.0f, radius - 1.3f));
+
+    // A crisp upper catch and lower inner shade complete the convex face.
     {
         juce::Graphics::ScopedSaveState save (g);
         juce::Path clip;
-        clip.addRoundedRectangle (r, radius);
+        clip.addRoundedRectangle (face, juce::jmax (2.0f, radius - 1.3f));
         g.reduceClipRegion (clip);
 
-        g.setColour (juce::Colours::white.withAlpha (0.58f));
-        g.fillRect (r.getX() + 2.0f, r.getY() + 1.0f, r.getWidth() - 4.0f, 1.0f);
-        g.setColour (juce::Colour (0xff6f675b).withAlpha (0.13f));
-        g.fillRect (r.getX() + 2.0f, r.getBottom() - 1.5f, r.getWidth() - 4.0f, 1.0f);
+        g.setColour (juce::Colours::white.withAlpha (brighterFace ? 0.78f : 0.62f));
+        g.fillRect (face.getX() + 2.0f, face.getY() + 0.6f,
+                    face.getWidth() - 4.0f, 1.15f);
+        g.setColour (juce::Colour (0xff4d4942).withAlpha (0.26f));
+        g.fillRect (face.getX() + 2.0f, face.getBottom() - 1.25f,
+                    face.getWidth() - 4.0f, 1.0f);
     }
 
-    // Thin warm-grey seam and an interior catch: precise, not outlined in black.
-    g.setColour (juce::Colour (0xff665f54).withAlpha (isActive ? 0.92f : 0.74f));
-    g.drawRoundedRectangle (r.reduced (0.5f), radius, 1.0f);
-    g.setColour (juce::Colours::white.withAlpha (0.28f));
-    g.drawRoundedRectangle (r.reduced (1.4f), juce::jmax (2.0f, radius - 1.2f), 0.65f);
+    g.setColour (juce::Colour (0xff716c64).withAlpha (0.66f));
+    g.drawRoundedRectangle (face.reduced (0.35f),
+                            juce::jmax (2.0f, radius - 1.5f), 0.75f);
+    g.setColour (isActive ? t.accent().withAlpha (0.36f)
+                          : juce::Colours::white.withAlpha (0.24f));
+    g.drawRoundedRectangle (face.reduced (1.05f),
+                            juce::jmax (1.6f, radius - 2.1f), 0.65f);
 }
 
-// Numeric readouts sit one brightness step below the TYPE field. Neutral muted
-// bone stays distinct from the khaki plate on a small DAW screen without reading
-// as either two white lamps or yellow/gold decorative plaques.
+inline void drawIvoryWell (juce::Graphics& g, juce::Rectangle<float> r,
+                           float radius, bool isActive, const Theme& t)
+{
+    drawRaisedBoneControl (g, r, radius, isActive, t, true);
+}
+
+// Numeric readouts use the same bevel, one brightness step below TYPE. The face
+// remains neutral bone, not the rejected white-lamp or gold-cream treatment.
 inline void drawMutedBoneReadout (juce::Graphics& g, juce::Rectangle<float> r,
                                   float radius, bool isActive, const Theme& t)
 {
-    g.setColour (juce::Colours::black.withAlpha (isActive ? 0.24f : 0.19f));
-    g.fillRoundedRectangle (r.translated (0.0f, 1.0f), radius);
-
-    juce::ColourGradient face (juce::Colour (0xffe8e4da), 0.0f, r.getY(),
-                               juce::Colour (0xffc9c2b5), 0.0f, r.getBottom(), false);
-    face.addColour (0.52, juce::Colour (0xffdcd6ca));
-    g.setGradientFill (face);
-    g.fillRoundedRectangle (r, radius);
-
-    {
-        juce::Graphics::ScopedSaveState save (g);
-        juce::Path clip;
-        clip.addRoundedRectangle (r, radius);
-        g.reduceClipRegion (clip);
-
-        g.setColour (juce::Colour (0xfff8f5ed).withAlpha (0.44f));
-        g.fillRect (r.getX() + 2.0f, r.getY() + 1.0f, r.getWidth() - 4.0f, 1.0f);
-        g.setColour (juce::Colour (0xff625e57).withAlpha (0.17f));
-        g.fillRect (r.getX() + 2.0f, r.getBottom() - 1.5f, r.getWidth() - 4.0f, 1.0f);
-    }
-
-    g.setColour (isActive ? t.accent().withAlpha (0.72f)
-                          : juce::Colour (0xff625e57).withAlpha (0.76f));
-    g.drawRoundedRectangle (r.reduced (0.5f), radius, 1.0f);
-    g.setColour (juce::Colour (0xfff8f5ed).withAlpha (0.22f));
-    g.drawRoundedRectangle (r.reduced (1.4f), juce::jmax (2.0f, radius - 1.2f), 0.65f);
+    drawRaisedBoneControl (g, r, radius, isActive, t, false);
 }
 
 // The dark screen glass (t.phosphor() = the iron glass base) — the SAME base treatment the hero GraphDisplay
