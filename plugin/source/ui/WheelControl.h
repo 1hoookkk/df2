@@ -183,23 +183,29 @@ public:
         const int last = numFrames - 1;
         const int frame = juce::jlimit (0, last, juce::roundToInt (displayNormalised() * (float) last));
 
-        // ACTUAL-SIZE draw: frames are authored at display resolution and drawn
-        // 1:1, centred — never resampled, never clipped. The frame's own alpha
-        // is the silhouette; it overhangs the plate's black opening so only the
-        // well edge frames it (the X3 sit). The cobalt position glow is BAKED
+        // The 200 px source frame is the authority, but the compact 350 px editor
+        // cannot hold it 1:1. Fit it proportionally inside the authored wheel
+        // aperture so the full roller survives instead of being centre-cropped.
+        // The frame's own alpha remains the silhouette. The cobalt position glow is BAKED
         // into the filmstrip — no code-drawn lamp. NOTHING is painted behind
         // the wheel: the panel art's baked recess IS the well (any code-drawn
         // cavity here reads as a fake rectangle; regressed twice, never again).
-        const int dx = (getWidth()  - fw) / 2;
-        const int dy = (getHeight() - fh) / 2;
+        const float fit = juce::jmin (1.0f,
+                                      juce::jmin ((float) getWidth() / (float) fw,
+                                                  (float) getHeight() / (float) fh));
+        const int dw = juce::jmax (1, juce::roundToInt ((float) fw * fit));
+        const int dh = juce::jmax (1, juce::roundToInt ((float) fh * fit));
+        const int dx = (getWidth()  - dw) / 2;
+        const int dy = (getHeight() - dh) / 2;
         g.setOpacity (1.0f);
-        g.drawImage (strip, dx, dy, fw, fh, frame * fw, 0, fw, fh);
+        g.setImageResamplingQuality (juce::Graphics::highResamplingQuality);
+        g.drawImage (strip, dx, dy, dw, dh, frame * fw, 0, fw, fh);
 
         // Hover/drag feedback: the drum catches a touch more light under
         // the cursor — state feedback as light on the object, not a ring.
         if (hovering || pressing)
         {
-            const auto drumF = juce::Rectangle<int> (dx, dy, fw, fh).toFloat();
+            const auto drumF = juce::Rectangle<int> (dx, dy, dw, dh).toFloat();
             juce::ColourGradient lift (juce::Colours::white.withAlpha (pressing ? 0.10f : 0.06f),
                                        0.0f, drumF.getY() + drumF.getHeight() * 0.30f,
                                        juce::Colours::transparentBlack, 0.0f, drumF.getBottom(), false);

@@ -627,8 +627,11 @@ private:
         const auto line1 = "SLAM " + juce::String (s * 100.0f, 1);
         const auto line2 = "OUT +" + juce::String (outDb, 1) + " dB  LIMIT " + juce::String (limitPct, 0) + "%";
 
-        const float boxW = 132.0f;
-        const float boxH = 30.0f;
+        // Scale the compact telemetry with the display aperture. At the 350 px
+        // editor size, retaining the old fixed type crowded the response peaks.
+        const float compact = juce::jlimit (0.72f, 1.0f, getWidth() / 346.0f);
+        const float boxW = 132.0f * compact;
+        const float boxH = 30.0f * compact;
         const float x = pressing
             ? juce::jlimit (screen.getX() + 5.0f, screen.getRight() - boxW - 5.0f, dragPos.x + 14.0f)
             : screen.getRight() - boxW - 8.0f;
@@ -641,13 +644,13 @@ private:
         // Remove the background box and border drawing to avoid fake overlays!
         // We only draw the text on the glass.
 
-        g.setFont (displayFont (12.5f, true));
+        g.setFont (displayFont (12.5f * compact, true));
         g.setColour (t.curveHighlight().withAlpha (0.95f * a));
-        g.drawText (line1, r.removeFromTop (15.0f).reduced (6.0f, 1.0f),
+        g.drawText (line1, r.removeFromTop (15.0f * compact).reduced (5.0f * compact, 1.0f),
                     juce::Justification::centredLeft, false);
-        g.setFont (displayFont (10.5f, false));
+        g.setFont (displayFont (10.5f * compact, false));
         g.setColour (t.telemetry().withAlpha (0.86f * a));
-        g.drawText (line2, r.reduced (6.0f, 0.0f), juce::Justification::centredLeft, false);
+        g.drawText (line2, r.reduced (5.0f * compact, 0.0f), juce::Justification::centredLeft, false);
     }
 
     Theme t;
