@@ -236,35 +236,33 @@ inline void drawHardwareKey (juce::Graphics& g, juce::Rectangle<float> b,
     g.drawFittedText (label, area, juce::Justification::centred, 1);
 }
 
-// Raised moulded control from the hardware reference: a close contact shadow,
-// bright rim, darker lower wall and a gently convex inset face. The geometry is
-// shared so the TYPE field and readouts belong to one physical control family.
+// Moulded control seated in a machined pocket. The dark upper cut and pale lower
+// lip make the surround belong to the plate; the quieter convex insert then reads
+// as fitted hardware instead of a bright rectangle pasted over the faceplate.
 inline void drawRaisedBoneControl (juce::Graphics& g, juce::Rectangle<float> r,
                                    float radius, bool isActive, const Theme& t,
                                    bool brighterFace)
 {
-    // The shadow hugs the lower edge instead of becoming a large floating halo.
-    g.setColour (juce::Colours::black.withAlpha (isActive ? 0.34f : 0.28f));
-    g.fillRoundedRectangle (r.translated (0.0f, 1.4f), radius + 0.5f);
+    const auto pocket = r.reduced (0.35f);
 
-    // Outer moulded rim. Its high top and dark lower wall are what make the box
-    // read at the plugin's small in-DAW size.
-    juce::ColourGradient rim (juce::Colour (0xfffbfaf5), 0.0f, r.getY(),
-                              juce::Colour (0xff8f8a81), 0.0f, r.getBottom(), false);
-    rim.addColour (0.40, juce::Colour (0xffddd9d0));
-    g.setGradientFill (rim);
-    g.fillRoundedRectangle (r, radius);
+    // Recess first: dark at the upper wall, plate-lit at the lower wall. There
+    // is deliberately no exterior drop shadow, so the control cannot float.
+    juce::ColourGradient recess (juce::Colour (0xff413c35), 0.0f, pocket.getY(),
+                                 juce::Colour (0xffb4aa9a), 0.0f, pocket.getBottom(), false);
+    recess.addColour (0.36, juce::Colour (0xff696157));
+    g.setGradientFill (recess);
+    g.fillRoundedRectangle (pocket, radius + 0.35f);
 
-    g.setColour (juce::Colour (0xff4f4b45).withAlpha (0.88f));
-    g.drawRoundedRectangle (r.reduced (0.45f), radius, 0.9f);
+    g.setColour (juce::Colours::black.withAlpha (0.76f));
+    g.drawRoundedRectangle (pocket, radius + 0.35f, 1.0f);
 
-    const auto face = r.reduced (2.0f).translated (0.0f, -0.15f);
-    const auto top = brighterFace ? juce::Colour (0xfff7f5ef)
-                                  : juce::Colour (0xffeeeae2);
-    const auto middle = brighterFace ? juce::Colour (0xffe8e5de)
-                                     : juce::Colour (0xffdedad1);
-    const auto bottom = brighterFace ? juce::Colour (0xffcbc8c1)
-                                     : juce::Colour (0xffc6c1b8);
+    const auto face = r.reduced (2.15f).translated (0.0f, 0.35f);
+    const auto top = brighterFace ? juce::Colour (0xffedeae3)
+                                  : juce::Colour (0xffddd8ce);
+    const auto middle = brighterFace ? juce::Colour (0xffd9d4ca)
+                                     : juce::Colour (0xffcdc6ba);
+    const auto bottom = brighterFace ? juce::Colour (0xffbdb6aa)
+                                     : juce::Colour (0xffb4ac9f);
 
     juce::ColourGradient faceFill (top, 0.0f, face.getY(),
                                     bottom, 0.0f, face.getBottom(), false);
@@ -272,28 +270,31 @@ inline void drawRaisedBoneControl (juce::Graphics& g, juce::Rectangle<float> r,
     g.setGradientFill (faceFill);
     g.fillRoundedRectangle (face, juce::jmax (2.0f, radius - 1.3f));
 
-    // A crisp upper catch and lower inner shade complete the convex face.
+    // The insert retains a controlled convex roll, but its highlights stop well
+    // inside the cut so it feels fitted rather than outlined in white.
     {
         juce::Graphics::ScopedSaveState save (g);
         juce::Path clip;
         clip.addRoundedRectangle (face, juce::jmax (2.0f, radius - 1.3f));
         g.reduceClipRegion (clip);
 
-        g.setColour (juce::Colours::white.withAlpha (brighterFace ? 0.78f : 0.62f));
-        g.fillRect (face.getX() + 2.0f, face.getY() + 0.6f,
-                    face.getWidth() - 4.0f, 1.15f);
-        g.setColour (juce::Colour (0xff4d4942).withAlpha (0.26f));
+        g.setColour (juce::Colours::white.withAlpha (brighterFace ? 0.54f : 0.38f));
+        g.fillRect (face.getX() + 2.0f, face.getY() + 0.7f,
+                    face.getWidth() - 4.0f, 0.85f);
+        g.setColour (juce::Colour (0xff3e3932).withAlpha (0.32f));
         g.fillRect (face.getX() + 2.0f, face.getBottom() - 1.25f,
                     face.getWidth() - 4.0f, 1.0f);
     }
 
-    g.setColour (juce::Colour (0xff716c64).withAlpha (0.66f));
+    // One decisive seam, plus an almost invisible state tint. Avoid the stacked
+    // white outlines that made the previous boxes look like pasted stickers.
+    g.setColour (juce::Colour (0xff514c44).withAlpha (0.88f));
     g.drawRoundedRectangle (face.reduced (0.35f),
-                            juce::jmax (2.0f, radius - 1.5f), 0.75f);
+                            juce::jmax (2.0f, radius - 1.5f), 0.9f);
     g.setColour (isActive ? t.accent().withAlpha (0.36f)
-                          : juce::Colours::white.withAlpha (0.24f));
+                          : juce::Colours::white.withAlpha (0.12f));
     g.drawRoundedRectangle (face.reduced (1.05f),
-                            juce::jmax (1.6f, radius - 2.1f), 0.65f);
+                            juce::jmax (1.6f, radius - 2.1f), 0.55f);
 }
 
 inline void drawIvoryWell (juce::Graphics& g, juce::Rectangle<float> r,
