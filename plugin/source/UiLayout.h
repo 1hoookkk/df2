@@ -82,20 +82,18 @@ public:
         layout.elements["brandLabel"]   = { { 114.0f, 78.0f, 230.0f, 40.0f }, 16.5f, juce::Colour (0xff2a2722) };
         layout.elements["brandLabel"].text = "TRENCH";
 
-        // Sweet-spot 60:30:10: WARM PUTTY / BLACKENED GRAPHITE / COBALT BLUE.
-        // The cobalt is confined to live state: trace, roller lamp and activity.
-        // The filmstrip's lit pixels resolve around a deep indigo-cobalt. Derive
-        // every live-screen colour from that hue so the roller, trace and text
-        // read as one instrument instead of teal hardware plus a violet plot.
-        layout.colours["accent"]             = juce::Colour (0xff4e63a7); // cobalt active ink
-        layout.colours["curveColour"]        = juce::Colour (0xff7080be); // readable roller-matched trace
-        layout.colours["curveHighlight"]     = juce::Colour (0xffa9b4dc); // hot state, same hue family
-        layout.colours["telemetry"]          = juce::Colour (0xff7080be); // trace-matched screen copy
-        layout.colours["rollerIllumination"] = juce::Colour (0xff3d476e); // measured bright-filmstrip family
-        layout.colours["phosphor"]           = juce::Colour (0xff1a1c1f); // deep smoked glass
-        layout.colours["amber"]              = juce::Colour (0xff4e63a7); // legacy token: cobalt halo
-        layout.colours["dashed"]             = juce::Colour (0xff465064); // cool cobalt-graphite grid
-        layout.colours["screenEdge"]  = juce::Colour (0xff0e1012); // blackened nickel reveal
+        // Warm putty / blackened graphite / restrained ember. The live colour
+        // is deliberately dusty rather than neon, matching the earlier red
+        // clean-baseline display without turning the whole panel orange.
+        layout.colours["accent"]             = juce::Colour (0xff9b4f4a);
+        layout.colours["curveColour"]        = juce::Colour (0xffc36b64);
+        layout.colours["curveHighlight"]     = juce::Colour (0xffe9a39b);
+        layout.colours["telemetry"]          = juce::Colour (0xffa78680);
+        layout.colours["rollerIllumination"] = juce::Colour (0xff9b4f4a);
+        layout.colours["phosphor"]           = juce::Colour (0xff1b1715);
+        layout.colours["amber"]              = juce::Colour (0xffa9554e);
+        layout.colours["dashed"]             = juce::Colour (0xff514743);
+        layout.colours["screenEdge"]         = juce::Colour (0xff100d0c);
         layout.colours["labelInk"]    = juce::Colour (0xff24231f); // warm charcoal type
 
         layout.params["wellRadius"]        = 9.0;

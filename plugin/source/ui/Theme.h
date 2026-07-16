@@ -55,23 +55,29 @@ inline juce::Font displayFont (float height, bool emphasis = false)
                                           useSyntheticBold ? juce::Font::bold : juce::Font::plain));
 }
 
+inline juce::Font telemetryFont (float height, bool emphasis = false)
+{
+    return juce::Font (juce::FontOptions (juce::Font::getDefaultMonospacedFontName(), height,
+                                          emphasis ? juce::Font::bold : juce::Font::plain));
+}
+
 // Named token accessors over the baked UiLayout — the Theme layer.
 struct Theme
 {
     const trench::UiLayout& layout;
 
     // 60:30:10: WARM PUTTY 60 (the plate, locked) / BLACKENED GRAPHITE 30
-    // (wheels, type, glass) / COBALT 10 (trace, lamp, active state).
+    // (wheels, type, glass) / MUTED EMBER 10 (trace, lamp, active state).
     // Values live in UiLayout::defaults() — change them there, not here.
-    juce::Colour accent()      const { return layout.colour ("accent",      juce::Colour (0xff4e63a7)); }
+    juce::Colour accent()      const { return layout.colour ("accent",      juce::Colour (0xff9b4f4a)); }
     juce::Colour curveColour() const { return layout.colour ("curveColour", accent()); }
     // Compatibility tokens retained by the workstation shell. The recovered
     // sweet-spot snapshot predates their named accessors, so they resolve into
     // the same cobalt family without altering the photographed display paint.
-    juce::Colour curveHighlight() const { return layout.colour ("curveHighlight", juce::Colour (0xffa9b4dc)); }
+    juce::Colour curveHighlight() const { return layout.colour ("curveHighlight", juce::Colour (0xffe9a39b)); }
     juce::Colour telemetry() const { return layout.colour ("telemetry", accent()); }
-    juce::Colour rollerIllumination() const { return layout.colour ("rollerIllumination", juce::Colour (0xff3d476e)); }
-    juce::Colour amber()       const { return layout.colour ("amber",       juce::Colour (0xff4e63a7)); } // legacy name: active glow
+    juce::Colour rollerIllumination() const { return layout.colour ("rollerIllumination", juce::Colour (0xff9b4f4a)); }
+    juce::Colour amber()       const { return layout.colour ("amber",       juce::Colour (0xffa9554e)); } // legacy name: active glow
     juce::Colour wellTop()     const { return layout.colour ("wellTop",     juce::Colour (0xffe7dec9)); }
     juce::Colour wellBottom()  const { return layout.colour ("wellBottom",  juce::Colour (0xffc9c0a8)); }
     juce::Colour wellKeyline() const { return layout.colour ("wellKeyline", juce::Colour (0xff5c4f3a)); }
@@ -80,9 +86,9 @@ struct Theme
     juce::Colour arrow()       const { return layout.colour ("arrow",       juce::Colour (0xff241e15)); }
     juce::Colour rim()         const { return layout.colour ("rim",         juce::Colour (0xff241e15)); }
     juce::Colour dashed()      const { return layout.colour ("dashed",      juce::Colour (0xff4a4640)); }
-    juce::Colour screenEdge()  const { return layout.colour ("screenEdge",  juce::Colour (0xff0e1012)); }
+    juce::Colour screenEdge()  const { return layout.colour ("screenEdge",  juce::Colour (0xff100d0c)); }
     juce::Colour labelInk()    const { return layout.colour ("labelInk",    juce::Colour (0xff24231f)); }
-    juce::Colour phosphor()    const { return layout.colour ("phosphor",    juce::Colour (0xff1a1c1f)); }
+    juce::Colour phosphor()    const { return layout.colour ("phosphor",    juce::Colour (0xff1b1715)); }
 
     float  wellRadius()        const { return (float) layout.param ("wellRadius", 9.0); }
     float  componentRadius()   const { return (float) layout.param ("componentRadius", 2.5); }
@@ -95,7 +101,13 @@ struct Theme
     {
         return sourceRectToEditor (layout.sourceRectFor (id));
     }
-    float    fontSize (const juce::String& id, float fb) const { return layout.fontSizeFor (id).value_or (fb); }
+    float    fontSize (const juce::String& id, float fb) const
+    {
+        // Layout typography was authored at the accepted 440 px face. Scale it
+        // with the compact editor instead of leaving oversized type in 350 px controls.
+        constexpr float fontReferenceWidth = 440.0f;
+        return layout.fontSizeFor (id).value_or (fb) * (float) kEditorWidth / fontReferenceWidth;
+    }
     juce::Colour textColour (const juce::String& id, juce::Colour fb) const { return layout.textColourFor (id).value_or (fb); }
     juce::String text (const juce::String& id, const juce::String& fb) const { return layout.textFor (id, fb); }
     float    opacity (const juce::String& id) const { return layout.opacityFor (id); }

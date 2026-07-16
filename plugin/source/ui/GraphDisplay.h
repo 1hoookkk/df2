@@ -292,9 +292,9 @@ private:
     {
         // Dense neutral smoke: slightly reflective at the crown, optically deep
         // at the floor. Opaque enough to read as its own fitted material.
-        juce::ColourGradient smoke (juce::Colour (0xff24272a), 0.0f, screen.getY(),
-                                    juce::Colour (0xff0e1012), 0.0f, screen.getBottom(), false);
-        smoke.addColour (0.46, juce::Colour (0xff181b1e));
+        juce::ColourGradient smoke (juce::Colour (0xff282321), 0.0f, screen.getY(),
+                                    juce::Colour (0xff0f0d0c), 0.0f, screen.getBottom(), false);
+        smoke.addColour (0.46, juce::Colour (0xff1a1715));
         g.setGradientFill (smoke);
         g.fillRect (screen);
 
@@ -622,16 +622,15 @@ private:
         const float s = slamNorm();
         const float a = pressing ? 1.0f : juce::jmax (0.52f, juce::jlimit (0.0f, 1.0f, meterAlpha));
 
-        const float outDb = trench::slamOutputGainDb (s);
         const float limitPct = slamOutClip * 100.0f;
-        const auto line1 = "SLAM " + juce::String (s * 100.0f, 1);
-        const auto line2 = "OUT +" + juce::String (outDb, 1) + " dB  LIMIT " + juce::String (limitPct, 0) + "%";
+        const auto status = "SLAM " + juce::String (juce::roundToInt (s * 100.0f))
+                          + "   LIMIT " + juce::String (juce::roundToInt (limitPct)) + "%";
 
         // Scale the compact telemetry with the display aperture. At the 350 px
         // editor size, retaining the old fixed type crowded the response peaks.
         const float compact = juce::jlimit (0.72f, 1.0f, getWidth() / 346.0f);
-        const float boxW = 132.0f * compact;
-        const float boxH = 30.0f * compact;
+        const float boxW = 136.0f * compact;
+        const float boxH = 16.0f * compact;
         const float x = pressing
             ? juce::jlimit (screen.getX() + 5.0f, screen.getRight() - boxW - 5.0f, dragPos.x + 14.0f)
             : screen.getRight() - boxW - 8.0f;
@@ -644,13 +643,9 @@ private:
         // Remove the background box and border drawing to avoid fake overlays!
         // We only draw the text on the glass.
 
-        g.setFont (displayFont (12.5f * compact, true));
-        g.setColour (t.curveHighlight().withAlpha (0.95f * a));
-        g.drawText (line1, r.removeFromTop (15.0f * compact).reduced (5.0f * compact, 1.0f),
-                    juce::Justification::centredLeft, false);
-        g.setFont (displayFont (10.5f * compact, false));
+        g.setFont (telemetryFont (10.8f * compact, false));
         g.setColour (t.telemetry().withAlpha (0.86f * a));
-        g.drawText (line2, r.reduced (5.0f * compact, 0.0f), juce::Justification::centredLeft, false);
+        g.drawText (status, r.reduced (4.0f * compact, 0.0f), juce::Justification::centredLeft, false);
     }
 
     Theme t;

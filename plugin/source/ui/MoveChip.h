@@ -182,8 +182,8 @@ public:
 
         // OFF is the lamp's job, not the text's: dark dot + "MOTION" alone.
         // When running, the state name earns its place next to the lit lamp.
-        // Smoked indigo telemetry; regular weight keeps this subordinate.
-        g.setFont (displayFont (11.5f, false));
+        // Match the compact hardware telemetry face used by the display status.
+        g.setFont (telemetryFont (9.2f, false));
         g.setColour (t.telemetry().withAlpha ((hover || on) ? 0.94f : 0.76f));
         g.drawText ((on || showingSibling) ? "MOTION  " + displayText() : "MOTION",
                     chip.withTrimmedLeft (lampD + 6.0f),

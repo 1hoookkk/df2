@@ -11,8 +11,37 @@
 namespace trench::ui
 {
 
-// One thumbwheel: the iron twin-row roller rendered at ACTUAL SIZE with the
-// cobalt position glow BAKED into the filmstrip (X3 law — light through the fin
+// Preserve the approved 257-frame geometry and progressive glow positions, but
+// remap only cold blue/cyan light pixels into muted ember. Neutral/khaki wheel
+// material is untouched. This is performed once when the editor loads; both
+// controls then share the transformed image.
+inline juce::Image remapColdRollerGlowToEmber (const juce::Image& source)
+{
+    if (! source.isValid())
+        return source;
+
+    auto result = source.createCopy();
+    juce::Image::BitmapData pixels (result, juce::Image::BitmapData::readWrite);
+    const auto ember = juce::Colour (0xffb35f56);
+
+    for (int y = 0; y < result.getHeight(); ++y)
+        for (int x = 0; x < result.getWidth(); ++x)
+        {
+            const auto c = pixels.getPixelColour (x, y);
+            const int coldLead = juce::jmax ((int) c.getBlue(), (int) c.getGreen()) - (int) c.getRed();
+            if (c.getAlpha() == 0 || coldLead <= 7)
+                continue;
+
+            const float mix = juce::jlimit (0.0f, 0.94f, (coldLead - 7) / 42.0f);
+            const auto target = ember.withBrightness (c.getBrightness()).withAlpha (c.getFloatAlpha());
+            pixels.setPixelColour (x, y, c.interpolatedWith (target, mix));
+        }
+
+    return result;
+}
+
+// One thumbwheel: the iron twin-row roller rendered from the authored filmstrip.
+// Position glow is BAKED into the frames (X3 law — light through the fin
 // gaps, trailing bar). Frames draw 1:1, centred, overhanging the plate's black
 // opening (the recut wells are tighter than the wheel — the well edge crops it,
 // like the hardware). Drag handling reaches the parameter directly through a

@@ -21,12 +21,12 @@ PluginEditor::PluginEditor (PluginProcessor& p)
     // its baked wells.
     auto panel = juce::ImageCache::getFromMemory (BinaryData::df2_panel_beige_png,
                                                   BinaryData::df2_panel_beige_pngSize);
-    // The wheels: the iron twin-row roller, Blender-rendered at ACTUAL SIZE with
-    // the deep smoked-cobalt position glow baked per frame (X3 law: trailing bar through the
-    // fin gaps). Frames draw 1:1 and overhang the recut wells; frame count
-    // derives from strip width; travel = 10 fin pitches, no wrap.
+    // The wheels retain the approved Blender-authored 257-frame geometry and
+    // progression. Only the cold glow hue is remapped to the display's muted
+    // ember family; the khaki/graphite material and alpha silhouette stay real.
     auto strip = juce::ImageCache::getFromMemory (BinaryData::trench_roller_strip_png,
                                                   BinaryData::trench_roller_strip_pngSize);
+    strip = remapColdRollerGlowToEmber (strip);
     faceplate    = std::make_unique<FaceplateView> (panel, theme);
     faceplate->setBufferedToImage (true);   // the static plate is cached, not re-rasterized per frame
     graph        = std::make_unique<GraphDisplay> (theme, processor.apvts, ParamID::slamDrive);
