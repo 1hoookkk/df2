@@ -272,59 +272,55 @@ inline void drawFrostedGlassControl (juce::Graphics& g, juce::Rectangle<float> r
     const auto middle = juce::Colour (0xffafc1bf).interpolatedWith (warmth, 0.24f);
     const auto bottom = juce::Colour (0xff97acaa).interpolatedWith (warmth, 0.20f);
 
-    juce::ColourGradient faceFill (top, 0.0f, face.getY(),
-                                    bottom, 0.0f, face.getBottom(), false);
+    // MOLDED, not stroked: classic two-layer pill. The EDGE layer's gradient
+    // runs from near-white (top) to deep shade (bottom); the body sits inset
+    // 1.4px so the revealed sliver of edge IS the rolled-off rim — it follows
+    // the corners exactly and reads as the material turning away, never as a
+    // drawn outline.
+    const float faceRad = juce::jmax (2.0f, radius - 1.3f);
+    {
+        juce::ColourGradient edge (juce::Colour (0xfff4f7f2), 0.0f, face.getY(),
+                                   juce::Colour (0xff4e564f), 0.0f, face.getBottom(), false);
+        edge.addColour (0.5, juce::Colour (0xffaeb6ab));
+        g.setGradientFill (edge);
+        g.fillRoundedRectangle (face, faceRad);
+    }
+    const auto body = face.reduced (1.4f);
+    juce::ColourGradient faceFill (top, 0.0f, body.getY(),
+                                    bottom, 0.0f, body.getBottom(), false);
     faceFill.addColour (0.43, middle);
     g.setGradientFill (faceFill);
-    g.fillRoundedRectangle (face, juce::jmax (2.0f, radius - 1.3f));
+    g.fillRoundedRectangle (body, juce::jmax (1.5f, faceRad - 1.2f));
 
     // Broad internal haze, not a glossy plastic highlight: light diffuses through
     // the upper half and disappears before the lower seat.
     {
         juce::Graphics::ScopedSaveState save (g);
         juce::Path clip;
-        clip.addRoundedRectangle (face, juce::jmax (2.0f, radius - 1.3f));
+        clip.addRoundedRectangle (body, juce::jmax (1.5f, faceRad - 1.2f));
         g.reduceClipRegion (clip);
 
         // Crisp gloss, not marshmallow: one hard specular line at the top,
         // then a short tight sheen — no broad soft haze.
         g.setColour (juce::Colours::white.withAlpha (0.55f));
-        g.fillRect (face.getX() + 2.5f, face.getY() + 1.0f, face.getWidth() - 5.0f, 1.0f);
+        g.fillRect (body.getX() + 2.0f, body.getY() + 0.6f, body.getWidth() - 4.0f, 1.0f);
         juce::ColourGradient frost (juce::Colours::white.withAlpha (0.18f),
-                                    0.0f, face.getY() + 2.0f,
+                                    0.0f, body.getY() + 1.6f,
                                     juce::Colours::transparentWhite,
-                                    0.0f, face.getY() + face.getHeight() * 0.34f, false);
+                                    0.0f, body.getY() + body.getHeight() * 0.34f, false);
         g.setGradientFill (frost);
-        g.fillRoundedRectangle (face.reduced (0.8f),
-                                juce::jmax (1.5f, radius - 2.0f));
+        g.fillRoundedRectangle (body.reduced (0.6f),
+                                juce::jmax (1.2f, faceRad - 1.8f));
 
         // Skirt shade: the moulded pill turns away from the light at its base.
         juce::ColourGradient skirt (juce::Colours::transparentBlack,
-                                    0.0f, face.getBottom() - 4.5f,
+                                    0.0f, body.getBottom() - 4.0f,
                                     juce::Colours::black.withAlpha (0.16f),
-                                    0.0f, face.getBottom(), false);
+                                    0.0f, body.getBottom(), false);
         g.setGradientFill (skirt);
-        g.fillRect (face.getX(), face.getBottom() - 4.5f, face.getWidth(), 4.5f);
+        g.fillRect (body.getX(), body.getBottom() - 4.0f, body.getWidth(), 4.0f);
     }
 
-    // The BEVEL ring: a real moulded rim, not a hairline — bright along the
-    // upper half where it faces the light, dark along the lower half.
-    {
-        const float rimRad = juce::jmax (2.0f, radius - 1.3f);
-        juce::Graphics::ScopedSaveState save (g);
-        g.reduceClipRegion (juce::Rectangle<int> ((int) face.getX() - 2, (int) face.getY() - 2,
-                                                  (int) face.getWidth() + 4, (int) (face.getHeight() * 0.5f) + 2));
-        g.setColour (juce::Colours::white.withAlpha (0.60f));
-        g.drawRoundedRectangle (face.reduced (0.5f), rimRad, 1.3f);
-    }
-    {
-        const float rimRad = juce::jmax (2.0f, radius - 1.3f);
-        juce::Graphics::ScopedSaveState save (g);
-        g.reduceClipRegion (juce::Rectangle<int> ((int) face.getX() - 2, (int) (face.getY() + face.getHeight() * 0.5f),
-                                                  (int) face.getWidth() + 4, (int) (face.getHeight() * 0.5f) + 3));
-        g.setColour (juce::Colour (0xff3a372f).withAlpha (0.55f));
-        g.drawRoundedRectangle (face.reduced (0.5f), rimRad, 1.3f);
-    }
 
     // One decisive seam, plus an almost invisible state tint. Avoid the stacked
     // white outlines that made the previous boxes look like pasted stickers.
