@@ -507,21 +507,30 @@ impl FilterEngine {
         let corner: CornerData = cart.interpolate(morph, q);
         let mut boost = cart.interpolate_boost(morph, q) as f32;
 
-        // AMOUNT — honest dose. Linear per-stage blend of the decoded corner
-        // toward PASSTHROUGH_COEFFS (identity). Cascade itself is untouched/
-        // frozen; this only changes what target coefficients it's handed, so
-        // the UI curve (read from these same coefficients) moves with it too.
-        // Stability is free: the direct-form (a1,a2) stability region is the
-        // convex triangle |a2|<1, a1<1+a2, a1>-(1+a2), which contains the
-        // origin (identity) — a linear blend from any stable point toward the
-        // origin stays inside the triangle at every step.
+        // AMOUNT — honest dose, in the PERCEPTUAL domain (the Rossum law:
+        // interpolate encoded values, then decode — never raw coefficients).
+        // A raw-coefficient lerp toward identity moves the pole ANGLES, so
+        // reducing amount detunes every resonance while it fades; it reads as
+        // a different filter, not less of the same one. Instead scale each
+        // stage's pole/zero RADII by k (Q taper, centre frequencies fixed)
+        // and its section gain in dB:
+        //   a1' = k·a1, a2' = k²·a2   (pole radius × k, angle untouched)
+        //   b1' = k·(b1/b0)·b0', b2' = k²·(b2/b0)·b0', b0' = b0^k
+        // k=1 is the full body; k=0 is the exact identity biquad. Stability is
+        // free: scaling the pole radius by k in [0,1] can only move poles
+        // toward the origin, staying inside the unit circle.
         let corner = if self.amount < 1.0 {
-            let a = self.amount as f64;
+            let k = self.amount as f64;
             let mut blended = corner;
             for stage in blended.iter_mut() {
-                for i in 0..NUM_COEFFS {
-                    stage[i] = a * stage[i] + (1.0 - a) * PASSTHROUGH_COEFFS[i];
-                }
+                let b0 = stage[0];
+                let b0k = if b0 > 0.0 { b0.powf(k) } else { k * b0 + (1.0 - k) };
+                let ratio = if b0.abs() > 1.0e-12 { b0k / b0 } else { 0.0 };
+                stage[1] *= k * ratio; // b1
+                stage[2] *= k * k * ratio; // b2
+                stage[0] = b0k;
+                stage[3] *= k; // a1
+                stage[4] *= k * k; // a2
             }
             // Gain compensation: NOT "match the α=1 level" (that would make
             // amount=0 louder than dry, contradicting "0 = flat/identity").
@@ -534,7 +543,7 @@ impl FilterEngine {
             // from that straight line at the current `a`.
             let peak_full = compute_cascade_peak(&corner, self.sample_rate).max(1.0e-6);
             let peak_blended = compute_cascade_peak(&blended, self.sample_rate).max(1.0e-6);
-            let expected_db = a as f32 * 20.0 * peak_full.log10();
+            let expected_db = k as f32 * 20.0 * peak_full.log10();
             let actual_db = 20.0 * peak_blended.log10();
             boost *= 10.0_f32.powf((expected_db - actual_db) / 20.0);
             blended

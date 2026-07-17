@@ -12,7 +12,6 @@
 // RouteView.h is shelved for V1 (ROUTE matrix editor not wired) — kept on disk for later.
 #include "ui/WheelControl.h"
 #include "ui/ValueReadout.h"
-#include "ui/AmountFader.h"
 #include "ui/SeedButton.h"
 #include "ui/TakeButton.h"
 #include "ui/FiveDButton.h"
@@ -67,7 +66,7 @@ private:
     std::unique_ptr<trench::ui::WheelControl>     secondaryWheel;
     std::unique_ptr<trench::ui::ValueReadout>     morphReadout;
     std::unique_ptr<trench::ui::ValueReadout>     secondaryReadout;
-    std::unique_ptr<trench::ui::AmountFader>      amountFader;   // honest-dose fader, left of the screen
+    std::unique_ptr<trench::ui::ValueReadout>     amountReadout; // honest-dose macro, top-right pill
     std::unique_ptr<trench::ui::SeedButton>       seedButton;    // SEED: one tap, one related sibling
     std::unique_ptr<trench::ui::TakeButton>       takeButton;    // TAKE: drag the last few seconds into the DAW
     std::unique_ptr<trench::ui::FiveDButton>      fiveDButton;   // 5D: latch the extreme spatial orbit

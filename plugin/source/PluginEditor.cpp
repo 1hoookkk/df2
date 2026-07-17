@@ -99,7 +99,11 @@ PluginEditor::PluginEditor (PluginProcessor& p)
     // Bind so the readouts are real controls too: scroll / type / right-click menu.
     morphReadout->bindParameter (processor.apvts.getParameter (ParamID::morph));
     secondaryReadout->bindParameter (processor.apvts.getParameter (ParamID::q));
-    amountFader  = std::make_unique<AmountFader> (processor.apvts, theme);
+    // AMOUNT: honest dose of the authored body (identity -> full), a readout
+    // pill top-right in the same material and interaction language as the
+    // MORPH/Q counters: drag up/down, scroll, double-click to type.
+    amountReadout = std::make_unique<ValueReadout> ("amountReadout", theme);
+    amountReadout->bindParameter (processor.apvts.getParameter (ParamID::amount));
     seedButton   = std::make_unique<SeedButton> (theme);
     seedButton->onSeed = runSeed;
     takeButton   = std::make_unique<TakeButton> (theme);
@@ -130,13 +134,7 @@ PluginEditor::PluginEditor (PluginProcessor& p)
     addAndMakeVisible (*secondaryWheel);
     addAndMakeVisible (*morphReadout);
     addAndMakeVisible (*secondaryReadout);
-    // AMOUNT is a key control, so it stays visible. It will read "pasted on"
-    // until the plate art grows a milled slot for it (see faceplate regen) — a
-    // code fader on bare metal always does; the recess is the real fix.
-    // The reference face is intentionally only TYPE + glass + MORPH/Q. These
-    // utilities remain wired for the future utility drawer/host surface, but
-    // do not float on the luxury lower third.
-    addChildComponent (*amountFader);
+    addAndMakeVisible (*amountReadout);
     addChildComponent (*seedButton);
     addChildComponent (*takeButton);
     addChildComponent (*fiveDButton);
@@ -255,7 +253,7 @@ void PluginEditor::layoutComponents()
     secondaryWheel->setBounds (rectOf ("qWheel"));
     morphReadout->setBounds (rectOf ("morphReadout"));
     secondaryReadout->setBounds (rectOf ("qReadout"));
-    amountFader->setBounds ({});
+    amountReadout->setBounds (rectOf ("amountReadout"));
     seedButton->setBounds ({});
     takeButton->setBounds ({});
     fiveDButton->setBounds ({});
@@ -301,6 +299,7 @@ void PluginEditor::onFrame()
         return 0.0f;
     };
     const bool motionOn = read (ParamID::motionOn) > 0.5f;
+    amountReadout->setNormalised (read (ParamID::amount));
     // GraphDisplay reads motionOn/motionTile/motionDiv live for its own MOTION/TIME
     // readout — no push needed from here.
 

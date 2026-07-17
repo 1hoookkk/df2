@@ -81,6 +81,11 @@ public:
         // sub-line anywhere ("MUSICAL FILTER" read as a second product name).
         layout.elements["brandLabel"]   = { { 114.0f, 78.0f, 230.0f, 40.0f }, 16.5f, juce::Colour (0xff0d0b09) };
         layout.elements["brandLabel"].text = "TRENCH";
+        // AMOUNT: the honest-dose macro, top-right opposite the nameplate —
+        // a readout-pill control in the same material as the MORPH/Q counters.
+        layout.elements["amountLabel"]   = { { 566.0f, 80.0f, 160.0f, 38.0f }, 12.5f, juce::Colour (0xff0d0b09) };
+        layout.elements["amountLabel"].text = "AMOUNT";
+        layout.elements["amountReadout"] = { { 736.0f, 68.0f, 158.0f, 60.0f }, 18.0f, juce::Colour (0xff0d0b09) };
 
         // Warm desaturated clinical, committed: putty plate, SAGE LCD glass with
         // ONE warm amber signal (the Millennium reference) â€” dark ink telemetry

@@ -76,7 +76,38 @@ public:
             return;
         }
         if (e.mods.isPopupMenu())
+        {
             showParamContextMenu (*this, param);
+            return;
+        }
+        dragStartY = e.position.y;
+        dragStartValue = param != nullptr ? param->getValue() : 0.0f;
+        dragging = false;
+    }
+
+    void mouseDrag (const juce::MouseEvent& e) override
+    {
+        if (param == nullptr || editor != nullptr || e.mods.isPopupMenu())
+            return;
+        if (! dragging)
+        {
+            if (std::abs (e.position.y - dragStartY) < 3.0f)
+                return;                       // a click is not yet a drag
+            dragging = true;
+            param->beginChangeGesture();      // ONE gesture for the whole drag
+        }
+        const float scale = e.mods.isShiftDown() ? 0.25f : 1.0f;   // fine adjust
+        const float travel = 140.0f;          // px for full range — deliberate, not twitchy
+        const float next = juce::jlimit (0.0f, 1.0f,
+                                         dragStartValue - (e.position.y - dragStartY) / travel * scale);
+        param->setValueNotifyingHost (next);  // up = more
+    }
+
+    void mouseUp (const juce::MouseEvent&) override
+    {
+        if (dragging && param != nullptr)
+            param->endChangeGesture();
+        dragging = false;
     }
 
     void mouseDoubleClick (const juce::MouseEvent&) override
@@ -166,6 +197,9 @@ private:
     bool isActive = false;
     juce::RangedAudioParameter* param = nullptr;
     std::unique_ptr<juce::TextEditor> editor;
+    float dragStartY = 0.0f;
+    float dragStartValue = 0.0f;
+    bool dragging = false;
 };
 
 } // namespace trench::ui
