@@ -104,6 +104,7 @@ PluginEditor::PluginEditor (PluginProcessor& p)
     // MORPH/Q counters: drag up/down, scroll, double-click to type.
     amountReadout = std::make_unique<ValueReadout> ("amountReadout", theme);
     amountReadout->bindParameter (processor.apvts.getParameter (ParamID::amount));
+    amountReadout->showAdjustCue (true);   // AMOUNT's only control on the face
     seedButton   = std::make_unique<SeedButton> (theme);
     seedButton->onSeed = runSeed;
     takeButton   = std::make_unique<TakeButton> (theme);

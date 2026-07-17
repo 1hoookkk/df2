@@ -246,7 +246,9 @@ inline void drawFrostedGlassControl (juce::Graphics& g, juce::Rectangle<float> r
     // Recess first: a THIN seat, not a black moat (X3 reference: the bar sits
     // in a hairline groove — shade at the upper wall, light catch at the lower
     // lip). There is deliberately no exterior drop shadow, so it cannot float.
-    juce::ColourGradient recess (juce::Colour (0xffa59c8b), 0.0f, pocket.getY(),
+    // Proud seat: no dark lip above the pane — the pane stands ON the plate;
+    // its own top gloss and the hairline ring do the seating.
+    juce::ColourGradient recess (juce::Colour (0xffc7beac), 0.0f, pocket.getY(),
                                  juce::Colour (0xffcfc6b4), 0.0f, pocket.getBottom(), false);
     g.setGradientFill (recess);
     g.fillRoundedRectangle (pocket, radius + 0.35f);
@@ -255,11 +257,16 @@ inline void drawFrostedGlassControl (juce::Graphics& g, juce::Rectangle<float> r
     g.drawRoundedRectangle (pocket, radius + 0.35f, 0.65f);
 
     // Sides sit flush (the X3 groove reads only above/below); vertical keeps the seat.
-    const auto face = r.reduced (0.6f, 1.25f).translated (0.0f, 0.2f);
+    // Reduced slightly more horizontally and vertically, and translated down to expose
+    // more of the top recess shadow.
+    const auto face = r.reduced (0.8f, 1.6f).translated (0.0f, 0.8f);
     // One restrained insert material across TYPE and both counters: frosted
     // glass in the display plate's teal family, cut with the plate's warm
     // bone (the approved 2026-07-17 material — verified against the
     // reference capture pixel-for-pixel).
+    // Molded PROUD button (X3 pill): lit from above — light crown, darker
+    // skirt. The deboss treatment (dark top, lit bottom) is what made the
+    // boxes read sunken.
     const auto warmth = juce::Colour (0xffd8d0bc);
     const auto top    = juce::Colour (0xffc4d2d0).interpolatedWith (warmth, 0.28f);
     const auto middle = juce::Colour (0xffafc1bf).interpolatedWith (warmth, 0.24f);
@@ -291,10 +298,32 @@ inline void drawFrostedGlassControl (juce::Graphics& g, juce::Rectangle<float> r
         g.fillRoundedRectangle (face.reduced (0.8f),
                                 juce::jmax (1.5f, radius - 2.0f));
 
-        g.setColour (juce::Colour (0xff3e3932).withAlpha (0.09f));
-        g.fillRect (face.getX() + 2.0f, face.getBottom() - 1.25f,
-                    face.getWidth() - 4.0f, 1.0f);
+        // Skirt shade: the moulded pill turns away from the light at its base.
+        juce::ColourGradient skirt (juce::Colours::transparentBlack,
+                                    0.0f, face.getBottom() - 4.5f,
+                                    juce::Colours::black.withAlpha (0.16f),
+                                    0.0f, face.getBottom(), false);
+        g.setGradientFill (skirt);
+        g.fillRect (face.getX(), face.getBottom() - 4.5f, face.getWidth(), 4.5f);
+    }
 
+    // The BEVEL ring: a real moulded rim, not a hairline — bright along the
+    // upper half where it faces the light, dark along the lower half.
+    {
+        const float rimRad = juce::jmax (2.0f, radius - 1.3f);
+        juce::Graphics::ScopedSaveState save (g);
+        g.reduceClipRegion (juce::Rectangle<int> ((int) face.getX() - 2, (int) face.getY() - 2,
+                                                  (int) face.getWidth() + 4, (int) (face.getHeight() * 0.5f) + 2));
+        g.setColour (juce::Colours::white.withAlpha (0.60f));
+        g.drawRoundedRectangle (face.reduced (0.5f), rimRad, 1.3f);
+    }
+    {
+        const float rimRad = juce::jmax (2.0f, radius - 1.3f);
+        juce::Graphics::ScopedSaveState save (g);
+        g.reduceClipRegion (juce::Rectangle<int> ((int) face.getX() - 2, (int) (face.getY() + face.getHeight() * 0.5f),
+                                                  (int) face.getWidth() + 4, (int) (face.getHeight() * 0.5f) + 3));
+        g.setColour (juce::Colour (0xff3a372f).withAlpha (0.55f));
+        g.drawRoundedRectangle (face.reduced (0.5f), rimRad, 1.3f);
     }
 
     // One decisive seam, plus an almost invisible state tint. Avoid the stacked

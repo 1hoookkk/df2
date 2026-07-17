@@ -50,6 +50,13 @@ public:
         if (isActive != active) { isActive = active; repaint(); }
     }
 
+    // Show the small up/down adjust cue (for readouts that are the parameter's
+    // ONLY control on the face — MORPH/Q have their wheels to say "adjustable").
+    void showAdjustCue (bool show)
+    {
+        if (adjustCue != show) { adjustCue = show; repaint(); }
+    }
+
     // Show literal text instead of the % numeric (e.g. the TIME value "1 BAR").
     void setText (const juce::String& s)
     {
@@ -151,9 +158,26 @@ public:
         // Slightly-aliased LCD numeral (render small, upscale nearest): crisper
         // digits at the compact 350px face than antialiased vector type.
         const float fs = t.fontSize (id, 20.0f);
-        drawAliasedText (g, b.reduced (4.0f, 1.0f), numeric, fs,
+        auto textArea = b.reduced (4.0f, 1.0f);
+        if (adjustCue)
+            textArea = textArea.withTrimmedRight (7.0f);
+        drawAliasedText (g, textArea, numeric, fs,
                          t.textColour (id, juce::Colour (0xff2a2722)),
                          t.readoutAliasScale());
+
+        // Adjust cue: two tiny chevrons at the right edge — quiet ink that
+        // says "this number moves" without becoming a spinner widget.
+        if (adjustCue && param != nullptr)
+        {
+            const float cxr = b.getRight() - 7.5f;
+            const float cy = b.getCentreY();
+            g.setColour (t.textColour (id, juce::Colour (0xff2a2722)).withAlpha (0.55f));
+            juce::Path up, dn;
+            up.addTriangle (cxr - 2.6f, cy - 2.2f, cxr + 2.6f, cy - 2.2f, cxr, cy - 5.6f);
+            dn.addTriangle (cxr - 2.6f, cy + 2.2f, cxr + 2.6f, cy + 2.2f, cxr, cy + 5.6f);
+            g.fillPath (up);
+            g.fillPath (dn);
+        }
     }
 
 private:
@@ -200,6 +224,7 @@ private:
     float dragStartY = 0.0f;
     float dragStartValue = 0.0f;
     bool dragging = false;
+    bool adjustCue = false;
 };
 
 } // namespace trench::ui
