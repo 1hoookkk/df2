@@ -279,13 +279,13 @@ inline void drawFrostedGlassControl (juce::Graphics& g, juce::Rectangle<float> r
     // drawn outline.
     const float faceRad = juce::jmax (2.0f, radius - 1.3f);
     {
-        juce::ColourGradient edge (juce::Colour (0xfff4f7f2), 0.0f, face.getY(),
-                                   juce::Colour (0xff4e564f), 0.0f, face.getBottom(), false);
+        juce::ColourGradient edge (juce::Colour (0xffe9eee7), 0.0f, face.getY(),
+                                   juce::Colour (0xff6d766e), 0.0f, face.getBottom(), false);
         edge.addColour (0.5, juce::Colour (0xffaeb6ab));
         g.setGradientFill (edge);
         g.fillRoundedRectangle (face, faceRad);
     }
-    const auto body = face.reduced (1.4f);
+    const auto body = face.reduced (1.1f);
     juce::ColourGradient faceFill (top, 0.0f, body.getY(),
                                     bottom, 0.0f, body.getBottom(), false);
     faceFill.addColour (0.43, middle);

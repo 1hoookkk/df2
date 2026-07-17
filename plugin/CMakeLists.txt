@@ -26,6 +26,8 @@ endif()
 set(TRENCH_COMMON_DEFINITIONS
     JUCE_WEB_BROWSER=0
     JUCE_USE_CURL=0
+    JUCE_DISPLAY_SPLASH_SCREEN=0   # no "Made with JUCE" overlay (requires a paid/appropriate JUCE license at release)
+    JUCE_REPORT_APP_USAGE=0
     JUCE_VST3_CAN_REPLACE_VST2=0
     JucePlugin_Name="TRENCH"
     JucePlugin_Desc="TRENCH filter processor"
@@ -80,7 +82,6 @@ set(TRENCH_PLUGIN_SOURCES
     source/dsp/TeleportEngine.h
     source/dsp/TrenchCleanBody.h
     source/dsp/TrenchDspBridge.h
-    source/ui/AmountFader.h
     source/ui/DecalsLayer.h
     source/ui/FaceplateView.h
     source/ui/FiveDButton.h
