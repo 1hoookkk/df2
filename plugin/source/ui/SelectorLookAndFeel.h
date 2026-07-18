@@ -19,20 +19,25 @@ public:
     juce::Font getComboBoxFont (juce::ComboBox&) override { return displayFont (12.0f, true); }
     juce::Font getPopupMenuFont() override { return displayFont (13.0f, false); }
 
+    // The popup is a little DISPLAY (2026-07-18, "simplify it make it fun"):
+    // the same dark teal glass as the hero screen, phosphor ink, and the
+    // accent lamp (#2BD8C3 — the wheel's own light) as tick + hover glow.
+    // No stock-JUCE navy panel anywhere.
+    static constexpr juce::uint32 kGlassTop = 0xff10201d, kGlassBot = 0xff0b1715;
+    static constexpr juce::uint32 kInk = 0xffcfe8de, kInkDim = 0xff4e6a63;
+    static constexpr juce::uint32 kLamp = 0xff2bd8c3;
+
     void drawPopupMenuBackground (juce::Graphics& g, int width, int height) override
     {
         const auto area = juce::Rectangle<float> (0.0f, 0.0f, (float) width, (float) height);
-        juce::ColourGradient body (juce::Colour (0xff1d2437), 0.0f, 0.0f,
-                                   juce::Colour (0xff141a2a), 0.0f, (float) height, false);
+        juce::ColourGradient body (juce::Colour (kGlassTop), 0.0f, 0.0f,
+                                   juce::Colour (kGlassBot), 0.0f, (float) height, false);
         g.setGradientFill (body);
         g.fillRect (area);
-        g.setColour (juce::Colour (0xff3a4560).withAlpha (0.85f));
+        // glass edge: dark seat below/right, faint sheen above — screen-bezel language
+        g.setColour (juce::Colour (kInk).withAlpha (0.10f));
         g.drawLine (1.5f, 1.5f, (float) width - 1.5f, 1.5f, 1.0f);
-        g.drawLine (1.5f, 1.5f, 1.5f, (float) height - 1.5f, 1.0f);
-        g.setColour (juce::Colours::black.withAlpha (0.55f));
-        g.drawLine (1.5f, (float) height - 1.5f, (float) width - 1.5f, (float) height - 1.5f, 1.0f);
-        g.drawLine ((float) width - 1.5f, 1.5f, (float) width - 1.5f, (float) height - 1.5f, 1.0f);
-        g.setColour (juce::Colour (0xff0a0d16));
+        g.setColour (juce::Colours::black.withAlpha (0.70f));
         g.drawRect (area.reduced (0.5f), 1.0f);
     }
 
@@ -44,30 +49,38 @@ public:
     {
         auto r = area.toFloat();
         if (isSeparator)
+        {
+            g.setColour (juce::Colour (kInk).withAlpha (0.10f));
+            g.fillRect (r.reduced (8.0f, 0.0f).withHeight (1.0f).withY (r.getCentreY()));
             return;
+        }
 
         if (isHighlighted && isActive)
         {
-            g.setColour (juce::Colour (0xffe9dfc6).withAlpha (0.10f));
-            g.fillRect (r.reduced (2.0f, 1.0f));
-            auto rail = r.reduced (2.0f, 1.0f);
-            rail.setWidth (2.0f);
-            g.setColour (juce::Colour (0xffa4263c).withAlpha (0.85f));
-            g.fillRect (rail);
+            // hover = the row lights like a lamp warming, not a select-bar
+            g.setColour (juce::Colour (kLamp).withAlpha (0.10f));
+            g.fillRoundedRectangle (r.reduced (3.0f, 1.0f), 3.0f);
         }
 
+        // tick = the lamp dot, lit; unticked rows keep a dark socket so the
+        // eye reads a row of lamps with one on — the hardware joke of the face
+        const float d = 5.0f;
+        const auto dot = juce::Rectangle<float> (r.getX() + 8.0f, r.getCentreY() - d * 0.5f, d, d);
         if (isTicked)
         {
-            g.setColour (juce::Colour (0xffe9dfc6).withAlpha (0.85f));
-            float leftOffset = isHighlighted ? 6.0f : 2.0f;
-            g.fillRoundedRectangle (r.removeFromLeft (4.0f).translated (leftOffset, 0.0f).reduced (1.0f, 4.0f), 1.0f);
+            g.setColour (juce::Colour (kLamp).withAlpha (0.35f));
+            g.fillEllipse (dot.expanded (2.2f));      // bloom
+            g.setColour (juce::Colour (kLamp));
         }
+        else
+            g.setColour (juce::Colours::black.withAlpha (0.50f));
+        g.fillEllipse (dot);
 
-        const auto textArea = area.reduced (10, 0);
-        g.setFont (displayFont (13.0f, false));
-        juce::Colour textCol = isActive ? juce::Colour (0xffe9dfc6) : juce::Colour (0xff5d6478);
-        if (isTicked) textCol = juce::Colour (0xfff4ecd8);
-        g.setColour (textCol);
+        const auto textArea = area.reduced (22, 0);
+        g.setFont (displayFont (13.0f, isTicked));
+        juce::Colour textCol = isActive ? juce::Colour (kInk) : juce::Colour (kInkDim);
+        if (isTicked) textCol = juce::Colour (kLamp).interpolatedWith (juce::Colour (kInk), 0.35f);
+        g.setColour (textCol.withAlpha (isActive ? 1.0f : 0.75f));
         g.drawFittedText (text, textArea, juce::Justification::centredLeft, 1);
     }
 

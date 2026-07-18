@@ -28,13 +28,13 @@ public:
     // The menu lists every division, fast to slow, so the shown time is always
     // the REAL live one.
     struct TimeItem { const char* label; int divIdx; };
-    // Includes the weird three (divIdx 10-12): 1/6 quarter-triplet, 3/16
-    // dotted-eighth, 5/16 polymeter — slotted by speed like everything else.
+    // SIMPLIFIED (Tyson 2026-07-18, "simplify it make it fun"): the seven
+    // musical core times only. The exotic divisions (1/32, triplets, 1/6,
+    // 3/16, 5/16 — divIdx 2,4,5,10,11,12) stay reachable as host params and
+    // still DISPLAY correctly if set there; the menu just stops listing them.
     static constexpr TimeItem kTimes[] = {
-        { "1/32",  5 }, { "1/16T", 4 }, { "1/16", 3 }, { "1/8T", 2 },
-        { "1/8",   1 }, { "1/6",  12 }, { "3/16", 10 }, { "1/4",   0 },
-        { "5/16", 11 }, { "1/2",  6 }, { "1 BAR", 7 },
-        { "2 BAR", 8 }, { "4 BAR", 9 },
+        { "1/16", 3 }, { "1/8", 1 }, { "1/4", 0 }, { "1/2", 6 },
+        { "1 BAR", 7 }, { "2 BAR", 8 }, { "4 BAR", 9 },
     };
 
     MoveChip (juce::AudioProcessorValueTreeState& apvts, const Theme& theme)
@@ -96,15 +96,9 @@ public:
         // RISE: arming a synced MOVE ramps depth 0->full over one TIME cycle,
         // then holds — the performed riser. Ignored in FREE (no clock to ride).
         m.addItem (kIdRise, "RISE", moveRiseParam != nullptr, paramBool (moveRiseParam));
-        // RATE — morph approach time (the patent's selectable menu). AUTO
-        // follows the chosen time; the rest are explicit overrides.
-        m.addSeparator();
-        {
-            const int liveRate = paramChoice (moveRateParam, 3);
-            for (int i = 0; i < 4; ++i)
-                m.addItem (kIdRateBase + i, kRateLabels[(size_t) i],
-                           moveRateParam != nullptr, i == liveRate);
-        }
+        // RATE rows retired from the menu (2026-07-18): AUTO derives the morph
+        // approach time from the chosen division. The host param remains the
+        // expert override.
 
         juce::Component::SafePointer<MoveChip> self (this);
         m.showMenuAsync (juce::PopupMenu::Options().withTargetComponent (this),
@@ -156,11 +150,12 @@ private:
 
     juce::String liveTimeLabel() const
     {
-        const int div = paramChoice (motionDivParam, 12);
-        for (const auto& it : kTimes)
-            if (it.divIdx == div)
-                return it.label;
-        return {};
+        // Full division vocabulary — host-set exotics still display truthfully
+        // even though the menu only lists the core seven.
+        static constexpr const char* kDivLabels[13] = {
+            "1/4", "1/8", "1/8T", "1/16", "1/16T", "1/32", "1/2",
+            "1 BAR", "2 BAR", "4 BAR", "3/16", "5/16", "1/6" };
+        return kDivLabels[paramChoice (motionDivParam, 12)];
     }
 
     void apply (int id)
@@ -211,6 +206,7 @@ private:
             write (motionTgtMParam, 1.0f);
             write (motionTgtQParam, 0.0f);
             write (motionOnParam, 1.0f);
+            write (moveRateParam, 0.0f);   // RATE AUTO — the menu no longer offers overrides
             if (orbitActive())
                 write (moveTimeParam, (float) moveTimeForDiv (div)); // orbit follows the clock
         }
