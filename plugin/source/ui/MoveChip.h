@@ -28,9 +28,12 @@ public:
     // The menu lists every division, fast to slow, so the shown time is always
     // the REAL live one.
     struct TimeItem { const char* label; int divIdx; };
+    // Includes the weird three (divIdx 10-12): 1/6 quarter-triplet, 3/16
+    // dotted-eighth, 5/16 polymeter — slotted by speed like everything else.
     static constexpr TimeItem kTimes[] = {
         { "1/32",  5 }, { "1/16T", 4 }, { "1/16", 3 }, { "1/8T", 2 },
-        { "1/8",   1 }, { "1/4",   0 }, { "1/2",  6 }, { "1 BAR", 7 },
+        { "1/8",   1 }, { "1/6",  12 }, { "3/16", 10 }, { "1/4",   0 },
+        { "5/16", 11 }, { "1/2",  6 }, { "1 BAR", 7 },
         { "2 BAR", 8 }, { "4 BAR", 9 },
     };
 
@@ -45,6 +48,9 @@ public:
         moveOnParam     = apvts.getParameter (ParamID::moveOn);
         moveShapeParam  = apvts.getParameter (ParamID::moveShape);
         moveTimeParam   = apvts.getParameter (ParamID::moveTime);
+        moveTensionParam = apvts.getParameter (ParamID::moveTension);
+        moveRateParam   = apvts.getParameter (ParamID::moveRate);
+        moveRiseParam   = apvts.getParameter (ParamID::moveRise);
 
         auto repaintOnChange = [this] (float) { repaint(); };
         for (auto* p : { motionOnParam, motionTileParam, motionDivParam,
@@ -79,7 +85,7 @@ public:
         juce::PopupMenu m;
         m.setLookAndFeel (&lookAndFeel);
         const bool on = paramBool (motionOnParam);
-        const int liveDiv = paramChoice (motionDivParam, 9);
+        const int liveDiv = paramChoice (motionDivParam, 12);
         m.addItem (kIdOff, "OFF", true, ! on && ! orbitActive());
         m.addSeparator();
         for (int i = 0; i < (int) std::size (kTimes); ++i)
@@ -87,6 +93,18 @@ public:
                        on && kTimes[(size_t) i].divIdx == liveDiv);
         m.addSeparator();
         m.addItem (kIdOrbit, "ORBIT", moveShapeParam != nullptr, orbitActive());
+        // RISE: arming a synced MOVE ramps depth 0->full over one TIME cycle,
+        // then holds — the performed riser. Ignored in FREE (no clock to ride).
+        m.addItem (kIdRise, "RISE", moveRiseParam != nullptr, paramBool (moveRiseParam));
+        // RATE — morph approach time (the patent's selectable menu). AUTO
+        // follows the chosen time; the rest are explicit overrides.
+        m.addSeparator();
+        {
+            const int liveRate = paramChoice (moveRateParam, 3);
+            for (int i = 0; i < 4; ++i)
+                m.addItem (kIdRateBase + i, kRateLabels[(size_t) i],
+                           moveRateParam != nullptr, i == liveRate);
+        }
 
         juce::Component::SafePointer<MoveChip> self (this);
         m.showMenuAsync (juce::PopupMenu::Options().withTargetComponent (this),
@@ -117,7 +135,8 @@ public:
     }
 
 private:
-    static constexpr int kIdOff = 1, kIdTimeBase = 100, kIdOrbit = 999;
+    static constexpr int kIdOff = 1, kIdTimeBase = 100, kIdOrbit = 999, kIdRateBase = 1200, kIdRise = 1300;
+    static constexpr const char* kRateLabels[4] = { "RATE  AUTO", "RATE  SNAP", "RATE  TIGHT", "RATE  GLIDE" };
 
     static bool paramBool (const juce::RangedAudioParameter* p) noexcept
     {
@@ -137,7 +156,7 @@ private:
 
     juce::String liveTimeLabel() const
     {
-        const int div = paramChoice (motionDivParam, 9);
+        const int div = paramChoice (motionDivParam, 12);
         for (const auto& it : kTimes)
             if (it.divIdx == div)
                 return it.label;
@@ -165,9 +184,21 @@ private:
             if (enable)
             {
                 write (moveShapeParam, (float) kOrbitShape);
-                write (moveTimeParam, (float) moveTimeForDiv (paramChoice (motionDivParam, 9)));
+                write (moveTimeParam, (float) moveTimeForDiv (paramChoice (motionDivParam, 12)));
+                // ORBIT is a toggle, not a fader: the gesture engine scales by
+                // moveTension, and nothing else sets it now that Page 2 is
+                // retired — without this the toggle ran at depth 0 (silent).
+                write (moveTensionParam, 1.0f);
             }
             write (moveOnParam, enable ? 1.0f : 0.0f);
+        }
+        else if (id >= kIdRateBase && id < kIdRateBase + 4)
+        {
+            write (moveRateParam, (float) (id - kIdRateBase));
+        }
+        else if (id == kIdRise)
+        {
+            write (moveRiseParam, paramBool (moveRiseParam) ? 0.0f : 1.0f);
         }
         else if (id >= kIdTimeBase && id < kIdTimeBase + (int) std::size (kTimes))
         {
@@ -237,6 +268,9 @@ private:
     juce::RangedAudioParameter* moveOnParam = nullptr;
     juce::RangedAudioParameter* moveShapeParam = nullptr;
     juce::RangedAudioParameter* moveTimeParam = nullptr;
+    juce::RangedAudioParameter* moveTensionParam = nullptr;
+    juce::RangedAudioParameter* moveRateParam = nullptr;
+    juce::RangedAudioParameter* moveRiseParam = nullptr;
     std::vector<std::unique_ptr<juce::ParameterAttachment>> atts;
     bool hover = false;
     bool showingSibling = false;

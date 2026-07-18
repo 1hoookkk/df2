@@ -79,7 +79,9 @@ public:
         const auto bar = recess;
         const bool hot = isMouseOverOrDragging (true) || selector.isPopupActive();
 
-        // Smoked bone selector bar painted into the machined plate's slot.
+        // Smoked bone selector bar painted into the machined plate's slot —
+        // the clean baseline (reverted 2026-07-17 after the light-pill and
+        // dark-pill experiments both lost to it).
         drawIvoryWell (g, bar, bar.getHeight() * 0.18f, hot, t);
         auto inner = bar.reduced (13.0f, 2.0f);
 

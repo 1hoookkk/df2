@@ -57,6 +57,12 @@ public:
         if (adjustCue != show) { adjustCue = show; repaint(); }
     }
 
+    // Whole-number display (AMOUNT: "91", not "91.4" — simpler macro readout).
+    void setDecimals (int d)
+    {
+        if (decimals != d) { decimals = d; repaint(); }
+    }
+
     // Show literal text instead of the % numeric (e.g. the TIME value "1 BAR").
     void setText (const juce::String& s)
     {
@@ -128,7 +134,11 @@ public:
         editor->setColour (juce::TextEditor::textColourId, t.labelInk());
         editor->setColour (juce::TextEditor::highlightColourId, t.labelInk().withAlpha (0.25f));
         editor->setWantsKeyboardFocus (true);   // this one DOES need keys, briefly
-        editor->setText (juce::String (juce::jlimit (0.0f, 1.0f, value) * 100.0f, 1), false);
+        {
+            const float pct = juce::jlimit (0.0f, 1.0f, value) * 100.0f;
+            editor->setText (decimals <= 0 ? juce::String (juce::roundToInt (pct))
+                                           : juce::String (pct, decimals), false);
+        }
         editor->onReturnKey  = [this] { commitEditor(); };
         editor->onEscapeKey  = [this] { closeEditor(); };
         editor->onFocusLost  = [this] { commitEditor(); };
@@ -153,7 +163,10 @@ public:
         // panel's only dark glass. Edge-to-edge: the component rect IS the opening.
         drawMutedBoneReadout (g, b, b.getHeight() * 0.17f, isActive, t);
         const auto pct = juce::jlimit (0.0f, 1.0f, value) * 100.0f;
-        const auto numeric = textOverride.isNotEmpty() ? textOverride : juce::String (pct, 1);
+        const auto numeric = textOverride.isNotEmpty()
+                               ? textOverride
+                               : (decimals <= 0 ? juce::String (juce::roundToInt (pct))
+                                                : juce::String (pct, decimals));
 
         // Slightly-aliased LCD numeral (render small, upscale nearest): crisper
         // digits at the compact 350px face than antialiased vector type.
@@ -225,6 +238,7 @@ private:
     float dragStartValue = 0.0f;
     bool dragging = false;
     bool adjustCue = false;
+    int decimals = 1;
 };
 
 } // namespace trench::ui

@@ -99,12 +99,10 @@ PluginEditor::PluginEditor (PluginProcessor& p)
     // Bind so the readouts are real controls too: scroll / type / right-click menu.
     morphReadout->bindParameter (processor.apvts.getParameter (ParamID::morph));
     secondaryReadout->bindParameter (processor.apvts.getParameter (ParamID::q));
-    // AMOUNT: honest dose of the authored body (identity -> full), a readout
-    // pill top-right in the same material and interaction language as the
-    // MORPH/Q counters: drag up/down, scroll, double-click to type.
-    amountReadout = std::make_unique<ValueReadout> ("amountReadout", theme);
-    amountReadout->bindParameter (processor.apvts.getParameter (ParamID::amount));
-    amountReadout->showAdjustCue (true);   // AMOUNT's only control on the face
+    // AMOUNT: honest dose of the authored body (identity -> full) — the X3's
+    // thin ribbed thumbwheel, top-right ("make one of those thin wheels just
+    // like emu did. it should be amount", 2026-07-17). Spinner, no readout.
+    amountWheel = std::make_unique<ThinWheel> (processor.apvts, ParamID::amount);
     seedButton   = std::make_unique<SeedButton> (theme);
     seedButton->onSeed = runSeed;
     takeButton   = std::make_unique<TakeButton> (theme);
@@ -135,7 +133,7 @@ PluginEditor::PluginEditor (PluginProcessor& p)
     addAndMakeVisible (*secondaryWheel);
     addAndMakeVisible (*morphReadout);
     addAndMakeVisible (*secondaryReadout);
-    addAndMakeVisible (*amountReadout);
+    addAndMakeVisible (*amountWheel);
     addChildComponent (*seedButton);
     addChildComponent (*takeButton);
     addChildComponent (*fiveDButton);
@@ -254,7 +252,7 @@ void PluginEditor::layoutComponents()
     secondaryWheel->setBounds (rectOf ("qWheel"));
     morphReadout->setBounds (rectOf ("morphReadout"));
     secondaryReadout->setBounds (rectOf ("qReadout"));
-    amountReadout->setBounds (rectOf ("amountReadout"));
+    amountWheel->setBounds (rectOf ("amountWheel"));
     seedButton->setBounds ({});
     takeButton->setBounds ({});
     fiveDButton->setBounds ({});
@@ -299,8 +297,7 @@ void PluginEditor::onFrame()
             return juce::jlimit (0.0f, 1.0f, v->load());
         return 0.0f;
     };
-    const bool motionOn = read (ParamID::motionOn) > 0.5f;
-    amountReadout->setNormalised (read (ParamID::amount));
+    // amountWheel repaints itself through its ParameterAttachment.
     // GraphDisplay reads motionOn/motionTile/motionDiv live for its own MOTION/TIME
     // readout — no push needed from here.
 

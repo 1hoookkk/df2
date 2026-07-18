@@ -240,7 +240,10 @@ private:
 
     float displayNormalised() const
     {
-        return displayOverrideActive ? displayOverrideValue : currentNormalised();
+        // While the user is dragging, the glow tracks THEIR hand (the real
+        // parameter), never the modulated display value — otherwise motion
+        // yanks the packet away from the cursor mid-gesture.
+        return (displayOverrideActive && ! pressing) ? displayOverrideValue : currentNormalised();
     }
 
     void dragAbsolute (const juce::MouseEvent& e)

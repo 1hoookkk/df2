@@ -53,6 +53,7 @@ juce_add_binary_data(TRENCHAssets
         assets/display_log_grid.png
         assets/display_log_grid_rules.png
         assets/display_bitmap4613.png
+        assets/thin_wheel_strip.png
         assets/bodies/identity.body240
         ${TRENCH_PRESET_BODY_FILES})
 

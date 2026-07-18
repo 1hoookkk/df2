@@ -288,16 +288,20 @@ public:
             drawDisplayDropouts (g, glass);
             drawSlamHoverCue (g, glass);
 
-            // One faint, broad reflection inside the glass. No stripe, glare
-            // decal or perspective trick: just the pane catching room light.
-            juce::ColourGradient reflection (juce::Colour (0xfffff1d8).withAlpha (0.036f),
-                                                 glass.getX() + glass.getWidth() * 0.16f, glass.getY(),
-                                                 juce::Colours::transparentBlack,
-                                                 glass.getX() + glass.getWidth() * 0.72f,
-                                                 glass.getY() + glass.getHeight() * 0.55f, false);
-            reflection.addColour (0.46, juce::Colour (0xfffff1d8).withAlpha (0.014f));
-            g.setGradientFill (reflection);
-            g.fillRect (glass.getX(), glass.getY(), glass.getWidth(), glass.getHeight() * 0.58f);
+            // Subtle, curved, semi-transparent white gradient across the top half of the screen
+            // to simulate a curved glass or plastic screen cover reflecting overhead studio lights.
+            juce::Path glossPath;
+            glossPath.startNewSubPath (glass.getX(), glass.getY());
+            glossPath.lineTo (glass.getRight(), glass.getY());
+            glossPath.lineTo (glass.getRight(), glass.getY() + glass.getHeight() * 0.45f);
+            glossPath.quadraticTo (glass.getCentreX(), glass.getY() + glass.getHeight() * 0.54f,
+                                   glass.getX(), glass.getY() + glass.getHeight() * 0.45f);
+            glossPath.closeSubPath();
+
+            juce::ColourGradient glossGrad (juce::Colours::white.withAlpha (0.12f), 0.0f, glass.getY(),
+                                            juce::Colours::white.withAlpha (0.0f),  0.0f, glass.getY() + glass.getHeight() * 0.50f, false);
+            g.setGradientFill (glossGrad);
+            g.fillPath (glossPath);
 
             juce::ColourGradient vig (juce::Colours::transparentBlack,
                                       glass.getCentreX(), glass.getCentreY(),
