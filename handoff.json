@@ -1,135 +1,92 @@
 {
-  "schema": "trench-engine-campaign-handoff-v1",
-  "created_at": "2026-07-17",
+  "schema": "trench-engine-campaign-handoff-v2",
+  "created_at": "2026-07-18",
   "workspace": "C:\\Users\\hooki\\df2-workstation",
-  "title": "Engine campaign: inter-stage BITE, distortion voicing, HD island option, island SRC sweep-null",
+  "title": "V1 feature-complete: locked state, signal chain, ship gate",
   "instructions_to_agent": [
     "Work only in C:\\Users\\hooki\\df2-workstation. Read AGENTS.md and FILTER_NOTEBOOK.md first.",
-    "The 39062.5 Hz path with linear cascade is the VERIFIED REFERENCE. Every change below is an OPTION around it, default-off, and must be bit-exact to current behavior when disabled. Prove the bypass with a null before claiming anything.",
-    "Nonlinear modes have no transfer function: plots become decorative the moment drive > 0. The only gates for driven sound are level-matched renders and Tyson's ear.",
-    "One change per verdict. Build each item to a hearable render, deliver, wait.",
-    "Preserve concurrent work. The tournament page, dev/tmp/bytes_survivors, and dev/tmp/arch_catalog are live evidence — do not regenerate or clean them as a side effect."
+    "Every fact below is OBSERVED from code/tests as of commit e5015a08 unless marked otherwise. Verify against code before relying on line-level details.",
+    "Nonlinear stages have no transfer function. Plots gate linear claims only; driven sound is gated by level-matched renders and Tyson's ear.",
+    "One change per verdict. Build to a hearable render, deliver, wait.",
+    "Renders must warm-start (hd_ab does a discarded full pass first). Level-match every A/B — the HD leveller alone is worth ~+0.7 dB."
   ],
-  "context": {
-    "installed_build": "RATE menu (AUTO/SNAP/TIGHT/GLIDE, engine coeff_ramp_scale + trench_engine_set_coeff_ramp_scale), ORBIT drives QSound SPACE, RISE depth ramp, demo bodies baked (Rubber Mouth / Mass Driver / Bright Servo / Glass Cliff / Vowel Stress / Tooth Field), FUZZ_B_RAZOR seeds SNAP.",
-    "locked_decisions": [
-      "SLAM = Mackie OUTPUT desk at host rate, applied once in PluginProcessor after the island. LOCKED (ear + history + code).",
-      "Into-filter input desk stays an unexposed per-preset seasoning (InputMode::MackieDeskSlam, scale kIntoFilterDriveScale=0.10 in PluginProcessor.cpp).",
-      "body240 format and the 39062.5 clock stay the shipping default forever. HD is an option, not a migration.",
-      "Q corners are authored, never derived. Clean-room bodies gate per-corner vs all 132 ROM corners (>=6 dB)."
-    ],
-    "evidence_pointers": {
-      "notebook": "FILTER_NOTEBOOK.md (SALVAGE section: rc1 pack, keep/kill archives)",
-      "signal_path_source": "trench-core/src/engine.rs header comment + process_sample_inner",
-      "x3_native_rate_tables": "C:\\Users\\hooki\\trench_re_vault\\contracts\\CPhantomMorphLPX\\ (per-rate base/scale tables 44.1/48/96/192 — successor precedent for rate-rederived coefficients)"
-    }
+  "locked_state": {
+    "defaults": {
+      "island_rate": "78125 Hz (hdMode=true DEFAULT). 39062.5 kept as compatibility fallback (hdMode=false). Bytes on disk are ALWAYS authored at 39062.5; HD is a decode-time re-derivation at load.",
+      "slamDrive": "0.10 — output desk on by default, tame. 0.5 approved as 'insane' flavor, reachable by wheel.",
+      "bite": "0.0 — the linear cascade, bit-exact. Bodies ship as authored; NO FILTER and utilities stay honest. Nonzero bite is per-preset seasoning or user's hand, NEVER a global default.",
+      "keyTrack": "false (host param, no face control yet)",
+      "amount": "1.0, morph 0.5, q 0.0, body 0 (NO FILTER), motion off, space 0"
+    },
+    "laws": [
+      "body240 format is immutable: 4 corners x 6 stages x 5 u16 words, authored at 39062.5. HD never touches disk bytes.",
+      "The roster imprints TIMBRE, never harmony. No chord/scale bodies in the roster (Phrygian was built, gated clean, and pulled on this rule). Chord-body pipeline lives in dev/tmp/bytes_fix for a future on-demand catalog.",
+      "Every option (bite, hdMode off, keyTrack, inputMode SLAM) must null bit-exact / byte-identical when disabled. All current ones are test-proven.",
+      "PresetRoster.inc is never regenerated without re-appending the hand-added tail (demo six + De-Esser + De-Mudder).",
+      "Gate chord/resonator bodies on DECODED POLE ANGLES (packed_probe -> acos), never on cascade magnitude maxima: half-step neighbours merge into one peak.",
+      "interpolate_biquad returns BIQUAD rows -> evaluate with response::biquad_*_mag_db, never kernel_*.",
+      "Coefficient-ramp convergence is geometric: probe runtime coefficients only after ~250k samples or mid-ramp values masquerade as math errors."
+    ]
   },
-  "missions": [
-    {
-      "id": "A_interstage_bite",
-      "title": "Inter-stage soft-clipper — BITE grown into the cascade (TRY IT)",
-      "priority": 1,
-      "rationale": "Resonances push into each other: a soft-knee between stages generates harmonics positioned by the upstream peak, carved by the downstream anatomy. Feed-forward cascade means no implicit loop — DF2T survives, no ZDF needed. This is what the reserved BITE knob was always supposed to become.",
-      "design": {
-        "drive_0_contract": "drive == 0.0 must be BIT-EXACT to the current linear cascade (branch on a bool, not a polynomial that approximates identity).",
-        "knee": "reuse the engine's saturate() soft-knee shape per inter-stage junction, pre-scaled by drive; do NOT clip inside a biquad's own feedback, only BETWEEN stages",
-        "placement": "after stage k output, before stage k+1 input, k = 0..4 (five junctions); post-cascade biteDriveBlock stays as-is for now",
-        "gain_staging": "junction drive must be ramped on the same glide as slam_drive (delta per control block) so motion doesn't zipper the nonlinearity",
-        "aliasing": "voice the drive range conservative (soft knee, low ceiling) — harmonics fold above 19531 Hz; heavy drive is out of scope until an HD island exists"
-      },
-      "files": [
-        "trench-core/src/cascade.rs            — Cascade: interstage_drive f32 (default 0), apply knee between stage ticks; keep tick() branch-free fast path when 0",
-        "trench-core/src/engine.rs             — plumb set_interstage_drive + per-block delta ramp (mirror slam_drive pattern, see delta_slam_drive)",
-        "trench-core/src/ffi.rs                — #[no_mangle] trench_engine_set_interstage_drive(engine, f32) (mirror trench_engine_set_coeff_ramp_scale)",
-        "plugin/source/dsp/TrenchDspBridge.h   — extern decl + TrenchParams.interstageDrive + send-on-change (mirror rampScale/lastRampScaleSent)",
-        "plugin/source/PluginProcessor.cpp     — route ParamID::bite -> params.interstageDrive (line ~1009 'BITE RESERVED in V1' is the hook); leave biteDriveBlock call at 0 while auditioning to isolate the new stage",
-        "plugin/source/parameters/TrenchParameters.cpp — verify a 'bite' parameter exists in the layout; add AudioParameterFloat 0..1 default 0 if not"
-      ],
-      "verification": [
-        "NULL: render any body, drive=0, new build vs current build — must null to -inf (bit-exact).",
-        "Render pack for the ear: FUZZ_B_RAZOR + Rubber Mouth + Tooth Field on the drum groove (trench-core/src/bin/rate_ab.rs groove) at drive {0, 0.2, 0.5, 0.8}, level-matched. Ear is the only gate.",
-        "Aliasing probe: 5 kHz sine at drive 0.8, FFT — report fold-back components above -60 dBc honestly."
-      ]
-    },
-    {
-      "id": "B_distortion_voicing",
-      "title": "Distortion voicing pass — the two unmeasured taste constants",
-      "priority": 2,
-      "rationale": "Two nonlinear numbers were never taste-tested: the into-filter desk scale (0.10) and the (new) inter-stage drive curve. One render session settles both.",
-      "files": [
-        "plugin/source/PluginProcessor.cpp     — kIntoFilterDriveScale (line ~15, currently 0.10): render A/B at {0.05, 0.10, 0.20, 0.35} through a fuzz body; Tyson picks",
-        "plugin/source/dsp/SlamStage.h         — (LATER, optional) 2x oversampled output desk for heavy drive; do not touch until asked"
-      ],
-      "verification": [
-        "Level-matched wav set per constant, one variable per set, delivered for ear verdict. No number changes without a verdict."
-      ]
-    },
-    {
-      "id": "C_hd_island",
-      "title": "HD island option — 78125 Hz (exactly 2x the unit), wired into the plugin, default OFF",
-      "priority": 3,
-      "rationale": "Opens Nyquist to 39 kHz for air without abandoning the clock: same geometry, re-derived words. NOT Gemini's 'kill the island' — the unit survives as the unit. Successor precedent exists (X3 per-rate tables in the vault).",
-      "design": {
-        "rederivation_law": "decode each stage via stage_law::geometry_from_words -> re-encode at fs2=78125: pole/zero ANGLE from the same Hz (angle2 = 2*pi*hz/fs2); RADIUS preserves bandwidth in Hz: r2 = r^(39062.5/78125) = sqrt(r); SCALE unchanged. Real pairs go through words_from_geometry (never approximate them).",
-        "where": "on cartridge load when the engine is prepared at 78125 — the stored body240 bytes NEVER change on disk; HD is a decode-time view",
-        "plugin_wiring": "island rate becomes selectable {39062.5, 78125}; hidden APVTS bool 'hdMode' default false (NOT on the V1 face — diagnostics/config only). Island latency and buffer sizing already parameterized by rate in prepare().",
-        "warning": "AGC table: active_agc_table() sqrt-law triggers only >65k — 78125 crosses it; verify the leveller feel is preserved or compensate (this is the likely gotcha)."
-      },
-      "files": [
-        "trench-core/src/stage_law.rs          — add words_for_rate(words, fs) or StageGeometry::reencode_at(fs) (angle re-derive + r^(fs0/fs) radius law); STAGE_SR stays the AUTHORING constant",
-        "trench-core/src/cartridge.rs          — Cartridge::from_body_bytes gains an optional target_rate; PackedCorners rederived when != 39062.5",
-        "trench-core/src/engine.rs             — prepare(78125) path: verify BLOCK_SIZE control grid, ramp seconds->samples, COEFF_RAMP law all scale by sample_rate (they do — audit, don't assume); active_agc_table crossover check",
-        "trench-core/src/ffi.rs                — trench_engine_load_body_bytes must know the prepared rate (it already prepares first — verify order)",
-        "plugin/source/TrenchRates.h           — emuInternalRate -> emuInternalRate(bool hd) or two constants",
-        "plugin/source/dsp/FixedRateTrenchIsland.cpp/.h — prepare() with the selected rate (SRC ratios/latency recompute)",
-        "plugin/source/dsp/TrenchDspBridge.h   — pass rate at prepare",
-        "plugin/source/PluginProcessor.cpp     — hdMode param read at prepareToPlay; report new latency to host",
-        "plugin/source/parameters/TrenchParameters.cpp — hidden bool 'hdMode' default false"
-      ],
-      "verification": [
-        "TF overlay: same body probed at 39062.5 vs re-derived 78125 — curves must match below 15 kHz within quantization (~0.1 dB); divergence above is the point.",
-        "Ring-time check: impulse through a Q100 body at both rates — decay tau in SECONDS must match (that is what r=sqrt(r) preserves).",
-        "AGC feel: level trajectory on the drum groove at both rates, overlaid.",
-        "Ear A/B: one pad body, 96k host session, HD on/off."
-      ]
-    },
-    {
-      "id": "D_island_sweep_null",
-      "title": "Measure the island SRC — sweep-null the one unmeasured stage",
-      "priority": 1,
-      "rationale": "The resampler is the only stage between the verified engine and the listener that has never been measured. Cheap, and it either clears the 'dark' question or finds real loss.",
-      "design": {
-        "method": "render an exponential sine sweep (20 Hz..22 kHz, ~10 s) through the plugin with the 'No Filter' body (exact identity — the island+SRC is then the ONLY processing besides AGC; disable AGC/saturate via the debug FFI toggles if driving trench-core directly, or measure through the full chain and say so), at host 44100 / 48000 / 96000. Compare against the dry sweep: latency-align, deconvolve or subtract.",
-        "laziest_valid_path": "python + spotify pedalboard loading the installed TRENCH.vst3 (state: No Filter body, motion off, slam 0, amount 1) — no new C++; if pedalboard cannot set the body, fall back to a tiny C++ harness cloned from dev/tmp/gesture_test/ (bat+cpp+exe pattern) that drives FixedRateTrenchIsland directly"
-      },
-      "files": [
-        "dev/tmp/island_null/measure.py        — NEW: sweep gen, render, latency-align, residual + magnitude-response plot",
-        "dev/tmp/gesture_test/                 — the existing harness pattern to clone IF pedalboard cannot set plugin state"
-      ],
-      "verification": [
-        "Deliverables: passband ripple (dB), HF rolloff at 15/18/19.5 kHz per host rate, residual-vs-dry in dB, one plot. Numbers, not adjectives.",
-        "If loss found: report WHERE (island down-SRC vs up-SRC) before proposing any fix."
-      ]
-    }
+  "signal_chain": {
+    "plugin_pre": [
+      "host input -> PluginProcessor.processBlock",
+      "input envelope tap (dry): broadband peak, OR per-body tuned detector when a baked-react body is loaded (De-Esser HP 4k / De-Mudder LP 700, two cascaded one-poles, 4ms/140ms follower)",
+      "KeyTrackDetector (if keyTrack): YIN on 4x-decimated ring, hop 512, pitch-class snap C-anchor +-6 semi, debounce 2, silence holds -> params.pitchRatio",
+      "applyMotion: motion tiles / react push (baked-react bodies push Q with motion fully off) -> morph/q",
+      "params: bite -> interstageDrive; ParamID::bite post-cascade biteDriveBlock held at 0"
+    ],
+    "island": [
+      "FixedRateTrenchIsland.prepare(hostRate, blockSize, bridge, islandRate) — islandRate from hdMode at prepareToPlay; latency reported to host",
+      "anti-fold guard: elliptic LP, stopband at islandRate/2, passband fold-2031.25 Hz, active only when hostNyquist > fold (bypassSRC when host==island rate)",
+      "down-SRC 200-tap windowed sinc -> engine rate"
+    ],
+    "engine_per_sample (trench-core FilterEngine::process_sample_inner, order verified)": [
+      "1. input stage: InputMode None (default) | MackieDeskSlam (into-filter desk, slam_drive ramped per control block; plugin scales param by kIntoFilterDriveScale=0.10) | Cvsd",
+      "2. pre_drive_gain",
+      "3. cascade L/R: 6 DF2T stages, per-sample coefficient ramp toward per-control-block targets (32-sample grid, phase-continuous). KEY TRACK transpose applied at interpolation (set_parameters: conjugate pairs root-factored, angle *= ratio clamped 0.5..2.0, radius kept, before AMOUNT taper; ratio 1.0 branches out bit-exact). AMOUNT taper after transpose. BITE: mackity_saturate (x - 0.1768 x^5) at the 5 inter-stage junctions, drive into curve g = 1 + 7*drive, unity-compensated, per-sample ramped; drive 0 branches to the untouched linear loop",
+      "4. AGC: table leveller (agc_drive=2.0 pre-scale law), active_agc_table(rate) — >65k uses the sqrt table (the DLL's own rate law, so HD gets authentic successor behavior)",
+      "5. output gain (interpolated body boost, ramped)",
+      "6. DC blocker (~20 Hz)",
+      "7. saturate() output soft-knee (safety, transparent below knee)"
+    ],
+    "engine_per_block_post": [
+      "QSound spatial (SpatialMode::QSound when space > 0): measured re-capture, shelf corners 513/1816 Hz, width guard keeps lows mono (process_block tail, engine.rs ~808)"
+    ],
+    "plugin_post": [
+      "up-SRC back to host rate",
+      "biteDriveBlock (post-cascade grit) — held at 0",
+      "MOVE guard duck (up to -5 dB at gesture peak)",
+      "output gain (dB param)",
+      "SLAM: Mackie output desk (Airwindows Mackity model) at host rate, applied ONCE, final audible operation. Default drive 0.10"
+    ]
+  },
+  "verified_this_build": [
+    "tests green: 22 suites. Key contracts: bite_interstage (drive-0 bit-exact, harmonics live, aliasing folds -62..-75 dBc at 39k), key_tracking (ratio-1.0 bit-exact; commanded 1.5 measured 1.49966, radius preserved), hd_island (native-rate verbatim; TF overlay <=0.233 dB below 12k; 12-15k diverges <=0.43 dB = base-rate Nyquist cramping relaxing; ring tau in seconds preserved; SCALE re-derived by per-stage DC match — 'SCALE unchanged' was measured wrong by 34 dB)",
+    "island SRC sweep-null (dev/tmp/island_null/): HD default = 0.00 dB at 15/18/19.5k all host rates, passband residual -21 dB, ripple 0.17 dB. Legacy island ceiling was ~17.5k. Chain gain +2.37 dB (HD AGC table) — level-match A/Bs",
+    "De-Esser (5/7/9k notches) + De-Mudder (150/250/400<->300/450/700 via MORPH): Q0 pose exactly flat (0.0000 dB, pole-zero word-level cancellation), auto-react baked with tuned detectors, in roster and installed",
+    "KeyTrackDetector standalone test: all pitch classes exact, octave fold works, silence holds (dev/tmp/keytrack_test/)",
+    "installed C:\\Program Files\\Common Files\\VST3\\TRENCH.vst3 == build artifact (hash-verified at every install this session)"
   ],
-  "queued_not_started": [
-    {
-      "id": "E_key_tracking",
-      "note": "Key-tracked morph (the lost Morpheus Frequency Tracking axis). Log encoding means transpose ~= adding a constant to frequency words. Needs: pitch detector (plugin, control-rate) + encoded-space word offset (trench-core minifloat/engine). Ranked FIRST of the doors for product value (melody bodies play in key) — start after A/D land."
-    },
-    {
-      "id": "F_per_sample_morph",
-      "note": "Audio-rate morph / anatomy FM. interpolate_words per sample (kernel exists in minifloat.rs, just called per 32-sample block today). Surface as RATE: AUDIO or a ZAP-family gesture. Foundation for FM presets — build when A..D are heard."
-    },
-    {
-      "id": "G_z_cube",
-      "note": "Body-to-body morph. z_crossfade already implemented+tested in minifloat.rs — needs engine plumbing (two cartridges + z param) and a product surface. The preset list becomes a space."
-    }
+  "unverified_ear_debt": [
+    "FL pass on EVERYTHING at the new defaults (HD island + SLAM 10%): all presets re-derive at 78125 and were never re-auditioned. Cue known bodies (Rubber Mouth) for the leveller feel.",
+    "De-Esser on a real vocal; De-Mudder on a real mix; Key Track with the LIVE YIN detector in FL (engine half proven, detector proven synthetic, never together in-host)",
+    "BITE render pack across bodies beyond Talker (FUZZ_B_RAZOR / Rubber Mouth / Tooth Field at drives 0/.2/.5/.8) if the taste point needs a second opinion"
   ],
-  "do_not": [
-    "Do not make any nonlinear or HD mode the default. The 39062.5 linear path is the product.",
-    "Do not re-derive method: the assembler, clean-room builder, and QC scripts live in dev/tmp/bytes_fix/ — extend them.",
-    "Do not ship or stage anything from dev/tmp/arch_catalog (transposed ROM rows) or fuzzi_face_REVERSED_ROM (raw ROM) — internal study objects.",
-    "Do not regenerate plugin/presets/PresetRoster.inc with the generator without re-appending the six demo bodies (hand-added at the bottom)."
-  ]
+  "next_missions_ranked": [
+    { "id": "SHIP", "note": "FL ear pass -> roster freeze (audition page) -> FL 150% DPI + wheel-feel QoL check -> demo video (shot list proven: reese riff -> key track -> bite -> slam -> orbit; harness renders in dev/tmp/hd_ab) -> package. All verdicts, no builds." },
+    { "id": "RACK", "note": "Two bodies in series (12 biquads, runtime headroom proven). Utility-into-character in one instance. Zero format changes. First build after ship." },
+    { "id": "G_z_cube", "note": "Body-to-body morph. z_crossfade implemented+tested in minifloat.rs; needs engine plumbing (two cartridges + z param) + surface. The preset list becomes a space." },
+    { "id": "F_audio_rate_morph", "note": "Scouted: per-sample lerp vs 32-grid measured -32.6 dB (grid vindicated for control-rate); the prize is RATE:AUDIO anatomy-FM (render dev/tmp/hd_ab/reese_ps_fm_48k.wav). Build only on ear verdict." },
+    { "id": "SAUCE_per_body", "note": "Approved direction, table-driven via bodyBakedReactSpec pattern, zero UI: stereo bloom (L/R cent offset via pitch_ratio), react->MORPH axis option, baked keyTrack per body, per-body bite/space seasoning. Tuned-lock (12-TET snap at load) same trick as HD re-derivation." },
+    { "id": "KEYTRACK_FACE", "note": "Key Track needs a face home (or ships hidden as an update headline). Tyson decides placement after hearing it live." },
+    { "id": "CATALOG", "note": "On-demand chord/scale body generation (user picks root+quality; compile through the proven gates). NOT roster presets — restraint law." }
+  ],
+  "artifacts": {
+    "render_harness": "trench-core/src/bin/hd_ab.rs (cargo bin hd-ab): island A/B, reese riff w/ key track, fx modes inslam/outslam/orbit, per-sample probes, warm-start. Env: HD_AB_SOURCE=reese, HD_AB_KEYTRACK=1, HD_AB_FX=..., HD_AB_SLAM=, HD_AB_MORPHSTEP=1, HD_AB_PERSAMPLE=lerp32|lerp1|fm",
+    "renders": "dev/tmp/hd_ab/*.wav (48k deliverables resampled 384/625 from 78125)",
+    "measurements": "dev/tmp/island_null/ (SRC sweep-null, results.md), dev/tmp/bytes_fix/*_tf.png",
+    "body_builders": "dev/tmp/bytes_fix/build_de_esser.py, build_utilities.py (hum surgeon / de-harsher / presence riser authored+gated, NOT shipped; presence riser needs HF renorm), build_phrygian.py (pulled body, catalog-lane evidence)",
+    "unshipped_bodies": "dev/tmp/bytes_fix/DEMO_hum_surgeon|de_harsher|presence_riser|phrygian.body240"
+  }
 }
