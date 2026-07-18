@@ -8,18 +8,18 @@
     "Every fact below is OBSERVED from code/tests as of commit e5015a08 unless marked otherwise. Verify against code before relying on line-level details.",
     "Nonlinear stages have no transfer function. Plots gate linear claims only; driven sound is gated by level-matched renders and Tyson's ear.",
     "One change per verdict. Build to a hearable render, deliver, wait.",
-    "Renders must warm-start (hd_ab does a discarded full pass first). Level-match every A/B \u00e2\u20ac\u201d the HD leveller alone is worth ~+0.7 dB."
+    "Renders must warm-start (hd_ab does a discarded full pass first). Level-match every A/B — the HD leveller alone is worth ~+0.7 dB."
   ],
   "locked_state": {
     "defaults": {
       "island_rate": "78125 Hz (hdMode=true DEFAULT). 39062.5 kept as compatibility fallback (hdMode=false). Bytes on disk are ALWAYS authored at 39062.5; HD is a decode-time re-derivation at load.",
-      "slamDrive": "0.10 \u00e2\u20ac\u201d output desk on by default, tame. 0.5 approved as 'insane' flavor, reachable by wheel.",
-      "bite": "0.0 \u00e2\u20ac\u201d the linear cascade, bit-exact. Bodies ship as authored; NO FILTER and utilities stay honest. Nonzero bite is per-preset seasoning or user's hand, NEVER a global default.",
+      "slamDrive": "0.10 — output desk on by default, tame. 0.5 approved as 'insane' flavor, reachable by wheel.",
+      "bite": "0.0 — the linear cascade, bit-exact. Bodies ship as authored; NO FILTER and utilities stay honest. Nonzero bite is per-preset seasoning or user's hand, NEVER a global default.",
       "keyTrack": "false (host param, no face control yet)",
       "amount": "1.0, morph 0.5, q 0.0, body 0 (NO FILTER), motion off, space 0"
     },
     "laws": [
-      "NO NEW UI ELEMENTS \u2014 the face is locked (Tyson, 2026-07-18). Every feature must surface through existing controls (TYPE list, MORPH/Q wheels, AMOUNT, the MOVE chips, hidden host params) or per-body baked behavior. A feature that needs a new control does not ship until it doesn't.",
+      "NO NEW UI ELEMENTS — the face is locked (Tyson, 2026-07-18). Every feature must surface through existing controls (TYPE list, MORPH/Q wheels, AMOUNT, the MOVE chips, hidden host params) or per-body baked behavior. A feature that needs a new control does not ship until it doesn't.",
       "body240 format is immutable: 4 corners x 6 stages x 5 u16 words, authored at 39062.5. HD never touches disk bytes.",
       "The roster imprints TIMBRE, never harmony. No chord/scale bodies in the roster (Phrygian was built, gated clean, and pulled on this rule). Chord-body pipeline lives in dev/tmp/bytes_fix for a future on-demand catalog.",
       "Every option (bite, hdMode off, keyTrack, inputMode SLAM) must null bit-exact / byte-identical when disabled. All current ones are test-proven.",
@@ -38,7 +38,7 @@
       "params: bite -> interstageDrive; ParamID::bite post-cascade biteDriveBlock held at 0"
     ],
     "island": [
-      "FixedRateTrenchIsland.prepare(hostRate, blockSize, bridge, islandRate) \u00e2\u20ac\u201d islandRate from hdMode at prepareToPlay; latency reported to host",
+      "FixedRateTrenchIsland.prepare(hostRate, blockSize, bridge, islandRate) — islandRate from hdMode at prepareToPlay; latency reported to host",
       "anti-fold guard: elliptic LP, stopband at islandRate/2, passband fold-2031.25 Hz, active only when hostNyquist > fold (bypassSRC when host==island rate)",
       "down-SRC 200-tap windowed sinc -> engine rate"
     ],
@@ -46,7 +46,7 @@
       "1. input stage: InputMode None (default) | MackieDeskSlam (into-filter desk, slam_drive ramped per control block; plugin scales param by kIntoFilterDriveScale=0.10) | Cvsd",
       "2. pre_drive_gain",
       "3. cascade L/R: 6 DF2T stages, per-sample coefficient ramp toward per-control-block targets (32-sample grid, phase-continuous). KEY TRACK transpose applied at interpolation (set_parameters: conjugate pairs root-factored, angle *= ratio clamped 0.5..2.0, radius kept, before AMOUNT taper; ratio 1.0 branches out bit-exact). AMOUNT taper after transpose. BITE: mackity_saturate (x - 0.1768 x^5) at the 5 inter-stage junctions, drive into curve g = 1 + 7*drive, unity-compensated, per-sample ramped; drive 0 branches to the untouched linear loop",
-      "4. AGC: table leveller (agc_drive=2.0 pre-scale law), active_agc_table(rate) \u00e2\u20ac\u201d >65k uses the sqrt table (the DLL's own rate law, so HD gets authentic successor behavior)",
+      "4. AGC: table leveller (agc_drive=2.0 pre-scale law), active_agc_table(rate) — >65k uses the sqrt table (the DLL's own rate law, so HD gets authentic successor behavior)",
       "5. output gain (interpolated body boost, ramped)",
       "6. DC blocker (~20 Hz)",
       "7. saturate() output soft-knee (safety, transparent below knee)"
@@ -56,15 +56,15 @@
     ],
     "plugin_post": [
       "up-SRC back to host rate",
-      "biteDriveBlock (post-cascade grit) \u00e2\u20ac\u201d held at 0",
+      "biteDriveBlock (post-cascade grit) — held at 0",
       "MOVE guard duck (up to -5 dB at gesture peak)",
       "output gain (dB param)",
       "SLAM: Mackie output desk (Airwindows Mackity model) at host rate, applied ONCE, final audible operation. Default drive 0.10"
     ]
   },
   "verified_this_build": [
-    "tests green: 22 suites. Key contracts: bite_interstage (drive-0 bit-exact, harmonics live, aliasing folds -62..-75 dBc at 39k), key_tracking (ratio-1.0 bit-exact; commanded 1.5 measured 1.49966, radius preserved), hd_island (native-rate verbatim; TF overlay <=0.233 dB below 12k; 12-15k diverges <=0.43 dB = base-rate Nyquist cramping relaxing; ring tau in seconds preserved; SCALE re-derived by per-stage DC match \u00e2\u20ac\u201d 'SCALE unchanged' was measured wrong by 34 dB)",
-    "island SRC sweep-null (dev/tmp/island_null/): HD default = 0.00 dB at 15/18/19.5k all host rates, passband residual -21 dB, ripple 0.17 dB. Legacy island ceiling was ~17.5k. Chain gain +2.37 dB (HD AGC table) \u00e2\u20ac\u201d level-match A/Bs",
+    "tests green: 22 suites. Key contracts: bite_interstage (drive-0 bit-exact, harmonics live, aliasing folds -62..-75 dBc at 39k), key_tracking (ratio-1.0 bit-exact; commanded 1.5 measured 1.49966, radius preserved), hd_island (native-rate verbatim; TF overlay <=0.233 dB below 12k; 12-15k diverges <=0.43 dB = base-rate Nyquist cramping relaxing; ring tau in seconds preserved; SCALE re-derived by per-stage DC match — 'SCALE unchanged' was measured wrong by 34 dB)",
+    "island SRC sweep-null (dev/tmp/island_null/): HD default = 0.00 dB at 15/18/19.5k all host rates, passband residual -21 dB, ripple 0.17 dB. Legacy island ceiling was ~17.5k. Chain gain +2.37 dB (HD AGC table) — level-match A/Bs",
     "De-Esser (5/7/9k notches) + De-Mudder (150/250/400<->300/450/700 via MORPH): Q0 pose exactly flat (0.0000 dB, pole-zero word-level cancellation), auto-react baked with tuned detectors, in roster and installed",
     "KeyTrackDetector standalone test: all pitch classes exact, octave fold works, silence holds (dev/tmp/keytrack_test/)",
     "installed C:\\Program Files\\Common Files\\VST3\\TRENCH.vst3 == build artifact (hash-verified at every install this session)"
@@ -97,11 +97,11 @@
     },
     {
       "id": "KEYTRACK_SURFACE",
-      "note": "Key Track must surface with NO new UI: per-body baked (bodyBakedReactSpec pattern \u2014 tracking bodies simply track) and/or the hidden host param. No face control, ever."
+      "note": "Key Track must surface with NO new UI: per-body baked (bodyBakedReactSpec pattern — tracking bodies simply track) and/or the hidden host param. No face control, ever."
     },
     {
       "id": "CATALOG",
-      "note": "On-demand chord/scale body generation (user picks root+quality; compile through the proven gates). NOT roster presets \u00e2\u20ac\u201d restraint law."
+      "note": "On-demand chord/scale body generation (user picks root+quality; compile through the proven gates). NOT roster presets — restraint law."
     }
   ],
   "beyond_body240": {
@@ -117,21 +117,21 @@
       },
       {
         "id": "UNISON_WALL",
-        "note": "3-5 detuned copies of one body (24-60 biquads), cents-spread, summed \u00e2\u20ac\u201d the filter supersaw. Stereo bloom (L/R cent offset via existing pitch_ratio machinery) is the 2-voice starter."
+        "note": "3-5 detuned copies of one body (24-60 biquads), cents-spread, summed — the filter supersaw. Stereo bloom (L/R cent offset via existing pitch_ratio machinery) is the 2-voice starter."
       }
     ],
     "extend_format_v2": [
       {
         "id": "MEASURED_OBJECTS",
-        "note": "A bodyN format (e.g. 12-24 stages/corner, 'body960') fits REAL measured objects \u00e2\u20ac\u201d guitar body, cymbal, cab, room modes \u00e2\u20ac\u201d as morphing cascades. 'Put your drums inside a grand piano', from measurements. The whole authoring/certify/decode pipeline generalizes; only the byte layout and grid-certification budget change."
+        "note": "A bodyN format (e.g. 12-24 stages/corner, 'body960') fits REAL measured objects — guitar body, cymbal, cab, room modes — as morphing cascades. 'Put your drums inside a grand piano', from measurements. The whole authoring/certify/decode pipeline generalizes; only the byte layout and grid-certification budget change."
       },
       {
         "id": "HRTF_ORBIT",
-        "note": "Measured-ear spatial: fit HRTF magnitude trajectories (SONICOM, 403 subjects, already on disk at dev/tmp/hrtf/sonicom) as morphing cascades \u00e2\u20ac\u201d ORBIT graduates from psychoacoustic QSound to real elevation/azimuth. Needs the bodyN lane above."
+        "note": "Measured-ear spatial: fit HRTF magnitude trajectories (SONICOM, 403 subjects, already on disk at dev/tmp/hrtf/sonicom) as morphing cascades — ORBIT graduates from psychoacoustic QSound to real elevation/azimuth. Needs the bodyN lane above."
       },
       {
         "id": "MULTIBAND",
-        "note": "Crossover split, one body per band (3x6 biquads + guards): mud body on lows / character mids / open top \u00e2\u20ac\u201d TRENCH as a master-bus device. Furthest from current product shape; park last."
+        "note": "Crossover split, one body per band (3x6 biquads + guards): mud body on lows / character mids / open top — TRENCH as a master-bus device. Furthest from current product shape; park last."
       }
     ],
     "restraint": "None of these enter V1. RACK and Z_CUBE are the first two post-ship builds; format extensions wait for a V2 decision. Catalog-lane chord generation (see next_missions_ranked) composes with all of them."
