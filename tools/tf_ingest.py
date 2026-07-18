@@ -20,7 +20,10 @@ import numpy as np
 FREQS = np.geomspace(30.0, 19200.0, 512)
 
 
-def ir_to_tf(wav_path, smooth_oct=1 / 6):
+def ir_to_tf(wav_path, smooth_oct=1 / 6, detilt=False):
+    """detilt=True subtracts the 2-octave-smoothed trend: keeps the modal
+    signature (the FEATURES) and drops the broadband energy slope — needed for
+    reverberant sources (rooms/caves) whose raw TF is a huge LF ramp."""
     from scipy.io import wavfile
     sr, x = wavfile.read(wav_path)
     x = x.astype(np.float64)
@@ -38,6 +41,12 @@ def ir_to_tf(wav_path, smooth_oct=1 / 6):
         w = np.abs(lo - c) <= smooth_oct / 2
         sm[i] = np.sqrt(np.mean(mag[w] ** 2))
     db = 20 * np.log10(np.maximum(sm, 1e-9))
+    if detilt:
+        trend = np.empty_like(db)
+        for i, c in enumerate(lo):
+            w = np.abs(lo - c) <= 1.0  # 2-octave window
+            trend[i] = np.mean(db[w])
+        db -= trend
     db -= np.median(db)  # floor at 0 dB median, same convention as body QC
     return {"freqs_hz": FREQS.tolist(), "mag_db": db.tolist(),
             "source": str(wav_path), "kind": "ir"}
