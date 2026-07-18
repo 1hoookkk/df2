@@ -266,6 +266,15 @@ juce::AudioProcessorValueTreeState::ParameterLayout createParameterLayout()
                   // compatibility fallback. Applied at prepareToPlay.
 
     layout.add (std::make_unique<juce::AudioParameterFloat> (
+        juce::ParameterID { ParamID::clip, 1 },
+        "Clip",
+        juce::NormalisableRange<float> { 0.0f, 1.0f, 0.001f },
+        0.0f, pctAttribs()));  // CLIP: post-cascade hard clip (ear-picked
+                               // "G": +14 dB into a straight clip at full).
+                               // Default 0 = exact unity. Hidden host param —
+                               // no face control (face is locked).
+
+    layout.add (std::make_unique<juce::AudioParameterFloat> (
         juce::ParameterID { ParamID::bite, 1 },
         "Bite",
         juce::NormalisableRange<float> { 0.0f, 1.0f, 0.001f },

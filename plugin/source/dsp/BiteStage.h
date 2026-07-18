@@ -29,22 +29,26 @@ inline void biteDriveBlock (float* buf, int n, float biteNorm) noexcept
     const float s = biteClamp (biteNorm);
     if (s <= 1.0e-4f)
         return;                                   // exact unity — engaging nothing
-    const float drive = 1.0f + 5.0f * s;          // 1..6x into the shaper
+    // HARD clip (the ear-picked "G" curve, 2026-07-18): straight clip, no knee.
+    // Drive 1..~5x (+14 dB at full) — the drum-bus crunch, not the desk smear.
+    const float drive = 1.0f + 4.0f * s;
 
     float peakDry = 0.0f, peakSh = 0.0f;
     for (int i = 0; i < n; ++i)
     {
         const float a = std::fabs (buf[i]);
         if (a > peakDry) peakDry = a;
-        const float sh = std::fabs (std::tanh (buf[i] * drive));
+        const float d = a * drive;
+        const float sh = d > 1.0f ? 1.0f : d;
         if (sh > peakSh) peakSh = sh;
     }
     const float g = peakSh > 1.0e-6f ? (peakDry / peakSh) : 1.0f;   // peak-match: level-neutral
 
     for (int i = 0; i < n; ++i)
     {
-        const float y = std::tanh (buf[i] * drive) * g;
-        buf[i] = buf[i] + (y - buf[i]) * s;       // dry -> shaped blend
+        const float d = buf[i] * drive;
+        const float y = (d > 1.0f ? 1.0f : (d < -1.0f ? -1.0f : d)) * g;
+        buf[i] = buf[i] + (y - buf[i]) * s;       // dry -> clipped blend
     }
 }
 

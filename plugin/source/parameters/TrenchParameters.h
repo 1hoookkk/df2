@@ -70,6 +70,7 @@ namespace ParamID
     inline constexpr auto moveRate    = "moveRate";    // choice: AUTO,SNAP,TIGHT,GLIDE — morph approach time (patent menu)
     inline constexpr auto keyTrack    = "keyTrack";    // bool: KEY TRACKING — resonances follow the input's note (pitch-class, C anchor)
     inline constexpr auto bite        = "bite";        // 0..1: BITE — inter-stage soft-clip drive inside the cascade (0 = linear, bit-exact)
+    inline constexpr auto clip        = "clip";        // 0..1: CLIP — post-cascade hard clip (drum-bus crunch); hidden host param, no face control
     inline constexpr auto hdMode      = "hdMode";      // bool: HD island — run the unit at 78125 Hz (words re-derived at load); applied at prepareToPlay
     inline constexpr auto moveRise    = "moveRise";    // bool: synced MOVE arms as a 0->full depth ramp over the chosen TIME
     inline constexpr auto moveMode    = "moveMode";    // internal/preset-only legacy mode

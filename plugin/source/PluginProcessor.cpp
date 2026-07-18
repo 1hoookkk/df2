@@ -897,8 +897,13 @@ void PluginProcessor::processBlock (juce::AudioBuffer<float>& buffer, juce::Midi
     float inPeak = 0.0f;
     if (detMode >= 2)
     {
+        // Level-invariant detector: the push is the RATIO of the tuned band to
+        // the broadband peak (how essy/muddy the moment is), never the absolute
+        // level — a −18 dBFS vocal de-esses as hard as a 0 dBFS test render.
+        // Below the silence floor the ratio is noise/noise, so it gates to 0.
         const float fc = bakedReactCutoff.load (std::memory_order_relaxed);
         const float a = 1.0f - std::exp (-juce::MathConstants<float>::twoPi * fc / (float) sampleRate);
+        float bandPeak = 0.0f, widePeak = 0.0f;
         for (int ch = 0; ch < juce::jmin (2, buffer.getNumChannels()); ++ch)
         {
             const auto* d = buffer.getReadPointer (ch);
@@ -909,10 +914,13 @@ void PluginProcessor::processBlock (juce::AudioBuffer<float>& buffer, juce::Midi
                 const float x1 = detMode == 2 ? d[i] - s1 : s1;  // hp : lp, stage 1
                 s2 += a * (x1 - s2);
                 const float v = detMode == 2 ? x1 - s2 : s2;     // hp : lp, stage 2
-                inPeak = juce::jmax (inPeak, std::abs (v));
+                bandPeak = juce::jmax (bandPeak, std::abs (v));
+                widePeak = juce::jmax (widePeak, std::abs (d[i]));
             }
             bakedDetState1[ch] = s1; bakedDetState2[ch] = s2;
         }
+        constexpr float silenceFloor = 1.0e-3f; // ~-60 dBFS: below this, no push
+        inPeak = widePeak > silenceFloor ? juce::jlimit (0.0f, 1.0f, bandPeak / widePeak) : 0.0f;
     }
     else
     {
@@ -1081,7 +1089,7 @@ void PluginProcessor::processBlock (juce::AudioBuffer<float>& buffer, juce::Midi
     // SLAM is output-only, applied in the DSP bridge after the body. The engine's
     // own Rust input stage stays CLEAN (None), so SLAM cannot change filter excitation.
     params.slamDrive = mod.drive;
-    params.bite = 0.0f;   // post-cascade grit stays OFF while auditioning the inter-stage BITE
+    params.bite = juce::jlimit (0.0f, 1.0f, apvts.getRawParameterValue (ParamID::clip)->load());   // CLIP: post-cascade hard clip (hidden host param)
     // BITE — the reserved knob, grown into the cascade: the 'bite' parameter
     // drives the five inter-stage soft-knee junctions inside the engine.
     // 0 (default) = the linear cascade, bit-exact (engine branches).
