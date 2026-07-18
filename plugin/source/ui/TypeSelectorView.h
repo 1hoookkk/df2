@@ -292,7 +292,29 @@ private:
         }
     }
 
-    void comboBoxChanged (juce::ComboBox*) override { repaint(); }
+    void comboBoxChanged (juce::ComboBox*) override
+    {
+        if (onAnnounce)
+            onAnnounce (selector.getText());
+        repaint();
+    }
+
+    // Scroll over TYPE = next/prev preset (2026-07-18): flip through the
+    // roster without opening the list — the FL audition workflow.
+    void mouseWheelMove (const juce::MouseEvent&, const juce::MouseWheelDetails& w) override
+    {
+        const int n = selector.getNumItems();
+        if (n == 0 || w.deltaY == 0.0f)
+            return;
+        const int step = w.deltaY > 0.0f ? -1 : 1;
+        const int idx = juce::jlimit (0, n - 1, selector.getSelectedItemIndex() + step);
+        selector.setSelectedItemIndex (idx, juce::sendNotificationSync);
+    }
+
+public:
+    std::function<void (const juce::String&)> onAnnounce;
+
+private:
 
     void populate()
     {

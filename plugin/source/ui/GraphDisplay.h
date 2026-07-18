@@ -82,7 +82,15 @@ public:
     // fades out once the wheel rests.
     void showAmountCue (float norm)
     {
-        amountCueValue = juce::jlimit (0.0f, 1.0f, norm);
+        announce ("AMOUNT " + juce::String (juce::roundToInt (
+                      juce::jlimit (0.0f, 1.0f, norm) * 100.0f)) + "%");
+    }
+
+    // The screen's one voice (2026-07-18): every gesture announces here in the
+    // same corner, same ink, same fade — time picks, verbs, preset loads.
+    void announce (const juce::String& text)
+    {
+        amountCueText = text;
         amountCueAlpha = 1.0f;
         startTimer (30);
         repaint();
@@ -289,8 +297,8 @@ public:
             {
                 g.setFont (telemetryFont (9.8f, false));
                 g.setColour (juce::Colour (0xffcfe8de).withAlpha (0.94f * amountCueAlpha));
-                g.drawText ("AMOUNT " + juce::String (juce::roundToInt (amountCueValue * 100.0f)) + "%",
-                            juce::Rectangle<float> (glass.getX() + 8.0f, glass.getY() + 4.0f, 110.0f, 14.0f),
+                g.drawText (amountCueText,
+                            juce::Rectangle<float> (glass.getX() + 8.0f, glass.getY() + 4.0f, 190.0f, 14.0f),
                             juce::Justification::centredLeft, false);
             }
 
@@ -622,7 +630,7 @@ private:
     static constexpr double kPulseStaticMs   = 80.0;
     static constexpr double kPulseRedrawMs   = 100.0;
 
-    float amountCueValue = 0.0f;
+    juce::String amountCueText;
     float amountCueAlpha = 0.0f;
 
     void timerCallback() override

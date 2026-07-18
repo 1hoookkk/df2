@@ -84,6 +84,7 @@ PluginEditor::PluginEditor (PluginProcessor& p)
     };
     typeSelector->onSeed       = runSeed;
     typeSelector->onExportBody = [this] { processor.exportCurrentBody(); };
+    typeSelector->onAnnounce   = [this] (const juce::String& s) { graph->announce (s); };
     // SOUND rails: upper aperture = MORPH, lower aperture = Q. SLAM is no longer a
     // rail — it is driven by dragging the screen canvas (see GraphDisplay), so the
     // old Q/SLAM label toggle is retired.
@@ -105,6 +106,10 @@ PluginEditor::PluginEditor (PluginProcessor& p)
     // stays", 2026-07-18). Spinner, no readout.
     amountWheel = std::make_unique<ThinWheel> (processor.apvts, ParamID::amount);
     amountWheel->onValueGesture = [this] (float v) { graph->showAmountCue (v); };
+    // The screen's one voice: menu picks, verbs, and preset loads announce in
+    // the AMOUNT-cue corner (2026-07-18).
+    moveChip->onAnnounce = [this] (const juce::String& s) { graph->announce (s); };
+    moveChip->getMotionStep = [this] { return processor.getMotionStepForUi(); };
     seedButton   = std::make_unique<SeedButton> (theme);
     seedButton->onSeed = runSeed;
     takeButton   = std::make_unique<TakeButton> (theme);

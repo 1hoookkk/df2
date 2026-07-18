@@ -53,7 +53,12 @@ public:
         moveRiseParam   = apvts.getParameter (ParamID::moveRise);
         motionReactParam = apvts.getParameter (ParamID::motionReact);
 
-        auto repaintOnChange = [this] (float) { repaint(); };
+        auto repaintOnChange = [this] (float)
+        {
+            if (paramBool (motionOnParam))
+                startTimer (60);   // pulse clock while modulating
+            repaint();
+        };
         for (auto* p : { motionOnParam, motionTileParam, motionDivParam,
                          moveOnParam, moveShapeParam, moveTimeParam })
             if (p != nullptr)
@@ -66,6 +71,11 @@ public:
     }
 
     ~MoveChip() override = default;
+
+    // The screen voice: fired with a short label on every menu action.
+    std::function<void (const juce::String&)> onAnnounce;
+    // Live pattern step (0..15) from the processor — drives the lamp pulse.
+    std::function<int()> getMotionStep;
 
     // SEED's screen feedback: replace this chip's own text with "SIBLING"
     // for ~500ms, then revert to the real derived state (unchanged the whole
@@ -107,7 +117,14 @@ public:
 
         juce::Component::SafePointer<MoveChip> self (this);
         m.showMenuAsync (juce::PopupMenu::Options().withTargetComponent (this),
-                         [self] (int id) { if (self != nullptr && id != 0) self->apply (id); });
+                         [self] (int id)
+                         {
+                             if (self == nullptr || id == 0)
+                                 return;
+                             self->apply (id);
+                             if (self->onAnnounce)
+                                 self->onAnnounce (self->announceLabel (id));
+                         });
     }
 
     void paint (juce::Graphics& g) override
@@ -119,10 +136,20 @@ public:
         const auto lamp = juce::Rectangle<float> (chip.getX(),
                                                    chip.getCentreY() - lampD * 0.5f,
                                                    lampD, lampD);
-        // The lamp is lit exactly when something is actually modulating.
-        g.setColour (on ? t.rollerIllumination()
-                        : t.rollerIllumination().darker (0.72f).withAlpha (0.82f));
+        // The lamp is lit exactly when something is actually modulating —
+        // and PULSES with the pattern step (2026-07-18): motion you can see.
+        // No pulse while the transport is stopped = the honest diagnostic.
+        auto lampCol = on ? t.rollerIllumination()
+                          : t.rollerIllumination().darker (0.72f).withAlpha (0.82f);
+        if (on && lampFlash > 0.0f)
+            lampCol = lampCol.brighter (lampFlash * 0.8f);
+        g.setColour (lampCol);
         g.fillEllipse (lamp);
+        if (on && lampFlash > 0.3f)
+        {
+            g.setColour (t.rollerIllumination().withAlpha (0.30f * lampFlash));
+            g.fillEllipse (lamp.expanded (2.0f));
+        }
         g.setColour (juce::Colours::black.withAlpha (0.45f));
         g.drawEllipse (lamp, 0.7f);
 
@@ -259,6 +286,17 @@ private:
         }
     }
 
+    juce::String announceLabel (int id) const
+    {
+        if (id == kIdOff)    return "MODULATION OFF";
+        if (id == kIdOrbit)  return orbitActive() ? "ORBIT" : "ORBIT OFF";
+        if (id == kIdRise)   return paramBool (moveRiseParam) ? "RISE" : "RISE OFF";
+        if (id == kIdFollow) return followActive() ? "FOLLOW" : "FOLLOW OFF";
+        if (id >= kIdTimeBase && id < kIdTimeBase + (int) std::size (kTimes))
+            return juce::String ("MODULATION ") + kTimes[(size_t) (id - kIdTimeBase)].label;
+        return {};
+    }
+
     juce::String displayText() const
     {
         if (showingSibling)
@@ -275,13 +313,34 @@ private:
 
     void timerCallback() override
     {
-        siblingElapsedMs += 30.0;
-        if (siblingElapsedMs >= kSiblingFlashMs)
+        if (showingSibling)
         {
-            showingSibling = false;
+            siblingElapsedMs += 30.0;
+            if (siblingElapsedMs >= kSiblingFlashMs)
+                showingSibling = false;
+        }
+        // Lamp pulse: flash on every pattern step change, quick decay.
+        bool needRepaint = showingSibling;
+        if (paramBool (motionOnParam) && getMotionStep)
+        {
+            const int step = getMotionStep();
+            if (step != lastStep)
+            {
+                lastStep = step;
+                lampFlash = 1.0f;
+            }
+            if (lampFlash > 0.0f)
+            {
+                lampFlash = juce::jmax (0.0f, lampFlash - 0.22f);
+                needRepaint = true;
+            }
+        }
+        else if (! showingSibling)
+        {
             stopTimer();
         }
-        repaint();
+        if (needRepaint)
+            repaint();
     }
 
     static constexpr int kBreatheTile = 1;   // motionTile choice: Riser,Breathe,Chop,Wobble,User
@@ -304,6 +363,8 @@ private:
     std::vector<std::unique_ptr<juce::ParameterAttachment>> atts;
     juce::RangedAudioParameter* motionReactParam = nullptr;
     bool followArmedMotion = false;
+    float lampFlash = 0.0f;
+    int lastStep = -1;
     bool hover = false;
     bool showingSibling = false;
     double siblingElapsedMs = 0.0;
