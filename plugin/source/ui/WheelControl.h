@@ -21,7 +21,12 @@ class WheelControl : public juce::Component,
                      public juce::SettableTooltipClient
 {
 public:
-    static constexpr int kStripFrameWidth = 150;   // actual-size frame (drawn 1:1, never resampled)
+    // Frames are authored at 2x the aperture (300x68) and drawn at HALF size
+    // with high-quality resampling: downscaling averages the glow cells' hard
+    // edges, so the wheel stays crisp at 100% AND 150% DPI. (The old 1x/1:1
+    // law fought upscale-mush; a 2x source has no upscale anywhere.)
+    static constexpr int kStripFrameWidth = 300;
+    static constexpr int kStripDrawScale = 2;      // authored 2x, drawn 1/2
 
     WheelControl (juce::AudioProcessorValueTreeState& apvts, juce::String paramID,
                   juce::Image filmstrip, const Theme& theme)
@@ -192,11 +197,12 @@ public:
         // segmented diode pass. NOTHING is painted behind the wheel: the panel art's
         // baked recess IS the well (any code-drawn cavity here reads as a fake
         // rectangle; regressed twice, never again).
-        const int dw = fw;
-        const int dh = fh;
+        const int dw = fw / kStripDrawScale;
+        const int dh = fh / kStripDrawScale;
         const int dx = (getWidth()  - dw) / 2;
         const int dy = (getHeight() - dh) / 2;
         g.setOpacity (1.0f);
+        g.setImageResamplingQuality (juce::Graphics::highResamplingQuality);
         g.drawImage (strip, dx, dy, dw, dh, frame * fw, 0, fw, fh);
 
         // Protrusion: the belly's crown catches the room light — a soft

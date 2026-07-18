@@ -310,6 +310,13 @@ public:
             vig.addColour (0.73, juce::Colours::transparentBlack);
             g.setGradientFill (vig);
             g.fillRect (glass);
+
+            // Pane thickness: the reveal casts a short shadow onto the recessed
+            // glass from above — the depth cue the flat vignette can't give.
+            juce::ColourGradient lip (juce::Colours::black.withAlpha (0.26f), 0.0f, glass.getY(),
+                                      juce::Colours::transparentBlack, 0.0f, glass.getY() + 7.0f, false);
+            g.setGradientFill (lip);
+            g.fillRect (glass.getX(), glass.getY(), glass.getWidth(), 7.0f);
         }
 
         // Hairline inner seam: the glass meets the reveal with zero visible lift.

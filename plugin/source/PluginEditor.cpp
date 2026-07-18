@@ -100,8 +100,9 @@ PluginEditor::PluginEditor (PluginProcessor& p)
     morphReadout->bindParameter (processor.apvts.getParameter (ParamID::morph));
     secondaryReadout->bindParameter (processor.apvts.getParameter (ParamID::q));
     // AMOUNT: honest dose of the authored body (identity -> full) — the X3's
-    // thin ribbed thumbwheel, top-right ("make one of those thin wheels just
-    // like emu did. it should be amount", 2026-07-17). Spinner, no readout.
+    // thin ribbed thumbwheel ("make one of those thin wheels just like emu
+    // did. it should be amount", 2026-07-17; re-affirmed "the thin wheel
+    // stays", 2026-07-18). Spinner, no readout.
     amountWheel = std::make_unique<ThinWheel> (processor.apvts, ParamID::amount);
     seedButton   = std::make_unique<SeedButton> (theme);
     seedButton->onSeed = runSeed;

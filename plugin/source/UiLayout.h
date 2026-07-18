@@ -83,14 +83,13 @@ public:
         layout.elements["brandLabel"].text = "TRENCH";
         // AMOUNT: the honest-dose macro, top-right opposite the nameplate �
         // a readout-pill control in the same material as the MORPH/Q counters.
-        // AMOUNT: the X3 thin vertical thumbwheel — its own column between the
-        // readouts and the plate's corner groove (it must never straddle the
-        // groove seam at ~850). Label on the MORPH/Q label row; the wheel
-        // spans exactly the two rails it doses (readout top to readout
-        // bottom). Height keeps the 47px frame at exactly 2x in the editor.
-        layout.elements["amountLabel"]   = { { 753.0f, 640.0f, 110.0f, 30.0f }, 11.5f, juce::Colour (0xff0d0b09) };
+        // AMOUNT: the X3 thin vertical thumbwheel (Tyson 2026-07-18: "the thin
+        // wheel stays") — its own column between the readouts and the plate's
+        // corner groove. Label on the MORPH/Q label row; the wheel spans the
+        // two rails it doses. Height keeps the 47px frame at exactly 2x.
+        layout.elements["amountLabel"]   = { { 777.0f, 640.0f, 110.0f, 30.0f }, 11.5f, juce::Colour (0xff0d0b09) };
         layout.elements["amountLabel"].text = "AMOUNT";
-        layout.elements["amountWheel"]   = { { 784.0f, 690.0f, 48.0f, 276.0f }, {}, {} };
+        layout.elements["amountWheel"]   = { { 808.0f, 690.0f, 48.0f, 276.0f }, {}, {} };
 
         // Warm desaturated clinical, committed: putty plate, SAGE LCD glass with
         // ONE warm amber signal (the Millennium reference) — dark ink telemetry

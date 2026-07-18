@@ -37,14 +37,25 @@ public:
         // Hairline shadow bezel wrapping each raised insert — very small, all
         // around, nothing spreading onto the plate.
         drawHairlineBezel (g, t.rect ("typeSelector"));
-        drawHairlineBezel (g, t.rect ("morphReadout"));
-        drawHairlineBezel (g, t.rect ("qReadout"));
+
+        // Numeric readouts: ONE thin black shadow ring hugging each pill
+        // (Tyson 2026-07-18) — replaces the faint hairline + under-seat pair.
+        drawReadoutRing (g, t.rect ("morphReadout"));
+        drawReadoutRing (g, t.rect ("qReadout"));
+
+        // The TYPE bar keeps only a whisper of a seat.
+        drawWheelContactShadow (g, t.rect ("typeSelector"), 4.0f, 0.30f);
 
         // X3 faceplate shadows (close-up reference 2026-07-17): a broad, SOFT
         // half-ellipse on the plate under each wheel capsule — visibly lighter
         // than a contact shadow, nearly the capsule's full width.
         drawWheelContactShadow (g, t.rect ("morphWheel"));
         drawWheelContactShadow (g, t.rect ("qWheel"));
+
+        // AMOUNT: the half-ellipse cast to the RIGHT of the column (Tyson:
+        // "the shadow to the right the half elipse"), on top of ThinWheel's
+        // own soft silhouette — the pairing he approved.
+        drawAmountSideShadow (g, t.rect ("amountWheel"));
 
         // restrained outer rim seats the panel
         const auto rb = getLocalBounds().toFloat();
@@ -63,7 +74,21 @@ private:
         g.drawRoundedRectangle (r.expanded (0.6f), rad + 0.6f, 1.0f);
     }
 
-    static void drawWheelContactShadow (juce::Graphics& g, juce::Rectangle<float> well)
+    // The numeric pills' surround: a THIN black ring at the pill's edge with a
+    // one-pixel soft falloff outside it — defined all around, spreading nowhere.
+    static void drawReadoutRing (juce::Graphics& g, juce::Rectangle<float> r)
+    {
+        if (r.isEmpty())
+            return;
+        const float rad = 5.0f;
+        g.setColour (juce::Colours::black.withAlpha (0.42f));
+        g.drawRoundedRectangle (r.expanded (0.5f), rad + 0.5f, 1.0f);
+        g.setColour (juce::Colours::black.withAlpha (0.14f));
+        g.drawRoundedRectangle (r.expanded (1.4f), rad + 1.4f, 1.0f);
+    }
+
+    static void drawWheelContactShadow (juce::Graphics& g, juce::Rectangle<float> well,
+                                        float castH = 9.0f, float strength = 1.0f)
     {
         if (well.isEmpty())
             return;
@@ -76,7 +101,6 @@ private:
         // clearly LIGHTER than a contact shadow (the plugin's were too dark).
         // A THIN, defined half-oval: an actual ellipse under the capsule,
         // dark at the contact line, softening just enough not to be a decal.
-        const float castH = 9.0f;                    // thin vertical reach
         const float cx = well.getCentreX();
         const float cy = well.getBottom();
         const float rx = well.getWidth() * 0.46f;
@@ -85,12 +109,38 @@ private:
         g.reduceClipRegion (juce::Rectangle<int> ((int) well.getX(), (int) well.getBottom(),
                                                   (int) well.getWidth(), (int) castH));
         g.addTransform (juce::AffineTransform::scale (1.0f, castH / rx, cx, cy));
-        juce::ColourGradient sh (juce::Colours::black.withAlpha (0.74f), cx, cy,
+        juce::ColourGradient sh (juce::Colours::black.withAlpha (0.74f * strength), cx, cy,
                                  juce::Colours::transparentBlack, cx + rx, cy, true);
-        sh.addColour (0.50, juce::Colours::black.withAlpha (0.50f));   // filled body...
-        sh.addColour (0.82, juce::Colours::black.withAlpha (0.18f));   // ...short soft edge
+        sh.addColour (0.50, juce::Colours::black.withAlpha (0.50f * strength));   // filled body...
+        sh.addColour (0.82, juce::Colours::black.withAlpha (0.18f * strength));   // ...short soft edge
         g.setGradientFill (sh);
         g.fillEllipse (cx - rx, cy - rx, rx * 2.0f, rx * 2.0f);
+    }
+
+    // drawWheelContactShadow rotated 90°: the AMOUNT column's contact line is
+    // its right edge — same alphas/stops as the wheels, one shadow law.
+    static void drawAmountSideShadow (juce::Graphics& g, juce::Rectangle<float> well)
+    {
+        if (well.isEmpty())
+            return;
+
+        const float castW = 9.0f;                    // thin horizontal reach
+        // Start at the strip's REAL edge (the drawn frame sits a hair inside
+        // its layout well) so the cast touches the contact line.
+        const float cx = well.getRight() - 2.5f;
+        const float cy = well.getCentreY();
+        const float ry = well.getHeight() * 0.46f;
+
+        juce::Graphics::ScopedSaveState save (g);
+        g.reduceClipRegion (juce::Rectangle<int> ((int) cx, (int) well.getY(),
+                                                  (int) castW + 1, (int) well.getHeight()));
+        g.addTransform (juce::AffineTransform::scale (castW / ry, 1.0f, cx, cy));
+        juce::ColourGradient sh (juce::Colours::black.withAlpha (0.74f), cx, cy,
+                                 juce::Colours::transparentBlack, cx, cy + ry, true);
+        sh.addColour (0.50, juce::Colours::black.withAlpha (0.50f));
+        sh.addColour (0.82, juce::Colours::black.withAlpha (0.18f));
+        g.setGradientFill (sh);
+        g.fillEllipse (cx - ry, cy - ry, ry * 2.0f, ry * 2.0f);
     }
 
     juce::Image panelImage;

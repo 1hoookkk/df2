@@ -343,7 +343,14 @@ inline void drawIvoryWell (juce::Graphics& g, juce::Rectangle<float> r,
 inline void drawMutedBoneReadout (juce::Graphics& g, juce::Rectangle<float> r,
                                   float radius, bool isActive, const Theme& t)
 {
-    drawFrostedGlassControl (g, r, radius, isActive, t);
+    // FLAT counter window (Tyson 2026-07-18: "remove that stupid moulding") —
+    // one plain fill in the approved bone-teal family; the faceplate's thin
+    // black ring does all the seating. No edge layer, no sheen, no skirt.
+    // (LCD-window variant tried 2026-07-18 and reverted: "no go back".)
+    juce::ignoreUnused (isActive, t);
+    const auto warmth = juce::Colour (0xffd8d0bc);
+    g.setColour (juce::Colour (0xffc4d2d0).interpolatedWith (warmth, 0.28f));
+    g.fillRoundedRectangle (r.reduced (0.35f), radius);
 }
 
 // The dark screen glass (t.phosphor() = the iron glass base) — the SAME base treatment the hero GraphDisplay
@@ -494,13 +501,18 @@ inline void drawEngravedTrackedText (juce::Graphics& g, const juce::String& text
 inline void drawAliasedText (juce::Graphics& g, juce::Rectangle<float> b, const juce::String& text,
                              float fontSize, juce::Colour colour, float scale)
 {
+    // DPI-aware: render the intermediate at PHYSICAL resolution so the styled
+    // LCD crunch stays constant — at 150% the old logical-res image was
+    // nearest-upscaled 1.5x on top of its own crunch (double aliasing).
+    const float dpi = g.getInternalContext().getPhysicalPixelScaleFactor();
+    const float eff = scale * juce::jmax (1.0f, dpi);
     const auto r = b.toNearestInt();
-    const int iw = juce::jmax (1, juce::roundToInt (r.getWidth()  * scale));
-    const int ih = juce::jmax (1, juce::roundToInt (r.getHeight() * scale));
+    const int iw = juce::jmax (1, juce::roundToInt (r.getWidth()  * eff));
+    const int ih = juce::jmax (1, juce::roundToInt (r.getHeight() * eff));
     juce::Image img (juce::Image::ARGB, iw, ih, true);
     {
         juce::Graphics tg (img);
-        tg.setFont (displayFont (fontSize * scale, false));
+        tg.setFont (displayFont (fontSize * eff, false));
         tg.setColour (colour);
         tg.drawFittedText (text, img.getBounds(), juce::Justification::centred, 1);
     }

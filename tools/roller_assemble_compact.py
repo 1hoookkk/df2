@@ -8,17 +8,9 @@
 # Union alpha>128 hard-crop first (the invisible-padding trap); uniform scale
 # only (never squash).
 #
-# LIGHT PATTERN (X3 dump): a stationary warm pool left-of-centre the teeth
-# scroll through, ends falling dark, gentle facet contrast. Restrained —
-# "too much light shining" killed the first pass.
-#
-# GLOW (X3 dump law): ONE continuous travelling packet that follows the value
-# 0-100 — crisp front, short tail, centred exactly at the value position,
-# shining through the fin gaps. The Blender diode pass is only the per-frame
-# gap GATE; its discrete cells and baked long tail are discarded. Dark at
-# v=0; the packet rides to the right cap at v=1. A light horizontal bloom
-# binds the gap cells into one body of light — never discrete LEDs, never a
-# dull halo.
+# GLOW LAW (Tyson 2026-07-18, restated): the glow FOLLOWS the wheel — head
+# tracks the value exactly; the lit run reaches ~50% of the width at v=1;
+# frame 0 is completely dark. Cells light as units on the seated 3D drum.
 #
 # ROTATION LAW: the authored drum turns in the same perceived left-to-right
 # direction as the value packet. The Blender batch's frame order is opposite
@@ -29,19 +21,16 @@ from PIL import Image, ImageFilter
 from pathlib import Path
 
 NF = 257
-FW, FH = 150, 34
-DRUM_H = 30
-GAP_TOP = 3
+# 2x-authored frames (drawn at half size with high-quality resampling in
+# WheelControl): downscale-only everywhere kills the DPI aliasing.
+FW, FH = 300, 68
+DRUM_H = 60
+GAP_TOP = 6
 
 GLOW_ON = True
-# The glow is DEEP SAGE/TEAL — light living in the fin gaps, not a pale stripe.
-# Pixels lerp toward a dark chromatic lamp colour, never add toward white.
-# MEASURED off the real X3 roller sheet (BITMAP4331): the glow is true CYAN
-# (G == B; mean 43,118,118, hot cores toward 229,255,255) lighting WHOLE
-# tooth-cells as units — never a wash, never malachite.
-GLOW_DEEP = np.array([0.17, 0.46, 0.46], dtype=np.float32)
-GLOW_CORE = np.array([0.30, 0.55, 0.55], dtype=np.float32)   # additive hot centre
-GAIN = 0.92                      # strong colour replacement, restrained luminance
+# The lit cell is EXTRACTED from the real X3 sheet (BITMAP4331 frame 096) —
+# real centre-bright profile, nothing invented.
+SHEET = Path(r"C:\Users\hooki\df2\dev\tmp\emu_bitmap_inspect\BITMAP4331_1_frame_096_85x16_8x.png")
 TEETH_VISIBLE = 14               # teeth across the front face — the trail math anchor
 
 BATCH = Path(r"C:\Users\hooki\df2\dev\tmp\roller_batch_az90")
@@ -49,12 +38,6 @@ OUT = Path(r"C:\Users\hooki\df2-workstation\plugin\assets")
 
 def load(p):
     return np.array(Image.open(p).convert("RGBA")).astype(np.float32)
-
-def xblur(arr, sigma):
-    im = Image.fromarray(np.clip(arr * 255.0, 0, 255).astype(np.uint8))
-    im = im.resize((im.width, 1), Image.BILINEAR).filter(ImageFilter.GaussianBlur(sigma))
-    row = np.array(im).astype(np.float32)[0] / 255.0
-    return np.tile(row, (arr.shape[0], 1))
 
 # union hard-crop box across sample frames
 boxes = []
@@ -70,12 +53,9 @@ drum_w = round(raw_w * s)
 print(f"raw drum {raw_w}x{raw_h} -> {drum_w}x{DRUM_H}, seat top {GAP_TOP}, "
       f"ends {(FW-drum_w)//2}px inside, frame {FW}x{FH}")
 
-# Diode-cell ROW profile, once: union of glow frames says which rows carry
-# light. The per-frame GAP mask now comes from the clean frame itself, so the
-# glow and the visible tooth rotation can never desync again ("the glow and
-# tooth rotate are out of sync", 2026-07-17 — the old code read the Blender
-# glow pass with the REVERSED source index while the packet ran forward).
+# Diode-cell ROW profile, once: union of glow frames says which rows carry light.
 row_profile = None
+sprite_rgb = sprite_wt = None
 if GLOW_ON:
     acc = None
     for j in (32, 96, 160, 224):
@@ -83,6 +63,38 @@ if GLOW_ON:
         acc = gj if acc is None else np.maximum(acc, gj)
     row_profile = acc.max(axis=1)
     row_profile = np.clip(row_profile / max(row_profile.max(), 1e-4), 0.0, 1.0) ** 0.5
+
+    # Extract the single HEAD cell from the real sheet at 8x resolution:
+    # cyanness = min(G,B)-R; cell bounds = the local separator dips either
+    # side of the brightest column (measured pitch ~6px native, 14 across).
+    sh = np.array(Image.open(SHEET).convert("RGB")).astype(np.float32)
+    cyan = np.clip(np.minimum(sh[..., 1], sh[..., 2]) - sh[..., 0], 0, None)
+    colc = cyan.max(axis=0)
+    p = int(colc.argmax())
+    half = 4 * 8                                      # < one native pitch, at 8x
+    ra = p - half + int(colc[max(0, p - half):p].argmin())
+    rb = p + 1 + int(colc[p:p + half + 1].argmin())
+    # ...then crop to the SOLID core (>=50% of peak): the separator falloff
+    # is re-created by the resize at stamp time.
+    core = np.where(colc[ra:rb] >= 0.5 * colc[p])[0]
+    ra, rb = ra + int(core.min()), ra + int(core.max()) + 1
+    rowc = cyan[:, ra:rb].max(axis=1)
+    rows = np.where(rowc > 0.25 * rowc.max())[0]
+    sr0, sr1 = int(rows.min()), int(rows.max()) + 1
+    sprite_rgb = sh[sr0:sr1, ra:rb]
+    # Plateau normalization: the sheet cell is a SOLID low-contrast square —
+    # mapping 55%-of-peak to full keeps the face solid to the cell edge.
+    sprite_wt = np.clip(cyan[sr0:sr1, ra:rb] / (0.55 * max(cyan[sr0:sr1, ra:rb].max(), 1e-4)), 0.0, 1.0)
+    # ONE LIT VOICE: the X3 sheet gives the STRUCTURE (cell profile, hot
+    # core); the COLOUR is the face's own accent (#2BD8C3 = rollerIllumination
+    # in UiLayout) so screen curve, active states and wheel lamp all speak
+    # the same light. Hot cores still bleach toward white like the sheet.
+    ACCENT = np.array([0x2b, 0xd8, 0xc3], dtype=np.float32) / 255.0
+    inten = sprite_rgb.max(axis=2, keepdims=True) / 255.0
+    wmix = np.clip((sprite_rgb[..., 0:1] / 255.0 - 0.15) / 0.45, 0.0, 1.0)
+    sprite_rgb = 255.0 * np.clip(inten ** 0.75 * 1.10, 0, 1) * (ACCENT[None, None] * (1.0 - wmix) + wmix)
+    print(f"sprite: head cell x{ra/8:.1f}-{rb/8:.1f} rows {sr0/8:.1f}-{sr1/8:.1f} (native), "
+          f"peak RGB {sprite_rgb.reshape(-1,3)[sprite_wt.ravel().argmax()].round().astype(int)}")
 
 frames = []
 glow_centroids = []
@@ -94,78 +106,93 @@ for i in range(NF):
     rgb = c[..., :3]
     H, W = rgb.shape[:2]
 
-    # Fixed material shine: the reference's lamp sits decisively over the left
-    # shoulder, not across the wheel centre. This is independent of the teal
-    # value packet, which still travels with the parameter.
     xn = np.arange(W, dtype=np.float32) / W
-    # METALLIC (Tyson 2026-07-17): a tighter, hotter lamp pool and harder
-    # facet contrast — iron reads as sharp light/dark breaks, not soft plastic.
-    env = 0.60 + 0.95 * np.exp(-((xn - 0.18) ** 2) / (2 * 0.11 ** 2))
+    # Dialled back toward the reference face (2026-07-18): even metallic
+    # light, a shade quieter than the full sheet match.
+    env = 0.80 + 0.28 * np.exp(-((xn - 0.22) ** 2) / (2 * 0.24 ** 2))
     env *= 0.45 + 0.55 * np.minimum(np.minimum(xn, 1 - xn) / 0.06, 1.0)
-    n = np.clip((rgb * env[None, :, None] / 255.0 - 0.04) * 1.38, 0, 1) ** 0.84
+    n = np.clip((rgb * env[None, :, None] / 255.0 - 0.015) * 1.18, 0, 1) ** 0.90
+    n = np.where(n > 0.55, 0.55 + (n - 0.55) * 0.60, n)   # sheet's soft speculars, not chrome pops
+    # SEATED cylinder ("seems to stick out", 2026-07-18): crown rolls into the
+    # socket shadow, belly melts into the contact shadow.
+    yn = np.clip((np.arange(rgb.shape[0], dtype=np.float32) - y0) / max(raw_h - 1, 1), 0, 1)
+    vshade = 0.24 + 0.76 * np.clip(np.sin(np.pi * (0.02 + 0.90 * yn)), 0.0, 1.0) ** 1.5
+    # "Hanging out a bit": near-point specular band just above centre.
+    vshade += 0.65 * np.exp(-((yn - 0.42) ** 2) / (2 * 0.075 ** 2))
+    n *= vshade[:, None, None]
     rgb = n * 255.0
 
     if GLOW_ON:
-        # Gate = THIS clean frame's own tooth gaps (dark slots), confined to the
-        # diode rows. Glow and tooth rotation share one source, so they cannot
-        # desync; the packet centre IS the value position, 0 -> 100.
-        # DISCRETE CELLS, not a wash: only the deep tooth-gap slots pass light
-        # (hard threshold, then a soft knee), confined to the diode rows. The
-        # loose 1-1.6*lum mask lit every mid-dark pixel — "just a spray".
-        lum = c[..., :3].mean(axis=2) / 255.0
         a_mask = c[..., 3] / 255.0
-        gaps = np.clip((0.30 - lum) / 0.26, 0.0, 1.0) * a_mask
-        gate = gaps * (row_profile[:, None] ** 1.5)
-        gate = gate / max(gate.max(), 1e-4)
-        gate = np.clip((gate - 0.30) / 0.45, 0.0, 1.0)
-        # The X3 law (BITMAP4331 sheet): whole cells switch on as units — a
-        # run of lit cells ending at the value position, one cell long near
-        # zero, widening with the value. Binary per cell, hard-edged.
+        # Cells sit on a UNIFORM pitch grid; whole cells light as units.
         head = x0 + v * raw_w
         x = np.arange(W, dtype=np.float32)
-        # Cells are the spaces BETWEEN TEETH (bright fin tops in the diode
-        # rows), never runs of darkness — dark runs merge across the whole
-        # drum and flood the fill. Long tooth-less stretches split at the
-        # authored tooth pitch so no cell exceeds one pitch.
-        band_rows = row_profile > 0.35
-        colbright = (lum * a_mask)[band_rows, :].max(axis=0)
-        toothcol = colbright > 0.42
         pitch = raw_w / float(TEETH_VISIBLE)
         cells = []
-        run_start = None
-        for xx in range(W + 1):
-            inside = xx < W and (x0 <= xx <= x1) and not toothcol[xx]
-            if inside and run_start is None:
-                run_start = xx
-            elif not inside and run_start is not None:
-                a = run_start
-                while xx - a > pitch * 1.3:          # split oversized runs
-                    cells.append((a, int(a + pitch)))
-                    a = int(a + pitch)
-                cells.append((a, xx))
-                run_start = None
-        lit = np.zeros(W, dtype=np.float32)
-        tail = (0.06 + 0.30 * v) * raw_w
-        if cells:
-            # the cell nearest the head is ALWAYS lit (the value marker)...
-            near = min(cells, key=lambda c: abs(0.5 * (c[0] + c[1] - 1) - head))
-            lit[near[0]:near[1]] = 1.0
-            # ...and the run behind it fills in as the value rises
-            for a, b in cells:
-                cctr = 0.5 * (a + b - 1)
-                if head - tail <= cctr <= head:
-                    fall = 1.0 - 0.45 * max(0.0, (head - cctr) / max(tail, 1e-3))
-                    lit[a:b] = max(lit[a:b].max(), fall)
-        amp = min(1.0, v * 12.0)                                       # frame 0 = no glow
+        for kc in range(TEETH_VISIBLE):
+            a = int(round(x0 + kc * pitch))
+            b = int(round(x0 + (kc + 1) * pitch))
+            if b - a > 2:
+                cells.append((a, b))
+        # Span law (Tyson 2026-07-18): the run reaches from ZERO up to the
+        # head, saturating at ~0.49 of the drum at v=1. Dark at v=0.
+        tail = min(0.49, v + 0.04) * raw_w
+        levels = {}
+        near = min(cells, key=lambda cc: abs(0.5 * (cc[0] + cc[1] - 1) - head))
+        levels[near] = 1.0                                # the value marker cell
+        for a, b in cells:
+            cctr = 0.5 * (a + b - 1)
+            if head - tail <= cctr <= head:
+                # Measured ramp (frame 096 cell peaks 21..156): near-linear
+                # rise from ~13% at the tail tip to 100% at the head.
+                lv = 1.0 - 0.87 * max(0.0, (head - cctr) / max(tail, 1e-3))
+                levels[(a, b)] = max(levels.get((a, b), 0.0), lv)
+        # Stamp the REAL sheet cell into each lit slot, scaled to the diode
+        # row band — colour and centre-bright profile come from the bitmap.
+        band = np.where(row_profile > 0.35)[0]
+        by0, by1 = int(band.min()), int(band.max()) + 1
+        E = np.zeros((H, W), dtype=np.float32)
+        C = np.tile(sprite_rgb.reshape(-1, 3).mean(axis=0) * 0.55, (H, W, 1)).astype(np.float32)
+        for (a, b), lv in levels.items():
+            # THIN OUT (Tyson 2026-07-18): the run tapers like a comet —
+            # full band height at the head, thinning toward the tail. Kills
+            # the square-block read; dim cells become slivers of light.
+            ch_full = by1 - by0
+            ch = max(2, int(round(ch_full * (0.30 + 0.70 * lv))))
+            cy0 = by0 + (ch_full - ch) // 2
+            cw = b - a
+            sw = np.array(Image.fromarray((sprite_wt * 255).astype(np.uint8))
+                          .resize((cw, ch), Image.LANCZOS)).astype(np.float32) / 255.0
+            sc = np.array(Image.fromarray(sprite_rgb.astype(np.uint8))
+                          .resize((cw, ch), Image.LANCZOS)).astype(np.float32)
+            # Measured separator: a SHALLOW dip (~50% depth, ~1 final px) at
+            # each cell boundary — cells read as units but never fuse.
+            xs_c = np.arange(cw, dtype=np.float32)
+            edge = 0.60 + 0.40 * np.clip(np.minimum(xs_c, cw - 1 - xs_c) / (0.10 * pitch), 0.0, 1.0)
+            # A dim diode is dim TEAL, not transparent: the ramp lives mostly
+            # in the COLOUR; coverage stays near-solid so tail cells read as
+            # lit units instead of stains on the metal.
+            E[cy0:cy0 + ch, a:b] = sw * edge[None, :] * (0.88 + 0.12 * lv)
+            C[cy0:cy0 + ch, a:b] = sc * (0.30 + 0.70 * lv)
+        # Real diode light blooms — a soft halo melts each cell's hard edge
+        # without erasing the separators.
+        Eim = Image.fromarray(np.clip(E * 255, 0, 255).astype(np.uint8)).filter(ImageFilter.GaussianBlur(1.3))
+        E = np.maximum(E * 0.95, np.array(Eim).astype(np.float32) / 255.0)
+        # EMBEDDED, not pasted (Tyson 2026-07-18): the drum owns the light.
+        # THIS frame's teeth ride dark over the glow (the fins occlude the
+        # lamp and scroll through it as the wheel turns), and the cylinder's
+        # own seat shading dims the glow into the socket/contact shadows.
+        lum = c[..., :3].mean(axis=2) / 255.0
+        band_rows = row_profile > 0.35
+        colbright = (lum * a_mask)[band_rows, :].max(axis=0)
+        toothness = np.clip(colbright / max(float(colbright.max()), 1e-4), 0.0, 1.0)
+        E *= (1.0 - 0.62 * toothness)[None, :]           # fins occlude, gaps pass
+        E *= np.clip(vshade, 0.25, 1.0)[:, None]         # glow lives IN the cylinder's light
+        amp = 0.88 * min(1.0, v * 12.0)                                # frame 0 = no glow
         caps = np.clip(np.minimum(x - x0, x1 - x) / (0.06 * raw_w), 0.0, 1.0) ** 2
-        E = gate * lit[None, :] * amp * caps[None, :]
-        # a whisper of bloom binds each cell's edges; cells stay discrete
-        E = np.clip(E + xblur(E.max(axis=0, keepdims=True) * np.ones_like(E), 3) * gate * 0.10, 0, 1)
-        # lerp toward the lamp colour, then an additive hot core where a cell
-        # is fully lit — the real sheet's centres run toward white-cyan.
-        k = (E * GAIN)[..., None]
-        rgb = rgb * (1.0 - k) + GLOW_DEEP[None, None] * 255.0 * k
-        rgb = np.clip(rgb + (E ** 3)[..., None] * GLOW_CORE[None, None] * 255.0, 0, 255)
+        E = E * amp * caps[None, :] * a_mask
+        k = E[..., None]
+        rgb = np.clip(rgb * (1.0 - k) + C * k, 0, 255)
         cols = E.sum(axis=0)
         glow_centroids.append(float((cols * np.arange(W)).sum() / max(cols.sum(), 1e-6)))
         lit = E > 0.75
@@ -183,8 +210,8 @@ strip = np.concatenate(frames, axis=1)
 Image.fromarray(strip).save(OUT / "trench_roller_strip.png")
 print("strip:", strip.shape, "->", OUT / "trench_roller_strip.png")
 
-# Law checks: no glow at v=0; the teal packet tracks value and its brightest
-# pixels stay chromatic instead of clipping toward white.
+# Law checks: no glow at v=0; the packet tracks value; brightest pixels
+# stay chromatic instead of clipping toward white.
 print(f"v=0 glow energy {glow_peak_rgb[0].max():.2f} (law: 0, dark at rest)")
 for f in (64, 128, 192, 256):
     centroid = (glow_centroids[f] - x0) / raw_w

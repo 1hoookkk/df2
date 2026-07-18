@@ -132,7 +132,9 @@ public:
         const int frame = juce::jlimit (0, kNumFrames - 1,
                                         juce::roundToInt (currentNormalised() * (kNumFrames - 1)));
         g.setOpacity (1.0f);   // the shadow's 0.14 alpha otherwise modulates the image
-        g.setImageResamplingQuality (juce::Graphics::lowResamplingQuality); // nearest: keep the teeth
+        // High quality: the 2x-authored frame DOWNSCALES here — averaging keeps
+        // the teeth crisp; nearest turned every tooth edge into DPI jaggies.
+        g.setImageResamplingQuality (juce::Graphics::highResamplingQuality);
         g.drawImage (strip, dx, dy, dw, dh, frame * kFrameW, 0, kFrameW, kFrameH);
     }
 

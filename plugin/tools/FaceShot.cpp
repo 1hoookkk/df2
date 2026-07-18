@@ -213,6 +213,18 @@ int main()
     juce::PNGImageFormat().writeImageToStream (img, os);
     os.flush();
 
+    // The same face at 150% — what an FL user on a 1.5x-DPI monitor actually sees.
+    {
+        const auto img150 = holder.createComponentSnapshot (holder.getLocalBounds(), true, 1.5f);
+        auto f150 = juce::File::getCurrentWorkingDirectory().getChildFile ("trench_face_150.png");
+        f150.deleteFile();
+        juce::FileOutputStream os150 (f150);
+        juce::PNGImageFormat().writeImageToStream (img150, os150);
+        os150.flush();
+        std::printf ("wrote %s (%d x %d)\n", f150.getFullPathName().toRawUTF8(),
+                     img150.getWidth(), img150.getHeight());
+    }
+
     // Glow-law proof: the same real editor at MORPH 0/25/50/75/100 — the
     // travelling packet must follow the value across the sweep.
     for (const int pct : { 0, 25, 50, 75, 100 })
