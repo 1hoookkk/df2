@@ -129,6 +129,17 @@ family_intents, membrane_modes, klatt_1980_*).
   floors ~0, bloom 18.5–199.3 dB (in band), mutual distance 26.4–37.3 dB.
   On the tournament page for keep/kill; not in the roster until the ear says.
 
+## Morph strengthening verdicts (2026-07-18)
+
+- **Anatomy-FM (audio-rate morph) FAILED the ear** — "FM sounds wrong"
+  (scout render `dev/tmp/hd_ab/reese_ps_fm_48k.wav` vs lerp32). RATE:AUDIO is
+  OUT of the build queue. A revival needs a different METHOD (single-axis or
+  single-lane FM), not re-tuned parameters. 32-grid + per-sample ramp stands
+  (−32.6 dB vs per-sample targets, measured).
+- Morph roadmap that stands: Z_CUBE (body-to-body morph) is the next
+  strengthener; the per-sample coefficient ramp is LAW — new features modulate
+  targets, never coefficients.
+
 ## SALVAGE (2026-07-17 dev/tmp harvest — read before authoring or launching)
 
 - **`df2/dev/tmp/trench_money_pack_rc1/`** — a FINISHED RC1 pack from 2026-06-30:
