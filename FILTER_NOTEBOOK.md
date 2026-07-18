@@ -140,6 +140,16 @@ family_intents, membrane_modes, klatt_1980_*).
   strengthener; the per-sample coefficient ramp is LAW — new features modulate
   targets, never coefficients.
 
+## TF = the internal representative for measured objects (2026-07-18)
+
+- `tools/tf_ingest.py`: IR wav OR modal table → |H(f)| dB on the QC grid
+  (30 Hz–19.2 kHz, 512 pts, floor=median 0 dB) → `fit_corner_from_magnitude`.
+  Any measured source (guitar body, cymbal modes, room IR, area function)
+  becomes the SAME object before fitting. End-to-end proven (bell modes →
+  6 finite fitted rows). Datasets landing in `wav-source-library/measured_objects/`
+  + `audition_stems/` with PROVENANCE.md (license per file; NC audio = modal
+  data only, never ship the audio).
+
 ## SALVAGE (2026-07-17 dev/tmp harvest — read before authoring or launching)
 
 - **`df2/dev/tmp/trench_money_pack_rc1/`** — a FINISHED RC1 pack from 2026-06-30:
