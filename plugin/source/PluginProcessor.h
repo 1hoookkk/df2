@@ -6,6 +6,7 @@
 #include "TrenchBodyRoster.h"
 #include "dsp/TrenchDspBridge.h"
 #include "dsp/FixedRateTrenchIsland.h"
+#include "dsp/KeyTrackDetector.h"
 #include "dsp/TeleportEngine.h"
 #include "dsp/MotionEngine.h"
 #include "dsp/GestureEngine.h"
@@ -242,10 +243,21 @@ private:
     void persistMoveMatrix();           // serialise the store into apvts.state
     void loadMoveMatrix();              // restore the store from apvts.state (if present)
     bool lastMoveOn = false;            // moveOn rising edge -> re-arm one-shots
+    double riseBeatsElapsed = 0.0;       // RISE: beats since MOVE armed (depth ramp clock)
+    bool  orbitRunningThisBlock = false; // ORBIT gesture live this block -> drives QSound SPACE
+    float orbitDepthThisBlock = 0.0f;    // ORBIT depth (moveTension) for the SPACE ride
     bool lastMovePlaying = false;       // transport start -> re-arm ONE/ARM
 
     std::atomic<int>  pendingBodyIndex { trench::kNoFilterIndex };   // open on No Filter (bypass)
     std::atomic<int>  loadedBodyIndex { trench::kNoFilterIndex };
+    // Baked-react (utility bodies): the loaded body reacts on its own — React
+    // floored at CHOP's constant, detector tuned to the body's band.
+    std::atomic<int>   bakedReactMode { 0 };       // trench::BakedReactSpec::mode
+    std::atomic<float> bakedReactCutoff { 0.0f };
+    float bakedDetState1[2] { 0.0f, 0.0f };        // cascaded one-pole detector states
+    float bakedDetState2[2] { 0.0f, 0.0f };        // (audio thread only)
+
+    trench::KeyTrackDetector keyTracker;           // KEY TRACKING pitch follower (audio thread only)
     std::atomic<int>  loadedSecondaryTarget { 0 };
     std::atomic<int>  loadedMorphTaper { 0 };
     std::atomic<bool> lastLoadOk { true };

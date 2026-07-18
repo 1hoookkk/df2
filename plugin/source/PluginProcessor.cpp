@@ -37,11 +37,12 @@ inline double motionPathDurationQuarterNotes (int divisionIndex, double quarterN
     // three are 1/2/4-bar multiples as they appear in MotionEngine's legacy
     // division list; resolve those against the host meter here.
     static constexpr double kQuarterNotes[] = {
-        1.0, 0.5, 0.375, 0.25, 0.1875, 0.125, 2.0, 4.0, 8.0, 16.0
+        1.0, 0.5, 0.375, 0.25, 0.1875, 0.125, 2.0, 4.0, 8.0, 16.0,
+        0.75, 1.25, 2.0 / 3.0   // the weird three: 3/16, 5/16, 1/6
     };
-    const int i = juce::jlimit (0, 9, divisionIndex);
+    const int i = juce::jlimit (0, 12, divisionIndex);
     const double meter = juce::jmax (1.0, quarterNotesPerBar);
-    const double beats = i >= 7 ? kQuarterNotes[i] * meter / 4.0 : kQuarterNotes[i];
+    const double beats = (i >= 7 && i <= 9) ? kQuarterNotes[i] * meter / 4.0 : kQuarterNotes[i];
     return juce::jmax (1.0e-6, beats);
 }
 
@@ -122,6 +123,12 @@ PluginProcessor::PluginProcessor()
                                          (int) apvts.getRawParameterValue (ParamID::body)->load());
     pendingBodyIndex.store (startIndex, std::memory_order_relaxed);
     loadedBodyIndex.store (startIndex, std::memory_order_relaxed);
+    {
+        const auto spec = trench::bodyBakedReactSpec (startIndex);
+        bakedReactMode.store (spec.mode, std::memory_order_relaxed);
+        bakedReactCutoff.store (spec.cutoffHz, std::memory_order_relaxed);
+        bakedDetState1[0] = bakedDetState1[1] = bakedDetState2[0] = bakedDetState2[1] = 0.0f;
+    }
     const auto startJson = trench::bodyCartridgeJson (startIndex);
     storeLoadedBodyBehavior (startIndex, startJson);
     juce::MemoryBlock startRaw;
@@ -445,7 +452,15 @@ PluginProcessor::ModulatedControls PluginProcessor::applyMotion (float morph, fl
 {
     const bool on = apvts.getRawParameterValue (ParamID::motionOn)->load() > 0.5f;
     if (! on)
-        return { morph, q, drive };
+    {
+        // Baked-react body (De-Esser): the preset de-esses with Motion fully
+        // off — input level pushes Q exactly like CHOP's React, no tile armed.
+        if (bakedReactMode.load (std::memory_order_relaxed) == 0)
+            return { morph, q, drive };
+        const float push = juce::jlimit (0.0f, 1.0f, inputEnv * 0.85f);
+        motionStepForUi.store ((int) std::round (push * 15.0f), std::memory_order_relaxed);
+        return { morph, juce::jlimit (0.0f, 1.0f, q + push), drive };
+    }
 
     if (motionResetRequested.exchange (false, std::memory_order_acq_rel))
     {
@@ -507,7 +522,9 @@ PluginProcessor::ModulatedControls PluginProcessor::applyMotion (float morph, fl
 
     if (typeBehavior == trench::TypeBehavior::Dynamic)
     {
-        const float react = juce::jlimit (0.0f, 1.0f, apvts.getRawParameterValue (ParamID::motionReact)->load());
+        float react = juce::jlimit (0.0f, 1.0f, apvts.getRawParameterValue (ParamID::motionReact)->load());
+        if (bakedReactMode.load (std::memory_order_relaxed) > 0)
+            react = juce::jmax (react, 0.85f);
         const float push = juce::jlimit (0.0f, 1.0f, inputEnv * juce::jmax (amount, react));
         motionStepForUi.store ((int) std::round (push * 15.0f), std::memory_order_relaxed);
         return {
@@ -640,7 +657,11 @@ PluginProcessor::ModulatedControls PluginProcessor::applyMotion (float morph, fl
 
     // Block-rate "abuse" cluster. Guarded so an armed-but-idle Motion (amount 0,
     // react 0) still returns the engine's centre untouched — the null contract.
-    const float react = juce::jlimit (0.0f, 1.0f, apvts.getRawParameterValue (ParamID::motionReact)->load());
+    // A baked-react body (De-Esser) floors React at CHOP's constant: the preset
+    // de-esses with no tile armed.
+    float react = juce::jlimit (0.0f, 1.0f, apvts.getRawParameterValue (ParamID::motionReact)->load());
+    if (bakedReactMode.load (std::memory_order_relaxed) > 0)
+        react = juce::jmax (react, 0.85f);
     if (amount > 0.0005f || react > 0.0005f)
     {
         // Morph<->Q cross-modulation: each axis's offset bleeds into the other,
@@ -717,12 +738,23 @@ void PluginProcessor::applyModulationBehavior (trench::TypeBehavior behavior, in
     // it's user-adjustable from there (same seed-on-arm-then-live pattern).
     const auto seeded = trench::smartMotionFor (bodyIndex, behavior);
     setParameterDenormalized (ParamID::motionDiv, (float) seeded.divIdx);
+
+    // RATE: one filter runs the target hardware's own no-ramp law — the X3
+    // control-block snap. FUZZ_B_RAZOR is that filter (rhythmic violence is
+    // its identity). Every other tile re-seeds AUTO (rate follows the time).
+    // Same seed-on-arm-then-live pattern: user can still override from the menu.
+    const bool snapBody = trench::bodyDisplayName (bodyIndex).containsIgnoreCase ("RAZOR");
+    setParameterDenormalized (ParamID::moveRate, snapBody ? 1.0f : 0.0f); // 1=SNAP, 0=AUTO
 }
 
 //==============================================================================
 void PluginProcessor::prepareToPlay (double sampleRate, int samplesPerBlock)
 {
-    fixedRateIsland.prepare (sampleRate, samplesPerBlock, dspBridge);
+    // HD island option: 78125 Hz (exactly 2x the unit), words re-derived at
+    // load inside trench-core. Read once here — rate changes only at prepare.
+    const bool hd = apvts.getRawParameterValue (ParamID::hdMode)->load() > 0.5f;
+    fixedRateIsland.prepare (sampleRate, samplesPerBlock, dspBridge,
+                             hd ? TrenchRates::emuInternalRateHd : TrenchRates::emuInternalRate);
     setLatencySamples (fixedRateIsland.getLatencySamples());
 
     dspBridge.setInputMode (kCleanInputMode);
@@ -733,6 +765,7 @@ void PluginProcessor::prepareToPlay (double sampleRate, int samplesPerBlock)
     teleportEngine.prepare (sampleRate);
     motionEngine.prepare (sampleRate);
     gestureEngine.prepare (sampleRate);
+    keyTracker.prepare (sampleRate);
     outputGain.reset (sampleRate, 0.02); // 20 ms ramp
     const float outDb = apvts.getRawParameterValue (ParamID::output)->load();
     outputGain.setCurrentAndTargetValue (juce::Decibels::decibelsToGain (outDb));
@@ -858,12 +891,37 @@ void PluginProcessor::processBlock (juce::AudioBuffer<float>& buffer, juce::Midi
 
     // Block-rate input envelope for Motion React: peak of the dry input (the
     // buffer still holds input here, pre-filter), fast attack / slow release.
+    // A baked-react utility body tunes the detector to its own band (two
+    // cascaded one-poles, 12 dB/oct) so only that band opens the filter.
+    const int detMode = bakedReactMode.load (std::memory_order_relaxed);
     float inPeak = 0.0f;
-    for (int ch = 0; ch < juce::jmin (2, buffer.getNumChannels()); ++ch)
+    if (detMode >= 2)
     {
-        const auto* d = buffer.getReadPointer (ch);
-        for (int i = 0; i < buffer.getNumSamples(); ++i)
-            inPeak = juce::jmax (inPeak, std::abs (d[i]));
+        const float fc = bakedReactCutoff.load (std::memory_order_relaxed);
+        const float a = 1.0f - std::exp (-juce::MathConstants<float>::twoPi * fc / (float) sampleRate);
+        for (int ch = 0; ch < juce::jmin (2, buffer.getNumChannels()); ++ch)
+        {
+            const auto* d = buffer.getReadPointer (ch);
+            float s1 = bakedDetState1[ch], s2 = bakedDetState2[ch];
+            for (int i = 0; i < buffer.getNumSamples(); ++i)
+            {
+                s1 += a * (d[i] - s1);
+                const float x1 = detMode == 2 ? d[i] - s1 : s1;  // hp : lp, stage 1
+                s2 += a * (x1 - s2);
+                const float v = detMode == 2 ? x1 - s2 : s2;     // hp : lp, stage 2
+                inPeak = juce::jmax (inPeak, std::abs (v));
+            }
+            bakedDetState1[ch] = s1; bakedDetState2[ch] = s2;
+        }
+    }
+    else
+    {
+        for (int ch = 0; ch < juce::jmin (2, buffer.getNumChannels()); ++ch)
+        {
+            const auto* d = buffer.getReadPointer (ch);
+            for (int i = 0; i < buffer.getNumSamples(); ++i)
+                inPeak = juce::jmax (inPeak, std::abs (d[i]));
+        }
     }
     inPeak = juce::jlimit (0.0f, 1.0f, inPeak);
     // TIME-based attack/release (was per-block fractions, so the follower's feel
@@ -908,11 +966,33 @@ void PluginProcessor::processBlock (juce::AudioBuffer<float>& buffer, juce::Midi
             }
         const double cycleBeats = trench::gestureCycleQuarterNotes (timeIdx, qnPerBar); // in quarter notes
 
-        const bool moveActive = freeTime ? (moveAmount > 0.0005f) : true;
+        // MOVE only runs when ARMED. Without the moveOn gate, any non-FREE
+        // moveTime (ORBIT toggled once, or a recalled session) left this block
+        // permanently active at moveTension=0 — overwriting applyMotion's
+        // output with the base value every block, so Modulation went silent.
+        const bool moveArmed = apvts.getRawParameterValue (ParamID::moveOn)->load() > 0.5f;
+        const bool moveActive = moveArmed && (freeTime ? (moveAmount > 0.0005f) : true);
+        orbitRunningThisBlock = moveActive && shapeIdx == 3 /*Orbit*/;
+        orbitDepthThisBlock = orbitRunningThisBlock ? moveAmount : 0.0f;
         if (moveActive && ! lastMoveOn)
+        {
             gestureEngine.reset();
+            riseBeatsElapsed = 0.0; // RISE ramps from the moment of arming
+        }
         lastMoveOn = moveActive;
         lastMovePlaying = playing;
+
+        // RISE: depth climbs 0->full over exactly one TIME cycle from arm,
+        // then holds. Beat clock accumulates from BPM so the ramp also runs
+        // with the transport stopped (preview) — re-arm to perform it again.
+        const bool riseOn = apvts.getRawParameterValue (ParamID::moveRise)->load() > 0.5f && ! freeTime;
+        float riseGain = 1.0f;
+        if (moveActive && riseOn)
+        {
+            const double srNow = getSampleRate() > 0.0 ? getSampleRate() : 48000.0;
+            riseBeatsElapsed += (double) buffer.getNumSamples() / srNow * bpm / 60.0;
+            riseGain = (float) juce::jlimit (0.0, 1.0, riseBeatsElapsed / juce::jmax (cycleBeats, 0.001));
+        }
 
         if (moveActive)
         {
@@ -926,11 +1006,12 @@ void PluginProcessor::processBlock (juce::AudioBuffer<float>& buffer, juce::Midi
             ctx.swing       = apvts.getRawParameterValue (ParamID::moveSwing)->load();
             ctx.phaseOffset = apvts.getRawParameterValue (ParamID::movePhase)->load();
 
+            const float syncedAmount = moveAmount * riseGain; // RISE scales synced depth only
             const auto gest = freeTime
                 ? trench::evaluateLanes ((trench::Gesture) shapeIdx, moveAmount, moveAmount,
                                          smoothedMorph, smoothedQ, slamBase, 0.0f, mtx, {}, ctx)
                 : gestureEngine.advanceLanes (
-                    (trench::Gesture) shapeIdx, moveAmount, cycleBeats,
+                    (trench::Gesture) shapeIdx, syncedAmount, cycleBeats,
                     smoothedMorph, smoothedQ, slamBase, 0.0f,
                     mtx, trench::MoveMode::Loop, bpm, ppq, playing,
                     buffer.getNumSamples(), qnPerBar, ctx);
@@ -1000,7 +1081,11 @@ void PluginProcessor::processBlock (juce::AudioBuffer<float>& buffer, juce::Midi
     // SLAM is output-only, applied in the DSP bridge after the body. The engine's
     // own Rust input stage stays CLEAN (None), so SLAM cannot change filter excitation.
     params.slamDrive = mod.drive;
-    params.bite = 0.0f;   // BITE RESERVED in V1 — lane is computed (mod.bite) but not applied to audio
+    params.bite = 0.0f;   // post-cascade grit stays OFF while auditioning the inter-stage BITE
+    // BITE — the reserved knob, grown into the cascade: the 'bite' parameter
+    // drives the five inter-stage soft-knee junctions inside the engine.
+    // 0 (default) = the linear cascade, bit-exact (engine branches).
+    params.interstageDrive = juce::jlimit (0.0f, 1.0f, apvts.getRawParameterValue (ParamID::bite)->load());
 
     // SLAM ROUTE (A/B). Output (0, default) = clean input, desk at the output —
     // the shipped/beloved sound, byte-unchanged. Into Filter (1) = the pre-cascade
@@ -1030,11 +1115,14 @@ void PluginProcessor::processBlock (juce::AudioBuffer<float>& buffer, juce::Midi
     // what the user/preset set; only the per-block effective value sent to
     // the DSP is offset.
     const float fiveDBase = juce::jlimit (0.0f, 1.0f, apvts.getRawParameterValue (ParamID::fiveD)->load());
-    float space = fiveDBase;
-    if (fiveDBase > 0.001f && apvts.getRawParameterValue (ParamID::motionOn)->load() > 0.5f)
+    // ORBIT drives SPACE: the 5D button is hidden in the V1 face, so the
+    // ORBIT toggle is the product's one path into QSound — "the sound ORBITS
+    // the head" needs the spatial stage on, not just the morph circle.
+    float space = juce::jmax (fiveDBase, orbitDepthThisBlock);
+    if (space > 0.001f && apvts.getRawParameterValue (ParamID::motionOn)->load() > 0.5f)
     {
         const float offset = std::abs (mod.morph - smoothedMorph) + std::abs (mod.q - smoothedQ);
-        space = juce::jlimit (0.0f, 1.0f, fiveDBase + offset);
+        space = juce::jlimit (0.0f, 1.0f, space + offset);
     }
     params.fiveD = space;
     lastSpaceSent.store (space, std::memory_order_relaxed);
@@ -1046,7 +1134,7 @@ void PluginProcessor::processBlock (juce::AudioBuffer<float>& buffer, juce::Midi
     // stopped so it still moves for preview. Only active when SPACE (fiveD) > 0,
     // which today is the Orbit preset — the one place QSound is used.
     float pan = rigPan.load (std::memory_order_relaxed);
-    if (fiveDBase > 0.001f)
+    if (space > 0.001f)
     {
         constexpr double kTwoPi = 2.0 * juce::MathConstants<double>::pi;
         double revPpq = -1.0, qnPerBar = 4.0;
@@ -1130,6 +1218,36 @@ void PluginProcessor::processBlock (juce::AudioBuffer<float>& buffer, juce::Midi
     // via Cascade's own per-block coefficient ramp — no separate JUCE-side
     // smoothing needed.
     params.amount = juce::jlimit (0.0f, 1.0f, apvts.getRawParameterValue (ParamID::amount)->load());
+
+    // RATE — morph approach time (US5170369's selectable menu). AUTO picks
+    // per motion: fast divisions articulate (TIGHT 13 ms — ~96% of full
+    // motion depth, still smooths steppy control input), bar-scale times and
+    // manual rides glide (80 ms, the original ear-picked settle). SNAP =
+    // 0.8 ms, the X3 control block, for rhythmic violence.
+    {
+        static constexpr float kSnap = 0.0f, kTight = 0.164f, kGlide = 1.0f;
+        const int rateIdx = juce::jlimit (0, 3, (int) apvts.getRawParameterValue (ParamID::moveRate)->load());
+        if (rateIdx == 0) // AUTO
+        {
+            const bool motionRunning = apvts.getRawParameterValue (ParamID::motionOn)->load() > 0.5f;
+            const int div = (int) apvts.getRawParameterValue (ParamID::motionDiv)->load();
+            const bool barScale = div >= 6 && div <= 9; // 1/2 .. 4 BAR
+            params.rampScale = (motionRunning && ! barScale) ? kTight : kGlide;
+        }
+        else
+        {
+            static constexpr float kRateScales[3] = { kSnap, kTight, kGlide };
+            params.rampScale = kRateScales[rateIdx - 1];
+        }
+    }
+
+    // KEY TRACKING — the body's resonances follow the input's note (pitch-class
+    // snap, C anchor, ±6 semitones). The buffer still holds dry input here; the
+    // engine's coeff ramp glides each transpose exactly like a morph move.
+    if (apvts.getRawParameterValue (ParamID::keyTrack)->load() > 0.5f)
+        params.pitchRatio = keyTracker.process (buffer.getReadPointer (0), buffer.getNumSamples());
+    else
+        params.pitchRatio = 1.0f;
 
     // Always. NO FILTER is a body (exact identity), not a bypass — see loadBody().
     fixedRateIsland.process (buffer, dspBridge, params);
@@ -1343,6 +1461,11 @@ void PluginProcessor::handleAsyncUpdate()
     lastLoadOk.store (ok, std::memory_order_release);
     controlSmoothersPrimed = false;
     loadedBodyIndex.store (want, std::memory_order_relaxed);
+    {
+        const auto spec = trench::bodyBakedReactSpec (want);
+        bakedReactMode.store (spec.mode, std::memory_order_relaxed);
+        bakedReactCutoff.store (spec.cutoffHz, std::memory_order_relaxed);
+    }
     if (trench::bodyIsAudition (want))
         auditionSlotMtime = trench::auditionSlotFile().getLastModificationTime();
 

@@ -75,7 +75,8 @@ juce::AudioProcessorValueTreeState::ParameterLayout createParameterLayout()
         juce::ParameterID { ParamID::slamDrive, 1 },
         "Slam",
         juce::NormalisableRange<float> { 0.0f, 1.0f, 0.001f },
-        0.25f));
+        0.1f));  // Tyson 2026-07-18: output desk ON by default but tame — 10%.
+                 // (50% was "insane" in the best way, but too hot as a default.)
 
     // Continuous QSound SPACE depth (the engine's set_space takes 0..1; the old
     // Bool quantized it to on/off). 0 = true bypass (spatial stage Off). The
@@ -144,7 +145,8 @@ juce::AudioProcessorValueTreeState::ParameterLayout createParameterLayout()
     layout.add (std::make_unique<juce::AudioParameterChoice> (
         juce::ParameterID { ParamID::motionDiv, 1 },
         "M.Div",
-        juce::StringArray { "1/4", "1/8", "1/8T", "1/16", "1/16T", "1/32", "1/2", "1 BAR", "2 BAR", "4 BAR" },
+        juce::StringArray { "1/4", "1/8", "1/8T", "1/16", "1/16T", "1/32", "1/2", "1 BAR", "2 BAR", "4 BAR",
+                            "3/16", "5/16", "1/6" },  // the weird three, appended (indices stay stable)
         3));  // default = 1/16. Bar values appended at the end (6-9) so the
               // existing 0-5 fast-subdivision indices keep their meaning.
 
@@ -238,6 +240,47 @@ juce::AudioProcessorValueTreeState::ParameterLayout createParameterLayout()
         "Time",
         juce::StringArray { "FREE", "1/4", "1/2", "1 BAR", "2 BAR", "4 BAR", "8 BAR" },
         0));  // default = FREE: no timeline, MOVE is manual.
+
+    layout.add (std::make_unique<juce::AudioParameterChoice> (
+        juce::ParameterID { ParamID::moveRate, 1 },
+        "Rate",
+        juce::StringArray { "AUTO", "SNAP", "TIGHT", "GLIDE" },
+        0));  // morph approach time: AUTO derives from the modulation time
+              // (fast divisions -> TIGHT 13 ms, bar-scale + manual -> GLIDE
+              // 80 ms); SNAP 0.8 ms / TIGHT / GLIDE are explicit overrides.
+
+    layout.add (std::make_unique<juce::AudioParameterBool> (
+        juce::ParameterID { ParamID::keyTrack, 1 },
+        "Key Track",
+        false));  // KEY TRACKING: pitch detector transposes the body's
+                  // resonances to the input's pitch class (C anchor, +-6 semi).
+                  // Off = bit-exact current behaviour.
+
+    layout.add (std::make_unique<juce::AudioParameterBool> (
+        juce::ParameterID { ParamID::hdMode, 1 },
+        "HD",
+        true));   // HD island (78125 Hz — exactly 2x the unit) is the DEFAULT
+                  // (Tyson, 2026-07-18: plugin runs light, always-on). Words
+                  // re-derive at load; body240 bytes and the 39062.5 authoring
+                  // clock are unchanged. Off = the legacy island, kept as the
+                  // compatibility fallback. Applied at prepareToPlay.
+
+    layout.add (std::make_unique<juce::AudioParameterFloat> (
+        juce::ParameterID { ParamID::bite, 1 },
+        "Bite",
+        juce::NormalisableRange<float> { 0.0f, 1.0f, 0.001f },
+        0.0f, pctAttribs()));  // BITE grown into the cascade: the measured desk
+                               // curve at the five inter-stage junctions.
+                               // Default 0 = the linear cascade, bit-exact —
+                               // every body ships as authored; NO FILTER and
+                               // the utilities stay honest. Nonzero Bite is
+                               // per-preset seasoning, never a global default.
+
+    layout.add (std::make_unique<juce::AudioParameterBool> (
+        juce::ParameterID { ParamID::moveRise, 1 },
+        "Rise",
+        false));  // RISE: arming a synced MOVE ramps depth 0->full over one
+                  // TIME cycle, then holds — the performed riser/transition.
 
     layout.add (std::make_unique<juce::AudioParameterChoice> (
         juce::ParameterID { ParamID::moveMode, 1 },

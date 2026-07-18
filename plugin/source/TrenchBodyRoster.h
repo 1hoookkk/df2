@@ -89,6 +89,27 @@ struct RosterStore
     std::vector<BodyEntry> entries;
 };
 
+// Product-face name from a raw body stem: drop the leading ALL-CAPS family
+// tag ("CAVL_"), turn underscores into spaces, and title-case the words —
+// "CAVL_beer_bottle_to_plastic_jug" reads "Beer Bottle to Plastic Jug".
+// Display only; resource stems and file lookups keep the raw name.
+inline std::string prettyBodyName (const std::string& stem)
+{
+    juce::String s (stem);
+    const int us = s.indexOfChar ('_');
+    if (us > 0 && s.substring (0, us) == s.substring (0, us).toUpperCase())
+        s = s.substring (us + 1);
+    s = s.replaceCharacter ('_', ' ');
+    juce::String out;
+    for (const auto& word : juce::StringArray::fromTokens (s, " ", {}))
+    {
+        if (out.isNotEmpty())
+            out << ' ';
+        out << (word == "to" ? word : word.substring (0, 1).toUpperCase() + word.substring (1));
+    }
+    return out.toStdString();
+}
+
 inline std::string bodyStem (const juce::File& file)
 {
     auto name = file.getFileName();
@@ -108,7 +129,9 @@ inline RosterStore& rosterStore()
         const auto* baked = bakedRoster (bakedCount);
         for (int index = 0; index < bakedCount; ++index)
         {
-            store.names.emplace_back (baked[index].displayName);
+            store.names.emplace_back (index == kNoFilterIndex
+                                          ? std::string (baked[index].displayName)
+                                          : prettyBodyName (baked[index].displayName));
             store.bases.emplace_back (baked[index].base);
             store.categories.emplace_back (baked[index].category);
         }
@@ -126,9 +149,10 @@ inline RosterStore& rosterStore()
             for (const auto& file : files)
             {
                 const auto stem = bodyStem (file);
-                if (stem.empty() || std::find (store.names.begin(), store.names.end(), stem) != store.names.end())
+                const auto pretty = prettyBodyName (stem);
+                if (stem.empty() || std::find (store.names.begin(), store.names.end(), pretty) != store.names.end())
                     continue;
-                store.names.push_back (stem);
+                store.names.push_back (pretty);
                 store.bases.push_back (file.getFullPathName().toStdString());
                 store.categories.push_back ("LIBRARY");
             }
@@ -180,6 +204,22 @@ inline int wrapBodyIndex (int index) noexcept
 }
 
 inline bool bodyIsNoFilter (int index) noexcept { return wrapBodyIndex (index) == kNoFilterIndex; }
+
+// Bodies whose reaction (input level -> Q push) is baked into the preset:
+// the processor floors Motion React at CHOP's constant while one is loaded,
+// no tile arming required. `mode` tunes WHAT the detector hears:
+//   0 = not a baked-react body   1 = broadband (full input)
+//   2 = highpassed at cutoffHz   3 = lowpassed at cutoffHz
+struct BakedReactSpec { int mode; float cutoffHz; };
+
+inline BakedReactSpec bodyBakedReactSpec (int index)
+{
+    auto& store = detail::rosterStore();
+    const auto& name = store.names[(size_t) wrapBodyIndex (index)];
+    if (name == "De-Esser")  return { 2, 4000.0f };
+    if (name == "De-Mudder") return { 3, 700.0f };
+    return { 0, 0.0f };
+}
 
 inline bool bodyIsAudition (int) noexcept { return false; }
 

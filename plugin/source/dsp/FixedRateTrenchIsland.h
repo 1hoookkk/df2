@@ -27,7 +27,8 @@ public:
     FixedRateTrenchIsland();
     ~FixedRateTrenchIsland();
 
-    void prepare (double hostSampleRate, int maxBlockSizeSamples, TrenchDspBridge& bridge);
+    void prepare (double hostSampleRate, int maxBlockSizeSamples, TrenchDspBridge& bridge,
+                  double islandRateHz = TrenchRates::emuInternalRate);
     void process (juce::AudioBuffer<float>& buffer, TrenchDspBridge& bridge, const TrenchParams& params);
 
     int getLatencySamples() const noexcept { return latencySamples; }
@@ -96,6 +97,7 @@ private:
     }
 
     double hostRate = 44100.0;
+    double islandRate = TrenchRates::emuInternalRate; // 39062.5 default; HD option = exactly 2x
     int latencySamples = 0;
     int maxHostBlock = 0;
     int maxInternalSamples = 0;

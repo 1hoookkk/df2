@@ -135,8 +135,11 @@ public:
 private:
     // Division ratios (relative to one quarter note, 4/4 time):
     // 1/4, 1/8, 1/8T, 1/16, 1/16T, 1/32, 1/2, 1 BAR, 2 BAR, 4 BAR
-    static constexpr double kDivisionRatios[] = { 1.0, 0.5, 0.375, 0.25, 0.1875, 0.125, 2.0, 4.0, 8.0, 16.0 };
-    static constexpr int numDivs = 10;
+    // ...plus three weird/specific times appended (2026-07-17, "they might
+    // sound cool"): 3/16 dotted-eighth, 5/16 polymeter, 1/6 quarter-triplet.
+    static constexpr double kDivisionRatios[] = { 1.0, 0.5, 0.375, 0.25, 0.1875, 0.125, 2.0, 4.0, 8.0, 16.0,
+                                                  0.75, 1.25, 2.0 / 3.0 };
+    static constexpr int numDivs = 13;
 
     int nextStepForInterp (int dir, int s, int len) const noexcept
     {

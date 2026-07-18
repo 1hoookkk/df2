@@ -15,8 +15,9 @@ constexpr int kSincHalfKernel = 100;          // group delay of the 200-tap sinc
 // Anti-fold guard geometry. Everything above the island's Nyquist folds, so the
 // stopband must START there — the passband edge is the only thing we get to
 // choose, and 17.5 kHz buys enough transition for an elliptic to reach -80 dB.
-constexpr double kGuardPassHz = 17500.0;
-constexpr double kGuardStopHz = TrenchRates::emuInternalRate * 0.5; // 19531.25 Hz — the fold
+// Pass edge sits 2031.25 Hz below the fold (17.5 kHz at the 39062.5 island);
+// at the HD island the fold (and with it the whole guard) moves up an octave.
+constexpr double kGuardTransitionHz = 2031.25;
 constexpr double kGuardPassRippleDb = -0.1;
 constexpr double kGuardStopDb = -80.0;
 
@@ -60,11 +61,13 @@ FixedRateTrenchIsland::~FixedRateTrenchIsland()
 {
 }
 
-void FixedRateTrenchIsland::prepare (double hostSampleRate, int maxBlockSizeSamples, TrenchDspBridge& bridge)
+void FixedRateTrenchIsland::prepare (double hostSampleRate, int maxBlockSizeSamples, TrenchDspBridge& bridge,
+                                     double islandRateHz)
 {
     hostRate = hostSampleRate;
+    islandRate = islandRateHz;
     maxHostBlock = juce::jmax (1, maxBlockSizeSamples);
-    bypassSRC = (std::abs (hostRate - TrenchRates::emuInternalRate) < 0.001);
+    bypassSRC = (std::abs (hostRate - islandRate) < 0.001);
 
     if (bypassSRC)
     {
@@ -73,8 +76,9 @@ void FixedRateTrenchIsland::prepare (double hostSampleRate, int maxBlockSizeSamp
         return;
     }
 
-    // Prepare the internal DSP bridge at the fixed E-mu rate
-    bridge.prepare (TrenchRates::emuInternalRate, maxBlockSizeSamples);
+    // Prepare the internal DSP bridge at the island rate (39062.5 default; the
+    // HD option runs the same unit at exactly 2x)
+    bridge.prepare (islandRate, maxBlockSizeSamples);
 
     // Reset resamplers
     inputResamplerL.reset();
@@ -85,8 +89,8 @@ void FixedRateTrenchIsland::prepare (double hostSampleRate, int maxBlockSizeSamp
     // Worst-case scratch sizing for this host rate. `outputRatio` is the number
     // of internal (E-mu rate) samples produced per host sample; it governs both
     // how big a single resampler push can get and the steady-state FIFO depth.
-    const double inputRatio = hostRate / TrenchRates::emuInternalRate;
-    const double outputRatio = TrenchRates::emuInternalRate / hostRate;
+    const double inputRatio = hostRate / islandRate;
+    const double outputRatio = islandRate / hostRate;
 
     // The host FIFO holds at most one incoming block plus the small unread guard
     // the interpolator keeps for fractional continuity between blocks.
@@ -112,7 +116,9 @@ void FixedRateTrenchIsland::prepare (double hostSampleRate, int maxBlockSizeSamp
 
     // Anti-fold guard. Only meaningful when the host can actually carry content
     // above the island's Nyquist — below that rate there is nothing to fold.
-    guardActive = (hostRate * 0.5) > (kGuardStopHz + 100.0);
+    const double guardStopHz = islandRate * 0.5;              // the fold
+    const double guardPassHz = guardStopHz - kGuardTransitionHz;
+    guardActive = (hostRate * 0.5) > (guardStopHz + 100.0);
     for (auto& ch : guardLP)
         ch.clear();
 
@@ -120,8 +126,8 @@ void FixedRateTrenchIsland::prepare (double hostSampleRate, int maxBlockSizeSamp
     {
         // JUCE designs around the transition CENTRE: fp = f - w/2, fs = f + w/2.
         // Aim fs exactly at the fold so nothing above it survives the downsample.
-        const double centreHz = 0.5 * (kGuardPassHz + kGuardStopHz);
-        const double widthHz = kGuardStopHz - kGuardPassHz;
+        const double centreHz = 0.5 * (guardPassHz + guardStopHz);
+        const double widthHz = guardStopHz - guardPassHz;
 
         auto coeffs = juce::dsp::FilterDesign<float>::designIIRLowpassHighOrderEllipticMethod (
             (float) centreHz, hostRate, (float) (widthHz / hostRate),
@@ -173,8 +179,8 @@ void FixedRateTrenchIsland::process (juce::AudioBuffer<float>& buffer, TrenchDsp
         return;
     }
 
-    const double inputRatio = hostRate / TrenchRates::emuInternalRate;
-    const double outputRatio = TrenchRates::emuInternalRate / hostRate;
+    const double inputRatio = hostRate / islandRate;
+    const double outputRatio = islandRate / hostRate;
 
     const float* inL = buffer.getReadPointer (0);
     const float* inR = (buffer.getNumChannels() > 1) ? buffer.getReadPointer (1) : inL;
