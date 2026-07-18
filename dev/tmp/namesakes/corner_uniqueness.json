@@ -1,0 +1,1322 @@
+[
+ {
+  "family": "Fuzzi Face",
+  "corner": "M100_Q100",
+  "unique_db": 26.6,
+  "crown_db": 29.7,
+  "crown_hz": 3738,
+  "notch_db": -137.3,
+  "notch_hz": 19200,
+  "floor": -23.9
+ },
+ {
+  "family": "Zoom Peaks",
+  "corner": "M0_Q0",
+  "unique_db": 22.9,
+  "crown_db": 5.5,
+  "crown_hz": 358,
+  "notch_db": -165.4,
+  "notch_hz": 11003,
+  "floor": -45.1
+ },
+ {
+  "family": "Klang Kling",
+  "corner": "M0_Q100",
+  "unique_db": 19.5,
+  "crown_db": 40.6,
+  "crown_hz": 937,
+  "notch_db": -180.0,
+  "notch_hz": 15419,
+  "floor": 0.2
+ },
+ {
+  "family": "Radio Craze",
+  "corner": "M100_Q100",
+  "unique_db": 19.4,
+  "crown_db": 31.2,
+  "crown_hz": 3321,
+  "notch_db": -83.6,
+  "notch_hz": 7986,
+  "floor": -24.8
+ },
+ {
+  "family": "Dream Weava",
+  "corner": "M100_Q100",
+  "unique_db": 19.3,
+  "crown_db": 9.9,
+  "crown_hz": 371,
+  "notch_db": -180.0,
+  "notch_hz": 16776,
+  "floor": -7.1
+ },
+ {
+  "family": "Dream Weava",
+  "corner": "M100_Q0",
+  "unique_db": 19.0,
+  "crown_db": 22.2,
+  "crown_hz": 805,
+  "notch_db": -165.8,
+  "notch_hz": 12175,
+  "floor": 0.1
+ },
+ {
+  "family": "Dream Weava",
+  "corner": "M0_Q100",
+  "unique_db": 17.4,
+  "crown_db": 27.9,
+  "crown_hz": 410,
+  "notch_db": -180.0,
+  "notch_hz": 11003,
+  "floor": -2.9
+ },
+ {
+  "family": "Dead Ringer",
+  "corner": "M0_Q0",
+  "unique_db": 17.2,
+  "crown_db": 3.7,
+  "crown_hz": 15681,
+  "notch_db": -65.3,
+  "notch_hz": 1073,
+  "floor": -26.9
+ },
+ {
+  "family": "Rogue Hertz",
+  "corner": "M0_Q100",
+  "unique_db": 17.2,
+  "crown_db": -14.9,
+  "crown_hz": 30,
+  "notch_db": -69.1,
+  "notch_hz": 10819,
+  "floor": -34.9
+ },
+ {
+  "family": "Klang Kling",
+  "corner": "M100_Q100",
+  "unique_db": 15.6,
+  "crown_db": 21.9,
+  "crown_hz": 5510,
+  "notch_db": -109.0,
+  "notch_hz": 11972,
+  "floor": 0.1
+ },
+ {
+  "family": "Fuzzi Face",
+  "corner": "M100_Q0",
+  "unique_db": 15.4,
+  "crown_db": 31.2,
+  "crown_hz": 921,
+  "notch_db": -180.0,
+  "notch_hz": 3999,
+  "floor": -23.9
+ },
+ {
+  "family": "Cruz Pusher",
+  "corner": "M0_Q100",
+  "unique_db": 15.4,
+  "crown_db": 18.0,
+  "crown_hz": 417,
+  "notch_db": -180.0,
+  "notch_hz": 3738,
+  "floor": -17.8
+ },
+ {
+  "family": "Radio Craze",
+  "corner": "M0_Q0",
+  "unique_db": 14.6,
+  "crown_db": 44.4,
+  "crown_hz": 4896,
+  "notch_db": -75.2,
+  "notch_hz": 12807,
+  "floor": -10.5
+ },
+ {
+  "family": "Deep Bouche",
+  "corner": "M100_Q100",
+  "unique_db": 14.5,
+  "crown_db": 17.4,
+  "crown_hz": 2536,
+  "notch_db": -113.9,
+  "notch_hz": 7591,
+  "floor": -20.9
+ },
+ {
+  "family": "Tooth Comb",
+  "corner": "M0_Q100",
+  "unique_db": 14.5,
+  "crown_db": -0.0,
+  "crown_hz": 30,
+  "notch_db": -128.1,
+  "notch_hz": 2667,
+  "floor": -29.4
+ },
+ {
+  "family": "Zoom Peaks",
+  "corner": "M100_Q0",
+  "unique_db": 14.2,
+  "crown_db": 7.5,
+  "crown_hz": 647,
+  "notch_db": -103.6,
+  "notch_hz": 17947,
+  "floor": -23.0
+ },
+ {
+  "family": "Deep Bouche",
+  "corner": "M0_Q100",
+  "unique_db": 14.2,
+  "crown_db": 24.1,
+  "crown_hz": 986,
+  "notch_db": -132.6,
+  "notch_hz": 17947,
+  "floor": -17.5
+ },
+ {
+  "family": "Ace Of Bass",
+  "corner": "M0_Q100",
+  "unique_db": 13.8,
+  "crown_db": 13.3,
+  "crown_hz": 87,
+  "notch_db": -146.7,
+  "notch_hz": 17947,
+  "floor": -36.5
+ },
+ {
+  "family": "Lucifer S Q",
+  "corner": "M100_Q100",
+  "unique_db": 13.8,
+  "crown_db": 37.7,
+  "crown_hz": 1167,
+  "notch_db": -8.0,
+  "notch_hz": 8836,
+  "floor": 10.1
+ },
+ {
+  "family": "Ear Bender",
+  "corner": "M0_Q100",
+  "unique_db": 13.8,
+  "crown_db": 3.8,
+  "crown_hz": 42,
+  "notch_db": -180.0,
+  "notch_hz": 17947,
+  "floor": -47.8
+ },
+ {
+  "family": "Zoom Peaks",
+  "corner": "M0_Q100",
+  "unique_db": 13.7,
+  "crown_db": 11.2,
+  "crown_hz": 454,
+  "notch_db": -108.5,
+  "notch_hz": 17947,
+  "floor": -22.9
+ },
+ {
+  "family": "Radio Craze",
+  "corner": "M100_Q0",
+  "unique_db": 13.0,
+  "crown_db": 39.8,
+  "crown_hz": 1478,
+  "notch_db": -96.6,
+  "notch_hz": 15948,
+  "floor": -12.3
+ },
+ {
+  "family": "Cruz Pusher",
+  "corner": "M100_Q100",
+  "unique_db": 12.9,
+  "crown_db": 15.0,
+  "crown_hz": 1109,
+  "notch_db": -180.0,
+  "notch_hz": 9614,
+  "floor": -13.2
+ },
+ {
+  "family": "Klub Klassik",
+  "corner": "M0_Q100",
+  "unique_db": 12.4,
+  "crown_db": 24.9,
+  "crown_hz": 876,
+  "notch_db": -108.4,
+  "notch_hz": 11381,
+  "floor": 0.0
+ },
+ {
+  "family": "Early Rizer",
+  "corner": "M100_Q100",
+  "unique_db": 12.2,
+  "crown_db": -0.0,
+  "crown_hz": 30,
+  "notch_db": -130.3,
+  "notch_hz": 16776,
+  "floor": -4.7
+ },
+ {
+  "family": "Fuzzi Face",
+  "corner": "M0_Q100",
+  "unique_db": 12.2,
+  "crown_db": 19.3,
+  "crown_hz": 1503,
+  "notch_db": -180.0,
+  "notch_hz": 9944,
+  "floor": -23.9
+ },
+ {
+  "family": "Cruz Pusher",
+  "corner": "M100_Q0",
+  "unique_db": 12.2,
+  "crown_db": 9.0,
+  "crown_hz": 1840,
+  "notch_db": -180.0,
+  "notch_hz": 9777,
+  "floor": -12.6
+ },
+ {
+  "family": "Acid Ravage",
+  "corner": "M0_Q100",
+  "unique_db": 12.2,
+  "crown_db": 23.2,
+  "crown_hz": 176,
+  "notch_db": -119.3,
+  "notch_hz": 3321,
+  "floor": -14.9
+ },
+ {
+  "family": "Deep Bouche",
+  "corner": "M100_Q0",
+  "unique_db": 12.1,
+  "crown_db": 16.7,
+  "crown_hz": 329,
+  "notch_db": -72.9,
+  "notch_hz": 10113,
+  "floor": -11.9
+ },
+ {
+  "family": "Razor Blades",
+  "corner": "M100_Q100",
+  "unique_db": 11.9,
+  "crown_db": 3.6,
+  "crown_hz": 110,
+  "notch_db": -121.2,
+  "notch_hz": 17947,
+  "floor": -16.1
+ },
+ {
+  "family": "Radio Craze",
+  "corner": "M0_Q100",
+  "unique_db": 11.7,
+  "crown_db": 20.9,
+  "crown_hz": 3321,
+  "notch_db": -77.2,
+  "notch_hz": 17947,
+  "floor": -6.2
+ },
+ {
+  "family": "Eeh To Aah",
+  "corner": "M0_Q0",
+  "unique_db": 11.7,
+  "crown_db": 14.2,
+  "crown_hz": 8836,
+  "notch_db": -56.2,
+  "notch_hz": 3932,
+  "floor": -10.3
+ },
+ {
+  "family": "Dead Ringer",
+  "corner": "M0_Q100",
+  "unique_db": 11.4,
+  "crown_db": 6.6,
+  "crown_hz": 12593,
+  "notch_db": -69.6,
+  "notch_hz": 8400,
+  "floor": -14.7
+ },
+ {
+  "family": "Ace Of Bass",
+  "corner": "M0_Q0",
+  "unique_db": 11.3,
+  "crown_db": -3.4,
+  "crown_hz": 30,
+  "notch_db": -177.3,
+  "notch_hz": 17947,
+  "floor": -28.5
+ },
+ {
+  "family": "Zoom Peaks",
+  "corner": "M100_Q100",
+  "unique_db": 11.3,
+  "crown_db": 17.1,
+  "crown_hz": 9944,
+  "notch_db": -48.3,
+  "notch_hz": 6306,
+  "floor": -12.2
+ },
+ {
+  "family": "Angelz Hairz",
+  "corner": "M100_Q100",
+  "unique_db": 11.3,
+  "crown_db": 19.2,
+  "crown_hz": 669,
+  "notch_db": -132.2,
+  "notch_hz": 17947,
+  "floor": -12.0
+ },
+ {
+  "family": "Bass O Matic",
+  "corner": "M100_Q100",
+  "unique_db": 11.3,
+  "crown_db": 11.9,
+  "crown_hz": 1037,
+  "notch_db": -72.5,
+  "notch_hz": 17947,
+  "floor": -8.2
+ },
+ {
+  "family": "Deep Bouche",
+  "corner": "M0_Q0",
+  "unique_db": 11.2,
+  "crown_db": 7.9,
+  "crown_hz": 1903,
+  "notch_db": -121.5,
+  "notch_hz": 17947,
+  "floor": -13.7
+ },
+ {
+  "family": "Angelz Hairz",
+  "corner": "M100_Q0",
+  "unique_db": 11.2,
+  "crown_db": 20.4,
+  "crown_hz": 1969,
+  "notch_db": -72.0,
+  "notch_hz": 5603,
+  "floor": -12.0
+ },
+ {
+  "family": "Bass O Matic",
+  "corner": "M100_Q0",
+  "unique_db": 11.2,
+  "crown_db": 9.2,
+  "crown_hz": 329,
+  "notch_db": -127.6,
+  "notch_hz": 13472,
+  "floor": -14.8
+ },
+ {
+  "family": "Early Rizer",
+  "corner": "M0_Q100",
+  "unique_db": 11.0,
+  "crown_db": 13.5,
+  "crown_hz": 269,
+  "notch_db": -136.1,
+  "notch_hz": 16495,
+  "floor": -18.5
+ },
+ {
+  "family": "Angelz Hairz",
+  "corner": "M0_Q0",
+  "unique_db": 11.0,
+  "crown_db": 3.9,
+  "crown_hz": 3801,
+  "notch_db": -123.9,
+  "notch_hz": 15948,
+  "floor": -12.0
+ },
+ {
+  "family": "Klang Kling",
+  "corner": "M0_Q0",
+  "unique_db": 10.8,
+  "crown_db": 53.4,
+  "crown_hz": 4067,
+  "notch_db": -106.9,
+  "notch_hz": 17947,
+  "floor": 0.0
+ },
+ {
+  "family": "Dj Alkaline",
+  "corner": "M0_Q100",
+  "unique_db": 10.7,
+  "crown_db": 44.5,
+  "crown_hz": 1779,
+  "notch_db": -50.1,
+  "notch_hz": 17352,
+  "floor": 0.1
+ },
+ {
+  "family": "Dj Alkaline",
+  "corner": "M0_Q0",
+  "unique_db": 10.6,
+  "crown_db": 27.9,
+  "crown_hz": 1809,
+  "notch_db": -54.1,
+  "notch_hz": 6413,
+  "floor": 0.1
+ },
+ {
+  "family": "Razor Blades",
+  "corner": "M100_Q0",
+  "unique_db": 10.6,
+  "crown_db": 4.6,
+  "crown_hz": 3866,
+  "notch_db": -140.9,
+  "notch_hz": 17947,
+  "floor": -21.2
+ },
+ {
+  "family": "Early Rizer",
+  "corner": "M100_Q0",
+  "unique_db": 10.5,
+  "crown_db": -0.0,
+  "crown_hz": 30,
+  "notch_db": -129.1,
+  "notch_hz": 17352,
+  "floor": -6.3
+ },
+ {
+  "family": "Angelz Hairz",
+  "corner": "M0_Q100",
+  "unique_db": 10.5,
+  "crown_db": 10.9,
+  "crown_hz": 1503,
+  "notch_db": -147.4,
+  "notch_hz": 17947,
+  "floor": -12.0
+ },
+ {
+  "family": "Rogue Hertz",
+  "corner": "M100_Q100",
+  "unique_db": 10.3,
+  "crown_db": 37.6,
+  "crown_hz": 494,
+  "notch_db": -54.4,
+  "notch_hz": 14413,
+  "floor": 2.4
+ },
+ {
+  "family": "Bass O Matic",
+  "corner": "M0_Q100",
+  "unique_db": 10.3,
+  "crown_db": 21.9,
+  "crown_hz": 390,
+  "notch_db": -98.2,
+  "notch_hz": 12175,
+  "floor": -10.6
+ },
+ {
+  "family": "Megasweepz",
+  "corner": "M100_Q0",
+  "unique_db": 10.0,
+  "crown_db": 4.2,
+  "crown_hz": 106,
+  "notch_db": -122.2,
+  "notch_hz": 17947,
+  "floor": -26.8
+ },
+ {
+  "family": "Rogue Hertz",
+  "corner": "M0_Q0",
+  "unique_db": 10.0,
+  "crown_db": -1.3,
+  "crown_hz": 30,
+  "notch_db": -58.5,
+  "notch_hz": 7217,
+  "floor": -13.8
+ },
+ {
+  "family": "Ubu Orator",
+  "corner": "M0_Q100",
+  "unique_db": 10.0,
+  "crown_db": 2.2,
+  "crown_hz": 108,
+  "notch_db": -134.0,
+  "notch_hz": 17947,
+  "floor": -22.0
+ },
+ {
+  "family": "Ubu Orator",
+  "corner": "M100_Q100",
+  "unique_db": 10.0,
+  "crown_db": 15.9,
+  "crown_hz": 216,
+  "notch_db": -89.2,
+  "notch_hz": 10460,
+  "floor": -6.6
+ },
+ {
+  "family": "Tooth Comb",
+  "corner": "M0_Q0",
+  "unique_db": 10.0,
+  "crown_db": -0.0,
+  "crown_hz": 30,
+  "notch_db": -107.2,
+  "notch_hz": 7591,
+  "floor": -10.9
+ },
+ {
+  "family": "Eeh To Aah",
+  "corner": "M0_Q100",
+  "unique_db": 9.8,
+  "crown_db": 24.3,
+  "crown_hz": 223,
+  "notch_db": -35.0,
+  "notch_hz": 703,
+  "floor": -11.8
+ },
+ {
+  "family": "Meaty Gizmo",
+  "corner": "M0_Q100",
+  "unique_db": 9.7,
+  "crown_db": 55.5,
+  "crown_hz": 13472,
+  "notch_db": -32.4,
+  "notch_hz": 9295,
+  "floor": 0.1
+ },
+ {
+  "family": "Dream Weava",
+  "corner": "M0_Q0",
+  "unique_db": 9.4,
+  "crown_db": 24.7,
+  "crown_hz": 3614,
+  "notch_db": -73.9,
+  "notch_hz": 17947,
+  "floor": 0.0
+ },
+ {
+  "family": "Dead Ringer",
+  "corner": "M100_Q0",
+  "unique_db": 9.3,
+  "crown_db": 16.2,
+  "crown_hz": 847,
+  "notch_db": -87.4,
+  "notch_hz": 10113,
+  "floor": 0.0
+ },
+ {
+  "family": "Multi Q Vox",
+  "corner": "M0_Q0",
+  "unique_db": 9.3,
+  "crown_db": 8.4,
+  "crown_hz": 220,
+  "notch_db": -67.1,
+  "notch_hz": 6306,
+  "floor": -13.1
+ },
+ {
+  "family": "Freak Shifta",
+  "corner": "M0_Q100",
+  "unique_db": 9.2,
+  "crown_db": 31.7,
+  "crown_hz": 9777,
+  "notch_db": -109.9,
+  "notch_hz": 17947,
+  "floor": 0.4
+ },
+ {
+  "family": "Freak Shifta",
+  "corner": "M100_Q100",
+  "unique_db": 9.2,
+  "crown_db": 32.2,
+  "crown_hz": 753,
+  "notch_db": -93.3,
+  "notch_hz": 8987,
+  "floor": 0.0
+ },
+ {
+  "family": "Bassbox 303",
+  "corner": "M0_Q100",
+  "unique_db": 9.1,
+  "crown_db": 12.0,
+  "crown_hz": 1207,
+  "notch_db": -87.0,
+  "notch_hz": 6413,
+  "floor": -5.1
+ },
+ {
+  "family": "Boland Bass",
+  "corner": "M0_Q100",
+  "unique_db": 9.1,
+  "crown_db": 11.2,
+  "crown_hz": 454,
+  "notch_db": -87.7,
+  "notch_hz": 6413,
+  "floor": 0.3
+ },
+ {
+  "family": "Klang Kling",
+  "corner": "M100_Q0",
+  "unique_db": 9.1,
+  "crown_db": 9.8,
+  "crown_hz": 1749,
+  "notch_db": -84.1,
+  "notch_hz": 9453,
+  "floor": 0.0
+ },
+ {
+  "family": "Talking Hedz",
+  "corner": "M100_Q100",
+  "unique_db": 8.7,
+  "crown_db": 27.1,
+  "crown_hz": 195,
+  "notch_db": -94.8,
+  "notch_hz": 17352,
+  "floor": -12.6
+ },
+ {
+  "family": "Klub Klassik",
+  "corner": "M0_Q0",
+  "unique_db": 8.6,
+  "crown_db": -0.0,
+  "crown_hz": 30,
+  "notch_db": -90.6,
+  "notch_hz": 2071,
+  "floor": -12.2
+ },
+ {
+  "family": "Tb Or Not Tb",
+  "corner": "M0_Q100",
+  "unique_db": 8.4,
+  "crown_db": 37.7,
+  "crown_hz": 358,
+  "notch_db": -99.0,
+  "notch_hz": 13472,
+  "floor": 0.1
+ },
+ {
+  "family": "Tb Or Not Tb",
+  "corner": "M100_Q100",
+  "unique_db": 8.4,
+  "crown_db": 27.6,
+  "crown_hz": 377,
+  "notch_db": -75.9,
+  "notch_hz": 17947,
+  "floor": 0.8
+ },
+ {
+  "family": "Multi Q Vox",
+  "corner": "M100_Q100",
+  "unique_db": 8.4,
+  "crown_db": 30.4,
+  "crown_hz": 410,
+  "notch_db": -76.4,
+  "notch_hz": 17947,
+  "floor": 0.2
+ },
+ {
+  "family": "Lucifer S Q",
+  "corner": "M0_Q100",
+  "unique_db": 8.4,
+  "crown_db": 24.9,
+  "crown_hz": 256,
+  "notch_db": -94.4,
+  "notch_hz": 17947,
+  "floor": 0.1
+ },
+ {
+  "family": "Multi Q Vox",
+  "corner": "M0_Q100",
+  "unique_db": 8.2,
+  "crown_db": 28.3,
+  "crown_hz": 937,
+  "notch_db": -93.5,
+  "notch_hz": 17947,
+  "floor": -0.0
+ },
+ {
+  "family": "Talking Hedz",
+  "corner": "M0_Q100",
+  "unique_db": 8.1,
+  "crown_db": 24.1,
+  "crown_hz": 157,
+  "notch_db": -71.1,
+  "notch_hz": 6096,
+  "floor": -10.4
+ },
+ {
+  "family": "Bass O Matic",
+  "corner": "M0_Q0",
+  "unique_db": 8.1,
+  "crown_db": 2.8,
+  "crown_hz": 110,
+  "notch_db": -83.1,
+  "notch_hz": 3053,
+  "floor": -14.9
+ },
+ {
+  "family": "Tb Or Not Tb",
+  "corner": "M0_Q0",
+  "unique_db": 7.5,
+  "crown_db": 5.5,
+  "crown_hz": 371,
+  "notch_db": -71.3,
+  "notch_hz": 3105,
+  "floor": 0.0
+ },
+ {
+  "family": "Dj Alkaline",
+  "corner": "M100_Q100",
+  "unique_db": 7.5,
+  "crown_db": 7.3,
+  "crown_hz": 417,
+  "notch_db": -93.7,
+  "notch_hz": 17947,
+  "floor": -4.5
+ },
+ {
+  "family": "Freak Shifta",
+  "corner": "M0_Q0",
+  "unique_db": 7.5,
+  "crown_db": 12.7,
+  "crown_hz": 1091,
+  "notch_db": -36.9,
+  "notch_hz": 9139,
+  "floor": 1.1
+ },
+ {
+  "family": "Megasweepz",
+  "corner": "M0_Q100",
+  "unique_db": 7.3,
+  "crown_db": 23.0,
+  "crown_hz": 16495,
+  "notch_db": -57.8,
+  "notch_hz": 9614,
+  "floor": 0.0
+ },
+ {
+  "family": "Ace Of Bass",
+  "corner": "M100_Q0",
+  "unique_db": 7.2,
+  "crown_db": -0.0,
+  "crown_hz": 30,
+  "notch_db": -48.1,
+  "notch_hz": 9295,
+  "floor": -2.2
+ },
+ {
+  "family": "Razor Blades",
+  "corner": "M0_Q100",
+  "unique_db": 7.2,
+  "crown_db": 6.9,
+  "crown_hz": 15948,
+  "notch_db": -65.0,
+  "notch_hz": 12382,
+  "floor": -1.5
+ },
+ {
+  "family": "Bassbox 303",
+  "corner": "M100_Q100",
+  "unique_db": 7.1,
+  "crown_db": 29.5,
+  "crown_hz": 364,
+  "notch_db": -52.7,
+  "notch_hz": 6413,
+  "floor": 2.1
+ },
+ {
+  "family": "Ear Bender",
+  "corner": "M0_Q0",
+  "unique_db": 7.1,
+  "crown_db": -0.0,
+  "crown_hz": 30,
+  "notch_db": -68.0,
+  "notch_hz": 13472,
+  "floor": -3.8
+ },
+ {
+  "family": "Megasweepz",
+  "corner": "M100_Q100",
+  "unique_db": 7.0,
+  "crown_db": 9.0,
+  "crown_hz": 4500,
+  "notch_db": -112.6,
+  "notch_hz": 17947,
+  "floor": -19.7
+ },
+ {
+  "family": "Ear Bender",
+  "corner": "M100_Q100",
+  "unique_db": 7.0,
+  "crown_db": 5.9,
+  "crown_hz": 235,
+  "notch_db": -100.1,
+  "notch_hz": 17947,
+  "floor": -17.1
+ },
+ {
+  "family": "Megasweepz",
+  "corner": "M0_Q0",
+  "unique_db": 6.9,
+  "crown_db": 4.2,
+  "crown_hz": 9777,
+  "notch_db": -58.9,
+  "notch_hz": 14413,
+  "floor": -0.4
+ },
+ {
+  "family": "Millennium",
+  "corner": "M100_Q100",
+  "unique_db": 6.8,
+  "crown_db": 13.1,
+  "crown_hz": 2713,
+  "notch_db": -79.3,
+  "notch_hz": 17947,
+  "floor": -5.0
+ },
+ {
+  "family": "Ooh To Eee",
+  "corner": "M100_Q0",
+  "unique_db": 6.8,
+  "crown_db": 8.4,
+  "crown_hz": 220,
+  "notch_db": -85.6,
+  "notch_hz": 12382,
+  "floor": -10.5
+ },
+ {
+  "family": "Early Rizer",
+  "corner": "M0_Q0",
+  "unique_db": 6.6,
+  "crown_db": 0.4,
+  "crown_hz": 220,
+  "notch_db": -120.2,
+  "notch_hz": 16776,
+  "floor": -5.8
+ },
+ {
+  "family": "Klub Klassik",
+  "corner": "M100_Q100",
+  "unique_db": 6.6,
+  "crown_db": 10.1,
+  "crown_hz": 1020,
+  "notch_db": -73.6,
+  "notch_hz": 13472,
+  "floor": 0.0
+ },
+ {
+  "family": "Bassbox 303",
+  "corner": "M100_Q0",
+  "unique_db": 6.6,
+  "crown_db": 18.1,
+  "crown_hz": 256,
+  "notch_db": -126.3,
+  "notch_hz": 17352,
+  "floor": -8.9
+ },
+ {
+  "family": "Bassbox 303",
+  "corner": "M0_Q0",
+  "unique_db": 6.5,
+  "crown_db": -0.1,
+  "crown_hz": 30,
+  "notch_db": -91.6,
+  "notch_hz": 3801,
+  "floor": -22.2
+ },
+ {
+  "family": "Ooh To Eee",
+  "corner": "M100_Q100",
+  "unique_db": 6.5,
+  "crown_db": 25.4,
+  "crown_hz": 227,
+  "notch_db": -78.6,
+  "notch_hz": 15161,
+  "floor": -9.9
+ },
+ {
+  "family": "Talking Hedz",
+  "corner": "M100_Q0",
+  "unique_db": 6.5,
+  "crown_db": 6.4,
+  "crown_hz": 195,
+  "notch_db": -93.3,
+  "notch_hz": 17352,
+  "floor": -10.8
+ },
+ {
+  "family": "Acid Ravage",
+  "corner": "M0_Q0",
+  "unique_db": 6.5,
+  "crown_db": -0.0,
+  "crown_hz": 30,
+  "notch_db": -93.2,
+  "notch_hz": 3801,
+  "floor": -11.3
+ },
+ {
+  "family": "Multi Q Vox",
+  "corner": "M100_Q0",
+  "unique_db": 6.4,
+  "crown_db": 3.6,
+  "crown_hz": 256,
+  "notch_db": -61.0,
+  "notch_hz": 6306,
+  "floor": -9.9
+ },
+ {
+  "family": "Bass Tracer",
+  "corner": "M0_Q100",
+  "unique_db": 6.3,
+  "crown_db": 33.8,
+  "crown_hz": 431,
+  "notch_db": -106.0,
+  "notch_hz": 17947,
+  "floor": 1.3
+ },
+ {
+  "family": "Klub Klassik",
+  "corner": "M100_Q0",
+  "unique_db": 5.9,
+  "crown_db": 4.2,
+  "crown_hz": 1020,
+  "notch_db": -43.2,
+  "notch_hz": 3435,
+  "floor": 0.0
+ },
+ {
+  "family": "Razor Blades",
+  "corner": "M0_Q0",
+  "unique_db": 5.9,
+  "crown_db": 9.6,
+  "crown_hz": 446,
+  "notch_db": -37.1,
+  "notch_hz": 10113,
+  "floor": 0.1
+ },
+ {
+  "family": "Acid Ravage",
+  "corner": "M100_Q100",
+  "unique_db": 5.9,
+  "crown_db": 24.2,
+  "crown_hz": 625,
+  "notch_db": -96.7,
+  "notch_hz": 17947,
+  "floor": 0.0
+ },
+ {
+  "family": "Ooh To Eee",
+  "corner": "M0_Q100",
+  "unique_db": 5.8,
+  "crown_db": 32.4,
+  "crown_hz": 3614,
+  "notch_db": -118.5,
+  "notch_hz": 17947,
+  "floor": 0.1
+ },
+ {
+  "family": "Millennium",
+  "corner": "M0_Q100",
+  "unique_db": 5.7,
+  "crown_db": 2.8,
+  "crown_hz": 1291,
+  "notch_db": -59.5,
+  "notch_hz": 6522,
+  "floor": -0.0
+ },
+ {
+  "family": "Tb Or Not Tb",
+  "corner": "M100_Q0",
+  "unique_db": 5.7,
+  "crown_db": 7.7,
+  "crown_hz": 403,
+  "notch_db": -97.3,
+  "notch_hz": 17947,
+  "floor": 1.4
+ },
+ {
+  "family": "Bass Tracer",
+  "corner": "M100_Q0",
+  "unique_db": 5.7,
+  "crown_db": 1.0,
+  "crown_hz": 298,
+  "notch_db": -100.0,
+  "notch_hz": 17947,
+  "floor": -3.2
+ },
+ {
+  "family": "Talking Hedz",
+  "corner": "M0_Q0",
+  "unique_db": 5.4,
+  "crown_db": 6.3,
+  "crown_hz": 195,
+  "notch_db": -76.4,
+  "notch_hz": 6413,
+  "floor": -8.9
+ },
+ {
+  "family": "Dj Alkaline",
+  "corner": "M100_Q0",
+  "unique_db": 5.4,
+  "crown_db": 9.3,
+  "crown_hz": 12382,
+  "notch_db": -33.8,
+  "notch_hz": 10113,
+  "floor": 0.0
+ },
+ {
+  "family": "Bass Tracer",
+  "corner": "M0_Q0",
+  "unique_db": 5.4,
+  "crown_db": 7.2,
+  "crown_hz": 17647,
+  "notch_db": -64.8,
+  "notch_hz": 3321,
+  "floor": -3.4
+ },
+ {
+  "family": "Ubu Orator",
+  "corner": "M100_Q0",
+  "unique_db": 5.4,
+  "crown_db": 6.3,
+  "crown_hz": 195,
+  "notch_db": -66.6,
+  "notch_hz": 5064,
+  "floor": -8.9
+ },
+ {
+  "family": "Tooth Comb",
+  "corner": "M100_Q100",
+  "unique_db": 5.4,
+  "crown_db": 22.1,
+  "crown_hz": 805,
+  "notch_db": -95.4,
+  "notch_hz": 17947,
+  "floor": 0.0
+ },
+ {
+  "family": "Dead Ringer",
+  "corner": "M100_Q100",
+  "unique_db": 5.3,
+  "crown_db": 33.3,
+  "crown_hz": 740,
+  "notch_db": -118.0,
+  "notch_hz": 17947,
+  "floor": 0.0
+ },
+ {
+  "family": "Ooh To Eee",
+  "corner": "M0_Q0",
+  "unique_db": 5.3,
+  "crown_db": 15.4,
+  "crown_hz": 3614,
+  "notch_db": -118.2,
+  "notch_hz": 17947,
+  "floor": 0.1
+ },
+ {
+  "family": "Meaty Gizmo",
+  "corner": "M100_Q100",
+  "unique_db": 5.1,
+  "crown_db": 5.3,
+  "crown_hz": 485,
+  "notch_db": -81.6,
+  "notch_hz": 17947,
+  "floor": -2.7
+ },
+ {
+  "family": "Ear Bender",
+  "corner": "M100_Q0",
+  "unique_db": 5.1,
+  "crown_db": 4.0,
+  "crown_hz": 669,
+  "notch_db": -88.9,
+  "notch_hz": 17947,
+  "floor": -0.0
+ },
+ {
+  "family": "Fuzzi Face",
+  "corner": "M0_Q0",
+  "unique_db": 5.0,
+  "crown_db": 18.8,
+  "crown_hz": 377,
+  "notch_db": -180.0,
+  "notch_hz": 3211,
+  "floor": -39.8
+ },
+ {
+  "family": "Cruz Pusher",
+  "corner": "M0_Q0",
+  "unique_db": 5.0,
+  "crown_db": 24.8,
+  "crown_hz": 377,
+  "notch_db": -180.0,
+  "notch_hz": 3435,
+  "floor": -33.9
+ },
+ {
+  "family": "Eeh To Aah",
+  "corner": "M100_Q100",
+  "unique_db": 3.9,
+  "crown_db": 28.7,
+  "crown_hz": 847,
+  "notch_db": -110.3,
+  "notch_hz": 17947,
+  "floor": 0.0
+ },
+ {
+  "family": "Boland Bass",
+  "corner": "M100_Q0",
+  "unique_db": 3.7,
+  "crown_db": 0.9,
+  "crown_hz": 298,
+  "notch_db": -64.3,
+  "notch_hz": 6413,
+  "floor": -3.3
+ },
+ {
+  "family": "Lucifer S Q",
+  "corner": "M100_Q0",
+  "unique_db": 3.7,
+  "crown_db": 0.8,
+  "crown_hz": 283,
+  "notch_db": -57.7,
+  "notch_hz": 6977,
+  "floor": -5.2
+ },
+ {
+  "family": "Bass Tracer",
+  "corner": "M100_Q100",
+  "unique_db": 3.4,
+  "crown_db": 39.8,
+  "crown_hz": 383,
+  "notch_db": -35.8,
+  "notch_hz": 10113,
+  "floor": 0.8
+ },
+ {
+  "family": "Ace Of Bass",
+  "corner": "M100_Q100",
+  "unique_db": 2.9,
+  "crown_db": 19.1,
+  "crown_hz": 876,
+  "notch_db": -82.4,
+  "notch_hz": 17947,
+  "floor": 0.0
+ },
+ {
+  "family": "Freak Shifta",
+  "corner": "M100_Q0",
+  "unique_db": 2.9,
+  "crown_db": 13.4,
+  "crown_hz": 4425,
+  "notch_db": -84.5,
+  "notch_hz": 17947,
+  "floor": 0.0
+ },
+ {
+  "family": "Boland Bass",
+  "corner": "M100_Q100",
+  "unique_db": 2.7,
+  "crown_db": 11.6,
+  "crown_hz": 410,
+  "notch_db": -46.0,
+  "notch_hz": 9777,
+  "floor": 0.8
+ },
+ {
+  "family": "Rogue Hertz",
+  "corner": "M100_Q0",
+  "unique_db": 2.7,
+  "crown_db": 19.7,
+  "crown_hz": 390,
+  "notch_db": -36.3,
+  "notch_hz": 9614,
+  "floor": 0.9
+ },
+ {
+  "family": "Boland Bass",
+  "corner": "M0_Q0",
+  "unique_db": 2.6,
+  "crown_db": -0.1,
+  "crown_hz": 30,
+  "notch_db": -120.0,
+  "notch_hz": 7217,
+  "floor": -26.0
+ },
+ {
+  "family": "Lucifer S Q",
+  "corner": "M0_Q0",
+  "unique_db": 2.6,
+  "crown_db": -0.1,
+  "crown_hz": 30,
+  "notch_db": -131.7,
+  "notch_hz": 6746,
+  "floor": -25.9
+ },
+ {
+  "family": "Eeh To Aah",
+  "corner": "M100_Q0",
+  "unique_db": 1.3,
+  "crown_db": 13.4,
+  "crown_hz": 847,
+  "notch_db": -109.1,
+  "notch_hz": 17947,
+  "floor": 0.0
+ },
+ {
+  "family": "Ubu Orator",
+  "corner": "M0_Q0",
+  "unique_db": 1.3,
+  "crown_db": 14.8,
+  "crown_hz": 847,
+  "notch_db": -107.6,
+  "notch_hz": 17947,
+  "floor": 0.0
+ },
+ {
+  "family": "Acid Ravage",
+  "corner": "M100_Q0",
+  "unique_db": 1.3,
+  "crown_db": 4.3,
+  "crown_hz": 1020,
+  "notch_db": -86.8,
+  "notch_hz": 17947,
+  "floor": 0.0
+ },
+ {
+  "family": "Tooth Comb",
+  "corner": "M100_Q0",
+  "unique_db": 1.3,
+  "crown_db": 6.8,
+  "crown_hz": 1020,
+  "notch_db": -89.0,
+  "notch_hz": 17947,
+  "floor": 0.0
+ },
+ {
+  "family": "Millennium",
+  "corner": "M0_Q0",
+  "unique_db": 0.0,
+  "crown_db": 12.3,
+  "crown_hz": 59,
+  "notch_db": -131.4,
+  "notch_hz": 11003,
+  "floor": -44.3
+ },
+ {
+  "family": "Millennium",
+  "corner": "M100_Q0",
+  "unique_db": 0.0,
+  "crown_db": 8.0,
+  "crown_hz": 847,
+  "notch_db": -68.8,
+  "notch_hz": 11190,
+  "floor": 0.0
+ },
+ {
+  "family": "Meaty Gizmo",
+  "corner": "M0_Q0",
+  "unique_db": 0.0,
+  "crown_db": 12.3,
+  "crown_hz": 59,
+  "notch_db": -131.4,
+  "notch_hz": 11003,
+  "floor": -44.3
+ },
+ {
+  "family": "Meaty Gizmo",
+  "corner": "M100_Q0",
+  "unique_db": 0.0,
+  "crown_db": 8.0,
+  "crown_hz": 847,
+  "notch_db": -68.8,
+  "notch_hz": 11190,
+  "floor": 0.0
+ }
+]
