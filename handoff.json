@@ -3,6 +3,26 @@
   "created_at": "2026-07-18",
   "workspace": "C:\\Users\\hooki\\df2-workstation",
   "title": "V1 feature-complete: locked state, signal chain, ship gate",
+  "ui_session_2026_07_18": {
+    "context": "UI is LOCKED, APPROVED ('Its so perfect' / 'Bro. Its outstanding') and INSTALLED (both VST3 dirs, hash 55154463..., dev-drawer build). Branch ui/five-point-cleanup, commits 93307d43 / 3da1e723 / d2d63ddf / c2cea4e4. FaceShot proofs green at 1x + 150%.",
+    "locked_face": [
+      "Teal/sage palette, X3 grid plate (committed 156x69 source, blitted as bed+grid).",
+      "Chunky 2.6px curve w/ faint aura, flat matte bezel (nickel + catch light removed).",
+      "Frosted moulded readouts + TYPE box (the shipped material) — the painted beige recess pocket is REMOVED (it read as a weird frame); plate art's baked wells do all seating. Widgets COVER the AI-composited baked rings entirely (hugging them exposes speckle).",
+      "Wheels: 2x-authored strip (300x68) drawn scale-to-fit w/ high resampling (never clip caps); glow = accent #2BD8C3 solid cells, comet taper, embedded (fins occlude 62%, seat shading dims), dark at v=0, ~50% span at v=1, X3-punch metal (median 40/p90 94/spec 241 measured off the real filter page).",
+      "NO retro-crunch props: smooth physical-res digits (aliasScale 1.0), display dropouts DELETED.",
+      "Compact 326x503. AMOUNT at x=856 (groove measured at ~955), screen announces 'AMOUNT n%' during drags (SLAM-cue voice).",
+      "TRENCH_DEV_PANEL=1 (CMake): right-edge arrow opens generic all-params drawer. SET 0 FOR SHIP."
+    ],
+    "wheel_law": "Glow changes ONLY through tools/roller_assemble_compact.py. Read dev/tmp/thumbwheel_blender/CLAUDE_FAILURE_REPORT_2026-07-03.md + memory wheel-lamp-is-the-measured-envelope BEFORE touching. IT IS NOT A DRUM.",
+    "next_session_focus": {
+      "mission": "ROSTER EAR PASS — Tyson: 'The current filters, 90% of them suck.' All pre-07-13 culls are VOID (broken chain); nobody has re-judged the 140 with the fixed chain + HD.",
+      "step_1": "Defaults triage with the dev drawer: 3 sucky bodies x {hdMode off, SLAM up, bite}. If one lever rescues most, it's a defaults problem (one-number fix), not a roster problem.",
+      "step_2": "Tournament page: dev/tmp/audition/tournament/tournament.html re-rendered against plugin/presets/bodies (all 140, shipped engine) — render kicked off 2026-07-18 eve, check dev/tmp/roster_tournament.log. Tyson marks keep/kill by ear.",
+      "step_3": "Pulls = one line each in plugin/presets/PresetRoster.inc (bodies stay on disk). Refill only from measured lanes (P2K atlas), never rule-synthesis.",
+      "also_pending": "Chord body pull on his word; FUZZ prettyBodyName register; 'sounds too good' levers = hdMode off / SLAM default / per-body bite (his ear verdicts via dev drawer)."
+    }
+  },
   "instructions_to_agent": [
     "Work only in C:\\Users\\hooki\\df2-workstation. Read AGENTS.md and FILTER_NOTEBOOK.md first.",
     "Every fact below is OBSERVED from code/tests as of commit e5015a08 unless marked otherwise. Verify against code before relying on line-level details.",
