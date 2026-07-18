@@ -343,14 +343,9 @@ inline void drawIvoryWell (juce::Graphics& g, juce::Rectangle<float> r,
 inline void drawMutedBoneReadout (juce::Graphics& g, juce::Rectangle<float> r,
                                   float radius, bool isActive, const Theme& t)
 {
-    // FLAT counter window (Tyson 2026-07-18: "remove that stupid moulding") —
-    // one plain fill in the approved bone-teal family; the faceplate's thin
-    // black ring does all the seating. No edge layer, no sheen, no skirt.
-    // (LCD-window variant tried 2026-07-18 and reverted: "no go back".)
-    juce::ignoreUnused (isActive, t);
-    const auto warmth = juce::Colour (0xffd8d0bc);
-    g.setColour (juce::Colour (0xffc4d2d0).interpolatedWith (warmth, 0.28f));
-    g.fillRoundedRectangle (r.reduced (0.35f), radius);
+    // The frosted moulded counter — the shipped look (restored 2026-07-18
+    // evening: "revert these readouts", pointing at the installed build).
+    drawFrostedGlassControl (g, r, radius, isActive, t);
 }
 
 // The dark screen glass (t.phosphor() = the iron glass base) — the SAME base treatment the hero GraphDisplay

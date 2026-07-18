@@ -37,14 +37,8 @@ public:
         // Hairline shadow bezel wrapping each raised insert — very small, all
         // around, nothing spreading onto the plate.
         drawHairlineBezel (g, t.rect ("typeSelector"));
-
-        // Numeric readouts: ONE thin black shadow ring hugging each pill
-        // (Tyson 2026-07-18) — replaces the faint hairline + under-seat pair.
-        drawReadoutRing (g, t.rect ("morphReadout"));
-        drawReadoutRing (g, t.rect ("qReadout"));
-
-        // The TYPE bar keeps only a whisper of a seat.
-        drawWheelContactShadow (g, t.rect ("typeSelector"), 4.0f, 0.30f);
+        drawHairlineBezel (g, t.rect ("morphReadout"));
+        drawHairlineBezel (g, t.rect ("qReadout"));
 
         // X3 faceplate shadows (close-up reference 2026-07-17): a broad, SOFT
         // half-ellipse on the plate under each wheel capsule — visibly lighter
@@ -72,19 +66,6 @@ private:
         const float rad = 5.0f;
         g.setColour (juce::Colours::black.withAlpha (0.10f));
         g.drawRoundedRectangle (r.expanded (0.6f), rad + 0.6f, 1.0f);
-    }
-
-    // The numeric pills' surround: a THIN black ring at the pill's edge with a
-    // one-pixel soft falloff outside it — defined all around, spreading nowhere.
-    static void drawReadoutRing (juce::Graphics& g, juce::Rectangle<float> r)
-    {
-        if (r.isEmpty())
-            return;
-        const float rad = 5.0f;
-        g.setColour (juce::Colours::black.withAlpha (0.42f));
-        g.drawRoundedRectangle (r.expanded (0.5f), rad + 0.5f, 1.0f);
-        g.setColour (juce::Colours::black.withAlpha (0.14f));
-        g.drawRoundedRectangle (r.expanded (1.4f), rad + 1.4f, 1.0f);
     }
 
     static void drawWheelContactShadow (juce::Graphics& g, juce::Rectangle<float> well,

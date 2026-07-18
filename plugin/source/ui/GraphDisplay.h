@@ -250,23 +250,12 @@ public:
         // backing plate to separate the glass without becoming a chunky bezel.
         // It is not a chrome border or an outer shadow.
         {
-            juce::ColourGradient nickel (juce::Colour (0xff222825), aperture.getX(), aperture.getY(),
-                                         juce::Colour (0xff0e110f), aperture.getRight(), aperture.getBottom(), false);
-            nickel.addColour (0.38, juce::Colour (0xff171b19));
-            g.setGradientFill (nickel);
+            // FLAT matte bezel (reference 2026-07-18: "the bezel isn't right")
+            // — one plain dark frame, no nickel gradient, no warm catch light.
+            g.setColour (juce::Colour (0xff14171a));
             g.fillRoundedRectangle (aperture, rad);
-
             g.setColour (juce::Colours::black.withAlpha (0.72f));
             g.drawRoundedRectangle (aperture.reduced (0.35f), rad - 0.25f, 0.75f);
-
-            // Warm nickel responds only along the lit half of the top edge.
-            juce::ColourGradient catchLight (juce::Colour (0xffb69a70).withAlpha (0.16f),
-                                             aperture.getX() + rad, 0.0f,
-                                             juce::Colours::transparentBlack,
-                                             aperture.getX() + aperture.getWidth() * 0.72f, 0.0f, false);
-            g.setGradientFill (catchLight);
-            g.fillRect (aperture.getX() + rad, aperture.getY() + 0.45f,
-                        aperture.getWidth() - 2.0f * rad, 0.70f);
         }
 
         {
@@ -450,11 +439,11 @@ private:
 
         constexpr auto joint = juce::PathStrokeType::curved;
         constexpr auto cap   = juce::PathStrokeType::rounded;
-        // Thin crisp instrument trace (the X3's own line weight): a fine core
-        // with one faint breath of glow — no drop shadow, no fat halo.
-        constexpr float lw = 1.35f;
-        g.setColour (phos.withAlpha (0.20f));
-        g.strokePath (responsePath, { lw + 1.4f, joint, cap });
+        // CHUNKY instrument stroke (reference 2026-07-18): a heavy light line
+        // with real presence — the curve IS the display's content. No fill.
+        constexpr float lw = 2.6f;
+        g.setColour (phos.withAlpha (0.22f));
+        g.strokePath (responsePath, { lw + 1.6f, joint, cap });
         g.setColour (phos);
         g.strokePath (responsePath, { lw, joint, cap });
 
