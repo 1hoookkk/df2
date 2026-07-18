@@ -274,7 +274,6 @@ public:
             g.drawImage (displayPlate, glass, juce::RectanglePlacement::stretchToFit, false);
 
             drawResponseTrace (g);
-            drawDisplayDropouts (g, glass);
             drawSlamHoverCue (g, glass);
 
             // Subtle, curved, semi-transparent white gradient across the top half of the screen
@@ -469,28 +468,8 @@ private:
         }
     }
 
-    void drawDisplayDropouts (juce::Graphics& g, juce::Rectangle<float> screen) const
-    {
-        g.setColour (juce::Colours::black.withAlpha (0.28f));
-        g.fillRect (screen.getX(), screen.getY(), screen.getWidth(), 1.0f);
-        g.fillRect (screen.getX(), screen.getBottom() - 1.4f, screen.getWidth(), 1.4f);
-
-        const float ys[] = { 31.0f, 74.0f, 126.0f, 211.0f, 287.0f };
-        for (float off : ys)
-        {
-            const float y = screen.getY() + std::fmod (off, screen.getHeight() - 4.0f);
-            const float x0 = screen.getX() + 18.0f + std::fmod (off * 3.7f, screen.getWidth() * 0.28f);
-            const float x1 = screen.getRight() - 24.0f - std::fmod (off * 2.1f, screen.getWidth() * 0.22f);
-            g.setColour (juce::Colours::black.withAlpha (0.16f));
-            g.drawLine (x0, y, x1, y, 0.9f);
-        }
-
-        // Two weak vertical failures at the edges, as if the panel is losing
-        // contact rather than glowing as one clean DAW widget.
-        g.setColour (juce::Colours::black.withAlpha (0.18f));
-        g.fillRect (screen.getX() + screen.getWidth() * 0.055f, screen.getY(), 1.0f, screen.getHeight());
-        g.fillRect (screen.getRight() - screen.getWidth() * 0.082f, screen.getY(), 1.0f, screen.getHeight());
-    }
+    // (drawDisplayDropouts removed 2026-07-18: the deliberate dropout/failure
+    // lines were a retro-crunch prop — banned with the aliased digits.)
 
     void drawSlamHoverCue (juce::Graphics& g, juce::Rectangle<float> screen) const
     {

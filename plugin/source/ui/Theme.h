@@ -241,25 +241,10 @@ inline void drawHardwareKey (juce::Graphics& g, juce::Rectangle<float> b,
 inline void drawFrostedGlassControl (juce::Graphics& g, juce::Rectangle<float> r,
                                      float radius, bool isActive, const Theme& t)
 {
-    const auto pocket = r.reduced (0.35f);
-
-    // Recess first: a THIN seat, not a black moat (X3 reference: the bar sits
-    // in a hairline groove — shade at the upper wall, light catch at the lower
-    // lip). There is deliberately no exterior drop shadow, so it cannot float.
-    // Proud seat: no dark lip above the pane — the pane stands ON the plate;
-    // its own top gloss and the hairline ring do the seating.
-    juce::ColourGradient recess (juce::Colour (0xffc7beac), 0.0f, pocket.getY(),
-                                 juce::Colour (0xffcfc6b4), 0.0f, pocket.getBottom(), false);
-    g.setGradientFill (recess);
-    g.fillRoundedRectangle (pocket, radius + 0.35f);
-
-    g.setColour (juce::Colours::black.withAlpha (0.20f));
-    g.drawRoundedRectangle (pocket, radius + 0.35f, 0.65f);
-
-    // Sides sit flush (the X3 groove reads only above/below); vertical keeps the seat.
-    // Reduced slightly more horizontally and vertically, and translated down to expose
-    // more of the top recess shadow.
-    const auto face = r.reduced (0.8f, 1.6f).translated (0.0f, 0.8f);
+    // No painted recess pocket: the beige under-fill peeked out above the face
+    // and read as a weird outer frame (Tyson 2026-07-18). The plate art's own
+    // baked wells do all the seating; the pill fills its rect edge-to-edge.
+    const auto face = r.reduced (0.35f);
     // One restrained insert material across TYPE and both counters: frosted
     // glass in the display plate's teal family, cut with the plate's warm
     // bone (the approved 2026-07-17 material — verified against the

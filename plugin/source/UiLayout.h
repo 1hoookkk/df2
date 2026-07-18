@@ -56,7 +56,10 @@ public:
         // Window edges use the OUTERMOST wall extent (the recesses bow by a few
         // px along their length — a median rect leaves wall showing at the
         // bowed rows; "look at the preset on the right side").
-        layout.elements["typeSelector"] = { { 209.5f, 126.0f, 696.0f, 82.0f },  {}, {} };
+        // COVER the plate's baked recess ring entirely (the AI-composited
+        // panel art's ring is irregular — hugging it exposes speckle;
+        // the widget buries it and draws its own clean edge, 2026-07-18).
+        layout.elements["typeSelector"] = { { 207.0f, 123.0f, 701.0f, 88.0f },  {}, {} };
         layout.elements["morphReadout"] = { { 588.8f, 700.0f, 177.3f, 77.9f },  21.0f, juce::Colour (0xff0d0b09) };
         layout.elements["qReadout"]     = { { 590.0f, 882.0f, 174.0f, 75.0f },  21.0f, juce::Colour (0xff0d0b09) };
         layout.elements["spectrumGrid"] = { { 100.1f, 229.2f, 814.9f, 390.5f }, {}, {} }; // the screen opening
@@ -110,7 +113,7 @@ public:
         layout.colours["labelInk"]    = juce::Colour (0xff0d0b09); // warm charcoal type
 
         layout.params["wellRadius"]        = 9.0;
-        layout.params["readoutAliasScale"] = 0.92; // crisp digits without visible crunch
+        layout.params["readoutAliasScale"] = 1.0;  // smooth digits — the crunch read as aliasing, killed 2026-07-18
         layout.params["typeArrowExtra"]    = 6.0;
         layout.params["curveDbTop"]        = 40.0;   // keep high-Q bodies inside the hardware display
         layout.params["curveDbBottom"]     = -40.0;

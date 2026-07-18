@@ -36,9 +36,8 @@ public:
 
         // Hairline shadow bezel wrapping each raised insert — very small, all
         // around, nothing spreading onto the plate.
-        drawHairlineBezel (g, t.rect ("typeSelector"));
-        drawHairlineBezel (g, t.rect ("morphReadout"));
-        drawHairlineBezel (g, t.rect ("qReadout"));
+        // No hairline bezels: the widgets draw their own edges, and an extra
+        // ring outside them double-edged against the plate (2026-07-18).
 
         // X3 faceplate shadows (close-up reference 2026-07-17): a broad, SOFT
         // half-ellipse on the plate under each wheel capsule — visibly lighter
@@ -58,16 +57,6 @@ public:
     }
 
 private:
-    // A 1px-scale soft dark ring hugging the control's edge on ALL sides.
-    static void drawHairlineBezel (juce::Graphics& g, juce::Rectangle<float> r)
-    {
-        if (r.isEmpty())
-            return;
-        const float rad = 5.0f;
-        g.setColour (juce::Colours::black.withAlpha (0.10f));
-        g.drawRoundedRectangle (r.expanded (0.6f), rad + 0.6f, 1.0f);
-    }
-
     static void drawWheelContactShadow (juce::Graphics& g, juce::Rectangle<float> well,
                                         float castH = 9.0f, float strength = 1.0f)
     {
