@@ -90,9 +90,11 @@ pub struct DebugToggles {
     pub agc_bypass: bool,
     /// Linear makeup gain used when `agc_bypass` is set. 1.0 = unity.
     pub agc_makeup_gain: f32,
-    /// INERT since the dual frozen-cascade transition law: coefficients no
-    /// longer ramp, so there is no ramp length to scale. Field kept for FFI/
-    /// ABI stability.
+    /// Morph RATE — scales `coeff_ramp_samples` (the approach time). The
+    /// patent's approach time is a selectable menu (US5170369: eight
+    /// power-of-two steps, 32 samples minimum); this is that selection.
+    /// 1.0 = the 80 ms manual glide; 0.01 ≈ the X3's one-control-block snap.
+    /// Floor is BLOCK_SIZE at the call site, so 0.0 is safe.
     pub coeff_ramp_scale: f32,
 }
 
@@ -256,7 +258,7 @@ pub const COEFF_RAMP_SECONDS: f64 = 0.080;
 /// Transparent below the knee. It is NOT a level control: if this stage is
 /// working continuously, the gain structure upstream is wrong (see `AGC_DRIVE`).
 #[inline]
-fn saturate(x: f32) -> f32 {
+pub(crate) fn saturate(x: f32) -> f32 {
     let a = x.abs();
     if a <= SATURATE_KNEE {
         x
@@ -307,6 +309,7 @@ pub struct FilterEngine {
     slam_drive: f32,
     target_slam_drive: f32,
     delta_slam_drive: f32,
+    target_interstage_drive: f32,
     input_mode: InputMode,
     desk_drive_configured: bool,
     desk_drive_l: DeskDrive,
@@ -345,6 +348,7 @@ pub struct FilterEngine {
     /// `set_parameters` (Cascade itself stays frozen/untouched), so the on-
     /// screen curve (read from the same cascade coefficients) moves with it.
     amount: f32,
+    pitch_ratio: f64,
 
     pub debug: DebugToggles,
 }
@@ -372,6 +376,7 @@ impl FilterEngine {
             slam_drive: 0.0,
             target_slam_drive: 0.0,
             delta_slam_drive: 0.0,
+            target_interstage_drive: 0.0,
             input_mode: InputMode::None,
             desk_drive_configured: false,
             desk_drive_l: DeskDrive::new(),
@@ -395,8 +400,14 @@ impl FilterEngine {
             width_lp_r: GuardBiquad::default(),
             space: 0.0,
             amount: 1.0,
+            pitch_ratio: 1.0,
             debug: DebugToggles::default(),
         }
+    }
+
+    /// The rate this engine was last prepared at (the island clock).
+    pub fn sample_rate(&self) -> f64 {
+        self.sample_rate
     }
 
     pub fn prepare(&mut self, sample_rate: f64) {
@@ -421,6 +432,7 @@ impl FilterEngine {
         self.slam_drive = 0.0;
         self.target_slam_drive = 0.0;
         self.delta_slam_drive = 0.0;
+        self.target_interstage_drive = 0.0;
         self.input_mode = InputMode::None;
         self.desk_drive_configured = false;
         self.desk_drive_l.prepare(sample_rate as f32);
@@ -477,9 +489,22 @@ impl FilterEngine {
         self.target_slam_drive = drive.clamp(0.0, 1.0);
     }
 
+    /// BITE — inter-stage soft-clipper drive (0 = the linear cascade, bit-exact).
+    pub fn set_interstage_drive(&mut self, drive: f32) {
+        self.target_interstage_drive = if drive.is_finite() { drive.clamp(0.0, 1.0) } else { 0.0 };
+    }
+
     /// AMOUNT — honest dose. 1.0 = full body (default), 0.0 = flat/identity.
     pub fn set_amount(&mut self, amount: f32) {
         self.amount = amount.clamp(0.0, 1.0);
+    }
+
+    /// KEY TRACKING — transpose every conjugate resonance by `ratio` (the lost
+    /// Morpheus Frequency Tracking axis). 1.0 = off (bit-exact skip). Applied
+    /// per control block on the interpolated coefficients, so the coeff ramp
+    /// glides pitch moves exactly like morph moves. Clamped to ±1 octave.
+    pub fn set_pitch_ratio(&mut self, ratio: f32) {
+        self.pitch_ratio = (ratio as f64).clamp(0.5, 2.0);
     }
 
     /// Pre-AGC scale (≥ 1.0). 1.0 = identity (curve stays asleep in float domain);
@@ -507,6 +532,39 @@ impl FilterEngine {
         let corner: CornerData = cart.interpolate(morph, q);
         let mut boost = cart.interpolate_boost(morph, q) as f32;
 
+        // KEY TRACKING — rotate every conjugate pair's angle by pitch_ratio in
+        // the Rossum spirit (frequencies move, radii — the ring — stay). Exact
+        // root factoring of the interpolated quadratics; real pairs and
+        // degenerate rows pass through verbatim. ratio == 1.0 skips (bit-exact).
+        let corner = if (self.pitch_ratio - 1.0).abs() > 1.0e-9 {
+            let sr = self.sample_rate;
+            let ratio = self.pitch_ratio;
+            let transpose_pair = |c1: f64, c2: f64| -> f64 {
+                let disc = c1 * c1 - 4.0 * c2;
+                if disc >= 0.0 {
+                    return c1; // real pair: not a tuned resonance
+                }
+                let r = c2.sqrt();
+                if r <= 1.0e-9 {
+                    return c1;
+                }
+                let w = (-c1 / (2.0 * r)).clamp(-1.0, 1.0).acos();
+                let hz = (w * sr / core::f64::consts::TAU * ratio).clamp(20.0, 0.49 * sr);
+                -2.0 * r * (core::f64::consts::TAU * hz / sr).cos()
+            };
+            let mut t = corner;
+            for stage in t.iter_mut() {
+                stage[3] = transpose_pair(stage[3], stage[4]);
+                let b0 = stage[0];
+                if b0.abs() > 1.0e-12 {
+                    stage[1] = transpose_pair(stage[1] / b0, stage[2] / b0) * b0;
+                }
+            }
+            t
+        } else {
+            corner
+        };
+
         // AMOUNT — honest dose, in the PERCEPTUAL domain (the Rossum law:
         // interpolate encoded values, then decode — never raw coefficients).
         // A raw-coefficient lerp toward identity moves the pole ANGLES, so
@@ -526,11 +584,25 @@ impl FilterEngine {
                 let b0 = stage[0];
                 let b0k = if b0 > 0.0 { b0.powf(k) } else { k * b0 + (1.0 - k) };
                 let ratio = if b0.abs() > 1.0e-12 { b0k / b0 } else { 0.0 };
-                stage[1] *= k * ratio; // b1
-                stage[2] *= k * k * ratio; // b2
+                // Radius taper in the LOG-resonance domain: r' = r^(1/k), i.e.
+                // bandwidth scales by 1/k (per-stage factor g = r^(1/k - 1),
+                // from a2 = r² for a conjugate pair). The old linear r' = k·r
+                // was all-or-nothing: audible Q lives at r in [0.9, 1), so the
+                // dial's top few percent held the whole taper and the rest was
+                // already flat. Bandwidth-1/k halves the Q near k = 0.5 and
+                // reaches the same endpoints (g = 1 at k = 1, g -> 0 at k -> 0);
+                // g is monotonic in k, and g <= 1 keeps stability free.
+                let a2 = stage[4];
+                let g = if a2 > 1.0e-9 {
+                    a2.powf(0.5 * (1.0 / k.max(1.0e-3) - 1.0)).min(1.0)
+                } else {
+                    k // real/degenerate poles: the old linear law is fine there
+                };
+                stage[1] *= g * ratio; // b1
+                stage[2] *= g * g * ratio; // b2
                 stage[0] = b0k;
-                stage[3] *= k; // a1
-                stage[4] *= k * k; // a2
+                stage[3] *= g; // a1
+                stage[4] *= g * g; // a2
             }
             // Gain compensation: NOT "match the α=1 level" (that would make
             // amount=0 louder than dry, contradicting "0 = flat/identity").
@@ -570,6 +642,8 @@ impl FilterEngine {
         self.target_output_gain = boost;
         self.delta_output_gain = (boost - self.output_gain) / ramp as f32;
         self.delta_slam_drive = (self.target_slam_drive - self.slam_drive) / ramp as f32;
+        self.cascade_l.set_interstage_drive(self.target_interstage_drive, ramp);
+        self.cascade_r.set_interstage_drive(self.target_interstage_drive, ramp);
     }
 
     #[inline]
@@ -698,7 +772,13 @@ impl FilterEngine {
                 // Deltas are recomputed from the CURRENT state every control
                 // block, so the approach is exponential and self-correcting —
                 // no snapping, and float drift can never accumulate.
-                self.set_parameters(morph, q, self.coeff_ramp_samples);
+                // RATE: the user-selected approach time (patent menu), floored
+                // at one control block — the X3's own minimum.
+                let ramp = ((self.coeff_ramp_samples as f64
+                    * self.debug.coeff_ramp_scale.clamp(0.0, 1.0) as f64)
+                    .round() as usize)
+                    .max(BLOCK_SIZE);
+                self.set_parameters(morph, q, ramp);
                 if self.input_mode == InputMode::MackieDeskSlam {
                     self.configure_desk_drive();
                 }

@@ -2,9 +2,45 @@
 name = "trench-core"
 version = "0.1.0"
 edition = "2021"
+autobins = false
 
 [lib]
 crate-type = ["cdylib", "staticlib", "rlib"]
+
+# End-to-end transfer-function system-ID / body-authoring pipeline. Lives here
+# because it is a pure consumer of the owned packed runtime (pack / interpolate /
+# response / certify) — no second kernel. Only serde/std, so it builds without
+# the workstation GUI stack.
+[[bin]]
+name = "hd-ab"
+path = "src/bin/hd_ab.rs"
+
+[[bin]]
+name = "tf-oracle"
+path = "src/bin/tf_oracle.rs"
+
+[[bin]]
+name = "body-from-geometry"
+path = "src/bin/body_from_geometry.rs"
+
+[[bin]]
+name = "motion_gap_proof"
+path = "src/bin/motion_gap_proof.rs"
+
+[[bin]]
+name = "motion_take_proof"
+path = "src/bin/motion_take_proof.rs"
+
+# `tf_harness.rs` is the immutable historical source recorded by the
+# Branching Mouth failure bundle. Keep the stable binary name while routing
+# live harness callers through the evidence-mode-aware implementation.
+[[bin]]
+name = "tf_harness"
+path = "src/bin/tf_harness_routed.rs"
+
+[[bin]]
+name = "rate-ab"
+path = "src/bin/rate_ab.rs"
 
 [dependencies]
 serde = { version = "1", features = ["derive"] }

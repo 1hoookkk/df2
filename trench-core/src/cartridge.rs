@@ -129,6 +129,27 @@ impl Cartridge {
         ))
     }
 
+    /// HD island load: same bytes, decode-time view at `target_rate`. Every
+    /// corner's words are re-derived via [`crate::stage_law::reencode_words_at`]
+    /// (same Hz, ring time in seconds preserved). At exactly [`crate::stage_law::STAGE_SR`]
+    /// this is `from_body_bytes` verbatim — the bytes on disk never change.
+    pub fn from_body_bytes_at(
+        name: &str,
+        bytes: &[u8],
+        boost: f64,
+        target_rate: f64,
+    ) -> Result<Self, String> {
+        let mut cart = Self::from_body_bytes(name, bytes, boost)?;
+        if target_rate != crate::stage_law::STAGE_SR {
+            for corner in cart.packed.words.iter_mut() {
+                for stage in corner.iter_mut() {
+                    *stage = crate::stage_law::reencode_words_at(*stage, target_rate);
+                }
+            }
+        }
+        Ok(cart)
+    }
+
     pub fn from_json(json: &str) -> Result<Self, String> {
         let raw: CartridgeJson =
             serde_json::from_str(json).map_err(|e| format!("JSON parse error: {e}"))?;

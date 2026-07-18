@@ -249,24 +249,33 @@ impl PackedCorners {
     /// Morph-first bilinear interpolation in packed u16 space.
     ///
     /// Order: morph lerp (A→B, C→D) first, then Q lerp (edge0→edge1).
-    /// Returns shifted minifloat-domain kernel form for all 6 stages. This is
-    /// not the direct Rust Cascade row; use `interpolate_biquad` for audio.
-    pub fn interpolate(&self, morph: f32, q: f32) -> CornerData {
-        let mut result = [[0.0f64; NUM_COEFFS]; NUM_STAGES];
+    /// Returns the exact five interpolated u16 words for all six stages before
+    /// any decode. This is the capture primitive for turning a sampled runtime
+    /// position into an authored corner without a decode/re-encode round trip.
+    pub fn interpolate_words(&self, morph: f32, q: f32) -> [PackedStage; NUM_STAGES] {
+        let mut result = [[0u16; NUM_COEFFS]; NUM_STAGES];
         for si in 0..NUM_STAGES {
             let a = self.words[0][si]; // M0_Q0
             let b = self.words[1][si]; // M100_Q0
             let c = self.words[2][si]; // M0_Q100
             let d = self.words[3][si]; // M100_Q100
 
-            let mut out_words = [0u16; NUM_COEFFS];
             for wi in 0..NUM_COEFFS {
                 let edge0 = lerp_u16(a[wi], b[wi], morph); // A→B along morph
                 let edge1 = lerp_u16(c[wi], d[wi], morph); // C→D along morph
-                out_words[wi] = lerp_u16(edge0, edge1, q); // edge0→edge1 along Q
+                result[si][wi] = lerp_u16(edge0, edge1, q); // edge0→edge1 along Q
             }
+        }
+        result
+    }
 
-            result[si] = stage_words_to_kernel(out_words);
+    /// Decode the packed interpolation result to shifted minifloat-domain
+    /// kernel form. Use `interpolate_biquad` for direct DF2T audio rows.
+    pub fn interpolate(&self, morph: f32, q: f32) -> CornerData {
+        let words = self.interpolate_words(morph, q);
+        let mut result = [[0.0f64; NUM_COEFFS]; NUM_STAGES];
+        for si in 0..NUM_STAGES {
+            result[si] = stage_words_to_kernel(words[si]);
         }
         result
     }
@@ -529,23 +538,41 @@ mod order_probe {
 
     /// Q-first bilinear — the OTHER order. Not shipped; used only to measure how
     /// much the (unsourced) axis-order choice actually costs.
-    fn interpolate_q_first(pc: &PackedCorners, morph: f32, q: f32) -> [[u16; NUM_COEFFS]; NUM_STAGES] {
+    fn interpolate_q_first(
+        pc: &PackedCorners,
+        morph: f32,
+        q: f32,
+    ) -> [[u16; NUM_COEFFS]; NUM_STAGES] {
         let mut out = [[0u16; NUM_COEFFS]; NUM_STAGES];
         for si in 0..NUM_STAGES {
-            let (a, b, c, d) = (pc.words[0][si], pc.words[1][si], pc.words[2][si], pc.words[3][si]);
+            let (a, b, c, d) = (
+                pc.words[0][si],
+                pc.words[1][si],
+                pc.words[2][si],
+                pc.words[3][si],
+            );
             for wi in 0..NUM_COEFFS {
-                let edge0 = lerp_u16(a[wi], c[wi], q);   // M0_Q0 -> M0_Q100   along Q
-                let edge1 = lerp_u16(b[wi], d[wi], q);   // M100_Q0 -> M100_Q100
+                let edge0 = lerp_u16(a[wi], c[wi], q); // M0_Q0 -> M0_Q100   along Q
+                let edge1 = lerp_u16(b[wi], d[wi], q); // M100_Q0 -> M100_Q100
                 out[si][wi] = lerp_u16(edge0, edge1, morph);
             }
         }
         out
     }
 
-    fn interpolate_morph_first(pc: &PackedCorners, morph: f32, q: f32) -> [[u16; NUM_COEFFS]; NUM_STAGES] {
+    fn interpolate_morph_first(
+        pc: &PackedCorners,
+        morph: f32,
+        q: f32,
+    ) -> [[u16; NUM_COEFFS]; NUM_STAGES] {
         let mut out = [[0u16; NUM_COEFFS]; NUM_STAGES];
         for si in 0..NUM_STAGES {
-            let (a, b, c, d) = (pc.words[0][si], pc.words[1][si], pc.words[2][si], pc.words[3][si]);
+            let (a, b, c, d) = (
+                pc.words[0][si],
+                pc.words[1][si],
+                pc.words[2][si],
+                pc.words[3][si],
+            );
             for wi in 0..NUM_COEFFS {
                 let edge0 = lerp_u16(a[wi], b[wi], morph);
                 let edge1 = lerp_u16(c[wi], d[wi], morph);
@@ -598,7 +625,8 @@ mod order_probe {
                                     worst = format!(
                                         "{} m={m:.1} q={q:.1} stage{si} word{wi}: {} vs {}",
                                         f.file_name().unwrap().to_string_lossy(),
-                                        a[si][wi], b[si][wi]
+                                        a[si][wi],
+                                        b[si][wi]
                                     );
                                 }
                             }
@@ -612,10 +640,19 @@ mod order_probe {
         }
 
         println!("\n=== bilinear axis order: morph-first (SHIPPED) vs Q-first ===");
-        println!("roster: {} bodies, 11x11 morph/Q grid, all 6 stages x 5 words\n", files.len());
+        println!(
+            "roster: {} bodies, 11x11 morph/Q grid, all 6 stages x 5 words\n",
+            files.len()
+        );
         println!("  words compared      : {total}");
-        println!("  words that DIFFER   : {differ}  ({:.2}%)", 100.0 * differ as f64 / total as f64);
-        println!("  bodies affected     : {bodies_affected} / {}", files.len());
+        println!(
+            "  words that DIFFER   : {differ}  ({:.2}%)",
+            100.0 * differ as f64 / total as f64
+        );
+        println!(
+            "  bodies affected     : {bodies_affected} / {}",
+            files.len()
+        );
         println!("  max |delta| (packed): {max_delta} LSB");
         if !worst.is_empty() {
             println!("  worst               : {worst}");
@@ -623,7 +660,9 @@ mod order_probe {
         if differ == 0 {
             println!("\n  -> the order is IRRELEVANT. Both give identical bits. Non-issue.");
         } else {
-            println!("\n  -> the orders differ in BITS. But is that AUDIBLE? Decode and compare in dB.");
+            println!(
+                "\n  -> the orders differ in BITS. But is that AUDIBLE? Decode and compare in dB."
+            );
         }
 
         // Differing bits is not the question — audibility is. A packed word is a
@@ -644,10 +683,12 @@ mod order_probe {
                     let (m, q) = (mi as f32 / 10.0, qi as f32 / 10.0);
                     let wa = interpolate_morph_first(&pc, m, q);
                     let wb = interpolate_q_first(&pc, m, q);
-                    let ka: Vec<[f64; NUM_COEFFS]> =
-                        (0..NUM_STAGES).map(|si| kernel_to_biquad(stage_words_to_kernel(wa[si]))).collect();
-                    let kb: Vec<[f64; NUM_COEFFS]> =
-                        (0..NUM_STAGES).map(|si| kernel_to_biquad(stage_words_to_kernel(wb[si]))).collect();
+                    let ka: Vec<[f64; NUM_COEFFS]> = (0..NUM_STAGES)
+                        .map(|si| kernel_to_biquad(stage_words_to_kernel(wa[si])))
+                        .collect();
+                    let kb: Vec<[f64; NUM_COEFFS]> = (0..NUM_STAGES)
+                        .map(|si| kernel_to_biquad(stage_words_to_kernel(wb[si])))
+                        .collect();
 
                     let mag = |rows: &Vec<[f64; NUM_COEFFS]>, w: f64| -> f64 {
                         let (cw, sw) = (w.cos(), w.sin());
@@ -761,6 +802,20 @@ mod x3_groundtruth {
         std::fs::write(dst, out).unwrap();
         println!("wrote {dst}");
     }
+
+    #[test]
+    fn interpolate_words_is_the_exact_source_of_decoded_interpolation() {
+        let mut bytes = [0u8; BODY_BYTES];
+        for (index, pair) in bytes.chunks_exact_mut(2).enumerate() {
+            pair.copy_from_slice(&(0x2710u16.wrapping_add(index as u16 * 97)).to_le_bytes());
+        }
+        let packed = PackedCorners::from_body_bytes(&bytes).unwrap();
+        let words = packed.interpolate_words(0.37, 0.64);
+        let decoded = packed.interpolate(0.37, 0.64);
+        for stage in 0..NUM_STAGES {
+            assert_eq!(stage_words_to_kernel(words[stage]), decoded[stage]);
+        }
+    }
 }
 
 #[cfg(test)]
@@ -803,31 +858,34 @@ mod interp_law {
         let mid_packed = pc.interpolate_biquad(0.5, 0.5);
 
         // B: decode all four corners first, then bilinear the COEFFICIENTS.
-        let c: Vec<[[f64; NUM_COEFFS]; NUM_STAGES]> =
-            (0..4).map(|ci| {
+        let c: Vec<[[f64; NUM_COEFFS]; NUM_STAGES]> = (0..4)
+            .map(|ci| {
                 let mut rows = [[0.0f64; NUM_COEFFS]; NUM_STAGES];
                 for si in 0..NUM_STAGES {
                     rows[si] = kernel_to_biquad(stage_words_to_kernel(pc.words[ci][si]));
                 }
                 rows
-            }).collect();
+            })
+            .collect();
         let mut mid_coeff = [[0.0f64; NUM_COEFFS]; NUM_STAGES];
         for si in 0..NUM_STAGES {
             for k in 0..NUM_COEFFS {
                 // corners: 0=M0Q0 1=M100Q0 2=M0Q100 3=M100Q100
                 let e0 = 0.5 * (c[0][si][k] + c[1][si][k]); // along morph @ q0
                 let e1 = 0.5 * (c[2][si][k] + c[3][si][k]); // along morph @ q1
-                mid_coeff[si][k] = 0.5 * (e0 + e1);         // along q
+                mid_coeff[si][k] = 0.5 * (e0 + e1); // along q
             }
         }
 
-        let corners: Vec<_> = (0..4).map(|ci| {
-            let mut rows = [[0.0f64; NUM_COEFFS]; NUM_STAGES];
-            for si in 0..NUM_STAGES {
-                rows[si] = kernel_to_biquad(stage_words_to_kernel(pc.words[ci][si]));
-            }
-            rows
-        }).collect();
+        let corners: Vec<_> = (0..4)
+            .map(|ci| {
+                let mut rows = [[0.0f64; NUM_COEFFS]; NUM_STAGES];
+                for si in 0..NUM_STAGES {
+                    rows[si] = kernel_to_biquad(stage_words_to_kernel(pc.words[ci][si]));
+                }
+                rows
+            })
+            .collect();
 
         let mut out = String::from("hz\tc_m0q0\tc_m1q0\tc_m0q1\tc_m1q1\tA_packed\tB_coeff\n");
         for k in 0..512 {
@@ -913,7 +971,9 @@ mod interp_law_audio {
                 casc.set_targets(&corner, len);
                 let mut buf: Vec<f32> = (0..len)
                     .map(|_| {
-                        rng = rng.wrapping_mul(6364136223846793005).wrapping_add(1442695040888963407);
+                        rng = rng
+                            .wrapping_mul(6364136223846793005)
+                            .wrapping_add(1442695040888963407);
                         let w = ((rng >> 40) as f64 / (1u64 << 23) as f64) - 1.0;
                         pb[0] = 0.99886 * pb[0] + w * 0.0555179;
                         pb[1] = 0.99332 * pb[1] + w * 0.0750759;
@@ -921,7 +981,9 @@ mod interp_law_audio {
                         pb[3] = 0.86650 * pb[3] + w * 0.3104856;
                         pb[4] = 0.55000 * pb[4] + w * 0.5329522;
                         pb[5] = -0.7616 * pb[5] - w * 0.0168980;
-                        let s = (pb[0]+pb[1]+pb[2]+pb[3]+pb[4]+pb[5]+pb[6] + w*0.5362) * 0.11;
+                        let s =
+                            (pb[0] + pb[1] + pb[2] + pb[3] + pb[4] + pb[5] + pb[6] + w * 0.5362)
+                                * 0.11;
                         pb[6] = w * 0.115926;
                         (s * 0.5) as f32
                     })
@@ -949,7 +1011,9 @@ mod interp_law_audio {
                 .collect();
             let pk = r.iter().fold(0.0f32, |m, &x| m.max(x.abs())).max(1e-9);
             let g = 0.5012 / pk; // -6 dBFS
-            for x in r.iter_mut() { *x *= g; }
+            for x in r.iter_mut() {
+                *x *= g;
+            }
             let mut b = Vec::new();
             let dl = (r.len() * 2) as u32;
             b.extend_from_slice(b"RIFF");
@@ -1012,9 +1076,13 @@ mod curve_check {
 
         // find every resonance
         let n = 4000;
-        let f: Vec<f64> = (0..n).map(|k| 20.0 * (19_000.0f64 / 20.0).powf(k as f64 / (n - 1) as f64)).collect();
+        let f: Vec<f64> = (0..n)
+            .map(|k| 20.0 * (19_000.0f64 / 20.0).powf(k as f64 / (n - 1) as f64))
+            .collect();
         let d: Vec<f64> = f.iter().map(|&hz| mag(hz)).collect();
-        println!("\n=== CAVL_mason_jar_to_stone_pipe @ MORPH 0, Q 100 (what is on your screen) ===\n");
+        println!(
+            "\n=== CAVL_mason_jar_to_stone_pipe @ MORPH 0, Q 100 (what is on your screen) ===\n"
+        );
         println!("  peaks the BODY actually has:");
         for i in 1..n - 1 {
             if d[i] > d[i - 1] && d[i] > d[i + 1] && d[i] > -25.0 {
@@ -1024,7 +1092,14 @@ mod curve_check {
         println!("\n  stage pole radii (Q) — how sharp each is:");
         for (si, r) in rows.iter().enumerate() {
             let rad = pole_radius(r[3], r[4]);
-            println!("    stage {si}: radius {rad:.5}{}", if rad > 0.9995 { "   <-- RAZOR (near-unstable)" } else { "" });
+            println!(
+                "    stage {si}: radius {rad:.5}{}",
+                if rad > 0.9995 {
+                    "   <-- RAZOR (near-unstable)"
+                } else {
+                    ""
+                }
+            );
         }
     }
 }

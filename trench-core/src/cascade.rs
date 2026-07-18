@@ -77,6 +77,13 @@ pub struct Cascade {
     boost: f64,
     /// Per-sample ramp delta for boost.
     boost_delta: f64,
+    /// BITE — inter-stage soft-clipper drive (0 = the linear cascade,
+    /// bit-exact). Applied at the five junctions BETWEEN stages, never inside
+    /// a biquad's own feedback. Ramped per sample like boost so motion cannot
+    /// zipper the nonlinearity.
+    interstage_drive: f32,
+    /// Per-sample ramp delta for interstage_drive.
+    interstage_delta: f32,
     /// Latched when stage math or boost becomes non-finite.
     instability_detected: bool,
 }
@@ -87,6 +94,8 @@ impl Cascade {
             stages: std::array::from_fn(|_| BiquadState::new()),
             boost: 1.0,
             boost_delta: 0.0,
+            interstage_drive: 0.0,
+            interstage_delta: 0.0,
             instability_detected: false,
         }
     }
@@ -99,6 +108,7 @@ impl Cascade {
             stage.deltas = [0.0; NUM_COEFFS];
         }
         self.boost_delta = 0.0;
+        self.interstage_delta = 0.0;
         self.instability_detected = false;
     }
 
@@ -106,6 +116,13 @@ impl Cascade {
     pub fn set_boost(&mut self, target: f64, ramp_samples: usize) {
         let ramp_samples = ramp_samples.max(1) as f64;
         self.boost_delta = (target - self.boost) / ramp_samples;
+    }
+
+    /// BITE — set the inter-stage drive target (0..1) and its per-sample ramp
+    /// delta (same glide law as boost / slam so motion doesn't zipper it).
+    pub fn set_interstage_drive(&mut self, target: f32, ramp_samples: usize) {
+        let target = target.clamp(0.0, 1.0);
+        self.interstage_delta = (target - self.interstage_drive) / ramp_samples.max(1) as f32;
     }
 
     /// Set the 6 active stages' coefficients immediately, no ramp, and clear
@@ -130,13 +147,37 @@ impl Cascade {
     #[inline(always)]
     pub fn tick(&mut self, x: f32) -> f32 {
         let mut v = x as f64;
-        for stage in &mut self.stages {
-            let (next, unstable) = stage.process_sample(v);
-            if unstable {
-                self.instability_detected = true;
-                return 0.0;
+        if self.interstage_drive <= 0.0 && self.interstage_delta == 0.0 {
+            // the linear cascade — BITE off is this exact loop, bit-exact
+            for stage in &mut self.stages {
+                let (next, unstable) = stage.process_sample(v);
+                if unstable {
+                    self.instability_detected = true;
+                    return 0.0;
+                }
+                v = next;
             }
-            v = next;
+        } else {
+            self.interstage_drive = (self.interstage_drive + self.interstage_delta).clamp(0.0, 1.0);
+            // BITE, the E-mu way: the measured desk curve (mackity_saturate,
+            // x - 0.1768 x^5) at the five junctions between stages. Polynomial
+            // = gradual color at every level (no threshold cliff — the first
+            // knee-shaped attempt was all-or-nothing), and its ±1 clamp acts
+            // like fixed-point headroom when a resonance truly slams. Drive
+            // pushes up to +18 dB into the curve; unity-compensated so the
+            // junction stays level-honest.
+            let g = 1.0 + 7.0 * self.interstage_drive as f64;
+            for (i, stage) in self.stages.iter_mut().enumerate() {
+                let (next, unstable) = stage.process_sample(v);
+                if unstable {
+                    self.instability_detected = true;
+                    return 0.0;
+                }
+                v = next;
+                if i < NUM_STAGES - 1 {
+                    v = crate::desk_drive::mackity_saturate(v * g) / g;
+                }
+            }
         }
         self.boost += self.boost_delta;
         if !self.boost.is_finite() {

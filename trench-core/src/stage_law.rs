@@ -136,14 +136,74 @@ pub fn words_from_geometry(g: &StageGeometry) -> [u16; 5] {
 }
 
 fn pair_coefficients(pair: RootPair) -> (f64, f64) {
+    pair_coefficients_at(pair, STAGE_SR)
+}
+
+fn pair_coefficients_at(pair: RootPair, sr: f64) -> (f64, f64) {
     match pair {
         RootPair::Conjugate { hz, r } => {
-            let angle = TAU * hz / STAGE_SR;
+            let angle = TAU * hz / sr;
             (-2.0 * r * angle.cos(), r * r)
         }
         RootPair::RealPair { root_a, root_b } => (-(root_a + root_b), root_a * root_b),
         RootPair::Degenerate => (0.0, 0.0),
     }
+}
+
+/// HD island re-derivation (decode-time view — the stored body240 bytes never
+/// change). Decode a stage's words (authored at [`STAGE_SR`]) and re-encode
+/// them for `target_sr`:
+///   · conjugate pairs keep their Hz (angle re-derived at the new rate) and
+///     preserve bandwidth in Hz: r2 = r^(STAGE_SR/target_sr) — at exactly 2x,
+///     sqrt(r) — so ring time in SECONDS is unchanged;
+///   · real pairs keep their signs and map magnitudes by the same law
+///     (|root|^(STAGE_SR/target_sr) preserves each root's time constant);
+///   · SCALE is unchanged.
+pub fn reencode_words_at(words: [u16; 5], target_sr: f64) -> [u16; 5] {
+    if target_sr == STAGE_SR {
+        return words;
+    }
+    let ex = STAGE_SR / target_sr;
+    let map = |p: RootPair| -> RootPair {
+        match p {
+            RootPair::Conjugate { hz, r } => RootPair::Conjugate {
+                hz: hz.min(0.49 * target_sr),
+                r: r.powf(ex),
+            },
+            RootPair::RealPair { root_a, root_b } => RootPair::RealPair {
+                root_a: root_a.signum() * root_a.abs().powf(ex),
+                root_b: root_b.signum() * root_b.abs().powf(ex),
+            },
+            RootPair::Degenerate => RootPair::Degenerate,
+        }
+    };
+    let g = geometry_from_words(words);
+    let mut g2 = StageGeometry {
+        zero: map(g.zero),
+        pole: map(g.pole),
+        scale: g.scale,
+    };
+    // SCALE re-derivation (the successor's own precedent: the X3 vault ships
+    // per-rate base/scale tables). Same Hz + same tau at a new rate changes a
+    // stage's normalization — a pole's peak height rides 1/(1-r) and r moved
+    // to r^(fs0/fs). Match the stage's DC gain so the cascade's low-frequency
+    // level (and with it the whole passband overlay) is preserved.
+    let eval_dc = |pair: RootPair, sr: f64| -> f64 {
+        let (p, q) = pair_coefficients_at(pair, sr);
+        (1.0 + p + q).abs().max(1.0e-9)
+    };
+    let dc0 = eval_dc(g.zero, STAGE_SR) / eval_dc(g.pole, STAGE_SR);
+    let dc2 = eval_dc(g2.zero, target_sr) / eval_dc(g2.pole, target_sr);
+    g2.scale = (g.scale * dc0 / dc2.max(1.0e-9)).clamp(0.0, 4.0);
+    let (zero_p, zero_q) = pair_coefficients_at(g2.zero, target_sr);
+    let (pole_p, pole_q) = pair_coefficients_at(g2.pole, target_sr);
+    [
+        encode((zero_p + 1.0 + zero_q) / 4.0),
+        encode(1.0 - zero_q),
+        encode((pole_p + 1.0 + pole_q) / 4.0),
+        encode(1.0 - pole_q),
+        encode(g2.scale / 4.0),
+    ]
 }
 
 /// five packed words → exact stage geometry. Always succeeds, never

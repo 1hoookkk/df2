@@ -161,7 +161,13 @@ pub unsafe extern "C" fn trench_engine_load_body_bytes(
             None => return -1,
         };
         let slice = unsafe { std::slice::from_raw_parts(bytes, len) };
-        match Cartridge::from_body_bytes("audition", slice, 1.0) {
+        // HD island: decode-time re-derivation for whatever rate the engine is
+        // prepared at (at STAGE_SR this is the verbatim byte path).
+        let rate = match unsafe { engine_ref(engine) } {
+            Some(eng) => eng.sample_rate(),
+            None => return -1,
+        };
+        match Cartridge::from_body_bytes_at("audition", slice, 1.0, rate) {
             Ok(cart) => {
                 mailbox.stage(Box::new(cart));
                 0
@@ -718,6 +724,39 @@ pub unsafe extern "C" fn trench_engine_set_agc_drive(engine: *mut c_void, drive:
     ffi_guard((), || {
         if let Some(eng) = unsafe { engine_mut(engine) } {
             eng.set_agc_drive(drive);
+        }
+    })
+}
+
+/// Morph RATE: scales the coefficient approach time (1.0 = 80 ms glide,
+/// 0.01 ≈ one-control-block snap; floored at 32 samples in the engine).
+#[no_mangle]
+pub unsafe extern "C" fn trench_engine_set_coeff_ramp_scale(engine: *mut c_void, scale: f32) {
+    ffi_guard((), || {
+        if let Some(eng) = unsafe { engine_mut(engine) } {
+            eng.debug.coeff_ramp_scale = if scale.is_finite() { scale.clamp(0.0, 1.0) } else { 1.0 };
+        }
+    })
+}
+
+/// BITE — inter-stage soft-clipper drive (0..1). 0 = the linear cascade,
+/// bit-exact.
+#[no_mangle]
+pub unsafe extern "C" fn trench_engine_set_interstage_drive(engine: *mut c_void, drive: f32) {
+    ffi_guard((), || {
+        if let Some(eng) = unsafe { engine_mut(engine) } {
+            eng.set_interstage_drive(drive);
+        }
+    })
+}
+
+/// KEY TRACKING — transpose ratio for every conjugate resonance. 1.0 = off
+/// (bit-exact); clamped to ±1 octave in the engine.
+#[no_mangle]
+pub unsafe extern "C" fn trench_engine_set_pitch_ratio(engine: *mut c_void, ratio: f32) {
+    ffi_guard((), || {
+        if let Some(eng) = unsafe { engine_mut(engine) } {
+            eng.set_pitch_ratio(if ratio.is_finite() { ratio } else { 1.0 });
         }
     })
 }

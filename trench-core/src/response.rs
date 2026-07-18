@@ -683,6 +683,48 @@ pub fn biquad_stage_mag_db(
     10.0 * (((nr * nr + ni * ni) + EPS) / ((dr * dr + di * di) + EPS)).log10()
 }
 
+/// Complex frequency response `H(e^{jω})` of one direct DF2T biquad row
+/// `[b0,b1,b2,a1,a2]`, returned as `(re, im)`. This is the single owner of
+/// per-stage complex response; [`biquad_stage_mag_db`] is exactly its
+/// magnitude in dB. Used by the transfer-function oracle to compare a packed
+/// candidate against a measured complex target without a second response
+/// engine.
+pub fn biquad_stage_complex(
+    stage: &[f64; NUM_COEFFS],
+    frequency_hz: f64,
+    sample_rate_hz: f64,
+) -> (f64, f64) {
+    let angle = std::f64::consts::TAU * frequency_hz / sample_rate_hz.max(1.0);
+    let (cos1, sin1) = (angle.cos(), angle.sin());
+    let (cos2, sin2) = ((2.0 * angle).cos(), (2.0 * angle).sin());
+    let [b0, b1, b2, a1, a2] = *stage;
+    let nr = b0 + b1 * cos1 + b2 * cos2;
+    let ni = -b1 * sin1 - b2 * sin2;
+    let dr = 1.0 + a1 * cos1 + a2 * cos2;
+    let di = -a1 * sin1 - a2 * sin2;
+    let den = dr * dr + di * di + EPS;
+    ((nr * dr + ni * di) / den, (ni * dr - nr * di) / den)
+}
+
+/// Complex frequency response of the six-stage serial cascade at one
+/// frequency: the ordered product of the per-stage complex responses. `corner`
+/// is direct DF2T rows (as returned by `PackedCorners::interpolate_biquad`).
+pub fn biquad_cascade_complex(
+    corner: &CornerData,
+    frequency_hz: f64,
+    sample_rate_hz: f64,
+) -> (f64, f64) {
+    let mut re = 1.0f64;
+    let mut im = 0.0f64;
+    for stage in corner.iter() {
+        let (sr, si) = biquad_stage_complex(stage, frequency_hz, sample_rate_hz);
+        let (pr, pi) = (re * sr - im * si, re * si + im * sr);
+        re = pr;
+        im = pi;
+    }
+    (re, im)
+}
+
 fn axis_motion(
     axis: &'static str,
     from_idx: usize,
