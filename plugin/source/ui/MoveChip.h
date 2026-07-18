@@ -51,6 +51,7 @@ public:
         moveTensionParam = apvts.getParameter (ParamID::moveTension);
         moveRateParam   = apvts.getParameter (ParamID::moveRate);
         moveRiseParam   = apvts.getParameter (ParamID::moveRise);
+        motionReactParam = apvts.getParameter (ParamID::motionReact);
 
         auto repaintOnChange = [this] (float) { repaint(); };
         for (auto* p : { motionOnParam, motionTileParam, motionDivParam,
@@ -96,6 +97,10 @@ public:
         // RISE: arming a synced MOVE ramps depth 0->full over one TIME cycle,
         // then holds — the performed riser. Ignored in FREE (no clock to ride).
         m.addItem (kIdRise, "RISE", moveRiseParam != nullptr, paramBool (moveRiseParam));
+        // FOLLOW (2026-07-18): env follow — the input's own level opens the
+        // filter (react push, no clock). The third verb: times dance, RISE
+        // builds, FOLLOW breathes.
+        m.addItem (kIdFollow, "FOLLOW", motionReactParam != nullptr, followActive());
         // RATE rows retired from the menu (2026-07-18): AUTO derives the morph
         // approach time from the chosen division. The host param remains the
         // expert override.
@@ -129,7 +134,7 @@ public:
     }
 
 private:
-    static constexpr int kIdOff = 1, kIdTimeBase = 100, kIdOrbit = 999, kIdRateBase = 1200, kIdRise = 1300;
+    static constexpr int kIdOff = 1, kIdTimeBase = 100, kIdOrbit = 999, kIdRateBase = 1200, kIdRise = 1300, kIdFollow = 1400;
     static constexpr const char* kRateLabels[4] = { "RATE  AUTO", "RATE  SNAP", "RATE  TIGHT", "RATE  GLIDE" };
 
     static bool paramBool (const juce::RangedAudioParameter* p) noexcept
@@ -146,6 +151,11 @@ private:
     bool orbitActive() const noexcept
     {
         return paramBool (moveOnParam) && paramChoice (moveShapeParam, 6) == kOrbitShape;
+    }
+
+    bool followActive() const noexcept
+    {
+        return motionReactParam != nullptr && motionReactParam->getValue() > 0.0005f;
     }
 
     juce::String liveTimeLabel() const
@@ -172,6 +182,8 @@ private:
         {
             write (motionOnParam, 0.0f);
             write (moveOnParam, 0.0f);
+            write (motionReactParam, 0.0f);   // OFF means everything, FOLLOW included
+            followArmedMotion = false;
         }
         else if (id == kIdOrbit)
         {
@@ -194,6 +206,26 @@ private:
         else if (id == kIdRise)
         {
             write (moveRiseParam, paramBool (moveRiseParam) ? 0.0f : 1.0f);
+        }
+        else if (id == kIdFollow)
+        {
+            const bool enable = ! followActive();
+            write (motionReactParam, enable ? 1.0f : 0.0f);
+            if (enable && ! paramBool (motionOnParam))
+            {
+                // arm the motion path with a NEUTRAL pattern so only the
+                // react push moves — pure env follow, no clocked dance.
+                write (motionTileParam, (float) kBreatheTile);
+                write (motionTgtMParam, 0.0f);
+                write (motionTgtQParam, 0.0f);
+                write (motionOnParam, 1.0f);
+                followArmedMotion = true;
+            }
+            else if (! enable && followArmedMotion)
+            {
+                write (motionOnParam, 0.0f);   // we armed it only for FOLLOW
+                followArmedMotion = false;
+            }
         }
         else if (id >= kIdTimeBase && id < kIdTimeBase + (int) std::size (kTimes))
         {
@@ -236,6 +268,8 @@ private:
             s << "  " << liveTimeLabel();
         if (orbitActive())
             s << "  \xC2\xB7 ORBIT";
+        if (followActive())
+            s << "  \xC2\xB7 FOLLOW";
         return juce::String (juce::CharPointer_UTF8 (s.toRawUTF8()));
     }
 
@@ -268,6 +302,8 @@ private:
     juce::RangedAudioParameter* moveRateParam = nullptr;
     juce::RangedAudioParameter* moveRiseParam = nullptr;
     std::vector<std::unique_ptr<juce::ParameterAttachment>> atts;
+    juce::RangedAudioParameter* motionReactParam = nullptr;
+    bool followArmedMotion = false;
     bool hover = false;
     bool showingSibling = false;
     double siblingElapsedMs = 0.0;
