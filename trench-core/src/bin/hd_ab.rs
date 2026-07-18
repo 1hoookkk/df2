@@ -117,6 +117,13 @@ fn render(body: &[u8], rate: f64, bite: f32) -> Vec<f32> {
     let src = if is_reese { reese(rate) } else { groove(rate) };
     let total = src.len();
     let mut out = Vec::with_capacity(total * 2);
+    // Warm start: run the full loop once and discard — coefficient ramps land,
+    // AGC and desk state settle — then capture. Renders must never cold-start.
+    for pass in 0..2 {
+        let capture = pass == 1;
+        if capture {
+            out.clear();
+        }
     let mut off = 0usize;
     while off < total {
         let n = BLOCK.min(total - off);
@@ -124,7 +131,10 @@ fn render(body: &[u8], rate: f64, bite: f32) -> Vec<f32> {
         let mut r = l.clone();
         let t = off as f64 / rate;
         // reese: beat-ish morph orbit (the modulation); groove: slow ride
-        let morph = if is_reese {
+        let morph = if is_reese && std::env::var("HD_AB_MORPHSTEP").as_deref() == Ok("1") {
+            // chords CHANGE, they don't smear: hold each pose for 2 beats
+            if (t * 2.0).floor() as i64 % 2 == 0 { 0.0 } else { 1.0 }
+        } else if is_reese {
             0.5 + 0.45 * (std::f64::consts::TAU * 2.0 * t).sin()
         } else {
             off as f64 / total as f64
@@ -153,11 +163,14 @@ fn render(body: &[u8], rate: f64, bite: f32) -> Vec<f32> {
             }
         }
         // interleave stereo (identical channels unless QSound is live)
-        for i in 0..n {
-            out.push(l[i]);
-            out.push(r[i]);
+        if capture {
+            for i in 0..n {
+                out.push(l[i]);
+                out.push(r[i]);
+            }
         }
         off += n;
+    }
     }
     out
 }
