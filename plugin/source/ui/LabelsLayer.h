@@ -53,7 +53,7 @@ public:
         };
 
         draw ("filterLabel", t.text ("filterLabel", ""), false);
-        draw ("typeLabel",   t.text ("typeLabel",   "TYPE"), false);
+        draw ("typeLabel",   t.text ("typeLabel",   "BODY"), false);  // "Type should be body" (2026-07-18)
         draw ("amountLabel", t.text ("amountLabel", "AMOUNT"), true);
         // SOUND draws the Q/SLAM mode as a real button component over qLabel, so
         // railLower is intentionally blank there. MOVE draws a normal TIME label.
