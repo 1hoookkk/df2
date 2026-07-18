@@ -150,6 +150,17 @@ family_intents, membrane_modes, klatt_1980_*).
   + `audition_stems/` with PROVENANCE.md (license per file; NC audio = modal
   data only, never ship the audio).
 
+## Measured-object verdicts (2026-07-18 night)
+
+- **violin_cave APPROVED — "Yes thats the sound."** The TF lane (tf_ingest
+  detilt + floor renorm → fit → pack) is the measured-object front door.
+- **bodyN scout FAILED the ear**: 6 vs 12 stages (residual fit, series render)
+  = "No difference". Measured: 3.75→2.45 dB RMS at 1/12-oct — inaudible on
+  drums. body240's 6 stages carry a measured object. bodyN waits until a
+  source audibly needs >6 resonances/corner (plateau at ~2 dB was the greedy
+  solver's floor, not proof of a format limit). Scout renders:
+  `dev/tmp/measured_objects/violin_{6,12}stage_drums.wav`.
+
 ## SALVAGE (2026-07-17 dev/tmp harvest — read before authoring or launching)
 
 - **`df2/dev/tmp/trench_money_pack_rc1/`** — a FINISHED RC1 pack from 2026-06-30:
