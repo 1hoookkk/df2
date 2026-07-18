@@ -82,6 +82,20 @@
     { "id": "KEYTRACK_FACE", "note": "Key Track needs a face home (or ships hidden as an update headline). Tyson decides placement after hearing it live." },
     { "id": "CATALOG", "note": "On-demand chord/scale body generation (user picks root+quality; compile through the proven gates). NOT roster presets — restraint law." }
   ],
+  "beyond_body240": {
+    "context": "Runtime headroom is proven far beyond one cascade (~100 biquads is comfortable). Two lanes: COMPOSE existing 240-byte bodies at runtime (no format change), or EXTEND the format (V2). The 6-stage body240 itself stays immutable either way.",
+    "compose_no_format_change": [
+      { "id": "RACK", "note": "Two bodies in series (12 biquads): utility-into-character in one instance (De-Esser -> Talker). One hidden second slot. Highest usability-per-line-of-code." },
+      { "id": "Z_CUBE", "note": "Body-to-body morph (12 biquads): MORPH travels BETWEEN two loaded bodies via z_crossfade (implemented+tested in minifloat.rs). The preset list becomes a space." },
+      { "id": "UNISON_WALL", "note": "3-5 detuned copies of one body (24-60 biquads), cents-spread, summed — the filter supersaw. Stereo bloom (L/R cent offset via existing pitch_ratio machinery) is the 2-voice starter." }
+    ],
+    "extend_format_v2": [
+      { "id": "MEASURED_OBJECTS", "note": "A bodyN format (e.g. 12-24 stages/corner, 'body960') fits REAL measured objects — guitar body, cymbal, cab, room modes — as morphing cascades. 'Put your drums inside a grand piano', from measurements. The whole authoring/certify/decode pipeline generalizes; only the byte layout and grid-certification budget change." },
+      { "id": "HRTF_ORBIT", "note": "Measured-ear spatial: fit HRTF magnitude trajectories (SONICOM, 403 subjects, already on disk at dev/tmp/hrtf/sonicom) as morphing cascades — ORBIT graduates from psychoacoustic QSound to real elevation/azimuth. Needs the bodyN lane above." },
+      { "id": "MULTIBAND", "note": "Crossover split, one body per band (3x6 biquads + guards): mud body on lows / character mids / open top — TRENCH as a master-bus device. Furthest from current product shape; park last." }
+    ],
+    "restraint": "None of these enter V1. RACK and Z_CUBE are the first two post-ship builds; format extensions wait for a V2 decision. Catalog-lane chord generation (see next_missions_ranked) composes with all of them."
+  },
   "artifacts": {
     "render_harness": "trench-core/src/bin/hd_ab.rs (cargo bin hd-ab): island A/B, reese riff w/ key track, fx modes inslam/outslam/orbit, per-sample probes, warm-start. Env: HD_AB_SOURCE=reese, HD_AB_KEYTRACK=1, HD_AB_FX=..., HD_AB_SLAM=, HD_AB_MORPHSTEP=1, HD_AB_PERSAMPLE=lerp32|lerp1|fm",
     "renders": "dev/tmp/hd_ab/*.wav (48k deliverables resampled 384/625 from 78125)",
