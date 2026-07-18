@@ -139,14 +139,20 @@ impl ActorProvenance {
             || self.file_sha256.len() != 64
             || self.license_source_description.trim().is_empty()
         {
-            return Err(invalid("actor provenance has an empty or malformed identity field"));
+            return Err(invalid(
+                "actor provenance has an empty or malformed identity field",
+            ));
         }
         if !matches!(self.source_status.as_str(), "MEASURED" | "SIMULATED") {
-            return Err(invalid("actor provenance source status must be MEASURED or SIMULATED"));
+            return Err(invalid(
+                "actor provenance source status must be MEASURED or SIMULATED",
+            ));
         }
         if let Some(rate) = self.source_sample_rate_hz {
             if !rate.is_finite() || rate <= 0.0 {
-                return Err(invalid("actor provenance sample rate is nonfinite or nonpositive"));
+                return Err(invalid(
+                    "actor provenance sample rate is nonfinite or nonpositive",
+                ));
             }
         }
         if self.source_status == "MEASURED" && self.frf_reconstruction.is_none() {
@@ -1743,7 +1749,46 @@ pub struct AudioRender {
     pub wav_bytes: Vec<u8>,
 }
 
+/// Fixed audition excitation. The stimulus is deterministic and identical
+/// across renders, so no arm reintroduces per-render normalization.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Excitation {
+    /// Fixed two-tone technical probe (the certification stimulus).
+    Probe,
+    /// Deterministic pink noise (seeded; same buffer every render).
+    Pink,
+    /// Silence — the transport starts here.
+    Silent,
+}
+
 pub fn render_audio(session: &Session, mode: AudioMode) -> Result<AudioRender, WorkstationError> {
+    render_audio_ex(session, mode, Excitation::Probe)
+}
+
+pub fn render_audio_ex(
+    session: &Session,
+    mode: AudioMode,
+    excitation: Excitation,
+) -> Result<AudioRender, WorkstationError> {
+    render_audio_at(session, mode, excitation, 0.5, 0.5)
+}
+
+/// Render the retained engine at the exact authored/interpolated position shown
+/// by the workstation. The legacy proof entrypoints remain pinned to midpoint.
+pub fn render_audio_at(
+    session: &Session,
+    mode: AudioMode,
+    excitation: Excitation,
+    morph: f64,
+    q: f64,
+) -> Result<AudioRender, WorkstationError> {
+    if !morph.is_finite()
+        || !q.is_finite()
+        || !(0.0..=1.0).contains(&morph)
+        || !(0.0..=1.0).contains(&q)
+    {
+        return Err(invalid("audio Morph and Q must be finite values in 0..1"));
+    }
     let body = session.to_body_bytes()?;
     let cartridge =
         Cartridge::from_body_bytes("workstation-listen", &body, 1.0).map_err(invalid)?;
@@ -1763,18 +1808,25 @@ pub fn render_audio(session: &Session, mode: AudioMode) -> Result<AudioRender, W
     let frames = sample_rate as usize / 2;
     let mut left = Vec::with_capacity(frames);
     let mut right = Vec::with_capacity(frames);
+    let mut pink = PinkSource::seeded();
     for index in 0..frames {
         let t = index as f32 / sample_rate as f32;
         // Fixed source headroom, identical for both render modes. This is not
         // per-render normalization: the stimulus stays fixed and the raw
         // engine output must fit the PCM16 audition container without clipping.
-        let sample = 0.08 * (std::f32::consts::TAU * 220.0 * t).sin()
-            + 0.04 * (std::f32::consts::TAU * 880.0 * t).sin();
+        let sample = match excitation {
+            Excitation::Probe => {
+                0.08 * (std::f32::consts::TAU * 220.0 * t).sin()
+                    + 0.04 * (std::f32::consts::TAU * 880.0 * t).sin()
+            }
+            Excitation::Pink => 0.06 * pink.next(),
+            Excitation::Silent => 0.0,
+        };
         left.push(sample);
         right.push(sample);
     }
     let input_peak = left.iter().map(|sample| sample.abs()).fold(0.0, f32::max);
-    engine.process_block(&mut left, &mut right, 0.5, 0.5);
+    engine.process_block(&mut left, &mut right, morph, q);
     let output_peak = left.iter().map(|sample| sample.abs()).fold(0.0, f32::max);
     let output_rms =
         (left.iter().map(|sample| sample * sample).sum::<f32>() / left.len() as f32).sqrt();
@@ -1810,6 +1862,52 @@ fn wav_pcm16_mono(samples: &[f32], sample_rate: u32) -> Vec<u8> {
         bytes.extend_from_slice(&quantized.to_le_bytes());
     }
     bytes
+}
+
+/// Deterministic pink noise (fixed seed → identical buffer every render, so the
+/// pink audition stays reproducible). Paul Kellet economy filter over a seeded
+/// xorshift white source; output stays within roughly [-1, 1].
+struct PinkSource {
+    state: u32,
+    b: [f32; 7],
+}
+
+impl PinkSource {
+    fn seeded() -> Self {
+        Self {
+            state: 0x1234_5678,
+            b: [0.0; 7],
+        }
+    }
+
+    fn white(&mut self) -> f32 {
+        let mut x = self.state;
+        x ^= x << 13;
+        x ^= x >> 17;
+        x ^= x << 5;
+        self.state = x;
+        (x as f32 / u32::MAX as f32) * 2.0 - 1.0
+    }
+
+    fn next(&mut self) -> f32 {
+        let white = self.white();
+        self.b[0] = 0.99886 * self.b[0] + white * 0.0555179;
+        self.b[1] = 0.99332 * self.b[1] + white * 0.0750759;
+        self.b[2] = 0.96900 * self.b[2] + white * 0.1538520;
+        self.b[3] = 0.86650 * self.b[3] + white * 0.3104856;
+        self.b[4] = 0.55000 * self.b[4] + white * 0.5329522;
+        self.b[5] = -0.7616 * self.b[5] - white * 0.0168980;
+        let pink = self.b[0]
+            + self.b[1]
+            + self.b[2]
+            + self.b[3]
+            + self.b[4]
+            + self.b[5]
+            + self.b[6]
+            + white * 0.5362;
+        self.b[6] = white * 0.115926;
+        pink * 0.11
+    }
 }
 
 #[cfg(test)]
@@ -2028,6 +2126,23 @@ mod tests {
         assert!(!product.normalized);
         assert!(solo.output_peak.is_finite() && product.output_peak.is_finite());
         assert_ne!(solo.wav_bytes, product.wav_bytes);
+    }
+
+    #[test]
+    fn positioned_audio_matches_midpoint_api_and_changes_with_pose() {
+        let session =
+            Session::from_body_bytes("four-pose", "test", &fixture("four-pose"), evidence())
+                .unwrap();
+        let midpoint = render_audio_ex(&session, AudioMode::BodySolo, Excitation::Probe).unwrap();
+        let positioned_midpoint =
+            render_audio_at(&session, AudioMode::BodySolo, Excitation::Probe, 0.5, 0.5).unwrap();
+        let corner =
+            render_audio_at(&session, AudioMode::BodySolo, Excitation::Probe, 0.0, 0.0).unwrap();
+        assert_eq!(midpoint.wav_bytes, positioned_midpoint.wav_bytes);
+        assert_ne!(corner.wav_bytes, midpoint.wav_bytes);
+        assert!(
+            render_audio_at(&session, AudioMode::BodySolo, Excitation::Probe, -0.1, 0.5,).is_err()
+        );
     }
 
     #[test]

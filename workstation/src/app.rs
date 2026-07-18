@@ -1,9 +1,8 @@
 use crate::hash::sha256_hex;
 use crate::model::{
     ActorProvenance, AudioMode, AudioRender, ChangedWord, EditRequest, EditResult,
-    EvidenceReference, Pose,
-    RootGeometry, SampledAudit, ScreenData, Session, StageRecord, StageSourceReference,
-    WorkstationError, CORNER_LABELS, DIRECT_STAGE_EVIDENCE, SESSION_FORMAT,
+    EvidenceReference, Pose, RootGeometry, SampledAudit, ScreenData, Session, StageRecord,
+    StageSourceReference, WorkstationError, CORNER_LABELS, DIRECT_STAGE_EVIDENCE, SESSION_FORMAT,
 };
 use crate::recipe_index::{apply_candidate, RecipeApplication, RecipeCatalog, RecipeIndex};
 use crate::source_xml::{SourceCatalog, SourceEndpoint};
@@ -13,6 +12,7 @@ use std::path::{Path, PathBuf};
 use trench_core::cartridge::BODY_BYTES;
 use trench_core::cascade::{NUM_COEFFS, NUM_STAGES};
 use trench_core::lpc::{extract_poles, Pole};
+use trench_core::minifloat::PackedCorners;
 use trench_core::stage_law::STAGE_SR;
 
 const OWNED_ACTOR_EVIDENCE: &str = "owned-audio-lpc-fixed-actor-v1";
@@ -425,12 +425,8 @@ impl AppState {
             .map(|stem| stem.to_string_lossy().trim().to_owned())
             .filter(|name| !name.is_empty())
             .unwrap_or_else(|| "Owned Actor Filter".to_owned());
-        let (next, measurements) = fixed_actor_session(
-            display_name,
-            poles,
-            evidence,
-            Some(provenance.clone()),
-        )?;
+        let (next, measurements) =
+            fixed_actor_session(display_name, poles, evidence, Some(provenance.clone()))?;
         let before = self.session.clone();
         let before_body = before.to_body_bytes()?;
         let after_body = next.to_body_bytes()?;
@@ -672,6 +668,94 @@ impl AppState {
         self.morph = morph;
         self.q = q;
         Ok(())
+    }
+
+    /// Capture one exact packed-runtime position from a stable source session
+    /// into one authored corner of the working session. The source is passed
+    /// explicitly so several corners can be chosen from one unchanged sweep.
+    pub fn capture_runtime_position_to_corner(
+        &mut self,
+        source: &Session,
+        morph: f64,
+        q: f64,
+        target_corner: usize,
+        wav: &str,
+        audio_mode: &str,
+    ) -> Result<BodyApplyReport, WorkstationError> {
+        if target_corner >= 4 {
+            return Err(WorkstationError(
+                "capture target corner must be in 0..4".to_owned(),
+            ));
+        }
+        if !morph.is_finite()
+            || !q.is_finite()
+            || !(0.0..=1.0).contains(&morph)
+            || !(0.0..=1.0).contains(&q)
+        {
+            return Err(WorkstationError(
+                "capture Morph and Q must be finite values in 0..1".to_owned(),
+            ));
+        }
+        let source_body = source.to_body_bytes()?;
+        let source_hash = sha256_hex(&source_body);
+        let packed = PackedCorners::from_body_bytes(&source_body)
+            .map_err(|message| WorkstationError(message.to_owned()))?;
+        let captured_words = packed.interpolate_words(morph as f32, q as f32);
+        let evidence = EvidenceReference {
+            external_repository_commit: "workstation-packed-runtime-capture-v1".to_owned(),
+            relative_path: source.name.clone(),
+            file_sha256: source_hash.clone(),
+            evidence_type: DIRECT_STAGE_EVIDENCE.to_owned(),
+            note: format!(
+                "Exact packed-u16 runtime capture at Morph {morph:.9}, Q {q:.9} (wav '{wav}', audio {audio_mode}); no decode/re-encode, sorting, normalization, or repair."
+            ),
+        };
+        let before = self.session.clone();
+        let before_body = before.to_body_bytes()?;
+        let mut after = before.clone();
+        for (lane, words) in captured_words.into_iter().enumerate() {
+            after.corners[target_corner].lanes[lane] =
+                StageRecord::from_words(words, evidence.clone());
+        }
+        after.note = format!(
+            "Captured packed runtime position M{:.3} Q{:.3} from '{}' into {}.",
+            morph * 100.0,
+            q * 100.0,
+            source.name,
+            CORNER_LABELS[target_corner]
+        );
+        after.validate()?;
+        let after_body = after.to_body_bytes()?;
+        let audit_after = SampledAudit::run(&after_body)?;
+        let report = BodyApplyReport {
+            format: "trench-workstation-body-apply-v1".to_owned(),
+            operation: "capture_runtime_position".to_owned(),
+            source_path: source.name.clone(),
+            source_name: source.name.clone(),
+            source_file_sha256: source_hash,
+            source_corner: None,
+            target_corner: Some(target_corner),
+            before_body_sha256: sha256_hex(&before_body),
+            after_body_sha256: sha256_hex(&after_body),
+            changed_words: changed_words_between(&before, &after),
+            sampled_audit_after: audit_after.clone(),
+            cartridge_parity_after: after.cartridge_parity()?,
+        };
+        self.undo.push(before);
+        self.redo.clear();
+        self.session = after;
+        self.audit = audit_after;
+        self.selected_corner = target_corner;
+        self.pending_edit = None;
+        self.last_edit = None;
+        self.last_source_apply = None;
+        self.last_actor_load = None;
+        self.last_recipe_apply = None;
+        self.recipe_ledger.clear();
+        self.last_body_apply = Some(report.clone());
+        self.last_keep = None;
+        self.refresh_recipe_catalog()?;
+        Ok(report)
     }
 
     pub fn preview(&mut self, request: EditRequest) -> Result<PendingPreview, WorkstationError> {
@@ -1064,7 +1148,8 @@ pub(crate) fn fixed_actor_session(
             hz: pole.freq_hz,
             radius: runtime_radius,
         };
-        let mut stage = StageRecord::from_geometry(geometry.clone(), geometry, 1.0, evidence.clone())?;
+        let mut stage =
+            StageRecord::from_geometry(geometry.clone(), geometry, 1.0, evidence.clone())?;
         stage.actor_provenance = actor_provenance.clone();
         if stage.packed_words[0..=1] != stage.packed_words[2..=3] {
             return Err(WorkstationError(format!(
@@ -1600,6 +1685,35 @@ mod tests {
     }
 
     #[test]
+    fn runtime_capture_copies_exact_interpolated_words_from_a_stable_source() {
+        use trench_core::minifloat::PackedCorners;
+
+        let mut app = AppState::new(repo_root()).unwrap();
+        let source = app.session.clone();
+        let source_body = source.to_body_bytes().unwrap();
+        let source_packed = PackedCorners::from_body_bytes(&source_body).unwrap();
+        let expected = source_packed.interpolate_words(0.37, 0.64);
+        let before = PackedCorners::from_body_bytes(&app.session.to_body_bytes().unwrap()).unwrap();
+
+        let report = app
+            .capture_runtime_position_to_corner(&source, 0.37, 0.64, 2, "cello.wav", "body_solo")
+            .unwrap();
+        let after = PackedCorners::from_body_bytes(&app.session.to_body_bytes().unwrap()).unwrap();
+        assert_eq!(after.words[2], expected);
+        assert_eq!(after.words[0], before.words[0]);
+        assert_eq!(after.words[1], before.words[1]);
+        assert_eq!(after.words[3], before.words[3]);
+        assert_eq!(report.operation, "capture_runtime_position");
+        assert_eq!(report.target_corner, Some(2));
+        assert!(report
+            .changed_words
+            .iter()
+            .all(|word| word.corner_index == 2));
+        assert!(report.cartridge_parity_after);
+        assert!(report.sampled_audit_after.pass);
+    }
+
+    #[test]
     fn new_filter_is_an_explicit_four_pose_direct_stage_scaffold() {
         let mut app = AppState::new(repo_root()).unwrap();
         app.new_filter().unwrap();
@@ -1713,13 +1827,9 @@ mod tests {
             source_sample_rate_hz: Some(16_000.0),
             frf_reconstruction: Some("test waveform".to_owned()),
         };
-        let (session, lanes) = fixed_actor_session(
-            "Owned Actors".to_owned(),
-            poles,
-            evidence,
-            Some(provenance),
-        )
-        .unwrap();
+        let (session, lanes) =
+            fixed_actor_session("Owned Actors".to_owned(), poles, evidence, Some(provenance))
+                .unwrap();
         assert_eq!(lanes.len(), 6);
         assert!(session
             .corners

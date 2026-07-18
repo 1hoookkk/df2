@@ -1,0 +1,135 @@
+{
+  "schema": "trench-engine-campaign-handoff-v1",
+  "created_at": "2026-07-17",
+  "workspace": "C:\\Users\\hooki\\df2-workstation",
+  "title": "Engine campaign: inter-stage BITE, distortion voicing, HD island option, island SRC sweep-null",
+  "instructions_to_agent": [
+    "Work only in C:\\Users\\hooki\\df2-workstation. Read AGENTS.md and FILTER_NOTEBOOK.md first.",
+    "The 39062.5 Hz path with linear cascade is the VERIFIED REFERENCE. Every change below is an OPTION around it, default-off, and must be bit-exact to current behavior when disabled. Prove the bypass with a null before claiming anything.",
+    "Nonlinear modes have no transfer function: plots become decorative the moment drive > 0. The only gates for driven sound are level-matched renders and Tyson's ear.",
+    "One change per verdict. Build each item to a hearable render, deliver, wait.",
+    "Preserve concurrent work. The tournament page, dev/tmp/bytes_survivors, and dev/tmp/arch_catalog are live evidence — do not regenerate or clean them as a side effect."
+  ],
+  "context": {
+    "installed_build": "RATE menu (AUTO/SNAP/TIGHT/GLIDE, engine coeff_ramp_scale + trench_engine_set_coeff_ramp_scale), ORBIT drives QSound SPACE, RISE depth ramp, demo bodies baked (Rubber Mouth / Mass Driver / Bright Servo / Glass Cliff / Vowel Stress / Tooth Field), FUZZ_B_RAZOR seeds SNAP.",
+    "locked_decisions": [
+      "SLAM = Mackie OUTPUT desk at host rate, applied once in PluginProcessor after the island. LOCKED (ear + history + code).",
+      "Into-filter input desk stays an unexposed per-preset seasoning (InputMode::MackieDeskSlam, scale kIntoFilterDriveScale=0.10 in PluginProcessor.cpp).",
+      "body240 format and the 39062.5 clock stay the shipping default forever. HD is an option, not a migration.",
+      "Q corners are authored, never derived. Clean-room bodies gate per-corner vs all 132 ROM corners (>=6 dB)."
+    ],
+    "evidence_pointers": {
+      "notebook": "FILTER_NOTEBOOK.md (SALVAGE section: rc1 pack, keep/kill archives)",
+      "signal_path_source": "trench-core/src/engine.rs header comment + process_sample_inner",
+      "x3_native_rate_tables": "C:\\Users\\hooki\\trench_re_vault\\contracts\\CPhantomMorphLPX\\ (per-rate base/scale tables 44.1/48/96/192 — successor precedent for rate-rederived coefficients)"
+    }
+  },
+  "missions": [
+    {
+      "id": "A_interstage_bite",
+      "title": "Inter-stage soft-clipper — BITE grown into the cascade (TRY IT)",
+      "priority": 1,
+      "rationale": "Resonances push into each other: a soft-knee between stages generates harmonics positioned by the upstream peak, carved by the downstream anatomy. Feed-forward cascade means no implicit loop — DF2T survives, no ZDF needed. This is what the reserved BITE knob was always supposed to become.",
+      "design": {
+        "drive_0_contract": "drive == 0.0 must be BIT-EXACT to the current linear cascade (branch on a bool, not a polynomial that approximates identity).",
+        "knee": "reuse the engine's saturate() soft-knee shape per inter-stage junction, pre-scaled by drive; do NOT clip inside a biquad's own feedback, only BETWEEN stages",
+        "placement": "after stage k output, before stage k+1 input, k = 0..4 (five junctions); post-cascade biteDriveBlock stays as-is for now",
+        "gain_staging": "junction drive must be ramped on the same glide as slam_drive (delta per control block) so motion doesn't zipper the nonlinearity",
+        "aliasing": "voice the drive range conservative (soft knee, low ceiling) — harmonics fold above 19531 Hz; heavy drive is out of scope until an HD island exists"
+      },
+      "files": [
+        "trench-core/src/cascade.rs            — Cascade: interstage_drive f32 (default 0), apply knee between stage ticks; keep tick() branch-free fast path when 0",
+        "trench-core/src/engine.rs             — plumb set_interstage_drive + per-block delta ramp (mirror slam_drive pattern, see delta_slam_drive)",
+        "trench-core/src/ffi.rs                — #[no_mangle] trench_engine_set_interstage_drive(engine, f32) (mirror trench_engine_set_coeff_ramp_scale)",
+        "plugin/source/dsp/TrenchDspBridge.h   — extern decl + TrenchParams.interstageDrive + send-on-change (mirror rampScale/lastRampScaleSent)",
+        "plugin/source/PluginProcessor.cpp     — route ParamID::bite -> params.interstageDrive (line ~1009 'BITE RESERVED in V1' is the hook); leave biteDriveBlock call at 0 while auditioning to isolate the new stage",
+        "plugin/source/parameters/TrenchParameters.cpp — verify a 'bite' parameter exists in the layout; add AudioParameterFloat 0..1 default 0 if not"
+      ],
+      "verification": [
+        "NULL: render any body, drive=0, new build vs current build — must null to -inf (bit-exact).",
+        "Render pack for the ear: FUZZ_B_RAZOR + Rubber Mouth + Tooth Field on the drum groove (trench-core/src/bin/rate_ab.rs groove) at drive {0, 0.2, 0.5, 0.8}, level-matched. Ear is the only gate.",
+        "Aliasing probe: 5 kHz sine at drive 0.8, FFT — report fold-back components above -60 dBc honestly."
+      ]
+    },
+    {
+      "id": "B_distortion_voicing",
+      "title": "Distortion voicing pass — the two unmeasured taste constants",
+      "priority": 2,
+      "rationale": "Two nonlinear numbers were never taste-tested: the into-filter desk scale (0.10) and the (new) inter-stage drive curve. One render session settles both.",
+      "files": [
+        "plugin/source/PluginProcessor.cpp     — kIntoFilterDriveScale (line ~15, currently 0.10): render A/B at {0.05, 0.10, 0.20, 0.35} through a fuzz body; Tyson picks",
+        "plugin/source/dsp/SlamStage.h         — (LATER, optional) 2x oversampled output desk for heavy drive; do not touch until asked"
+      ],
+      "verification": [
+        "Level-matched wav set per constant, one variable per set, delivered for ear verdict. No number changes without a verdict."
+      ]
+    },
+    {
+      "id": "C_hd_island",
+      "title": "HD island option — 78125 Hz (exactly 2x the unit), wired into the plugin, default OFF",
+      "priority": 3,
+      "rationale": "Opens Nyquist to 39 kHz for air without abandoning the clock: same geometry, re-derived words. NOT Gemini's 'kill the island' — the unit survives as the unit. Successor precedent exists (X3 per-rate tables in the vault).",
+      "design": {
+        "rederivation_law": "decode each stage via stage_law::geometry_from_words -> re-encode at fs2=78125: pole/zero ANGLE from the same Hz (angle2 = 2*pi*hz/fs2); RADIUS preserves bandwidth in Hz: r2 = r^(39062.5/78125) = sqrt(r); SCALE unchanged. Real pairs go through words_from_geometry (never approximate them).",
+        "where": "on cartridge load when the engine is prepared at 78125 — the stored body240 bytes NEVER change on disk; HD is a decode-time view",
+        "plugin_wiring": "island rate becomes selectable {39062.5, 78125}; hidden APVTS bool 'hdMode' default false (NOT on the V1 face — diagnostics/config only). Island latency and buffer sizing already parameterized by rate in prepare().",
+        "warning": "AGC table: active_agc_table() sqrt-law triggers only >65k — 78125 crosses it; verify the leveller feel is preserved or compensate (this is the likely gotcha)."
+      },
+      "files": [
+        "trench-core/src/stage_law.rs          — add words_for_rate(words, fs) or StageGeometry::reencode_at(fs) (angle re-derive + r^(fs0/fs) radius law); STAGE_SR stays the AUTHORING constant",
+        "trench-core/src/cartridge.rs          — Cartridge::from_body_bytes gains an optional target_rate; PackedCorners rederived when != 39062.5",
+        "trench-core/src/engine.rs             — prepare(78125) path: verify BLOCK_SIZE control grid, ramp seconds->samples, COEFF_RAMP law all scale by sample_rate (they do — audit, don't assume); active_agc_table crossover check",
+        "trench-core/src/ffi.rs                — trench_engine_load_body_bytes must know the prepared rate (it already prepares first — verify order)",
+        "plugin/source/TrenchRates.h           — emuInternalRate -> emuInternalRate(bool hd) or two constants",
+        "plugin/source/dsp/FixedRateTrenchIsland.cpp/.h — prepare() with the selected rate (SRC ratios/latency recompute)",
+        "plugin/source/dsp/TrenchDspBridge.h   — pass rate at prepare",
+        "plugin/source/PluginProcessor.cpp     — hdMode param read at prepareToPlay; report new latency to host",
+        "plugin/source/parameters/TrenchParameters.cpp — hidden bool 'hdMode' default false"
+      ],
+      "verification": [
+        "TF overlay: same body probed at 39062.5 vs re-derived 78125 — curves must match below 15 kHz within quantization (~0.1 dB); divergence above is the point.",
+        "Ring-time check: impulse through a Q100 body at both rates — decay tau in SECONDS must match (that is what r=sqrt(r) preserves).",
+        "AGC feel: level trajectory on the drum groove at both rates, overlaid.",
+        "Ear A/B: one pad body, 96k host session, HD on/off."
+      ]
+    },
+    {
+      "id": "D_island_sweep_null",
+      "title": "Measure the island SRC — sweep-null the one unmeasured stage",
+      "priority": 1,
+      "rationale": "The resampler is the only stage between the verified engine and the listener that has never been measured. Cheap, and it either clears the 'dark' question or finds real loss.",
+      "design": {
+        "method": "render an exponential sine sweep (20 Hz..22 kHz, ~10 s) through the plugin with the 'No Filter' body (exact identity — the island+SRC is then the ONLY processing besides AGC; disable AGC/saturate via the debug FFI toggles if driving trench-core directly, or measure through the full chain and say so), at host 44100 / 48000 / 96000. Compare against the dry sweep: latency-align, deconvolve or subtract.",
+        "laziest_valid_path": "python + spotify pedalboard loading the installed TRENCH.vst3 (state: No Filter body, motion off, slam 0, amount 1) — no new C++; if pedalboard cannot set the body, fall back to a tiny C++ harness cloned from dev/tmp/gesture_test/ (bat+cpp+exe pattern) that drives FixedRateTrenchIsland directly"
+      },
+      "files": [
+        "dev/tmp/island_null/measure.py        — NEW: sweep gen, render, latency-align, residual + magnitude-response plot",
+        "dev/tmp/gesture_test/                 — the existing harness pattern to clone IF pedalboard cannot set plugin state"
+      ],
+      "verification": [
+        "Deliverables: passband ripple (dB), HF rolloff at 15/18/19.5 kHz per host rate, residual-vs-dry in dB, one plot. Numbers, not adjectives.",
+        "If loss found: report WHERE (island down-SRC vs up-SRC) before proposing any fix."
+      ]
+    }
+  ],
+  "queued_not_started": [
+    {
+      "id": "E_key_tracking",
+      "note": "Key-tracked morph (the lost Morpheus Frequency Tracking axis). Log encoding means transpose ~= adding a constant to frequency words. Needs: pitch detector (plugin, control-rate) + encoded-space word offset (trench-core minifloat/engine). Ranked FIRST of the doors for product value (melody bodies play in key) — start after A/D land."
+    },
+    {
+      "id": "F_per_sample_morph",
+      "note": "Audio-rate morph / anatomy FM. interpolate_words per sample (kernel exists in minifloat.rs, just called per 32-sample block today). Surface as RATE: AUDIO or a ZAP-family gesture. Foundation for FM presets — build when A..D are heard."
+    },
+    {
+      "id": "G_z_cube",
+      "note": "Body-to-body morph. z_crossfade already implemented+tested in minifloat.rs — needs engine plumbing (two cartridges + z param) and a product surface. The preset list becomes a space."
+    }
+  ],
+  "do_not": [
+    "Do not make any nonlinear or HD mode the default. The 39062.5 linear path is the product.",
+    "Do not re-derive method: the assembler, clean-room builder, and QC scripts live in dev/tmp/bytes_fix/ — extend them.",
+    "Do not ship or stage anything from dev/tmp/arch_catalog (transposed ROM rows) or fuzzi_face_REVERSED_ROM (raw ROM) — internal study objects.",
+    "Do not regenerate plugin/presets/PresetRoster.inc with the generator without re-appending the six demo bodies (hand-added at the bottom)."
+  ]
+}
