@@ -146,8 +146,17 @@ private:
         const float h = juce::jmax (1.0f, (float) getHeight() - 6.0f);
         const float next = juce::jlimit (0.0f, 1.0f, 1.0f - (e.position.y - 3.0f) / h);
         attachment->setValueAsPartOfGesture (param->convertFrom0to1 (next));
+        if (onValueGesture)
+            onValueGesture (next);
         repaint();
     }
+
+public:
+    // The screen announces the dose while the wheel is worked (SLAM-cue
+    // pattern) — AMOUNT stays readout-free on the plate but never silent.
+    std::function<void (float)> onValueGesture;
+
+private:
 
     float currentNormalised() const
     {

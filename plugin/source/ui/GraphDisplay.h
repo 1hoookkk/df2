@@ -78,6 +78,16 @@ public:
         setInterceptsMouseClicks (canvasParam != nullptr, false);
     }
 
+    // AMOUNT drag telemetry: the screen announces the dose (SLAM-cue voice);
+    // fades out once the wheel rests.
+    void showAmountCue (float norm)
+    {
+        amountCueValue = juce::jlimit (0.0f, 1.0f, norm);
+        amountCueAlpha = 1.0f;
+        startTimer (30);
+        repaint();
+    }
+
     void setSlamMeter (float outClipFrac) noexcept
     {
         const float v = juce::jlimit (0.0f, 1.0f, outClipFrac);
@@ -275,6 +285,14 @@ public:
 
             drawResponseTrace (g);
             drawSlamHoverCue (g, glass);
+            if (amountCueAlpha > 0.01f)
+            {
+                g.setFont (telemetryFont (9.8f, false));
+                g.setColour (juce::Colour (0xffcfe8de).withAlpha (0.94f * amountCueAlpha));
+                g.drawText ("AMOUNT " + juce::String (juce::roundToInt (amountCueValue * 100.0f)) + "%",
+                            juce::Rectangle<float> (glass.getX() + 8.0f, glass.getY() + 4.0f, 110.0f, 14.0f),
+                            juce::Justification::centredLeft, false);
+            }
 
             // Subtle, curved, semi-transparent white gradient across the top half of the screen
             // to simulate a curved glass or plastic screen cover reflecting overhead studio lights.
@@ -604,9 +622,13 @@ private:
     static constexpr double kPulseStaticMs   = 80.0;
     static constexpr double kPulseRedrawMs   = 100.0;
 
+    float amountCueValue = 0.0f;
+    float amountCueAlpha = 0.0f;
+
     void timerCallback() override
     {
         meterAlpha = juce::jmax (0.0f, meterAlpha - 0.05f);
+        amountCueAlpha = juce::jmax (0.0f, amountCueAlpha - 0.04f);
 
 
         if (pulsePhase != PulseIdle)
@@ -629,7 +651,7 @@ private:
             }
         }
 
-        if (meterAlpha <= 0.01f && pulsePhase == PulseIdle)
+        if (meterAlpha <= 0.01f && amountCueAlpha <= 0.01f && pulsePhase == PulseIdle)
             stopTimer();
         repaint();
     }

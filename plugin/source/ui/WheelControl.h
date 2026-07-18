@@ -197,8 +197,14 @@ public:
         // segmented diode pass. NOTHING is painted behind the wheel: the panel art's
         // baked recess IS the well (any code-drawn cavity here reads as a fake
         // rectangle; regressed twice, never again).
-        const int dw = fw / kStripDrawScale;
-        const int dh = fh / kStripDrawScale;
+        // Scale-to-FIT the well (uniform, downscale only): the compact editor
+        // shrank the wells below the authored 1x frame and clipped the caps —
+        // FULL silhouette, never clipped (WINE_WHEEL law).
+        const float fit = juce::jmin (1.0f,
+                                      (float) getWidth()  / ((float) fw / kStripDrawScale),
+                                      (float) getHeight() / ((float) fh / kStripDrawScale));
+        const int dw = juce::roundToInt ((float) fw / kStripDrawScale * fit);
+        const int dh = juce::roundToInt ((float) fh / kStripDrawScale * fit);
         const int dx = (getWidth()  - dw) / 2;
         const int dy = (getHeight() - dh) / 2;
         g.setOpacity (1.0f);

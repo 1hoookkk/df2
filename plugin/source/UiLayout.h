@@ -90,9 +90,9 @@ public:
         // wheel stays") — its own column between the readouts and the plate's
         // corner groove. Label on the MORPH/Q label row; the wheel spans the
         // two rails it doses. Height keeps the 47px frame at exactly 2x.
-        layout.elements["amountLabel"]   = { { 777.0f, 640.0f, 110.0f, 30.0f }, 11.5f, juce::Colour (0xff0d0b09) };
+        layout.elements["amountLabel"]   = { { 825.0f, 640.0f, 110.0f, 30.0f }, 11.5f, juce::Colour (0xff0d0b09) };
         layout.elements["amountLabel"].text = "AMOUNT";
-        layout.elements["amountWheel"]   = { { 808.0f, 690.0f, 48.0f, 276.0f }, {}, {} };
+        layout.elements["amountWheel"]   = { { 856.0f, 690.0f, 48.0f, 276.0f }, {}, {} };  // right column, inside the groove at ~955 (measured; the ~850 note was stale)
 
         // Warm desaturated clinical, committed: putty plate, SAGE LCD glass with
         // ONE warm amber signal (the Millennium reference) — dark ink telemetry

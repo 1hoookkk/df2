@@ -72,6 +72,14 @@ private:
     std::unique_ptr<trench::ui::TakeButton>       takeButton;    // TAKE: drag the last few seconds into the DAW
     std::unique_ptr<trench::ui::FiveDButton>      fiveDButton;   // 5D: latch the extreme spatial orbit
     std::unique_ptr<trench::ui::LabelsLayer>      labels;
+#if TRENCH_DEV_PANEL
+    // Dev-only: right-edge arrow opens a generic all-parameters panel so every
+    // hidden host param (hdMode, slamDrive, bite, keyTrack, space, ...) can be
+    // tuned by taste. Never ships: TRENCH_DEV_PANEL=0 for release.
+    std::unique_ptr<juce::TextButton>                 devArrow;
+    std::unique_ptr<juce::Viewport>                   devViewport;
+    std::unique_ptr<juce::GenericAudioProcessorEditor> devPanel;
+#endif
     std::unique_ptr<trench::ui::DecalsLayer>      decalsLayer;
 
     JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR (PluginEditor)

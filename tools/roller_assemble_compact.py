@@ -109,10 +109,12 @@ for i in range(NF):
     xn = np.arange(W, dtype=np.float32) / W
     # Dialled back toward the reference face (2026-07-18): even metallic
     # light, a shade quieter than the full sheet match.
-    env = 0.80 + 0.28 * np.exp(-((xn - 0.22) ** 2) / (2 * 0.24 ** 2))
+    # PUNCHY GLOSS (measured off the real X3 filter page 2026-07-18: roller
+    # median 43, p90 104, speculars to 247): dark body, fins FLASH. The old
+    # highlight knee crushed exactly this — removed.
+    env = 0.86 + 0.28 * np.exp(-((xn - 0.22) ** 2) / (2 * 0.24 ** 2))
     env *= 0.45 + 0.55 * np.minimum(np.minimum(xn, 1 - xn) / 0.06, 1.0)
-    n = np.clip((rgb * env[None, :, None] / 255.0 - 0.015) * 1.18, 0, 1) ** 0.90
-    n = np.where(n > 0.55, 0.55 + (n - 0.55) * 0.60, n)   # sheet's soft speculars, not chrome pops
+    n = np.clip((rgb * env[None, :, None] / 255.0 - 0.015) * 1.30, 0, 1) ** 0.86
     # SEATED cylinder ("seems to stick out", 2026-07-18): crown rolls into the
     # socket shadow, belly melts into the contact shadow.
     yn = np.clip((np.arange(rgb.shape[0], dtype=np.float32) - y0) / max(raw_h - 1, 1), 0, 1)

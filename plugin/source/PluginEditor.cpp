@@ -104,6 +104,7 @@ PluginEditor::PluginEditor (PluginProcessor& p)
     // did. it should be amount", 2026-07-17; re-affirmed "the thin wheel
     // stays", 2026-07-18). Spinner, no readout.
     amountWheel = std::make_unique<ThinWheel> (processor.apvts, ParamID::amount);
+    amountWheel->onValueGesture = [this] (float v) { graph->showAmountCue (v); };
     seedButton   = std::make_unique<SeedButton> (theme);
     seedButton->onSeed = runSeed;
     takeButton   = std::make_unique<TakeButton> (theme);
@@ -140,6 +141,26 @@ PluginEditor::PluginEditor (PluginProcessor& p)
     addChildComponent (*fiveDButton);
     addAndMakeVisible (*labels);
     addAndMakeVisible (*decalsLayer);   // front-most: free text/boxes/lines
+
+#if TRENCH_DEV_PANEL
+    // Dev tuning drawer: '›' at the right edge opens EVERY parameter —
+    // hdMode, slamDrive, bite, keyTrack, space, inputMode, motion, the lot.
+    devPanel = std::make_unique<juce::GenericAudioProcessorEditor> (processor);
+    devViewport = std::make_unique<juce::Viewport>();
+    devViewport->setViewedComponent (devPanel.get(), false);
+    devViewport->setScrollBarsShown (true, false);
+    addChildComponent (*devViewport);
+    devArrow = std::make_unique<juce::TextButton> (juce::String::fromUTF8 ("\xe2\x80\xba"));
+    devArrow->setTooltip ("dev: all parameters");
+    devArrow->setClickingTogglesState (true);
+    devArrow->onClick = [this]
+    {
+        devViewport->setVisible (devArrow->getToggleState());
+        devViewport->toFront (false);
+        devArrow->setButtonText (juce::String::fromUTF8 (devArrow->getToggleState() ? "\xe2\x80\xb9" : "\xe2\x80\xba"));
+    };
+    addAndMakeVisible (*devArrow);
+#endif
 
     setResizable (false, false);
     setSize (kEditorWidth, kEditorHeight);
@@ -215,6 +236,16 @@ void PluginEditor::timerCallback()
 void PluginEditor::resized()
 {
     layoutComponents();
+#if TRENCH_DEV_PANEL
+    if (devArrow != nullptr)
+    {
+        devArrow->setBounds (getWidth() - 14, getHeight() / 2 - 22, 13, 44);
+        devArrow->toFront (false);
+        const int pw = juce::roundToInt (getWidth() * 0.82f);
+        devPanel->setSize (pw - 10, juce::jmax (devPanel->getHeight(), 10));
+        devViewport->setBounds (getWidth() - 14 - pw, 8, pw, getHeight() - 16);
+    }
+#endif
 }
 
 void PluginEditor::layoutComponents()

@@ -24,6 +24,7 @@ else()
 endif()
 
 set(TRENCH_COMMON_DEFINITIONS
+    TRENCH_DEV_PANEL=1             # dev-only: right-edge arrow opens the all-params tuning panel. Set 0 for ship builds.
     JUCE_WEB_BROWSER=0
     JUCE_USE_CURL=0
     JUCE_DISPLAY_SPLASH_SCREEN=0   # no "Made with JUCE" overlay (requires a paid/appropriate JUCE license at release)
