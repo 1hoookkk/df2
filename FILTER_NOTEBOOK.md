@@ -115,6 +115,20 @@ family_intents, membrane_modes, klatt_1980_*).
   `df2-workstation/dev/tmp/audition/tournament/tournament.html`; the df2 copy
   of the tool is plot-less and superseded. Awaiting keep/kill.
 
+## The four TRENCH namesakes (2026-07-18)
+
+- Archetype ⊗ NEW MEASURED RAILS off the four founding families:
+  `tube_shout` ← P2k_007 Fuzzi Face (closed-open tube L 0.60→0.15 m),
+  `bell_rake` ← P2k_029 Lucifer's Q (tuned-bell partials f0 400→1200),
+  `skin_hit` ← P2k_004 Meaty Gizmo (drumhead modes f0 120→400),
+  `acid_vox` ← P2k_015 DJ Alkaline (Klatt 'oo'→'ae' + F4/F5).
+  Movers re-railed rank-matched (pole centers only); zeros/radii/scales/frames
+  verbatim; Q corners inherit each archetype's own per-lane Q transform.
+  Builder: `dev/tmp/bytes_fix/build_namesakes.py` → `dev/tmp/namesakes/`.
+  Gates ALL CLEAR: surface copy-risk 29.2–43.8 dB, per-corner worst 8.1 dB,
+  floors ~0, bloom 18.5–199.3 dB (in band), mutual distance 26.4–37.3 dB.
+  On the tournament page for keep/kill; not in the roster until the ear says.
+
 ## SALVAGE (2026-07-17 dev/tmp harvest — read before authoring or launching)
 
 - **`df2/dev/tmp/trench_money_pack_rc1/`** — a FINISHED RC1 pack from 2026-06-30:
