@@ -255,8 +255,9 @@ public:
                                      params.morph,
                                      params.q);
 
-        // BITE / DAMAGE — post-cascade harmonic grit on the FILTERED signal (distinct from
-        // the pre-filter SLAM clip). Bounded soft-fold; exact unity at bite=0.
+        // CLIP — post-cascade drum-bus hard clip on the FILTERED signal (params.bite
+        // carries ParamID::clip; the inter-stage BITE lives in the Rust engine).
+        // Gain into a 1.0 ceiling; exact unity at clip=0.
         const float biteNorm = juce::jlimit (0.0f, 1.0f, params.bite);
         trench::biteDriveBlock (buffer.getWritePointer (0), n, biteNorm);
         trench::biteDriveBlock (buffer.getWritePointer (1), n, biteNorm);

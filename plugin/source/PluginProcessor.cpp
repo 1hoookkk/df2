@@ -903,11 +903,15 @@ void PluginProcessor::processBlock (juce::AudioBuffer<float>& buffer, juce::Midi
         // Below the silence floor the ratio is noise/noise, so it gates to 0.
         const float fc = bakedReactCutoff.load (std::memory_order_relaxed);
         const float a = 1.0f - std::exp (-juce::MathConstants<float>::twoPi * fc / (float) sampleRate);
-        float bandPeak = 0.0f, widePeak = 0.0f;
+        // Ratio per CHANNEL (then max) so a loud unrelated channel can't mask
+        // the other channel's in-band energy. Fade the push in over the quiet
+        // range (-60..-30 dBFS broadband) so near-silent tails/hiss — which are
+        // often 100% in-band by ratio — can't drive a full push.
         for (int ch = 0; ch < juce::jmin (2, buffer.getNumChannels()); ++ch)
         {
             const auto* d = buffer.getReadPointer (ch);
             float s1 = bakedDetState1[ch], s2 = bakedDetState2[ch];
+            float bandPeak = 0.0f, widePeak = 0.0f;
             for (int i = 0; i < buffer.getNumSamples(); ++i)
             {
                 s1 += a * (d[i] - s1);
@@ -918,9 +922,15 @@ void PluginProcessor::processBlock (juce::AudioBuffer<float>& buffer, juce::Midi
                 widePeak = juce::jmax (widePeak, std::abs (d[i]));
             }
             bakedDetState1[ch] = s1; bakedDetState2[ch] = s2;
+            constexpr float silenceFloor = 1.0e-3f;   // ~-60 dBFS: no push at all
+            constexpr float fullLevel = 0.0316f;      // ~-30 dBFS: full sensitivity
+            if (widePeak > silenceFloor && std::isfinite (bandPeak) && std::isfinite (widePeak))
+            {
+                const float ratio = juce::jlimit (0.0f, 1.0f, bandPeak / widePeak);
+                const float loud = juce::jlimit (0.0f, 1.0f, (widePeak - silenceFloor) / (fullLevel - silenceFloor));
+                inPeak = juce::jmax (inPeak, ratio * loud);
+            }
         }
-        constexpr float silenceFloor = 1.0e-3f; // ~-60 dBFS: below this, no push
-        inPeak = widePeak > silenceFloor ? juce::jlimit (0.0f, 1.0f, bandPeak / widePeak) : 0.0f;
     }
     else
     {
