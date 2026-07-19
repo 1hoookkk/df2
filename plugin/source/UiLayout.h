@@ -70,7 +70,7 @@ public:
         layout.elements["filterLabel"].text = "TRENCH";   // hidden — the nameplate carries the identity
         // TYPE label: clear breathing room before the preset bar.
         layout.elements["typeLabel"]    = { { 108.0f, 133.0f, 84.0f, 74.0f },  15.0f, juce::Colour (0xff0d0b09) };
-        layout.elements["typeLabel"].text = "TYPE";
+        layout.elements["typeLabel"].text = "BODY";  // "Type should be body" (2026-07-18)
         layout.elements["typeName"]     = { { 244.0f, 127.0f, 530.0f, 79.0f },  18.0f, juce::Colour (0xff0d0b09) };
         layout.elements["typeArrow"]    = { { 838.0f, 127.0f, 56.0f,  79.0f },  {}, {} }; // dropdown arrow box (the bar's divided end segment)
         // Rail labels: the SAME measured vertical gap above each wheel well;
