@@ -67,8 +67,73 @@ public:
     void mouseExit  (const juce::MouseEvent&) override { repaint(); }
     void mouseDown  (const juce::MouseEvent&) override
     {
-        selector.showPopup();
+        showGroupedMenu();
         repaint();
+    }
+
+    // The monolith fix (2026-07-19): 141 flat rows -> signature bodies up
+    // front, the mass families folded into submenus. Same cartridge panel
+    // styling, same attachment (selection goes through the ComboBox).
+    void showGroupedMenu()
+    {
+        int count = 0;
+        const auto* entries = trench::bodyRoster (count);
+        const int current = selector.getSelectedId() - 1;
+
+        struct Fam { const char* prefix; const char* label; };
+        static constexpr Fam kFams[] = {
+            { "VOWL_", "VOWELS" }, { "RISERL_", "RISERS" }, { "CAVL_", "CAVES" },
+            { "X_", "CROSSES" }, { "three_layer", "LAYERS" }, { "FUZZ_", "FUZZ" },
+            { "METALL_", "METAL" }, { "M0_", "HYBRIDS" },
+        };
+
+        juce::PopupMenu m;
+        m.setLookAndFeel (&menuLookAndFeel);
+        juce::PopupMenu fams[std::size (kFams)];
+        juce::PopupMenu userMenu;
+        // Scanned Documents/TRENCH/bodies entries carry a full path as base —
+        // they fold into USER, never the signature tier (216 loose dev files
+        // were flooding the top level: the monolith).
+        auto isUser = [] (const char* base) { return juce::String (base).containsChar (':'); };
+        auto famIndex = [&] (const char* base) -> int
+        {
+            if (isUser (base))
+                return -2;
+            const juce::String b (base);
+            for (int f = 0; f < (int) std::size (kFams); ++f)
+                if (b.startsWith (kFams[(size_t) f].prefix))
+                    return f;
+            return -1;
+        };
+
+        // top level: NO FILTER + every named/signature body (not in a family)
+        for (int i = 0; i < count; ++i)
+            if (famIndex (entries[i].base) == -1)
+                m.addItem (i + 1, entries[i].displayName, true, i == current);
+        m.addSeparator();
+        for (int i = 0; i < count; ++i)
+        {
+            const int f = famIndex (entries[i].base);
+            if (f >= 0)
+                fams[f].addItem (i + 1, entries[i].displayName, true, i == current);
+            else if (f == -2)
+                userMenu.addItem (i + 1, entries[i].displayName, true, i == current);
+        }
+        for (int f = 0; f < (int) std::size (kFams); ++f)
+            if (fams[f].getNumItems() > 0)
+                m.addSubMenu (kFams[(size_t) f].label, fams[f], true, nullptr,
+                              current >= 0 && famIndex (entries[current].base) == f);
+        if (userMenu.getNumItems() > 0)
+            m.addSubMenu ("USER", userMenu, true, nullptr,
+                          current >= 0 && famIndex (entries[current].base) == -2);
+
+        juce::Component::SafePointer<TypeSelectorView> self (this);
+        m.showMenuAsync (juce::PopupMenu::Options().withTargetComponent (this),
+                         [self] (int id)
+                         {
+                             if (self != nullptr && id > 0)
+                                 self->selector.setSelectedItemIndex (id - 1, juce::sendNotificationSync);
+                         });
     }
 
     void paint (juce::Graphics& g) override
