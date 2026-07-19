@@ -188,13 +188,19 @@ for i in range(NF):
         band_rows = row_profile > 0.35
         colbright = (lum * a_mask)[band_rows, :].max(axis=0)
         toothness = np.clip(colbright / max(float(colbright.max()), 1e-4), 0.0, 1.0)
-        E *= (1.0 - 0.62 * toothness)[None, :]           # fins occlude, gaps pass
-        E *= np.clip(vshade, 0.25, 1.0)[:, None]         # glow lives IN the cylinder's light
+        # RELIGHT, don't composite (method change 2026-07-18, 'still pasted'):
+        # the lamp is UNDER the drum. Gaps TRANSMIT the light; fin tops facing
+        # it CATCH a dimmer teal reflection scaled by the metal's own specular
+        # (lum) — so the drum's geometry modulates the light both ways and the
+        # metal texture always survives underneath (screen blend, not replace).
+        E_trans = E * (1.0 - 0.62 * toothness)[None, :]
+        E_refl = E * (toothness[None, :] * lum * 0.50)
+        Eall = (E_trans + E_refl) * np.clip(vshade, 0.25, 1.0)[:, None]
         amp = 0.88 * min(1.0, v * 12.0)                                # frame 0 = no glow
         caps = np.clip(np.minimum(x - x0, x1 - x) / (0.06 * raw_w), 0.0, 1.0) ** 2
-        E = E * amp * caps[None, :] * a_mask
+        E = Eall * amp * caps[None, :] * a_mask
         k = E[..., None]
-        rgb = np.clip(rgb * (1.0 - k) + C * k, 0, 255)
+        rgb = np.clip(rgb + C * k * (1.0 - rgb / 255.0), 0, 255)  # screen: add light, keep metal
         cols = E.sum(axis=0)
         glow_centroids.append(float((cols * np.arange(W)).sum() / max(cols.sum(), 1e-6)))
         lit = E > 0.75
