@@ -71,6 +71,70 @@ public:
         repaint();
     }
 
+    // Hover-audition row (2026-07-19, "I need to audition directly in the
+    // plugin"): highlighting a body LOADS it live — browse with your ears.
+    // Click commits; dismissing the menu restores the pre-menu body.
+    class AuditionItem : public juce::PopupMenu::CustomComponent
+    {
+    public:
+        AuditionItem (TypeSelectorView& owner, int bodyIdx, juce::String name, bool ticked)
+            : juce::PopupMenu::CustomComponent (true),
+              o (owner), idx (bodyIdx), label (std::move (name)), isTicked (ticked) {}
+
+        void getIdealSize (int& w, int& h) override
+        {
+            w = juce::jmax (150, label.length() * 8 + 40); h = 22;
+        }
+
+        void paint (juce::Graphics& g) override
+        {
+            const bool hot = isItemHighlighted();
+            if (hot && ! wasHot)
+            {
+                // side-effect on highlight change: preview asynchronously
+                // (never mutate params inside paint)
+                auto safeOwner = juce::Component::SafePointer<TypeSelectorView> (&o);
+                const int i = idx;
+                juce::MessageManager::callAsync ([safeOwner, i]
+                {
+                    if (safeOwner != nullptr)
+                        safeOwner->previewBody (i);
+                });
+            }
+            wasHot = hot;
+
+            auto r = getLocalBounds().toFloat();
+            if (hot)
+            {
+                g.setColour (juce::Colour (0xffe9dfc6).withAlpha (0.10f));
+                g.fillRect (r.reduced (2.0f, 1.0f));
+                auto rail = r.reduced (2.0f, 1.0f); rail.setWidth (2.0f);
+                g.setColour (juce::Colour (0xffd98a36).withAlpha (0.85f));
+                g.fillRect (rail);
+            }
+            if (isTicked)
+            {
+                g.setColour (juce::Colour (0xffe9dfc6).withAlpha (0.85f));
+                g.fillRoundedRectangle (juce::Rectangle<float> (hot ? 6.0f : 2.0f, 4.0f, 3.0f, r.getHeight() - 8.0f), 1.0f);
+            }
+            g.setFont (displayFont (14.5f, false));
+            g.setColour (isTicked ? juce::Colour (0xfff4ecd8) : juce::Colour (0xffe9dfc6));
+            g.drawFittedText (label, getLocalBounds().reduced (12, 0),
+                              juce::Justification::centredLeft, 1);
+        }
+
+    private:
+        TypeSelectorView& o;
+        int idx;
+        juce::String label;
+        bool isTicked, wasHot = false;
+    };
+
+    void previewBody (int idx)
+    {
+        selector.setSelectedItemIndex (idx, juce::sendNotificationSync);
+    }
+
     // The monolith fix (2026-07-19): 141 flat rows -> signature bodies up
     // front, the mass families folded into submenus. Same cartridge panel
     // styling, same attachment (selection goes through the ComboBox).
@@ -106,18 +170,19 @@ public:
             return -1;
         };
 
-        // top level: NO FILTER + every named/signature body (not in a family)
+        // top level: NO FILTER + every named/signature body (not in a family).
+        // Every row is an AuditionItem: highlight = hear it now.
         for (int i = 0; i < count; ++i)
             if (famIndex (entries[i].base) == -1)
-                m.addItem (i + 1, entries[i].displayName, true, i == current);
+                m.addCustomItem (i + 1, std::make_unique<AuditionItem> (*this, i, entries[i].displayName, i == current));
         m.addSeparator();
         for (int i = 0; i < count; ++i)
         {
             const int f = famIndex (entries[i].base);
             if (f >= 0)
-                fams[f].addItem (i + 1, entries[i].displayName, true, i == current);
+                fams[f].addCustomItem (i + 1, std::make_unique<AuditionItem> (*this, i, entries[i].displayName, i == current));
             else if (f == -2)
-                userMenu.addItem (i + 1, entries[i].displayName, true, i == current);
+                userMenu.addCustomItem (i + 1, std::make_unique<AuditionItem> (*this, i, entries[i].displayName, i == current));
         }
         for (int f = 0; f < (int) std::size (kFams); ++f)
             if (fams[f].getNumItems() > 0)
@@ -129,10 +194,15 @@ public:
 
         juce::Component::SafePointer<TypeSelectorView> self (this);
         m.showMenuAsync (juce::PopupMenu::Options().withTargetComponent (this),
-                         [self] (int id)
+                         [self, current] (int id)
                          {
-                             if (self != nullptr && id > 0)
+                             if (self == nullptr)
+                                 return;
+                             if (id > 0)
                                  self->selector.setSelectedItemIndex (id - 1, juce::sendNotificationSync);
+                             else if (current >= 0)
+                                 // dismissed without picking: undo the hover previews
+                                 self->selector.setSelectedItemIndex (current, juce::sendNotificationSync);
                          });
     }
 

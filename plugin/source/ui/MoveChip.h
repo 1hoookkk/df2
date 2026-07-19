@@ -302,7 +302,12 @@ private:
         if (showingSibling)
             return "Modulation  SIBLING";
         juce::String s ("Modulation");
-        if (paramBool (motionOnParam))
+        // FOLLOW alone is clockless — showing a time would be a lie. The time
+        // only prints when the clocked pattern actually moves (targets > 0).
+        const bool patternLive = paramBool (motionOnParam)
+            && ((motionTgtMParam != nullptr && motionTgtMParam->getValue() > 0.001f)
+                || (motionTgtQParam != nullptr && motionTgtQParam->getValue() > 0.001f));
+        if (patternLive)
             s << "  " << liveTimeLabel();
         if (orbitActive())
             s << "  \xC2\xB7 ORBIT";
