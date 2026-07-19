@@ -144,7 +144,11 @@ private:
         if (attachment == nullptr || param == nullptr)
             return;
         const float h = juce::jmax (1.0f, (float) getHeight() - 6.0f);
-        const float next = juce::jlimit (0.0f, 1.0f, 1.0f - (e.position.y - 3.0f) / h);
+        float next = juce::jlimit (0.0f, 1.0f, 1.0f - (e.position.y - 3.0f) / h);
+        // Hardware detent (2026-07-19): the wheel clicks home into 100% —
+        // full imprint is a notch, not a pixel hunt. Shift-drag (fine) bypasses.
+        if (next > 0.965f)
+            next = 1.0f;
         attachment->setValueAsPartOfGesture (param->convertFrom0to1 (next));
         if (onValueGesture)
             onValueGesture (next);

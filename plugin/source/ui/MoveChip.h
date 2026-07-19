@@ -91,8 +91,38 @@ public:
     void mouseEnter (const juce::MouseEvent&) override { hover = true; repaint(); }
     void mouseExit  (const juce::MouseEvent&) override { hover = false; repaint(); }
 
-    void mouseDown (const juce::MouseEvent&) override
+    // Tactile time-nudge (2026-07-19): drag the chip left/right to ride the
+    // division; a plain click (no drag) opens the menu on release.
+    void mouseDown (const juce::MouseEvent& e) override
     {
+        chipDragStartX = e.x;
+        chipDragged = false;
+        const int liveDiv = paramChoice (motionDivParam, 12);
+        chipDragStartIdx = 2; // default 1/4 if live div isn't a core time
+        for (int i = 0; i < (int) std::size (kTimes); ++i)
+            if (kTimes[(size_t) i].divIdx == liveDiv)
+                chipDragStartIdx = i;
+    }
+
+    void mouseDrag (const juce::MouseEvent& e) override
+    {
+        const int step = (e.x - chipDragStartX) / 16;
+        if (step == 0 && ! chipDragged)
+            return;
+        chipDragged = true;
+        const int idx = juce::jlimit (0, (int) std::size (kTimes) - 1, chipDragStartIdx + step);
+        if (kTimes[(size_t) idx].divIdx != paramChoice (motionDivParam, 12) || ! paramBool (motionOnParam))
+        {
+            apply (kIdTimeBase + idx);
+            if (onAnnounce)
+                onAnnounce (announceLabel (kIdTimeBase + idx));
+        }
+    }
+
+    void mouseUp (const juce::MouseEvent&) override
+    {
+        if (chipDragged)
+            return;
         juce::PopupMenu m;
         m.setLookAndFeel (&lookAndFeel);
         const bool on = paramBool (motionOnParam);
@@ -370,6 +400,8 @@ private:
     bool followArmedMotion = false;
     float lampFlash = 0.0f;
     int lastStep = -1;
+    int chipDragStartX = 0, chipDragStartIdx = 2;
+    bool chipDragged = false;
     bool hover = false;
     bool showingSibling = false;
     double siblingElapsedMs = 0.0;
