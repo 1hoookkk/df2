@@ -1,15 +1,23 @@
-# filters/ — the canonical filter workspace
+# filters/ — the canonical filter workspace and legacy evidence
 
 Everything that makes a TRENCH body, in one place. Consolidated 2026-07-13 from
 three scattered locations. Nothing here is exhaust — the ~600 scratch dirs in
 `df2/dev/tmp` and the 1,083 generated bodies in `production_authoring` were left
 where they are on purpose.
 
+## Current status
+
+The 132 files under `bodies/` are retained legacy/quarantine material. They
+remain available for provenance and historical comparison, but they are not a
+current candidate source or a product-quality verdict. New candidates enter
+through a separate artifact directory and are promoted only after packed
+runtime proof and listening.
+
 ## What's here
 
 | dir | what it is |
 |---|---|
-| `bodies/` | **The roster. 132 authored `.body240`.** The product. |
+| `bodies/` | **Historical roster. 132 authored `.body240`.** Retained, not active product. |
 | `generator/` | `build_interesting_presets.py` — the run that produced the 132 (2026-07-13). |
 | `grammar/` | `typed_vowl` — the measured E-mu type grammar. THE stage logic. |
 | `rails/` | Physics → pole/zero rails: modal, circuit, phononic, HRTF, DVTD, vowel-from-tables. |
@@ -30,7 +38,7 @@ grammar/ (typed_vowl)     the stage grammar: which type, which lane
 generator/                4 corners -> packed words -> 240 bytes
        |
        v
-bodies/                   132 .body240   <- the product
+bodies/                   132 .body240   <- legacy/quarantine roster
        |
        v
 trench-core (Rust)        packing, decode, bilinear morph/Q, cascade, engine
@@ -40,7 +48,8 @@ trench-core (Rust)        packing, decode, bilinear morph/Q, cascade, engine
 
 `bodies/` used to live **only** in `%USERPROFILE%\Documents\TRENCH\bodies` — the
 folder `TrenchBodyRoster.h` reads at runtime. It was under no version control at
-all. The entire shipping roster was one bad delete from gone. It is now in git.
+all. The historical roster is now in git, where it can be preserved without
+being mistaken for the active candidate or shipping set.
 
 Note the plug-in still *reads* from `Documents\TRENCH\bodies` at runtime. This
 directory is the source of truth; that one is the working copy. Wiring the roster
@@ -62,7 +71,7 @@ What IS here, and why it's safe:
   are original and how far from prior art they measure.
 
 The bodies themselves are original — 0 of 132 carry a P2K name, and all cleared
-`copy_risk.py`.
+`copy_risk.py`. That is provenance evidence, not a keeper verdict.
 
 ## Provenance
 

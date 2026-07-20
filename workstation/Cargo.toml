@@ -57,6 +57,10 @@ name = "trench-studio"
 path = "src/bin/trench_studio.rs"
 
 [[bin]]
+name = "candidates"
+path = "src/bin/candidates.rs"
+
+[[bin]]
 name = "dump-curves"
 path = "src/bin/dump_curves.rs"
 

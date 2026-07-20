@@ -20,6 +20,7 @@
 !/workstation/src/bin/proof_slice.rs
 !/workstation/src/bin/recipe_proof.rs
 !/workstation/src/bin/trench_studio.rs
+!/workstation/src/bin/candidates.rs
 /wav-source-library/*
 !/wav-source-library/README.md
 !/wav-source-library/SOURCE_LEDGER.csv
@@ -28,6 +29,7 @@
 *.log
 /JULY_04_12_WORK.md
 /NEXT_SESSION_BRIEF.md
+/session-ses_*.md
 .venv/
 __pycache__/
 *.pyc
@@ -35,3 +37,7 @@ __pycache__/
 Thumbs.db
 .claude/settings.local.json
 plugin/build/
+plugin/libs/
+
+# exhaust quarantine (2026-07-19): dev/tmp is scratch, never authority
+/dev/tmp/
