@@ -34,21 +34,13 @@ public:
         // the plate asset itself (df2_panel_beige_shadow.png), so the grain
         // shades with it like the X3 reference.
 
-        // Hairline shadow bezel wrapping each raised insert — very small, all
-        // around, nothing spreading onto the plate.
-        // No hairline bezels: the widgets draw their own edges, and an extra
-        // ring outside them double-edged against the plate (2026-07-18).
-
-        // X3 faceplate shadows (close-up reference 2026-07-17): a broad, SOFT
-        // half-ellipse on the plate under each wheel capsule — visibly lighter
-        // than a contact shadow, nearly the capsule's full width.
+        // X3-style wheel depth shadows: broad lower half-ellipses cast onto the
+        // faceplate. They descend close to the following label without touching
+        // it, making both thin wheels read as projecting from the same plate.
         drawWheelContactShadow (g, t.rect ("morphWheel"));
         drawWheelContactShadow (g, t.rect ("qWheel"));
-
-        // AMOUNT: the half-ellipse cast to the RIGHT of the column (Tyson:
-        // "the shadow to the right the half elipse"), on top of ThinWheel's
-        // own soft silhouette — the pairing he approved.
         drawAmountSideShadow (g, t.rect ("amountWheel"));
+        drawReferenceAmountThumb (g, t.rect ("amountWheel"));
 
         // restrained outer rim seats the panel
         const auto rb = getLocalBounds().toFloat();
@@ -57,8 +49,7 @@ public:
     }
 
 private:
-    static void drawWheelContactShadow (juce::Graphics& g, juce::Rectangle<float> well,
-                                        float castH = 9.0f, float strength = 1.0f)
+    static void drawWheelContactShadow (juce::Graphics& g, juce::Rectangle<float> well)
     {
         if (well.isEmpty())
             return;
@@ -67,36 +58,34 @@ private:
         // point — dark under the drum's belly, fading smoothly down AND toward
         // the sides. No drawn outline anywhere (a hard-edged ellipse read as
         // "a black thing", Tyson 2026-07-11). Clipped short of the label text.
-        // The X3's broad soft half-ellipse: nearly the capsule's full width,
-        // clearly LIGHTER than a contact shadow (the plugin's were too dark).
-        // A THIN, defined half-oval: an actual ellipse under the capsule,
-        // dark at the contact line, softening just enough not to be a decal.
+        // Thin, flat black contact crescent from the supplied reference — not
+        // a round puddle. At 7 px it stops just clear of the following label.
+        const float castH = 7.0f;
         const float cx = well.getCentreX();
         const float cy = well.getBottom();
-        const float rx = well.getWidth() * 0.46f;
+        const float rx = well.getWidth() * 0.48f;   // broad half-ellipse edge
 
         juce::Graphics::ScopedSaveState save (g);
         g.reduceClipRegion (juce::Rectangle<int> ((int) well.getX(), (int) well.getBottom(),
                                                   (int) well.getWidth(), (int) castH));
+        // Squash a circular radial gradient into the short oval under the wheel.
         g.addTransform (juce::AffineTransform::scale (1.0f, castH / rx, cx, cy));
-        juce::ColourGradient sh (juce::Colours::black.withAlpha (0.74f * strength), cx, cy,
+        juce::ColourGradient sh (juce::Colours::black.withAlpha (0.74f), cx, cy,
                                  juce::Colours::transparentBlack, cx + rx, cy, true);
-        sh.addColour (0.50, juce::Colours::black.withAlpha (0.50f * strength));   // filled body...
-        sh.addColour (0.82, juce::Colours::black.withAlpha (0.18f * strength));   // ...short soft edge
+        sh.addColour (0.50, juce::Colours::black.withAlpha (0.50f));
+        sh.addColour (0.82, juce::Colours::black.withAlpha (0.18f));
         g.setGradientFill (sh);
         g.fillEllipse (cx - rx, cy - rx, rx * 2.0f, rx * 2.0f);
     }
 
-    // drawWheelContactShadow rotated 90°: the AMOUNT column's contact line is
-    // its right edge — same alphas/stops as the wheels, one shadow law.
     static void drawAmountSideShadow (juce::Graphics& g, juce::Rectangle<float> well)
     {
         if (well.isEmpty())
             return;
 
-        const float castW = 9.0f;                    // thin horizontal reach
-        // Start at the strip's REAL edge (the drawn frame sits a hair inside
-        // its layout well) so the cast touches the contact line.
+        // The thin amount roller has a small half-moon cast to its right edge.
+        // It is a side contact shadow, not a second outline around the wheel.
+        const float castW = 9.0f;
         const float cx = well.getRight() - 2.5f;
         const float cy = well.getCentreY();
         const float ry = well.getHeight() * 0.46f;
@@ -111,6 +100,36 @@ private:
         sh.addColour (0.82, juce::Colours::black.withAlpha (0.18f));
         g.setGradientFill (sh);
         g.fillEllipse (cx - ry, cy - ry, ry * 2.0f, ry * 2.0f);
+    }
+
+    static void drawReferenceAmountThumb (juce::Graphics& g, juce::Rectangle<float> well)
+    {
+        if (well.isEmpty())
+            return;
+
+        // The reference face has a short blue-grey thumb at the far right of
+        // the amount rail. It is a separate depth cue from the thin wheel:
+        // keep the wheel artwork untouched and restore only this small thumb.
+        const auto thumb = juce::Rectangle<float> (well.getRight() + 16.0f,
+                                                   well.getY() + 12.0f,
+                                                   12.0f, 41.0f);
+        const float radius = 5.0f;
+
+        juce::ColourGradient body (juce::Colour (0xff33464b), thumb.getX(), thumb.getY(),
+                                   juce::Colour (0xff5d7479), thumb.getRight(), thumb.getCentreY(), true);
+        body.addColour (0.42, juce::Colour (0xff26383d));
+        body.addColour (0.76, juce::Colour (0xff52686e));
+        g.setGradientFill (body);
+        g.fillRoundedRectangle (thumb, radius);
+
+        g.setColour (juce::Colours::black.withAlpha (0.34f));
+        g.drawRoundedRectangle (thumb.reduced (0.55f), radius - 0.35f, 0.75f);
+
+        // A restrained horizontal catch is visible in the photographed thumb;
+        // it keeps the control from reading as a flat dark rectangle.
+        g.setColour (juce::Colour (0xffb8c9ca).withAlpha (0.52f));
+        const float catchY = thumb.getCentreY();
+        g.drawLine (thumb.getX() + 3.0f, catchY, thumb.getRight() - 3.0f, catchY, 0.65f);
     }
 
     juce::Image panelImage;

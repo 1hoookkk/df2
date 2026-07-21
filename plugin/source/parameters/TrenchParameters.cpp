@@ -33,7 +33,7 @@ juce::AudioProcessorValueTreeState::ParameterLayout createParameterLayout()
         juce::ParameterID { ParamID::body, 1 },
         "Body",
         0,                                          // slot 0 = NO FILTER (exact identity, a real bypass)
-        juce::jmax (1, trench::bodyCount() - 1),
+        juce::jmax (1, trench::bodyCount() - 1 + trench::kUserSlotPool),  // + headroom for live-discovered bodies
         trench::kDefaultBodyIndex));                // open on NO FILTER; a body is an explicit choice.
 
     layout.add (std::make_unique<juce::AudioParameterFloat> (
@@ -42,12 +42,14 @@ juce::AudioProcessorValueTreeState::ParameterLayout createParameterLayout()
         juce::NormalisableRange<float> { -24.0f, 24.0f, 0.1f },
         0.0f));  // final user makeup gain, dB — the only level control after the engine.
 
-    // AMOUNT — the honest dose. Crossfades the flat/identity dry signal (0) to the
-    // full effect (1). Not a volume knob: it doses effect intensity so the weirdness
-    // stays usable in a session. Default 1.0 = full effect (no change to existing sound).
+    // MIX — punch-preserving parallel dry/wet (replaces the old serial AMOUNT dose).
+    // 0 = pristine dry, 1 = full effect. Not a plain crossfade: the sub and the
+    // transients stay dry while the melodic body comes in early (see PunchBlend).
+    // Param ID stays `amount` so existing sessions/automation keep working.
+    // Default 1.0 = full effect (no change to the shipped sound).
     layout.add (std::make_unique<juce::AudioParameterFloat> (
         juce::ParameterID { ParamID::amount, 1 },
-        "Amount",
+        "MIX",
         juce::NormalisableRange<float> { 0.0f, 1.0f, 0.001f },
         1.0f, pctAttribs()));
 
@@ -252,9 +254,20 @@ juce::AudioProcessorValueTreeState::ParameterLayout createParameterLayout()
     layout.add (std::make_unique<juce::AudioParameterBool> (
         juce::ParameterID { ParamID::keyTrack, 1 },
         "Key Track",
-        false));  // KEY TRACKING: pitch detector transposes the body's
-                  // resonances to the input's pitch class (C anchor, +-6 semi).
-                  // Off = bit-exact current behaviour.
+        false));  // Legacy state only. Suggestions are passive and always-on;
+                  // this retained ID keeps older sessions deserializing.
+
+    layout.add (std::make_unique<juce::AudioParameterChoice> (
+        juce::ParameterID { ParamID::keySnap, 1 },
+        "Key Snap",
+        juce::StringArray {
+            "Off",
+            "C m", "C# m", "D m", "D# m", "E m", "F m",
+            "F# m", "G m", "G# m", "A m", "A# m", "B m",
+            "C M", "C# M", "D M", "D# M", "E M", "F M",
+            "F# M", "G M", "G# M", "A M", "A# M", "B M"
+        },
+        0));  // Off preserves existing sessions and is the exact no-op path.
 
     layout.add (std::make_unique<juce::AudioParameterBool> (
         juce::ParameterID { ParamID::hdMode, 1 },

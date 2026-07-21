@@ -253,6 +253,77 @@ pub const AGC_DRIVE: f32 = AGC_FIRST_TOOTH / SATURATE_KNEE; // 2.222...
 /// morph swipe still hits.
 pub const COEFF_RAMP_SECONDS: f64 = 0.080;
 
+const KEY_SNAP_MINOR_DEGREES: [i32; 7] = [0, 2, 3, 5, 7, 8, 10];
+const KEY_SNAP_MAJOR_DEGREES: [i32; 7] = [0, 2, 4, 5, 7, 9, 11];
+
+fn key_snap_spec(choice: i32) -> Option<(i32, &'static [i32; 7])> {
+    match choice {
+        1..=12 => Some((choice - 1, &KEY_SNAP_MINOR_DEGREES)),
+        13..=24 => Some((choice - 13, &KEY_SNAP_MAJOR_DEGREES)),
+        _ => None,
+    }
+}
+
+fn conjugate_pair_hz(c1: f64, c2: f64, sample_rate: f64) -> Option<f64> {
+    let discriminant = c1 * c1 - 4.0 * c2;
+    if discriminant >= 0.0 || c2 <= 1.0e-18 {
+        return None;
+    }
+    let radius = c2.sqrt();
+    let angle = (-c1 / (2.0 * radius)).clamp(-1.0, 1.0).acos();
+    Some(angle * sample_rate / core::f64::consts::TAU)
+}
+
+fn transpose_conjugate_pair(c1: f64, c2: f64, sample_rate: f64, ratio: f64) -> f64 {
+    let Some(hz) = conjugate_pair_hz(c1, c2, sample_rate) else {
+        return c1;
+    };
+    let radius = c2.sqrt();
+    let moved_hz = (hz * ratio).clamp(20.0, 0.49 * sample_rate);
+    -2.0 * radius * (core::f64::consts::TAU * moved_hz / sample_rate).cos()
+}
+
+fn nearest_scale_hz(hz: f64, tonic: i32, degrees: &[i32; 7]) -> f64 {
+    let midi = 69.0 + 12.0 * (hz / 440.0).log2();
+    let centre = midi.round() as i32;
+    let mut best_note = centre;
+    let mut best_distance = f64::INFINITY;
+    for note in (centre - 12)..=(centre + 12) {
+        let pitch_class = note.rem_euclid(12);
+        let degree = (pitch_class - tonic).rem_euclid(12);
+        if !degrees.contains(&degree) {
+            continue;
+        }
+        let distance = (note as f64 - midi).abs();
+        if distance < best_distance - 1.0e-12
+            || ((distance - best_distance).abs() <= 1.0e-12 && note < best_note)
+        {
+            best_note = note;
+            best_distance = distance;
+        }
+    }
+    440.0 * 2.0_f64.powf((best_note as f64 - 69.0) / 12.0)
+}
+
+fn snap_stage_to_key(stage: &mut [f64; NUM_COEFFS], sample_rate: f64, choice: i32) {
+    let Some((tonic, degrees)) = key_snap_spec(choice) else {
+        return;
+    };
+    // The pole is the lane's resonant identity. Pick one scale landing for it,
+    // then move the zero by the SAME ratio so the authored local/remote
+    // pole-zero relationship is preserved. Real and degenerate pole rows are
+    // not tuned resonances and pass through verbatim.
+    let Some(pole_hz) = conjugate_pair_hz(stage[3], stage[4], sample_rate) else {
+        return;
+    };
+    let ratio = nearest_scale_hz(pole_hz, tonic, degrees) / pole_hz;
+    stage[3] = transpose_conjugate_pair(stage[3], stage[4], sample_rate, ratio);
+    let b0 = stage[0];
+    if b0.abs() > 1.0e-12 {
+        stage[1] = transpose_conjugate_pair(stage[1] / b0, stage[2] / b0, sample_rate, ratio) * b0;
+    }
+}
+
 /// Output soft-limiter — the safety net for the AGC's attack overshoot.
 ///
 /// Transparent below the knee. It is NOT a level control: if this stage is
@@ -349,6 +420,7 @@ pub struct FilterEngine {
     /// screen curve (read from the same cascade coefficients) moves with it.
     amount: f32,
     pitch_ratio: f64,
+    key_snap: i32,
 
     pub debug: DebugToggles,
 }
@@ -401,6 +473,7 @@ impl FilterEngine {
             space: 0.0,
             amount: 1.0,
             pitch_ratio: 1.0,
+            key_snap: 0,
             debug: DebugToggles::default(),
         }
     }
@@ -507,6 +580,12 @@ impl FilterEngine {
         self.pitch_ratio = (ratio as f64).clamp(0.5, 2.0);
     }
 
+    /// MANUAL KEY SNAP — 0=off, 1..12=C..B natural minor,
+    /// 13..24=C..B major. The off branch is an exact no-op.
+    pub fn set_key_snap(&mut self, choice: i32) {
+        self.key_snap = choice.clamp(0, 24);
+    }
+
     /// Pre-AGC scale (≥ 1.0). 1.0 = identity (curve stays asleep in float domain);
     /// higher drives the cascade into the AGC table's teeth so it compresses.
     pub fn set_agc_drive(&mut self, drive: f32) {
@@ -532,6 +611,20 @@ impl FilterEngine {
         let corner: CornerData = cart.interpolate(morph, q);
         let mut boost = cart.interpolate_boost(morph, q) as f32;
 
+        // MANUAL KEY SNAP — each lane's conjugate pole lands on the nearest
+        // tone of the selected scale. Its conjugate zero moves by the same
+        // ratio, preserving the authored stage relationship. Real/degenerate
+        // pole rows pass through exactly. key_snap == 0 is an exact no-op.
+        let corner = if self.key_snap != 0 {
+            let mut snapped = corner;
+            for stage in snapped.iter_mut() {
+                snap_stage_to_key(stage, self.sample_rate, self.key_snap);
+            }
+            snapped
+        } else {
+            corner
+        };
+
         // KEY TRACKING — rotate every conjugate pair's angle by pitch_ratio in
         // the Rossum spirit (frequencies move, radii — the ring — stay). Exact
         // root factoring of the interpolated quadratics; real pairs and
@@ -539,25 +632,12 @@ impl FilterEngine {
         let corner = if (self.pitch_ratio - 1.0).abs() > 1.0e-9 {
             let sr = self.sample_rate;
             let ratio = self.pitch_ratio;
-            let transpose_pair = |c1: f64, c2: f64| -> f64 {
-                let disc = c1 * c1 - 4.0 * c2;
-                if disc >= 0.0 {
-                    return c1; // real pair: not a tuned resonance
-                }
-                let r = c2.sqrt();
-                if r <= 1.0e-9 {
-                    return c1;
-                }
-                let w = (-c1 / (2.0 * r)).clamp(-1.0, 1.0).acos();
-                let hz = (w * sr / core::f64::consts::TAU * ratio).clamp(20.0, 0.49 * sr);
-                -2.0 * r * (core::f64::consts::TAU * hz / sr).cos()
-            };
             let mut t = corner;
             for stage in t.iter_mut() {
-                stage[3] = transpose_pair(stage[3], stage[4]);
+                stage[3] = transpose_conjugate_pair(stage[3], stage[4], sr, ratio);
                 let b0 = stage[0];
                 if b0.abs() > 1.0e-12 {
-                    stage[1] = transpose_pair(stage[1] / b0, stage[2] / b0) * b0;
+                    stage[1] = transpose_conjugate_pair(stage[1] / b0, stage[2] / b0, sr, ratio) * b0;
                 }
             }
             t
@@ -579,6 +659,13 @@ impl FilterEngine {
         // toward the origin, staying inside the unit circle.
         let corner = if self.amount < 1.0 {
             let k = self.amount as f64;
+            // AMOUNT scales the AUTHORED gain in dB too (Tyson 2026-07-19:
+            // effectiveGainDb = authoredGainDb * amountNormalized) — dB
+            // scaling is a power law on the linear boost. Without this,
+            // amount=0 left the body's authored gain fully applied and the
+            // dial never reached flat. Inside the <1 branch so amount=1
+            // stays bit-exact.
+            boost = boost.powf(self.amount);
             let mut blended = corner;
             for stage in blended.iter_mut() {
                 let b0 = stage[0];
@@ -1042,6 +1129,56 @@ fn compute_cascade_peak(corner: &CornerData, sample_rate: f64) -> f32 {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    fn conjugate_coefficients(hz: f64, radius: f64, sample_rate: f64) -> (f64, f64) {
+        let angle = core::f64::consts::TAU * hz / sample_rate;
+        (-2.0 * radius * angle.cos(), radius * radius)
+    }
+
+    #[test]
+    fn manual_key_snap_removes_a_natural_from_c_minor() {
+        let snapped = nearest_scale_hz(440.0, 0, &KEY_SNAP_MINOR_DEGREES);
+        let expected_ab = 440.0 * 2.0_f64.powf(-1.0 / 12.0);
+        assert!((snapped - expected_ab).abs() < 1.0e-9, "snapped={snapped}");
+    }
+
+    #[test]
+    fn manual_key_snap_preserves_the_stage_pole_zero_interval() {
+        let sample_rate = 48_000.0;
+        let (b1, b2) = conjugate_coefficients(660.0, 0.82, sample_rate);
+        let (a1, a2) = conjugate_coefficients(440.0, 0.96, sample_rate);
+        let mut stage = [1.0, b1, b2, a1, a2];
+        let before_pole = conjugate_pair_hz(stage[3], stage[4], sample_rate).unwrap();
+        let before_zero = conjugate_pair_hz(stage[1], stage[2], sample_rate).unwrap();
+
+        snap_stage_to_key(&mut stage, sample_rate, 1); // C natural minor
+
+        let after_pole = conjugate_pair_hz(stage[3], stage[4], sample_rate).unwrap();
+        let after_zero = conjugate_pair_hz(stage[1], stage[2], sample_rate).unwrap();
+        let expected_ab = 440.0 * 2.0_f64.powf(-1.0 / 12.0);
+        assert!((after_pole - expected_ab).abs() < 1.0e-8);
+        assert!((after_zero / before_zero - after_pole / before_pole).abs() < 1.0e-10);
+        assert!((stage[2] - b2).abs() < 1.0e-15, "zero radius changed");
+        assert!((stage[4] - a2).abs() < 1.0e-15, "pole radius changed");
+    }
+
+    #[test]
+    fn manual_key_snap_leaves_real_pole_rows_verbatim() {
+        let mut stage = [1.0, -0.4, 0.03, -1.1, 0.28];
+        let before = stage;
+        snap_stage_to_key(&mut stage, 48_000.0, 1);
+        assert_eq!(stage, before);
+    }
+
+    #[test]
+    fn manual_key_snap_off_is_an_exact_noop() {
+        let (b1, b2) = conjugate_coefficients(660.0, 0.82, 48_000.0);
+        let (a1, a2) = conjugate_coefficients(440.0, 0.96, 48_000.0);
+        let mut stage = [0.91, b1 * 0.91, b2 * 0.91, a1, a2];
+        let before = stage;
+        snap_stage_to_key(&mut stage, 48_000.0, 0);
+        assert_eq!(stage, before);
+    }
 
     fn cartridge_from_corner(name: &str, corner: CornerData) -> Cartridge {
         let mut word_corner = [[0u16; crate::cascade::NUM_COEFFS]; crate::cascade::NUM_STAGES];

@@ -4,12 +4,13 @@
 Composes two dormant tables + two behavioral laws into one legal .body240:
   - klatt_1980_formants.json   -> pole center frequencies (F1..F3)   [phonetic SEED]
   - klatt_1980_bandwidths.json -> pole radius via r = exp(-pi*BW/SR)  [physical law]
-  - Q-derivation law           -> Q100 radii = 1-(1-r)*0.35           [behavioral law, painter Q LINK]
+  - Q scene                    -> baseline damping plus one explicit sentinel-stage wake
   - law_author.unity_dc_gain   -> per-lane gain staging               [gain-staging law]
 
 It authors the four corners DIRECTLY (all-pole vowel ridges, Klatt is all-pole),
 then reuses df2's proven pack -> body240 -> stages.json path. The morph axis runs
-vowel A (M0) -> vowel B (M100); Q axis sharpens the same formants (no center drift).
+vowel A (M0) -> vowel B (M100). Q100 is a second authored scene: it tightens the
+existing lanes and wakes one identity-sentinel lane at the measured F2 position.
 
 Output: a body240 + stages.json editable sidecar (drop-in for the painter's
 Verified-Editable START lane) + a verification plot with the Klatt formant
@@ -41,8 +42,21 @@ from tools import author_body  # noqa: E402
 from pyruntime import trench_ffi  # noqa: E402
 
 SR = AUTHORING_SR
-Q100_TIGHTEN = 0.35  # painter Q LINK: r -> 1-(1-r)*0.35
-RADIUS_CAP = 0.9988  # bw_oct_radius stability cap in law_author; keep parity
+Q100_TIGHTEN = 0.35       # r -> 1-(1-r)*0.35; Q100 is allowed to bloom
+BASELINE_RADIUS_MAX = 0.98  # Q0 headroom; raw/source radii are not changed here
+RUNTIME_RADIUS_MAX = 0.9988  # final authoring/runtime safety ceiling
+TRAILING_ZERO_OCTAVES = -0.6  # one trailing zero below the F1/throat pole
+TRAILING_ZERO_RADIUS = 0.98
+Q100_WAKE_STAGE = 3        # first identity-sentinel lane after F1..F3
+Q100_WAKE_FORMANT = 1      # wake it at the existing F2 peak, not a made-up frequency
+STAGE_ROLES = (
+    "vowel body / F1 + trailing zero",
+    "vowel body / F2",
+    "presence / F3",
+    "Q wake reserve",
+    "upper-mid reserve",
+    "throat / floor",
+)
 
 # Klatt formant table keys by IPA (a e o u); bandwidth table keys by i/a/u.
 # Vowels with BOTH a Klatt formant AND a Klatt bandwidth entry: ah(a), oo(u).
@@ -72,24 +86,60 @@ def load_vowel(name: str) -> dict:
 
 def r_from_bw(bw_hz: float) -> float:
     """Physical law from klatt_1980_bandwidths.json header: r = exp(-pi*BW/SR)."""
-    return min(math.exp(-math.pi * float(bw_hz) / SR), RADIUS_CAP)
+    return min(math.exp(-math.pi * float(bw_hz) / SR), BASELINE_RADIUS_MAX)
+
+
+def q100_radius(baseline_radius: float) -> float:
+    """Open a damped baseline lane for Q100 without touching its source centre."""
+    return min(1.0 - (1.0 - baseline_radius) * Q100_TIGHTEN, RUNTIME_RADIUS_MAX)
+
+
+def active_lane(**kwargs) -> dict:
+    row = la.lane(**kwargs)
+    row["state"] = "active"
+    return row
+
+
+def identity_lane(role: str) -> dict:
+    """Exact packed sentinel: one serialized section with unity response."""
+    return {
+        "pole_hz": 0.0,
+        "pole_r": 0.0,
+        "zero_hz": 0.0,
+        "zero_r": 0.0,
+        "gain": 1.0,
+        "role": role,
+        "state": "identity",
+    }
 
 
 def formant_lanes(formants, bandwidths, q100: bool) -> list[dict]:
-    """Six all-pole vowel lanes: F1..F3 ridges + 3 parked-flat lanes."""
+    """Six named lanes: active formants plus explicit identity sentinels."""
     rows = []
     for i, (fhz, bw) in enumerate(zip(formants, bandwidths)):
-        r = r_from_bw(bw)
-        if q100:
-            r = 1.0 - (1.0 - r) * Q100_TIGHTEN  # Q axis sharpens, no center move
-        # shallow near-flat zero so the lane reads as a clean pole ridge (Klatt=all-pole)
-        zero_hz, zero_r = fhz, 0.30
+        baseline_r = r_from_bw(bw)
+        r = q100_radius(baseline_r) if q100 else baseline_r
+        # The first lane carries the explicit trailing zero below the F1/throat pole.
+        # Other vowel lanes keep the shallow co-located zero used by the table author.
+        zero_hz = fhz * 2.0 ** TRAILING_ZERO_OCTAVES if i == 0 else fhz
+        zero_r = TRAILING_ZERO_RADIUS if i == 0 else 0.30
         gain = la.unity_dc_gain(fhz, r, zero_hz, zero_r)
-        rows.append(la.lane(pole_hz=fhz, pole_q=None, zero_hz=zero_hz, zero_r=zero_r,
-                            gain=gain, role=f"F{i + 1}", pole_r=r))
-    while len(rows) < la.STAGES:  # parked-flat fillers (unity, inert)
-        rows.append(la.lane(pole_hz=1000.0, pole_q=None, zero_hz=1000.0, zero_r=0.5,
-                            gain=1.0, role="parked", pole_r=0.5))
+        rows.append(active_lane(pole_hz=fhz, pole_q=None, zero_hz=zero_hz, zero_r=zero_r,
+                                gain=gain, role=STAGE_ROLES[i], pole_r=r))
+    while len(rows) < la.STAGES:  # every slot is serialized; unused slots are exact identity
+        if q100 and len(rows) == Q100_WAKE_STAGE:
+            # Q must change the topology visibly. Reuse an existing table peak (F2)
+            # rather than inventing a new frequency: the parked lane becomes an
+            # additional active F2 resonance only in the authored Q100 scene.
+            wake_hz = float(formants[Q100_WAKE_FORMANT])
+            wake_r = q100_radius(r_from_bw(bandwidths[Q100_WAKE_FORMANT]))
+            wake_zero_hz, wake_zero_r = wake_hz, 0.30
+            wake_gain = la.unity_dc_gain(wake_hz, wake_r, wake_zero_hz, wake_zero_r)
+            rows.append(active_lane(pole_hz=wake_hz, pole_q=None, zero_hz=wake_zero_hz,
+                                    zero_r=wake_zero_r, gain=wake_gain,
+                                    role="Q100 wake F2", pole_r=wake_r))
+        else:
+            rows.append(identity_lane(f"{STAGE_ROLES[len(rows)]} (sentinel)"))
     return rows
 
 
@@ -110,8 +160,28 @@ def pack(name: str, corners: dict, out_dir: Path) -> tuple[bytes, Path]:
     (out_dir / "stages.json").write_text(json.dumps(corners, indent=2) + "\n", encoding="utf-8")
     pname, boost, words = author_body.load_packed_words(packed_source)
     cart = author_body.compiled_payload(pname, boost, words)
-    cart["provenance"] = "vowel-from-tables-v1"
+    cart["provenance"] = "vowel-from-tables-v3"
     cart["sourceTables"] = ["klatt_1980_formants.json", "klatt_1980_bandwidths.json"]
+    cart["authoringRules"] = {
+        "baselineRadiusMax": BASELINE_RADIUS_MAX,
+        "q100RadiusRule": "1-(1-r)*0.35",
+        "trailingZero": {
+            "lane": "F1",
+            "octavesBelowPole": abs(TRAILING_ZERO_OCTAVES),
+            "radius": TRAILING_ZERO_RADIUS,
+        },
+        "q100Wake": {
+            "stage": Q100_WAKE_STAGE,
+            "target": "F2",
+            "mode": "identity sentinel becomes an additional active F2 peak",
+        },
+        "identitySentinel": {
+            "pole": {"hz": 0.0, "r": 0.0},
+            "zero": {"hz": 0.0, "r": 0.0},
+            "scale": 1.0,
+        },
+        "stageRoles": list(STAGE_ROLES),
+    }
     (out_dir / f"{name}.cartridge.json").write_text(json.dumps(cart, indent=2) + "\n", encoding="utf-8")
     body = author_body.raw_from_words(words)
     body_path = out_dir / f"{name}.body240"
@@ -143,8 +213,8 @@ def nearest_peak_hz(db: np.ndarray, target_hz: float, tol_ratio: float = 0.18) -
 def verify_and_plot(body: bytes, vowel_a: dict, vowel_b: dict, out_png: Path) -> dict:
     corners = [("M0_Q0  " + vowel_a["name"], 0.0, 0.0, vowel_a, "#63d7ff"),
                ("M100_Q0  " + vowel_b["name"], 1.0, 0.0, vowel_b, "#ff8b6b"),
-               ("M50_Q0  (mid morph)", 0.5, 0.0, None, "#96e6bf"),
-               ("M0_Q100  " + vowel_a["name"] + " sharp", 0.0, 1.0, vowel_a, "#af9cff")]
+               ("M0_Q100  " + vowel_a["name"] + " wake", 0.0, 1.0, vowel_a, "#af9cff"),
+               ("M100_Q100  " + vowel_b["name"] + " wake", 1.0, 1.0, vowel_b, "#96e6bf")]
     fig, axes = plt.subplots(2, 2, figsize=(16, 10), facecolor="#070908")
     axes = axes.flatten()
     report = {"vowel_a": vowel_a["name"], "vowel_b": vowel_b["name"], "landings": [], "max_pole_r": 0.0,
@@ -181,8 +251,8 @@ def verify_and_plot(body: bytes, vowel_a: dict, vowel_b: dict, out_png: Path) ->
                  f"peaks vs table freqs (dashed)  ·  worst landing {worst:.1f}%  ·  "
                  f"max|pole| {report['max_pole_r']:.5f}  ·  {'UNSTABLE' if report['unstable'] else 'stable'}",
                  color="#edf3ee", fontsize=12)
-    fig.text(0.01, 0.005, "trench_ffi.packed_probe @ 39062.5 Hz · tables: klatt_1980_formants + "
-             "klatt_1980_bandwidths · r=exp(-pi*BW/SR) · gain=unity_dc_gain · 2026-07-04",
+    fig.text(0.01, 0.005, "trench_ffi.packed_probe @ 39062.5 Hz · four authored corners · "
+             "Q0 r≤0.98 · Q100 wake at F2 · F1 trailing zero −0.6 oct · gain=unity_dc_gain",
              color="#6f7f75", fontsize=7)
     fig.tight_layout(rect=(0, 0.02, 1, 0.96))
     fig.savefig(out_png, dpi=120, facecolor="#070908")

@@ -68,7 +68,8 @@ namespace ParamID
     inline constexpr auto moveTension = "moveTension"; // 0..1: visible MOVE amount; FREE uses it as phase + intensity
     inline constexpr auto moveTime    = "moveTime";    // choice: FREE,1/4,1/2,1 BAR,2 BAR,4 BAR,8 BAR
     inline constexpr auto moveRate    = "moveRate";    // choice: AUTO,SNAP,TIGHT,GLIDE — morph approach time (patent menu)
-    inline constexpr auto keyTrack    = "keyTrack";    // bool: KEY TRACKING — resonances follow the input's note (pitch-class, C anchor)
+    inline constexpr auto keyTrack    = "keyTrack";    // legacy bool; passive suggestions do not automate Key Snap
+    inline constexpr auto keySnap     = "keySnap";     // choice: Off, C..B minor, C..B major — all lane resonances land in one scale
     inline constexpr auto bite        = "bite";        // 0..1: BITE — inter-stage soft-clip drive inside the cascade (0 = linear, bit-exact)
     inline constexpr auto clip        = "clip";        // 0..1: CLIP — post-cascade hard clip (drum-bus crunch); hidden host param, no face control
     inline constexpr auto hdMode      = "hdMode";      // bool: HD island — run the unit at 78125 Hz (words re-derived at load); applied at prepareToPlay

@@ -2,7 +2,7 @@ import numpy as np
 from PIL import Image
 from pathlib import Path
 
-S = 2  # CRITICAL: C++ expects kFrameW/kFrameH to match (now 14x94, S=2).
+S = 2  # C++ consumes the complete 12x94 source frame and fits it at draw time.
 FW, FH, NF = 6 * S, 47 * S, 64   # a tad thinner again (true 4386 slimness)
 
 frames = []

@@ -1,0 +1,52 @@
+- generic [active] [ref=f2e1]:
+  - banner [ref=f2e2]:
+    - generic [ref=f2e3]:
+      - heading "Trench Cull" [level=1] [ref=f2e4]
+      - generic [ref=f2e5]: A/B elimination
+    - generic [ref=f2e6]:
+      - generic [ref=f2e7]:
+        - generic [ref=f2e8]: "132"
+        - text: in play
+      - generic [ref=f2e9]:
+        - generic [ref=f2e10]: "0"
+        - text: kept
+      - generic [ref=f2e11]:
+        - generic [ref=f2e12]: "0"
+        - text: killed
+    - generic [ref=f2e13]:
+      - generic [ref=f2e14]: Round 1
+      - generic [ref=f2e15]: duel 1 / 66
+  - main [ref=f2e16]:
+    - generic [ref=f2e17]:
+      - generic [ref=f2e18]:
+        - generic [ref=f2e19]: Sound A
+        - generic [ref=f2e20]: M0_NOTCH_TO_PHONONIC_SPLIT
+        - generic [ref=f2e21]:
+          - generic [ref=f2e22]: M0
+          - generic [ref=f2e23]: M 0.75 Â· Q 1.00
+        - generic [ref=f2e24]: Response Â· band = how far it moves
+        - button "â–¶ Play" [ref=f2e26] [cursor=pointer]:
+          - generic [ref=f2e27]: â–¶
+          - generic [ref=f2e28]: Play
+        - generic [ref=f2e30]:
+          - button "Keep" [ref=f2e31] [cursor=pointer]
+          - button "Kill" [ref=f2e32] [cursor=pointer]
+      - generic [ref=f2e33]:
+        - generic [ref=f2e34]: Sound B
+        - generic [ref=f2e35]: M0_BELL_PIN_TO_PLATE_SPRAY
+        - generic [ref=f2e36]:
+          - generic [ref=f2e37]: M0
+          - generic [ref=f2e38]: M 1.00 Â· Q 1.00
+        - generic [ref=f2e39]: Response Â· band = how far it moves
+        - button "â–¶ Play" [ref=f2e41] [cursor=pointer]:
+          - generic [ref=f2e42]: â–¶
+          - generic [ref=f2e43]: Play
+        - generic [ref=f2e45]:
+          - button "Keep" [ref=f2e46] [cursor=pointer]
+          - button "Kill" [ref=f2e47] [cursor=pointer]
+    - button "Skip (both survive) â–¸" [ref=f2e48] [cursor=pointer]
+    - generic [ref=f2e49]:
+      - button "â†© Undo" [disabled] [ref=f2e50] [cursor=pointer]
+      - button "Copy keeps" [ref=f2e51] [cursor=pointer]
+      - button "Reset" [ref=f2e52] [cursor=pointer]
+    - generic [ref=f2e53]: "Plot: dB vs Hz. Green = the morph move (Q0), amber = the Q bloom; the shaded band is how far the filter travels. Clip: drums through hotspot, morph, then Q â€” level-matched. Keep real movement, kill the dead or one-note ones. Undecided come back next round."

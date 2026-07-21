@@ -1,0 +1,49 @@
+{
+  "format": "trench-profile-stage-plan-v1",
+  "name": "ship_riot_plate",
+  "intent": "Register the six published/analytic bell-to-free-plate modal roles without claiming that the recipe is a measured transfer function.",
+  "source_evidence": {
+    "status": "ANALYTIC_ONLY_NO_MEASURED_TF",
+    "recipe": "df2/recipes/three_layer_acoustic_forge/generated/recipe_metal_bell_to_free_plate.json",
+    "tables": ["filters/tables/metallic_modes.json"],
+    "method": "pole bands enclose corresponding bell and free-plate modal endpoints; zero bands enclose the recipe's declared ratio-derived articulation endpoints"
+  },
+  "stage_plan": [
+    {
+      "slot": 0,
+      "lane_id": "low_mode",
+      "role": "bell hum to plate fundamental / macro contour",
+      "analysis": {"source": "macro_body", "pole_band_hz": [200, 700], "zero_band_hz": [500, 1450], "pole_radius": [0.70, 0.98], "zero_radius": [0.02, 0.98]}
+    },
+    {
+      "slot": 1,
+      "lane_id": "tierce_mid_mode",
+      "role": "bell prime/tierce to plate second mode",
+      "analysis": {"source": "residual", "pole_band_hz": [450, 1100], "zero_band_hz": [200, 1150], "pole_radius": [0.80, 0.995], "zero_radius": [0.02, 0.98]}
+    },
+    {
+      "slot": 2,
+      "lane_id": "body_mode",
+      "role": "bell body to plate body mode",
+      "analysis": {"source": "residual", "pole_band_hz": [550, 1450], "zero_band_hz": [600, 1200], "pole_radius": [0.80, 0.995], "zero_radius": [0.02, 0.98]}
+    },
+    {
+      "slot": 3,
+      "lane_id": "clang_mode",
+      "role": "bell clang to plate fourth mode",
+      "analysis": {"source": "residual", "pole_band_hz": [700, 1650], "zero_band_hz": [500, 1700], "pole_radius": [0.80, 0.995], "zero_radius": [0.02, 0.985]}
+    },
+    {
+      "slot": 4,
+      "lane_id": "shimmer_mode",
+      "role": "bell shimmer to dense plate mode",
+      "analysis": {"source": "residual", "pole_band_hz": [950, 2150], "zero_band_hz": [1000, 1800], "pole_radius": [0.80, 0.995], "zero_radius": [0.02, 0.995]}
+    },
+    {
+      "slot": 5,
+      "lane_id": "ceiling_mode",
+      "role": "bell ceiling to upper plate mode",
+      "analysis": {"source": "residual", "pole_band_hz": [1200, 2450], "zero_band_hz": [850, 1900], "pole_radius": [0.80, 0.995], "zero_radius": [0.02, 0.995]}
+    }
+  ]
+}

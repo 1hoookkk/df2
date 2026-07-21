@@ -150,6 +150,35 @@ family_intents, membrane_modes, klatt_1980_*).
   + `audition_stems/` with PROVENANCE.md (license per file; NC audio = modal
   data only, never ship the audio).
 
+## Registered-lane IR (2026-07-19) — the authoring layer above geometry
+
+- `.geometry.json` is COMPILED OUTPUT; the authoring model is
+  `*.registered_lanes.json` (`filters/registered-lanes.schema.json`,
+  `tools/register_lanes.py`, doc `filters/docs/REGISTERED_LANES.md`).
+  Six stable lane IDs × four explicit corners, stage plan with law
+  (`local_peak_notch`/`high_zero_cliff`/`low_zero_sub_cut`/`free`),
+  topology, provenance per assignment, continuity limits. Validator
+  rejects derived Q100, inexact identity, topology swaps, missing
+  provenance, study-reference evidence. `emit` → canonical geometry;
+  `pack` delegates to `tools/filter_cli pack` (no second compiler).
+  Tests: `python -m tools.test_register_lanes` (24 checks).
+
+## Candidate extraction (2026-07-19) — the feed into registered lanes
+
+- Four TF JSONs (tf_ingest shape) → one deterministic `*.candidates.json`
+  (`filters/candidate-set.schema.json`, `tools/extract_candidates.py`).
+  Numerical owner = new `trench-core` bin `fit-candidates`
+  (`arma::fit_corner_from_magnitude` → `minifloat::encode` words →
+  `stage_law::geometry_from_words` exact classification; residual via
+  `response::biquad_cascade_complex` over the QUANTIZED words). No slots,
+  no lane ids, no cross-corner matching, no derived anything — candidates
+  are unordered per-corner features for MANUAL registration in
+  `register_lanes`. Real proof set: `dev/tmp/candidate_extraction/`
+  (violin dampened/resonant + ukulele + piano; byte-identical re-runs).
+  Tests: `python -m tools.test_extract_candidates` (16 checks).
+  CAVEAT: residuals on raw un-detilted IR curves are honest and LARGE
+  (piano 86.9 dB rms) — detilt/floor the TF before fitting dense sources.
+
 ## Measured-object verdicts (2026-07-18 night)
 
 - **violin_cave APPROVED — "Yes thats the sound."** The TF lane (tf_ingest

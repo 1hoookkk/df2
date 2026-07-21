@@ -31,6 +31,16 @@ PluginEditor::PluginEditor (PluginProcessor& p)
     graph        = std::make_unique<GraphDisplay> (theme, processor.apvts, ParamID::slamDrive);
     slotPad      = std::make_unique<SlotPad> (theme);
     moveChip = std::make_unique<MoveChip> (processor.apvts, theme);
+    keySnapBox = std::make_unique<KeySnapBox> (processor.apvts, theme);
+    keySnapBox->setSuggestionProviders (
+        [this] { return processor.getDetectedKeyForUi(); },
+        [this] { return processor.getDetectedAltKeyForUi(); });
+    keySnapBox->setListeningProvider ([this]
+    {
+        return juce::jmax (processor.getInputMeterLeftForUi().load (std::memory_order_relaxed),
+                           processor.getInputMeterRightForUi().load (std::memory_order_relaxed))
+               > 0.0015f;
+    });
     takeView     = std::make_unique<TakeView> (theme);
     moveView     = std::make_unique<MoveView> (processor, theme);
     // ROUTE matrix editor is shelved for V1 (RouteView.h kept on disk) — PLAY only until
@@ -124,7 +134,8 @@ PluginEditor::PluginEditor (PluginProcessor& p)
     };
     fiveDButton  = std::make_unique<FiveDButton> (processor.apvts, theme);
     labels       = std::make_unique<LabelsLayer> (theme);
-    labels->setBufferedToImage (true);        // static engravings: rasterize once
+    // Keep typography live. A cached bitmap of the labels amplified the
+    // fractional-DPI glyph artifacts while the rest of the plate was resized.
     decalsLayer  = std::make_unique<DecalsLayer> (theme);
     decalsLayer->setBufferedToImage (true);
 
@@ -135,6 +146,7 @@ PluginEditor::PluginEditor (PluginProcessor& p)
     addChildComponent (*moveView);     // page 2 (MOVE/PLAY) screen; shown by setPage
     addChildComponent (*slotPad);      // pager RETIRED everywhere (Tyson: no pages)
     addAndMakeVisible (*moveChip); // curated MOVE status chip -- added after graph, paints on top
+    addAndMakeVisible (*keySnapBox);
     addAndMakeVisible (*typeSelector);
     addAndMakeVisible (*morphWheel);
     addAndMakeVisible (*secondaryWheel);
@@ -147,24 +159,13 @@ PluginEditor::PluginEditor (PluginProcessor& p)
     addAndMakeVisible (*labels);
     addAndMakeVisible (*decalsLayer);   // front-most: free text/boxes/lines
 
-#if TRENCH_DEV_PANEL
-    // Dev tuning drawer: '›' at the right edge opens EVERY parameter —
-    // hdMode, slamDrive, bite, keyTrack, space, inputMode, motion, the lot.
-    devPanel = std::make_unique<juce::GenericAudioProcessorEditor> (processor);
-    devViewport = std::make_unique<juce::Viewport>();
-    devViewport->setViewedComponent (devPanel.get(), false);
-    devViewport->setScrollBarsShown (true, false);
-    addChildComponent (*devViewport);
-    devArrow = std::make_unique<juce::TextButton> (juce::String::fromUTF8 ("\xe2\x80\xba"));
-    devArrow->setTooltip ("dev: all parameters");
-    devArrow->setClickingTogglesState (true);
-    devArrow->onClick = [this]
-    {
-        devViewport->setVisible (devArrow->getToggleState());
-        devViewport->toFront (false);
-        devArrow->setButtonText (juce::String::fromUTF8 (devArrow->getToggleState() ? "\xe2\x80\xb9" : "\xe2\x80\xba"));
-    };
-    addAndMakeVisible (*devArrow);
+#if TRENCH_TABLE_STITCH_PANEL
+    tableStitchButton = std::make_unique<juce::TextButton> ("TABLES");
+    tableStitchButton->setTooltip ("Open the external raw-table stitcher");
+    tableStitchButton->setColour (juce::TextButton::buttonColourId, juce::Colour (0xff1d2b25));
+    tableStitchButton->setColour (juce::TextButton::textColourOffId, juce::Colour (0xffefc36b));
+    tableStitchButton->onClick = [this] { openTableStitcher(); };
+    addAndMakeVisible (*tableStitchButton);
 #endif
 
     setResizable (false, false);
@@ -201,7 +202,53 @@ PluginEditor::PluginEditor (PluginProcessor& p)
 
 PluginEditor::~PluginEditor()
 {
+#if TRENCH_TABLE_STITCH_PANEL
+    // Only terminate a server launched by this editor. A separately started
+    // workstation server is not owned here and is left alone.
+    if (tableStitchProcess != nullptr && tableStitchProcess->isRunning())
+        tableStitchProcess->kill();
+#endif
 }
+
+#if TRENCH_TABLE_STITCH_PANEL
+void PluginEditor::openTableStitcher()
+{
+    const auto root = juce::File (TRENCH_TABLE_STITCH_ROOT);
+    const auto script = root.getChildFile ("tools").getChildFile ("table_stitch_gui.py");
+    if (! script.existsAsFile())
+    {
+        graph->announce ("TABLES: tools/table_stitch_gui.py not found");
+        return;
+    }
+
+    if (tableStitchProcess == nullptr || ! tableStitchProcess->isRunning())
+    {
+        tableStitchProcess = std::make_unique<juce::ChildProcess>();
+        juce::StringArray command;
+        const auto configuredPython = juce::SystemStats::getEnvironmentVariable ("TRENCH_PYTHON", {});
+        command.add (configuredPython.isNotEmpty() ? configuredPython : juce::String ("python"));
+        command.add (script.getFullPathName());
+        command.add ("--port");
+        command.add ("8758");
+
+        if (! tableStitchProcess->start (command, juce::ChildProcess::wantStdErr))
+        {
+            graph->announce ("TABLES: could not start table stitcher");
+            tableStitchProcess.reset();
+            return;
+        }
+    }
+
+    // Give Python a moment to bind localhost before opening the external panel.
+    juce::Component::SafePointer<PluginEditor> safeThis (this);
+    juce::Timer::callAfterDelay (450, [safeThis]
+    {
+        if (safeThis != nullptr)
+            juce::URL ("http://127.0.0.1:8758/").launchInDefaultBrowser();
+    });
+    graph->announce ("TABLES: external raw-table panel opened");
+}
+#endif
 
 void PluginEditor::reloadLayoutFromDisk()
 {
@@ -241,14 +288,11 @@ void PluginEditor::timerCallback()
 void PluginEditor::resized()
 {
     layoutComponents();
-#if TRENCH_DEV_PANEL
-    if (devArrow != nullptr)
+#if TRENCH_TABLE_STITCH_PANEL
+    if (tableStitchButton != nullptr)
     {
-        devArrow->setBounds (getWidth() - 14, getHeight() / 2 - 22, 13, 44);
-        devArrow->toFront (false);
-        const int pw = juce::roundToInt (getWidth() * 0.82f);
-        devPanel->setSize (pw - 10, juce::jmax (devPanel->getHeight(), 10));
-        devViewport->setBounds (getWidth() - 14 - pw, 8, pw, getHeight() - 16);
+        tableStitchButton->setBounds (getWidth() - 77, 7, 62, 22);
+        tableStitchButton->toFront (false);
     }
 #endif
 }
@@ -284,6 +328,9 @@ void PluginEditor::layoutComponents()
         // bottom-left on the glass, exactly where the reference builds put it.
         moveChip->setBounds (scr.getX() + 14, scr.getBottom() - 28, 178, 18);
     }
+    // The display bezel is the mechanism: KEY is engraved on its upper-right
+    // edge and candidate tabs descend just inside the glass.
+    keySnapBox->setBounds (214, 65, 74, 36);
     typeSelector->setBounds (rectOf ("typeSelector"));
     morphWheel->setBounds (rectOf ("morphWheel"));
     secondaryWheel->setBounds (rectOf ("qWheel"));
@@ -313,6 +360,7 @@ void PluginEditor::layoutComponents()
 
 void PluginEditor::onFrame()
 {
+    keySnapBox->refreshSuggestion();
     // Per display refresh: push live engine state into the views. Each view
     // no-ops when its input is unchanged, so an idle UI does no repainting.
     //

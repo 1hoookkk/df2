@@ -21,7 +21,7 @@ class WheelControl : public juce::Component,
                      public juce::SettableTooltipClient
 {
 public:
-    static constexpr int kStripFrameWidth = 150;   // actual-size frame (drawn 1:1, never resampled)
+    static constexpr int kStripFrameWidth = 139;   // actual-size frame (drawn 1:1, never resampled)
 
     WheelControl (juce::AudioProcessorValueTreeState& apvts, juce::String paramID,
                   juce::Image filmstrip, const Theme& theme)

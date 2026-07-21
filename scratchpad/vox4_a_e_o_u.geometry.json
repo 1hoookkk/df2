@@ -1,0 +1,181 @@
+{
+ "name": "vox4_a_e_o_u",
+ "corners": [
+  [
+   {
+    "pole_hz": 10500.0,
+    "pole_r": 0.85,
+    "zero_hz": 13500.0,
+    "zero_r": 0.8,
+    "scale": 0.45
+   },
+   {
+    "pole_hz": 700.0,
+    "pole_r": 0.985,
+    "zero_hz": 441.0,
+    "zero_r": 0.85,
+    "scale": 0.45
+   },
+   {
+    "pole_hz": 1220.0,
+    "pole_r": 0.985,
+    "zero_hz": 768.6,
+    "zero_r": 0.85,
+    "scale": 0.45
+   },
+   {
+    "pole_hz": 2600.0,
+    "pole_r": 0.98,
+    "zero_hz": 1638.0,
+    "zero_r": 0.85,
+    "scale": 0.45
+   },
+   {
+    "pole_hz": 190.0,
+    "pole_r": 0.88,
+    "zero_hz": 430.0,
+    "zero_r": 0.9,
+    "scale": 0.45
+   },
+   {
+    "pole_hz": 120.0,
+    "pole_r": 0.2,
+    "zero_hz": 6000.0,
+    "zero_r": 0.9999,
+    "scale": 0.45
+   }
+  ],
+  [
+   {
+    "pole_hz": 10500.0,
+    "pole_r": 0.85,
+    "zero_hz": 13500.0,
+    "zero_r": 0.8,
+    "scale": 0.45
+   },
+   {
+    "pole_hz": 490.0,
+    "pole_r": 0.985,
+    "zero_hz": 308.7,
+    "zero_r": 0.85,
+    "scale": 0.45
+   },
+   {
+    "pole_hz": 1720.0,
+    "pole_r": 0.985,
+    "zero_hz": 1083.6,
+    "zero_r": 0.85,
+    "scale": 0.45
+   },
+   {
+    "pole_hz": 2520.0,
+    "pole_r": 0.98,
+    "zero_hz": 1587.6,
+    "zero_r": 0.85,
+    "scale": 0.45
+   },
+   {
+    "pole_hz": 190.0,
+    "pole_r": 0.88,
+    "zero_hz": 430.0,
+    "zero_r": 0.9,
+    "scale": 0.45
+   },
+   {
+    "pole_hz": 120.0,
+    "pole_r": 0.2,
+    "zero_hz": 6000.0,
+    "zero_r": 0.9999,
+    "scale": 0.45
+   }
+  ],
+  [
+   {
+    "pole_hz": 10500.0,
+    "pole_r": 0.85,
+    "zero_hz": 13500.0,
+    "zero_r": 0.8,
+    "scale": 0.45
+   },
+   {
+    "pole_hz": 540.0,
+    "pole_r": 0.985,
+    "zero_hz": 340.2,
+    "zero_r": 0.85,
+    "scale": 0.45
+   },
+   {
+    "pole_hz": 1100.0,
+    "pole_r": 0.985,
+    "zero_hz": 693.0,
+    "zero_r": 0.85,
+    "scale": 0.45
+   },
+   {
+    "pole_hz": 2300.0,
+    "pole_r": 0.98,
+    "zero_hz": 1449.0,
+    "zero_r": 0.85,
+    "scale": 0.45
+   },
+   {
+    "pole_hz": 190.0,
+    "pole_r": 0.88,
+    "zero_hz": 430.0,
+    "zero_r": 0.9,
+    "scale": 0.45
+   },
+   {
+    "pole_hz": 120.0,
+    "pole_r": 0.2,
+    "zero_hz": 6000.0,
+    "zero_r": 0.9999,
+    "scale": 0.45
+   }
+  ],
+  [
+   {
+    "pole_hz": 10500.0,
+    "pole_r": 0.85,
+    "zero_hz": 13500.0,
+    "zero_r": 0.8,
+    "scale": 0.45
+   },
+   {
+    "pole_hz": 350.0,
+    "pole_r": 0.985,
+    "zero_hz": 220.5,
+    "zero_r": 0.85,
+    "scale": 0.45
+   },
+   {
+    "pole_hz": 1250.0,
+    "pole_r": 0.985,
+    "zero_hz": 787.5,
+    "zero_r": 0.85,
+    "scale": 0.45
+   },
+   {
+    "pole_hz": 2200.0,
+    "pole_r": 0.98,
+    "zero_hz": 1386.0,
+    "zero_r": 0.85,
+    "scale": 0.45
+   },
+   {
+    "pole_hz": 190.0,
+    "pole_r": 0.88,
+    "zero_hz": 430.0,
+    "zero_r": 0.9,
+    "scale": 0.45
+   },
+   {
+    "pole_hz": 120.0,
+    "pole_r": 0.2,
+    "zero_hz": 6000.0,
+    "zero_r": 0.9999,
+    "scale": 0.45
+   }
+  ]
+ ]
+}

@@ -8,17 +8,22 @@
 #   seat + metal tone (the approved 07-18 passes) -> additive glow -> crop.
 # Rotation reversal is baked into the batch (clean f_i uses the reversed
 # source rotation), so clean and glow share index i — desync impossible.
+import os
+
 import numpy as np
 from PIL import Image
 from pathlib import Path
 
 NF = 257
-FW, FH = 150, 34
-DRUM_H = 30
-GAP_TOP = 3
+SOURCE_SCALE = 2
+FW, FH = 150 * SOURCE_SCALE, 34 * SOURCE_SCALE
+DRUM_H = 30 * SOURCE_SCALE
+GAP_TOP = 3 * SOURCE_SCALE
 
-BATCH = Path(r"C:\Users\hooki\df2\dev\tmp\roller_batch_accent")
-OUT = Path(r"C:\Users\hooki\df2-workstation\plugin\assets")
+BATCH = Path (os.environ.get ("TRENCH_ROLLER_BATCH",
+                              r"C:\Users\hooki\df2\dev\tmp\roller_batch_accent"))
+OUT = Path (os.environ.get ("TRENCH_ROLLER_OUT",
+                            r"C:\Users\hooki\df2-workstation\plugin\assets"))
 
 def load(p):
     return np.array(Image.open(p).convert("RGBA")).astype(np.float32)
@@ -42,21 +47,12 @@ glow_peak_rgb = []
 for i in range(NF):
     v = i / (NF - 1)
     c = load(BATCH / "clean" / f"f{i:03d}.png")
-    rgb = c[..., :3]
+    rgb = c[..., :3].copy()
     H, W = rgb.shape[:2]
 
-    # Approved 07-18 material pass: even silvery metal (dialled back), soft
-    # specular knee, seated-cylinder vertical shading + near-point streak.
-    xn = np.arange(W, dtype=np.float32) / W
-    env = 0.80 + 0.28 * np.exp(-((xn - 0.22) ** 2) / (2 * 0.24 ** 2))
-    env *= 0.45 + 0.55 * np.minimum(np.minimum(xn, 1 - xn) / 0.06, 1.0)
-    n = np.clip((rgb * env[None, :, None] / 255.0 - 0.015) * 1.18, 0, 1) ** 0.90
-    n = np.where(n > 0.55, 0.55 + (n - 0.55) * 0.60, n)
-    yn = np.clip((np.arange(H, dtype=np.float32) - y0) / max(raw_h - 1, 1), 0, 1)
-    vshade = 0.24 + 0.76 * np.clip(np.sin(np.pi * (0.02 + 0.90 * yn)), 0.0, 1.0) ** 1.5
-    vshade += 0.65 * np.exp(-((yn - 0.42) ** 2) / (2 * 0.075 ** 2))
-    n *= vshade[:, None, None]
-    rgb = n * 255.0
+    # Keep the rendered clean layer's own material.  It already contains the
+    # authored body lighting; rebuilding a second plate-lighting ramp here
+    # makes the drum sink into the black aperture and hides its front face.
 
     # REAL glow, additive: the pass already carries span/ramp/occlusion.
     # amp gates the always-lit head diode to zero at rest (X3: dark at v=0);

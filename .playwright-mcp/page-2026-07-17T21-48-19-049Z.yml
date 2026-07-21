@@ -1,0 +1,1081 @@
+- generic [active] [ref=f1e1]:
+  - link "Skip to main content" [ref=f1e2] [cursor=pointer]:
+    - /url: "#main-content"
+  - generic [ref=f1e6]:
+    - generic:
+      - generic: "Free 24-band dynamic EQ with sidechain, per-band M/S and linear phase - VST3/AU, Windows & Mac : r/FL_Studio"
+      - banner [ref=f1e10]:
+        - navigation [ref=f1e11]:
+          - generic [ref=f1e12]:
+            - button [ref=f1e16] [cursor=pointer]
+            - generic:
+              - generic:
+                - generic:
+                  - generic:
+                    - generic:
+                      - link "Home":
+                        - /url: https://www.reddit.com/
+          - search [ref=f1e31]:
+            - generic [ref=f1e33]:
+              - textbox "Ask" [ref=f1e40]:
+                - /placeholder: Find anything
+              - separator [ref=f1e41]
+              - link "Ask" [ref=f1e45] [cursor=pointer]:
+                - /url: /answers/
+              - generic: Find anything
+          - generic [ref=f1e51]:
+            - link "Log In" [ref=f1e55] [cursor=pointer]:
+              - /url: https://www.reddit.com/login/
+            - button [ref=f1e62] [cursor=pointer]
+      - generic [ref=f1e71]:
+        - main [ref=f1e72]:
+          - 'generic "Free 24-band dynamic EQ with sidechain, per-band M/S and linear phase - VST3/AU, Windows & Mac : r/FL_Studio"'
+          - generic [ref=f1e73]:
+            - generic [ref=f1e74]:
+              - generic [ref=f1e75]:
+                - button "Back" [ref=f1e77] [cursor=pointer]
+                - link "Go to FL_Studio" [ref=f1e85] [cursor=pointer]:
+                  - /url: https://www.reddit.com/r/FL_Studio/
+                - group [ref=f1e90]:
+                  - generic [ref=f1e91]:
+                    - link "r/FL_Studio" [ref=f1e94] [cursor=pointer]:
+                      - /url: https://www.reddit.com/r/FL_Studio/
+                    - generic [ref=f1e95]: •
+                    - time [ref=f1e97]: 5h ago
+                  - 'link "Author: AntAggravating1665" [ref=f1e102] [cursor=pointer]':
+                    - /url: https://www.reddit.com/user/AntAggravating1665/
+                    - generic [ref=f1e103]: AntAggravating1665
+              - button "Open user actions" [ref=f1e107] [cursor=pointer]
+            - 'heading "Post Title: Free 24-band dynamic EQ with sidechain, per-band M/S and linear phase - VST3/AU, Windows & Mac" [level=1] [ref=f1e114]': Free 24-band dynamic EQ with sidechain, per-band M/S and linear phase - VST3/AU, Windows & Mac
+            - generic [ref=f1e119]:
+              - generic [ref=f1e120]:
+                - generic [ref=f1e121]:
+                  - list [ref=f1e123] [cursor=pointer]:
+                    - listitem [ref=f1e124]:
+                      - figure [ref=f1e125]:
+                        - img "r/FL_Studio - Free 24-band dynamic EQ with sidechain, per-band M/S and linear phase - VST3/AU, Windows & Mac" [ref=f1e126]
+                  - group [ref=f1e131]:
+                    - button [ref=f1e133] [cursor=pointer]
+                    - button [ref=f1e135] [cursor=pointer]
+                    - button [ref=f1e137]
+                    - button [ref=f1e139]
+                - generic [ref=f1e142]:
+                  - button "Previous page" [disabled]
+                - button "Next page" [ref=f1e145] [cursor=pointer]
+              - generic [ref=f1e150]: Item 1 of 4
+            - generic [ref=f1e153]:
+              - generic [ref=f1e154]:
+                - paragraph [ref=f1e155]: Over the past few months, I’ve been working on Aurora, a free EQ plugin for Windows and macOS. Version 1.0 is now available.
+                - paragraph [ref=f1e156]: The workflow is node-based and designed to feel fast and familiar.My goal was to combine the EQ features I use most often in a single plugin without making the interface feel overloaded.
+                - paragraph [ref=f1e157]: "Aurora includes:"
+                - list [ref=f1e158]:
+                  - listitem [ref=f1e159]:
+                    - paragraph [ref=f1e160]: Up to 24 EQ bands
+                  - listitem [ref=f1e161]:
+                    - paragraph [ref=f1e162]: Dynamic EQ on every band
+                  - listitem [ref=f1e163]:
+                    - paragraph [ref=f1e164]: External sidechain support
+                  - listitem [ref=f1e165]:
+                    - paragraph [ref=f1e166]: Adjustable attack, hold and release
+                  - listitem [ref=f1e167]:
+                    - paragraph [ref=f1e168]: Triggering above or below the threshold
+                  - listitem [ref=f1e169]:
+                    - paragraph [ref=f1e170]: Stereo, Left, Right, Mid and Side processing for each band
+                  - listitem [ref=f1e171]:
+                    - paragraph [ref=f1e172]: Zero Latency, Natural Phase and Linear Phase modes
+                  - listitem [ref=f1e173]:
+                    - paragraph [ref=f1e174]: Filter slopes from 6 to 96 dB/oct, including Brickwall filters
+                  - listitem [ref=f1e175]:
+                    - paragraph [ref=f1e176]: Q values up to 40
+                  - listitem [ref=f1e177]:
+                    - paragraph [ref=f1e178]: A real-time spectrum analyzer with a pre-EQ ghost curve
+                  - listitem [ref=f1e179]:
+                    - paragraph [ref=f1e180]: Spectrum learning with automatic high-pass and low-pass suggestions
+                  - listitem [ref=f1e181]:
+                    - paragraph [ref=f1e182]: De-resonance, Match EQ and De-Ess functions
+                  - listitem [ref=f1e183]:
+                    - paragraph [ref=f1e184]: Optional Clean, Subtle and Warm saturation modes
+                - paragraph [ref=f1e185]: "Compatibility:"
+                - list [ref=f1e186]:
+                  - listitem [ref=f1e187]:
+                    - paragraph [ref=f1e188]: "Windows: VST3"
+                  - listitem [ref=f1e189]:
+                    - paragraph [ref=f1e190]: "macOS: VST3 and AU"
+                  - listitem [ref=f1e191]:
+                    - paragraph [ref=f1e192]: Native Apple Silicon and Intel support
+                  - listitem [ref=f1e193]:
+                    - paragraph [ref=f1e194]: Notarized macOS build
+                - paragraph [ref=f1e195]:
+                  - text: "Free download:"
+                  - link "https://13x.audio/products/aurora" [ref=f1e196] [cursor=pointer]:
+                    - /url: https://13x.audio/products/aurora
+                - paragraph [ref=f1e197]: Aurora is a solo project, so real-world feedback helps a lot. I’m particularly interested in how it behaves in FL Studio.
+                - paragraph [ref=f1e198]: In case you run into a bug, crash or workflow issue, please let me know what happened and include your operating system and FL Studio version. That makes it much easier for me to reproduce and fix the problem.
+              - button "Read more" [ref=f1e199] [cursor=pointer]
+            - generic [ref=f1e206]:
+              - generic [ref=f1e209]: "55"
+              - generic [ref=f1e212]: ·
+              - generic [ref=f1e215]: "10"
+          - separator [ref=f1e216]
+          - 'generic "ON SALE NOW: Tickets for MAMAMOO 2026 WORLD TOUR <4WARD> in AUSTRALIA are available now!" [ref=f1e217]':
+            - generic [ref=f1e218]:
+              - 'link "Advertisement: ON SALE NOW: Tickets for MAMAMOO 2026 WORLD TOUR <4WARD> in AUSTRALIA are available now!" [ref=f1e219] [cursor=pointer]':
+                - /url: https://alb.reddit.com/cr?za=fKT245m0zQXQFeCTeSec32uE0Zn3B4UJGieBFBpWL7tE8iXGo1BrIliIlywANIaD4qOZlZWcVs3zxHihebmuAHdtRCfQgA7VEK-w0RQv4wF-LrwKoxBjAcDoxAkW77wuMxoobFH4kA7WpFYHyPFfh7LiRfJjJJY5KU7V8ZqQK4FToutNfLKtDIftJbEOgXpWtey-dsstRyDGfOPB1VJBy9WoG7u8V1r3MeVpJ245o7jDdTNChvbuPHfGBOicehyqaAmDZA9z7fAha5JMpE2cV3cPj6dZbdvdsyP1LP-CbMW3YTLKCGmbqYEginSTBPpxinBte1mrVfnJeyAr4LVXJ4V0snp3vxwEqJpYR1edVLpTnDcDvYHSov2OxFgpQnWS8cvAaQyaYB2QGgNSmwRfPP0_bsdYg01wdhryJLaYkw64SVgEVF7As3RU4MJMBk3b0V4OY2dYKeyJYNJORqbkM0K2bed63rtoR8gG6ExPvxgMPuQwq_-qnVkB_VnnRs2rWBeocp0A4bOFXj8BxUihbkBUd7wjl3IVZCBwN7rm1iYPSSEQOA7dDg-Qk39W3wha2JDFgMm85KhY1m5a9Iwj4GASBz05O5WUecR57oEFFjrLUBHT9J7dF2x3o3UhYK-_4KguKGRqigaFImObOlBEaTW4dpMC6QhNn8mge5NT&zp=deIMcGO3v0ME9IME4DFE1vnXmAGanWpEyhH3ru0_x1_SE5ejAMhofi6AvoP3yHbCcX4ve7IL6U0FPg3YF-OrmG4ON6I0dlRJM7uin4ft_S-FBWXWrTh4VRf74jxBliOrWztpIpRpLFdFyAMGITCW_iWHE_bCmDG14H4PA921vAWEI_iTiNMXWlUVm0cyjOO5OSj-Qc7PXEGx9dEsMFk_ZIF2Bm1aaKyaHNBH8QtE_FlMHcwVUE5jTUdMv21yEbd0sHl8oTfz9BAFFtz7YBYeRFAPQMDef6s2aQlsHxi5oZTzj3MXYQto-BZYUN2GZiOCraunYto4WKYHdOtuZMlShkeWTcvooin0-mjrWWI1IYwse9Oso5PimSe5OcF9DtyMeg
+              - generic [ref=f1e220]:
+                - generic [ref=f1e221]:
+                  - link "LiveNationAU" [ref=f1e223] [cursor=pointer]:
+                    - /url: /user/LiveNationAU/
+                    - img "u/LiveNationAU avatar" [ref=f1e226]
+                  - generic [ref=f1e228]: •
+                  - link "Promoted" [ref=f1e230] [cursor=pointer]:
+                    - /url: /user/LiveNationAU/
+                  - link [ref=f1e232] [cursor=pointer]:
+                    - /url: https://alb.reddit.com/cr?za=fKT245m0zQXQFeCTeSec32uE0Zn3B4UJGieBFBpWL7tE8iXGo1BrIliIlywANIaD4qOZlZWcVs3zxHihebmuAHdtRCfQgA7VEK-w0RQv4wF-LrwKoxBjAcDoxAkW77wuMxoobFH4kA7WpFYHyPFfh7LiRfJjJJY5KU7V8ZqQK4FToutNfLKtDIftJbEOgXpWtey-dsstRyDGfOPB1VJBy9WoG7u8V1r3MeVpJ245o7jDdTNChvbuPHfGBOicehyqaAmDZA9z7fAha5JMpE2cV3cPj6dZbdvdsyP1LP-CbMW3YTLKCGmbqYEginSTBPpxinBte1mrVfnJeyAr4LVXJ4V0snp3vxwEqJpYR1edVLpTnDcDvYHSov2OxFgpQnWS8cvAaQyaYB2QGgNSmwRfPP0_bsdYg01wdhryJLaYkw64SVgEVF7As3RU4MJMBk3b0V4OY2dYKeyJYNJORqbkM0K2bed63rtoR8gG6ExPvxgMPuQwq_-qnVkB_VnnRs2rWBeocp0A4bOFXj8BxUihbkBUd7wjl3IVZCBwN7rm1iYPSSEQOA7dDg-Qk39W3wha2JDFgMm85KhY1m5a9Iwj4GASBz05O5WUecR57oEFFjrLUBHT9J7dF2x3o3UhYK-_4KguKGRqigaFImObOlBEaTW4dpMC6QhNn8mge5NT&zp=deIMcGO3v0ME9IME4DFE1vnXmAGanWpEyhH3ru0_x1_SE5ejAMhofi6AvoP3yHbCcX4ve7IL6U0FPg3YF-OrmG4ON6I0dlRJM7uin4ft_S-FBWXWrTh4VRf74jxBliOrWztpIpRpLFdFyAMGITCW_iWHE_bCmDG14H4PA921vAWEI_iTiNMXWlUVm0cyjOO5OSj-Qc7PXEGx9dEsMFk_ZIF2Bm1aaKyaHNBH8QtE_FlMHcwVUE5jTUdMv21yEbd0sHl8oTfz9BAFFtz7YBYeRFAPQMDef6s2aQlsHxi5oZTzj3MXYQto-BZYUN2GZiOCraunYto4WKYHdOtuZMlShkeWTcvooin0-mjrWWI1IYwse9Oso5PimSe5OcF9DtyMeg
+                - button "Open user actions" [ref=f1e238] [cursor=pointer]
+              - generic [ref=f1e244]:
+                - generic [ref=f1e245]:
+                  - 'link "ON SALE NOW: Tickets for MAMAMOO 2026 WORLD TOUR <4WARD> in AUSTRALIA are available now!" [ref=f1e247] [cursor=pointer]':
+                    - /url: https://alb.reddit.com/cr?za=fKT245m0zQXQFeCTeSec32uE0Zn3B4UJGieBFBpWL7tE8iXGo1BrIliIlywANIaD4qOZlZWcVs3zxHihebmuAHdtRCfQgA7VEK-w0RQv4wF-LrwKoxBjAcDoxAkW77wuMxoobFH4kA7WpFYHyPFfh7LiRfJjJJY5KU7V8ZqQK4FToutNfLKtDIftJbEOgXpWtey-dsstRyDGfOPB1VJBy9WoG7u8V1r3MeVpJ245o7jDdTNChvbuPHfGBOicehyqaAmDZA9z7fAha5JMpE2cV3cPj6dZbdvdsyP1LP-CbMW3YTLKCGmbqYEginSTBPpxinBte1mrVfnJeyAr4LVXJ4V0snp3vxwEqJpYR1edVLpTnDcDvYHSov2OxFgpQnWS8cvAaQyaYB2QGgNSmwRfPP0_bsdYg01wdhryJLaYkw64SVgEVF7As3RU4MJMBk3b0V4OY2dYKeyJYNJORqbkM0K2bed63rtoR8gG6ExPvxgMPuQwq_-qnVkB_VnnRs2rWBeocp0A4bOFXj8BxUihbkBUd7wjl3IVZCBwN7rm1iYPSSEQOA7dDg-Qk39W3wha2JDFgMm85KhY1m5a9Iwj4GASBz05O5WUecR57oEFFjrLUBHT9J7dF2x3o3UhYK-_4KguKGRqigaFImObOlBEaTW4dpMC6QhNn8mge5NT&zp=deIMcGO3v0ME9IME4DFE1vnXmAGanWpEyhH3ru0_x1_SE5ejAMhofi6AvoP3yHbCcX4ve7IL6U0FPg3YF-OrmG4ON6I0dlRJM7uin4ft_S-FBWXWrTh4VRf74jxBliOrWztpIpRpLFdFyAMGITCW_iWHE_bCmDG14H4PA921vAWEI_iTiNMXWlUVm0cyjOO5OSj-Qc7PXEGx9dEsMFk_ZIF2Bm1aaKyaHNBH8QtE_FlMHcwVUE5jTUdMv21yEbd0sHl8oTfz9BAFFtz7YBYeRFAPQMDef6s2aQlsHxi5oZTzj3MXYQto-BZYUN2GZiOCraunYto4WKYHdOtuZMlShkeWTcvooin0-mjrWWI1IYwse9Oso5PimSe5OcF9DtyMeg
+                  - generic [ref=f1e248]:
+                    - link [ref=f1e249] [cursor=pointer]:
+                      - /url: https://alb.reddit.com/cr?za=fKT245m0zQXQFeCTeSec32uE0Zn3B4UJGieBFBpWL7tE8iXGo1BrIliIlywANIaD4qOZlZWcVs3zxHihebmuAHdtRCfQgA7VEK-w0RQv4wF-LrwKoxBjAcDoxAkW77wuMxoobFH4kA7WpFYHyPFfh7LiRfJjJJY5KU7V8ZqQK4FToutNfLKtDIftJbEOgXpWtey-dsstRyDGfOPB1VJBy9WoG7u8V1r3MeVpJ245o7jDdTNChvbuPHfGBOicehyqaAmDZA9z7fAha5JMpE2cV3cPj6dZbdvdsyP1LP-CbMW3YTLKCGmbqYEginSTBPpxinBte1mrVfnJeyAr4LVXJ4V0snp3vxwEqJpYR1edVLpTnDcDvYHSov2OxFgpQnWS8cvAaQyaYB2QGgNSmwRfPP0_bsdYg01wdhryJLaYkw64SVgEVF7As3RU4MJMBk3b0V4OY2dYKeyJYNJORqbkM0K2bed63rtoR8gG6ExPvxgMPuQwq_-qnVkB_VnnRs2rWBeocp0A4bOFXj8BxUihbkBUd7wjl3IVZCBwN7rm1iYPSSEQOA7dDg-Qk39W3wha2JDFgMm85KhY1m5a9Iwj4GASBz05O5WUecR57oEFFjrLUBHT9J7dF2x3o3UhYK-_4KguKGRqigaFImObOlBEaTW4dpMC6QhNn8mge5NT&zp=deIMcGO3v0ME9IME4DFE1vnXmAGanWpEyhH3ru0_x1_SE5ejAMhofi6AvoP3yHbCcX4ve7IL6U0FPg3YF-OrmG4ON6I0dlRJM7uin4ft_S-FBWXWrTh4VRf74jxBliOrWztpIpRpLFdFyAMGITCW_iWHE_bCmDG14H4PA921vAWEI_iTiNMXWlUVm0cyjOO5OSj-Qc7PXEGx9dEsMFk_ZIF2Bm1aaKyaHNBH8QtE_FlMHcwVUE5jTUdMv21yEbd0sHl8oTfz9BAFFtz7YBYeRFAPQMDef6s2aQlsHxi5oZTzj3MXYQto-BZYUN2GZiOCraunYto4WKYHdOtuZMlShkeWTcvooin0-mjrWWI1IYwse9Oso5PimSe5OcF9DtyMeg
+                    - generic [ref=f1e250]:
+                      - link "Learn More" [ref=f1e251] [cursor=pointer]:
+                        - /url: https://alb.reddit.com/cr?za=fKT245m0zQXQFeCTeSec32uE0Zn3B4UJGieBFBpWL7tE8iXGo1BrIliIlywANIaD4qOZlZWcVs3zxHihebmuAHdtRCfQgA7VEK-w0RQv4wF-LrwKoxBjAcDoxAkW77wuMxoobFH4kA7WpFYHyPFfh7LiRfJjJJY5KU7V8ZqQK4FToutNfLKtDIftJbEOgXpWtey-dsstRyDGfOPB1VJBy9WoG7u8V1r3MeVpJ245o7jDdTNChvbuPHfGBOicehyqaAmDZA9z7fAha5JMpE2cV3cPj6dZbdvdsyP1LP-CbMW3YTLKCGmbqYEginSTBPpxinBte1mrVfnJeyAr4LVXJ4V0snp3vxwEqJpYR1edVLpTnDcDvYHSov2OxFgpQnWS8cvAaQyaYB2QGgNSmwRfPP0_bsdYg01wdhryJLaYkw64SVgEVF7As3RU4MJMBk3b0V4OY2dYKeyJYNJORqbkM0K2bed63rtoR8gG6ExPvxgMPuQwq_-qnVkB_VnnRs2rWBeocp0A4bOFXj8BxUihbkBUd7wjl3IVZCBwN7rm1iYPSSEQOA7dDg-Qk39W3wha2JDFgMm85KhY1m5a9Iwj4GASBz05O5WUecR57oEFFjrLUBHT9J7dF2x3o3UhYK-_4KguKGRqigaFImObOlBEaTW4dpMC6QhNn8mge5NT&zp=deIMcGO3v0ME9IME4DFE1vnXmAGanWpEyhH3ru0_x1_SE5ejAMhofi6AvoP3yHbCcX4ve7IL6U0FPg3YF-OrmG4ON6I0dlRJM7uin4ft_S-FBWXWrTh4VRf74jxBliOrWztpIpRpLFdFyAMGITCW_iWHE_bCmDG14H4PA921vAWEI_iTiNMXWlUVm0cyjOO5OSj-Qc7PXEGx9dEsMFk_ZIF2Bm1aaKyaHNBH8QtE_FlMHcwVUE5jTUdMv21yEbd0sHl8oTfz9BAFFtz7YBYeRFAPQMDef6s2aQlsHxi5oZTzj3MXYQto-BZYUN2GZiOCraunYto4WKYHdOtuZMlShkeWTcvooin0-mjrWWI1IYwse9Oso5PimSe5OcF9DtyMeg
+                      - link "livenation.com.au" [ref=f1e255] [cursor=pointer]:
+                        - /url: https://alb.reddit.com/cr?za=fKT245m0zQXQFeCTeSec32uE0Zn3B4UJGieBFBpWL7tE8iXGo1BrIliIlywANIaD4qOZlZWcVs3zxHihebmuAHdtRCfQgA7VEK-w0RQv4wF-LrwKoxBjAcDoxAkW77wuMxoobFH4kA7WpFYHyPFfh7LiRfJjJJY5KU7V8ZqQK4FToutNfLKtDIftJbEOgXpWtey-dsstRyDGfOPB1VJBy9WoG7u8V1r3MeVpJ245o7jDdTNChvbuPHfGBOicehyqaAmDZA9z7fAha5JMpE2cV3cPj6dZbdvdsyP1LP-CbMW3YTLKCGmbqYEginSTBPpxinBte1mrVfnJeyAr4LVXJ4V0snp3vxwEqJpYR1edVLpTnDcDvYHSov2OxFgpQnWS8cvAaQyaYB2QGgNSmwRfPP0_bsdYg01wdhryJLaYkw64SVgEVF7As3RU4MJMBk3b0V4OY2dYKeyJYNJORqbkM0K2bed63rtoR8gG6ExPvxgMPuQwq_-qnVkB_VnnRs2rWBeocp0A4bOFXj8BxUihbkBUd7wjl3IVZCBwN7rm1iYPSSEQOA7dDg-Qk39W3wha2JDFgMm85KhY1m5a9Iwj4GASBz05O5WUecR57oEFFjrLUBHT9J7dF2x3o3UhYK-_4KguKGRqigaFImObOlBEaTW4dpMC6QhNn8mge5NT&zp=deIMcGO3v0ME9IME4DFE1vnXmAGanWpEyhH3ru0_x1_SE5ejAMhofi6AvoP3yHbCcX4ve7IL6U0FPg3YF-OrmG4ON6I0dlRJM7uin4ft_S-FBWXWrTh4VRf74jxBliOrWztpIpRpLFdFyAMGITCW_iWHE_bCmDG14H4PA921vAWEI_iTiNMXWlUVm0cyjOO5OSj-Qc7PXEGx9dEsMFk_ZIF2Bm1aaKyaHNBH8QtE_FlMHcwVUE5jTUdMv21yEbd0sHl8oTfz9BAFFtz7YBYeRFAPQMDef6s2aQlsHxi5oZTzj3MXYQto-BZYUN2GZiOCraunYto4WKYHdOtuZMlShkeWTcvooin0-mjrWWI1IYwse9Oso5PimSe5OcF9DtyMeg
+                - link [ref=f1e257] [cursor=pointer]:
+                  - /url: https://alb.reddit.com/cr?za=fKT245m0zQXQFeCTeSec32uE0Zn3B4UJGieBFBpWL7tE8iXGo1BrIliIlywANIaD4qOZlZWcVs3zxHihebmuAHdtRCfQgA7VEK-w0RQv4wF-LrwKoxBjAcDoxAkW77wuMxoobFH4kA7WpFYHyPFfh7LiRfJjJJY5KU7V8ZqQK4FToutNfLKtDIftJbEOgXpWtey-dsstRyDGfOPB1VJBy9WoG7u8V1r3MeVpJ245o7jDdTNChvbuPHfGBOicehyqaAmDZA9z7fAha5JMpE2cV3cPj6dZbdvdsyP1LP-CbMW3YTLKCGmbqYEginSTBPpxinBte1mrVfnJeyAr4LVXJ4V0snp3vxwEqJpYR1edVLpTnDcDvYHSov2OxFgpQnWS8cvAaQyaYB2QGgNSmwRfPP0_bsdYg01wdhryJLaYkw64SVgEVF7As3RU4MJMBk3b0V4OY2dYKeyJYNJORqbkM0K2bed63rtoR8gG6ExPvxgMPuQwq_-qnVkB_VnnRs2rWBeocp0A4bOFXj8BxUihbkBUd7wjl3IVZCBwN7rm1iYPSSEQOA7dDg-Qk39W3wha2JDFgMm85KhY1m5a9Iwj4GASBz05O5WUecR57oEFFjrLUBHT9J7dF2x3o3UhYK-_4KguKGRqigaFImObOlBEaTW4dpMC6QhNn8mge5NT&zp=deIMcGO3v0ME9IME4DFE1vnXmAGanWpEyhH3ru0_x1_SE5ejAMhofi6AvoP3yHbCcX4ve7IL6U0FPg3YF-OrmG4ON6I0dlRJM7uin4ft_S-FBWXWrTh4VRf74jxBliOrWztpIpRpLFdFyAMGITCW_iWHE_bCmDG14H4PA921vAWEI_iTiNMXWlUVm0cyjOO5OSj-Qc7PXEGx9dEsMFk_ZIF2Bm1aaKyaHNBH8QtE_FlMHcwVUE5jTUdMv21yEbd0sHl8oTfz9BAFFtz7YBYeRFAPQMDef6s2aQlsHxi5oZTzj3MXYQto-BZYUN2GZiOCraunYto4WKYHdOtuZMlShkeWTcvooin0-mjrWWI1IYwse9Oso5PimSe5OcF9DtyMeg
+                  - 'img "Thumbnail image: ON SALE NOW: Tickets for MAMAMOO 2026 WORLD TOUR <4WARD> in AUSTRALIA are available now!" [ref=f1e258]'
+          - separator [ref=f1e259]
+          - region "Comments" [ref=f1e262]:
+            - heading "Comments Section" [level=1] [ref=f1e263]
+            - article "Comment from b_lett 4 hours ago" [ref=f1e265]:
+              - generic [ref=f1e266] [cursor=pointer]:
+                - link "b_lett's profile --- avatar" [ref=f1e271]:
+                  - /url: https://www.reddit.com/user/b_lett/
+                  - img "u/b_lett avatar" [ref=f1e274]
+                - generic [ref=f1e278]:
+                  - link "b_lett's profile" [ref=f1e281]:
+                    - /url: https://www.reddit.com/user/b_lett/
+                    - text: b_lett
+                  - generic [ref=f1e282]: •
+                  - link [ref=f1e284]:
+                    - /url: https://www.reddit.com/r/FL_Studio/comments/1uz534s/comment/oy4zonu/
+                    - time [ref=f1e286]: 4h ago
+              - generic [ref=f1e288]:
+                - generic [ref=f1e292]:
+                  - paragraph [ref=f1e293]: Pretty impressive, but there are few things that are acting a little weird for me.
+                  - paragraph [ref=f1e294]: Primarily, the size of the GUI does not seem to want to remember any sort of state that you set it to, it always wants to reset back to whatever default state it is at. This happens whether or not I'm just clicking to another tab or back, or closing and reopening the plugin.
+                  - paragraph [ref=f1e295]: I'm using FL 2025, with GUI setting just set to System Scaling (my PC is set to 150% scaling on 4k monitor). I've tried playing with FL settings of making it DPI Aware or not, as well as
+                  - figure [ref=f1e296]:
+                    - link "video player" [ref=f1e298] [cursor=pointer]:
+                      - /url: https://i.redd.it/99bju324vtdh1.gif
+                      - generic [ref=f1e301]:
+                        - generic "video player" [ref=f1e302]
+                        - button [disabled] [ref=f1e303]
+                  - paragraph [ref=f1e306]: Another thing I noticed is anything controlled with the mousewheel is very blocky movement instead of smooth. It's fine if that's default behavior, but could be nice if you added something like CTRL + Mousewheel = Smooth or Finetune adjust.
+                  - paragraph [ref=f1e307]: If you could add something like ALT + Click a node toggles instant LISTEN mode on that node, that'd be a nice QoL boost as well. Just consider adding macro functions like this if you want this to be more up to par with stuff like Pro Q in terms of workflow.
+                - generic [ref=f1e308]: "1"
+                - 'article "Comment thread level 1: Reply from AntAggravating1665 4 hours ago" [ref=f1e317]':
+                  - generic [ref=f1e318] [cursor=pointer]:
+                    - link "AntAggravating1665's profile --- avatar" [ref=f1e323]:
+                      - /url: https://www.reddit.com/user/AntAggravating1665/
+                      - img "u/AntAggravating1665 avatar" [ref=f1e326]
+                    - generic [ref=f1e330]:
+                      - link "AntAggravating1665's profile" [ref=f1e333]:
+                        - /url: https://www.reddit.com/user/AntAggravating1665/
+                        - text: AntAggravating1665
+                      - generic "Comment distinguished as the original poster" [ref=f1e336]: OP
+                      - generic [ref=f1e337]: •
+                      - link [ref=f1e339]:
+                        - /url: https://www.reddit.com/r/FL_Studio/comments/1uz534s/comment/oy50xa7/
+                        - time [ref=f1e341]: 4h ago
+                  - generic [ref=f1e343]:
+                    - paragraph [ref=f1e347]: Thanks for your feedback, gonna work on this and implement it
+                    - generic [ref=f1e348]: "1"
+            - article "Comment from Dry-Ambassador-4276 5 hours ago" [ref=f1e356]:
+              - generic [ref=f1e357] [cursor=pointer]:
+                - link "Dry-Ambassador-4276's profile --- avatar" [ref=f1e362]:
+                  - /url: https://www.reddit.com/user/Dry-Ambassador-4276/
+                  - img "u/Dry-Ambassador-4276 avatar" [ref=f1e365]
+                - generic [ref=f1e369]:
+                  - link "Dry-Ambassador-4276's profile" [ref=f1e372]:
+                    - /url: https://www.reddit.com/user/Dry-Ambassador-4276/
+                    - text: Dry-Ambassador-4276
+                  - generic [ref=f1e373]: •
+                  - link [ref=f1e375]:
+                    - /url: https://www.reddit.com/r/FL_Studio/comments/1uz534s/comment/oy4o11m/
+                    - time [ref=f1e377]: 5h ago
+              - generic [ref=f1e379]:
+                - paragraph [ref=f1e383]: Did you use the JUCE framework? This looks fire, and more capable than fl eq 2. I'll def check it out
+                - generic [ref=f1e384]: "1"
+                - 'article "Comment thread level 1: Reply from AntAggravating1665 4 hours ago" [ref=f1e393]':
+                  - generic [ref=f1e394] [cursor=pointer]:
+                    - link "AntAggravating1665's profile --- avatar" [ref=f1e399]:
+                      - /url: https://www.reddit.com/user/AntAggravating1665/
+                      - img "u/AntAggravating1665 avatar" [ref=f1e402]
+                    - generic [ref=f1e406]:
+                      - link "AntAggravating1665's profile" [ref=f1e409]:
+                        - /url: https://www.reddit.com/user/AntAggravating1665/
+                        - text: AntAggravating1665
+                      - generic "Comment distinguished as the original poster" [ref=f1e412]: OP
+                      - generic [ref=f1e413]: •
+                      - link [ref=f1e415]:
+                        - /url: https://www.reddit.com/r/FL_Studio/comments/1uz534s/comment/oy4rvk5/
+                        - time [ref=f1e417]: 4h ago
+                  - generic [ref=f1e419]:
+                    - paragraph [ref=f1e423]: Thank you, really appreciate it! Yes, it is built with JUCE.
+                    - generic [ref=f1e424]: "1"
+            - article "Comment from Dist__ 5 hours ago" [ref=f1e432]:
+              - generic [ref=f1e433] [cursor=pointer]:
+                - link "Dist__'s profile --- avatar" [ref=f1e438]:
+                  - /url: https://www.reddit.com/user/Dist__/
+                - generic [ref=f1e448]:
+                  - link "Dist__'s profile" [ref=f1e451]:
+                    - /url: https://www.reddit.com/user/Dist__/
+                    - text: Dist__
+                  - generic [ref=f1e452]: •
+                  - link [ref=f1e454]:
+                    - /url: https://www.reddit.com/r/FL_Studio/comments/1uz534s/comment/oy4ku5b/
+                    - time [ref=f1e456]: 5h ago
+              - generic [ref=f1e458]:
+                - generic [ref=f1e461]:
+                  - paragraph [ref=f1e462]: wow, native linux version.
+                  - paragraph [ref=f1e463]: runs well, i like "character" switch, will play with it today.
+                  - paragraph [ref=f1e464]: not that i have complaints about how Pro Q3 works with yabridge, but this is good VST
+                - generic [ref=f1e465]: "1"
+            - article "Comment from Lurkingscorpion14 5 hours ago" [ref=f1e473]:
+              - generic [ref=f1e474] [cursor=pointer]:
+                - link "Lurkingscorpion14's profile --- avatar" [ref=f1e479]:
+                  - /url: https://www.reddit.com/user/Lurkingscorpion14/
+                - generic [ref=f1e495]:
+                  - link "Lurkingscorpion14's profile" [ref=f1e498]:
+                    - /url: https://www.reddit.com/user/Lurkingscorpion14/
+                    - text: Lurkingscorpion14
+                  - generic [ref=f1e499]: •
+                  - link [ref=f1e501]:
+                    - /url: https://www.reddit.com/r/FL_Studio/comments/1uz534s/comment/oy4muvr/
+                    - time [ref=f1e503]: 5h ago
+              - generic [ref=f1e505]:
+                - paragraph [ref=f1e509]: I’ll check it out,thanks
+                - generic [ref=f1e510]: "1"
+            - article "Comment from midachavi 4 hours ago" [ref=f1e518]:
+              - generic [ref=f1e519] [cursor=pointer]:
+                - link "midachavi's profile --- avatar" [ref=f1e524]:
+                  - /url: https://www.reddit.com/user/midachavi/
+                - generic [ref=f1e534]:
+                  - link "midachavi's profile" [ref=f1e537]:
+                    - /url: https://www.reddit.com/user/midachavi/
+                    - text: midachavi
+                  - generic [ref=f1e538]: •
+                  - link [ref=f1e540]:
+                    - /url: https://www.reddit.com/r/FL_Studio/comments/1uz534s/comment/oy4zwnx/
+                    - time [ref=f1e542]: 4h ago
+              - generic [ref=f1e544]:
+                - generic [ref=f1e547]:
+                  - paragraph [ref=f1e548]: Too good to be true actually, will check it out! Funilly enough I was just on the hunt for a new EQ!
+                  - paragraph [ref=f1e549]: Would you mind sharing to what extent did you use ai?
+                  - paragraph [ref=f1e550]: "Edit: and Linux version too!!"
+                - generic [ref=f1e551]: "1"
+            - generic "Why WHAT HI-FI & Homereview recommend our ALR screen?" [ref=f1e560]:
+              - generic [ref=f1e561]:
+                - 'link "Advertisement: Why WHAT HI-FI & Homereview recommend our ALR screen?" [ref=f1e562] [cursor=pointer]':
+                  - /url: https://alb.reddit.com/cr?za=miC39ZXLfkz1itFADzlVpxkStRcniTY9CFbiBZfuV-zcuw9xt9J4oCoBnZ3ZS7Bj2YPF1A0l1xXNM_UureAZ8vzWKwd-Bf9doKCXwy3dNFsAaEQhOyR2UY4upQBzNUsrlnpVpLFPXPCK-XfjkDdbq7lUdAznjIzROckGBOgncShHNGKMujoH6qGSueRHbH-SB8yjceOeugMtRRhbWpMbvhsBhGh0knpfImpE1nQ39VAwQPKR-erFPfTgGrT3OE5bGM6o7dVobekCZw2IOebs7iwy9kcCQswrCujvdxQZ3vX72rmyrshjRZBJy-4SjeX5fjIgg-VDmcWLJSg3_9h90F3O7DaZyIO8vfd4XAVqAhtZejXefjjgn4oMI-ZsvlYbFOo05BN6aFJ8WlJYW8SMHO-HNX-zxflVk-AaUVNzb6uL35qmavWdFlkz7164MrefsTArKblpnBynWscHUGDRTqYisSFsTx11MZeqJrg4t23tNy8ynt39tljIoM2GGfXT4951vzlHO-loyvLwqFWtVVeu6zw8-N1-HJ2tPf8IABHgslRZjA7f1XrDEyuK8mARbSaCV0leWXa0SkBbSUQGoSAUYDA-w-IlaNVWL0XJvEJNcI4r_BSwikImG_7peF-zZoCsKENrMJnwN18Z3bWKjbzoVVWoLkK9q9PuS4gdDQnYycTBVlQppdjg_Q1nUi7lQTZ6wWSzlliuHDOOw5LGHl8Z&zp=TNKP54R5L7kIHCjfogSzAc0doFU37Jj3VBR9YqkdpRoBGzOEElDnWDz25LVhWV2OCF_kpUAGGeA13VP6yVsMPV-stPfAEmmRoCbb31NHEctOUo-8xkgwWLxO0zK5b5Q_y7kFRxXYDq0CJQswqGNOJV0XJjtlDdqfR14zCugWcCTaFHcOaFxLXk0TaJS0AqXJgQfQQMaVGZsli0XZuHnKphRvxyY-HJgWspcDV65PjvTKuQTXohZQmDM-skyBrMvLWvWcJbYeyLzpz1yOtJb7eUK7zimdHITja9pPMICd5B2ixPzm03WZqUgIoQ1JzJ4oruvUmOhCuskDCUzS7weMjGGlQhBnBWZ7bIJ3Ndm5SIVJskphc9jie0Y7p2AkJPdpINsYTmITQokhX9qP-oGVYVGK4pAZl5dejsEpvMXn7cjXQp_Ev7pryA
+                - generic [ref=f1e563]:
+                  - generic [ref=f1e564]:
+                    - link "u/NothingProjector" [ref=f1e566] [cursor=pointer]:
+                      - /url: /user/NothingProjector/
+                      - img "u/NothingProjector avatar" [ref=f1e569]
+                    - generic [ref=f1e571]: •
+                    - link "Promoted" [ref=f1e573] [cursor=pointer]:
+                      - /url: /user/NothingProjector/
+                    - link [ref=f1e575] [cursor=pointer]:
+                      - /url: https://alb.reddit.com/cr?za=miC39ZXLfkz1itFADzlVpxkStRcniTY9CFbiBZfuV-zcuw9xt9J4oCoBnZ3ZS7Bj2YPF1A0l1xXNM_UureAZ8vzWKwd-Bf9doKCXwy3dNFsAaEQhOyR2UY4upQBzNUsrlnpVpLFPXPCK-XfjkDdbq7lUdAznjIzROckGBOgncShHNGKMujoH6qGSueRHbH-SB8yjceOeugMtRRhbWpMbvhsBhGh0knpfImpE1nQ39VAwQPKR-erFPfTgGrT3OE5bGM6o7dVobekCZw2IOebs7iwy9kcCQswrCujvdxQZ3vX72rmyrshjRZBJy-4SjeX5fjIgg-VDmcWLJSg3_9h90F3O7DaZyIO8vfd4XAVqAhtZejXefjjgn4oMI-ZsvlYbFOo05BN6aFJ8WlJYW8SMHO-HNX-zxflVk-AaUVNzb6uL35qmavWdFlkz7164MrefsTArKblpnBynWscHUGDRTqYisSFsTx11MZeqJrg4t23tNy8ynt39tljIoM2GGfXT4951vzlHO-loyvLwqFWtVVeu6zw8-N1-HJ2tPf8IABHgslRZjA7f1XrDEyuK8mARbSaCV0leWXa0SkBbSUQGoSAUYDA-w-IlaNVWL0XJvEJNcI4r_BSwikImG_7peF-zZoCsKENrMJnwN18Z3bWKjbzoVVWoLkK9q9PuS4gdDQnYycTBVlQppdjg_Q1nUi7lQTZ6wWSzlliuHDOOw5LGHl8Z&zp=TNKP54R5L7kIHCjfogSzAc0doFU37Jj3VBR9YqkdpRoBGzOEElDnWDz25LVhWV2OCF_kpUAGGeA13VP6yVsMPV-stPfAEmmRoCbb31NHEctOUo-8xkgwWLxO0zK5b5Q_y7kFRxXYDq0CJQswqGNOJV0XJjtlDdqfR14zCugWcCTaFHcOaFxLXk0TaJS0AqXJgQfQQMaVGZsli0XZuHnKphRvxyY-HJgWspcDV65PjvTKuQTXohZQmDM-skyBrMvLWvWcJbYeyLzpz1yOtJb7eUK7zimdHITja9pPMICd5B2ixPzm03WZqUgIoQ1JzJ4oruvUmOhCuskDCUzS7weMjGGlQhBnBWZ7bIJ3Ndm5SIVJskphc9jie0Y7p2AkJPdpINsYTmITQokhX9qP-oGVYVGK4pAZl5dejsEpvMXn7cjXQp_Ev7pryA
+                  - button "Open user actions" [ref=f1e581] [cursor=pointer]
+                - generic [ref=f1e586]:
+                  - link "Why WHAT HI-FI & Homereview recommend our ALR screen?" [ref=f1e588] [cursor=pointer]:
+                    - /url: https://alb.reddit.com/cr?za=miC39ZXLfkz1itFADzlVpxkStRcniTY9CFbiBZfuV-zcuw9xt9J4oCoBnZ3ZS7Bj2YPF1A0l1xXNM_UureAZ8vzWKwd-Bf9doKCXwy3dNFsAaEQhOyR2UY4upQBzNUsrlnpVpLFPXPCK-XfjkDdbq7lUdAznjIzROckGBOgncShHNGKMujoH6qGSueRHbH-SB8yjceOeugMtRRhbWpMbvhsBhGh0knpfImpE1nQ39VAwQPKR-erFPfTgGrT3OE5bGM6o7dVobekCZw2IOebs7iwy9kcCQswrCujvdxQZ3vX72rmyrshjRZBJy-4SjeX5fjIgg-VDmcWLJSg3_9h90F3O7DaZyIO8vfd4XAVqAhtZejXefjjgn4oMI-ZsvlYbFOo05BN6aFJ8WlJYW8SMHO-HNX-zxflVk-AaUVNzb6uL35qmavWdFlkz7164MrefsTArKblpnBynWscHUGDRTqYisSFsTx11MZeqJrg4t23tNy8ynt39tljIoM2GGfXT4951vzlHO-loyvLwqFWtVVeu6zw8-N1-HJ2tPf8IABHgslRZjA7f1XrDEyuK8mARbSaCV0leWXa0SkBbSUQGoSAUYDA-w-IlaNVWL0XJvEJNcI4r_BSwikImG_7peF-zZoCsKENrMJnwN18Z3bWKjbzoVVWoLkK9q9PuS4gdDQnYycTBVlQppdjg_Q1nUi7lQTZ6wWSzlliuHDOOw5LGHl8Z&zp=TNKP54R5L7kIHCjfogSzAc0doFU37Jj3VBR9YqkdpRoBGzOEElDnWDz25LVhWV2OCF_kpUAGGeA13VP6yVsMPV-stPfAEmmRoCbb31NHEctOUo-8xkgwWLxO0zK5b5Q_y7kFRxXYDq0CJQswqGNOJV0XJjtlDdqfR14zCugWcCTaFHcOaFxLXk0TaJS0AqXJgQfQQMaVGZsli0XZuHnKphRvxyY-HJgWspcDV65PjvTKuQTXohZQmDM-skyBrMvLWvWcJbYeyLzpz1yOtJb7eUK7zimdHITja9pPMICd5B2ixPzm03WZqUgIoQ1JzJ4oruvUmOhCuskDCUzS7weMjGGlQhBnBWZ7bIJ3Ndm5SIVJskphc9jie0Y7p2AkJPdpINsYTmITQokhX9qP-oGVYVGK4pAZl5dejsEpvMXn7cjXQp_Ev7pryA
+                  - list [ref=f1e592]:
+                    - generic:
+                      - listitem [ref=f1e593]:
+                        - generic [ref=f1e594]:
+                          - link [ref=f1e595] [cursor=pointer]:
+                            - /url: https://alb.reddit.com/cr?za=miC39ZXLfkz1itFADzlVpxkStRcniTY9CFbiBZfuV-zcuw9xt9J4oCoBnZ3ZS7Bj2YPF1A0l1xXNM_UureAZ8vzWKwd-Bf9doKCXwy3dNFsAaEQhOyR2UY4upQBzNUsrlnpVpLFPXPCK-XfjkDdbq7lUdAznjIzROckGBOgncShHNGKMujoH6qGSueRHbH-SB8yjceOeugMtRRhbWpMbvhsBhGh0knpfImpE1nQ39VAwQPKR-erFPfTgGrT3OE5bGM6o7dVobekCZw2IOebs7iwy9kcCQswrCujvdxQZ3vX72rmyrshjRZBJy-4SjeX5fjIgg-VDmcWLJSg3_9h90F3O7DaZyIO8vfd4XAVqAhtZejXefjjgn4oMI-ZsvlYbFOo05BN6aFJ8WlJYW8SMHO-HNX-zxflVk-AaUVNzb6uL35qmavWdFlkz7164MrefsTArKblpnBynWscHUGDRTqYisSFsTx11MZeqJrg4t23tNy8ynt39tljIoM2GGfXT4951vzlHO-loyvLwqFWtVVeu6zw8-N1-HJ2tPf8IABHgslRZjA7f1XrDEyuK8mARbSaCV0leWXa0SkBbSUQGoSAUYDA-w-IlaNVWL0XJvEJNcI4r_BSwikImG_7peF-zZoCsKENrMJnwN18Z3bWKjbzoVVWoLkK9q9PuS4gdDQnYycTBVlQppdjg_Q1nUi7lQTZ6wWSzlliuHDOOw5LGHl8Z&zp=TNKP54R5L7kIHCjfogSzAc0doFU37Jj3VBR9YqkdpRoBGzOEElDnWDz25LVhWV2OCF_kpUAGGeA13VP6yVsMPV-stPfAEmmRoCbb31NHEctOUo-8xkgwWLxO0zK5b5Q_y7kFRxXYDq0CJQswqGNOJV0XJjtlDdqfR14zCugWcCTaFHcOaFxLXk0TaJS0AqXJgQfQQMaVGZsli0XZuHnKphRvxyY-HJgWspcDV65PjvTKuQTXohZQmDM-skyBrMvLWvWcJbYeyLzpz1yOtJb7eUK7zimdHITja9pPMICd5B2ixPzm03WZqUgIoQ1JzJ4oruvUmOhCuskDCUzS7weMjGGlQhBnBWZ7bIJ3Ndm5SIVJskphc9jie0Y7p2AkJPdpINsYTmITQokhX9qP-oGVYVGK4pAZl5dejsEpvMXn7cjXQp_Ev7pryA
+                          - link [ref=f1e596] [cursor=pointer]:
+                            - /url: https://alb.reddit.com/cr?za=miC39ZXLfkz1itFADzlVpxkStRcniTY9CFbiBZfuV-zcuw9xt9J4oCoBnZ3ZS7Bj2YPF1A0l1xXNM_UureAZ8vzWKwd-Bf9doKCXwy3dNFsAaEQhOyR2UY4upQBzNUsrlnpVpLFPXPCK-XfjkDdbq7lUdAznjIzROckGBOgncShHNGKMujoH6qGSueRHbH-SB8yjceOeugMtRRhbWpMbvhsBhGh0knpfImpE1nQ39VAwQPKR-erFPfTgGrT3OE5bGM6o7dVobekCZw2IOebs7iwy9kcCQswrCujvdxQZ3vX72rmyrshjRZBJy-4SjeX5fjIgg-VDmcWLJSg3_9h90F3O7DaZyIO8vfd4XAVqAhtZejXefjjgn4oMI-ZsvlYbFOo05BN6aFJ8WlJYW8SMHO-HNX-zxflVk-AaUVNzb6uL35qmavWdFlkz7164MrefsTArKblpnBynWscHUGDRTqYisSFsTx11MZeqJrg4t23tNy8ynt39tljIoM2GGfXT4951vzlHO-loyvLwqFWtVVeu6zw8-N1-HJ2tPf8IABHgslRZjA7f1XrDEyuK8mARbSaCV0leWXa0SkBbSUQGoSAUYDA-w-IlaNVWL0XJvEJNcI4r_BSwikImG_7peF-zZoCsKENrMJnwN18Z3bWKjbzoVVWoLkK9q9PuS4gdDQnYycTBVlQppdjg_Q1nUi7lQTZ6wWSzlliuHDOOw5LGHl8Z&zp=TNKP54R5L7kIHCjfogSzAc0doFU37Jj3VBR9YqkdpRoBGzOEElDnWDz25LVhWV2OCF_kpUAGGeA13VP6yVsMPV-stPfAEmmRoCbb31NHEctOUo-8xkgwWLxO0zK5b5Q_y7kFRxXYDq0CJQswqGNOJV0XJjtlDdqfR14zCugWcCTaFHcOaFxLXk0TaJS0AqXJgQfQQMaVGZsli0XZuHnKphRvxyY-HJgWspcDV65PjvTKuQTXohZQmDM-skyBrMvLWvWcJbYeyLzpz1yOtJb7eUK7zimdHITja9pPMICd5B2ixPzm03WZqUgIoQ1JzJ4oruvUmOhCuskDCUzS7weMjGGlQhBnBWZ7bIJ3Ndm5SIVJskphc9jie0Y7p2AkJPdpINsYTmITQokhX9qP-oGVYVGK4pAZl5dejsEpvMXn7cjXQp_Ev7pryA
+                            - img "Why WHAT HI-FI & Homereview recommend our ALR screen?" [ref=f1e597]
+                      - listitem [ref=f1e598]:
+                        - generic [ref=f1e599]:
+                          - link [ref=f1e600] [cursor=pointer]:
+                            - /url: https://alb.reddit.com/cr?za=miC39ZXLfkz1itFADzlVpxkStRcniTY9CFbiBZfuV-zcuw9xt9J4oCoBnZ3ZS7Bj2YPF1A0l1xXNM_UureAZ8vzWKwd-Bf9doKCXwy3dNFsAaEQhOyR2UY4upQBzNUsrlnpVpLFPXPCK-XfjkDdbq7lUdAznjIzROckGBOgncShHNGKMujoH6qGSueRHbH-SB8yjceOeugMtRRhbWpMbvhsBhGh0knpfImpE1nQ39VAwQPKR-erFPfTgGrT3OE5bGM6o7dVobekCZw2IOebs7iwy9kcCQswrCujvdxQZ3vX72rmyrshjRZBJy-4SjeX5fjIgg-VDmcWLJSg3_9h90F3O7DaZyIO8vfd4XAVqAhtZejXefjjgn4oMI-ZsvlYbFOo05BN6aFJ8WlJYW8SMHO-HNX-zxflVk-AaUVNzb6uL35qmavWdFlkz7164MrefsTArKblpnBynWscHUGDRTqYisSFsTx11MZeqJrg4t23tNy8ynt39tljIoM2GGfXT4951vzlHO-loyvLwqFWtVVeu6zw8-N1-HJ2tPf8IABHgslRZjA7f1XrDEyuK8mARbSaCV0leWXa0SkBbSUQGoSAUYDA-w-IlaNVWL0XJvEJNcI4r_BSwikImG_7peF-zZoCsKENrMJnwN18Z3bWKjbzoVVWoLkK9q9PuS4gdDQnYycTBVlQppdjg_Q1nUi7lQTZ6wWSzlliuHDOOw5LGHl8Z&zp=HfeZQ9nbvSvgCtCdIM0-xI01MDEZ4jrMFkqxQrqXFtXvIF8y1SDoH0jcS1CjsBj6Xq-azQKR8m4fgr2IL3X-AXgtnuF-lngX8Whipy-M_xo3CEwmvaXzKlC_b2OukJe31tYfwLeV8NmUzYckyExvrtP1KWc7xqMwGq38C1BlWoefwM8_6OJZQUs040KfkWMeaIvhm99NReDSMnW9Fjnl0DKz5O1dl2PWmz6DjySv9fovV6395CLdJ11NsUSlJI0HzXm3bfLLGcKPvKonFKoXugJ9my-v9gUPlVt_97OWd6g9vGK8oBUpUug5XZejOyAhDhLHxsW-njxnR6uj6lYjpw2LKsLGLRkoIHnyKK8kXruj4WYlznoJkfEEdM9i2dgZB4Xn70IKh_rgNAoTn_SmEbla4sM7NBkNBMJngbRUsrrafcnTIhkULg
+                          - link [ref=f1e601] [cursor=pointer]:
+                            - /url: https://alb.reddit.com/cr?za=miC39ZXLfkz1itFADzlVpxkStRcniTY9CFbiBZfuV-zcuw9xt9J4oCoBnZ3ZS7Bj2YPF1A0l1xXNM_UureAZ8vzWKwd-Bf9doKCXwy3dNFsAaEQhOyR2UY4upQBzNUsrlnpVpLFPXPCK-XfjkDdbq7lUdAznjIzROckGBOgncShHNGKMujoH6qGSueRHbH-SB8yjceOeugMtRRhbWpMbvhsBhGh0knpfImpE1nQ39VAwQPKR-erFPfTgGrT3OE5bGM6o7dVobekCZw2IOebs7iwy9kcCQswrCujvdxQZ3vX72rmyrshjRZBJy-4SjeX5fjIgg-VDmcWLJSg3_9h90F3O7DaZyIO8vfd4XAVqAhtZejXefjjgn4oMI-ZsvlYbFOo05BN6aFJ8WlJYW8SMHO-HNX-zxflVk-AaUVNzb6uL35qmavWdFlkz7164MrefsTArKblpnBynWscHUGDRTqYisSFsTx11MZeqJrg4t23tNy8ynt39tljIoM2GGfXT4951vzlHO-loyvLwqFWtVVeu6zw8-N1-HJ2tPf8IABHgslRZjA7f1XrDEyuK8mARbSaCV0leWXa0SkBbSUQGoSAUYDA-w-IlaNVWL0XJvEJNcI4r_BSwikImG_7peF-zZoCsKENrMJnwN18Z3bWKjbzoVVWoLkK9q9PuS4gdDQnYycTBVlQppdjg_Q1nUi7lQTZ6wWSzlliuHDOOw5LGHl8Z&zp=HfeZQ9nbvSvgCtCdIM0-xI01MDEZ4jrMFkqxQrqXFtXvIF8y1SDoH0jcS1CjsBj6Xq-azQKR8m4fgr2IL3X-AXgtnuF-lngX8Whipy-M_xo3CEwmvaXzKlC_b2OukJe31tYfwLeV8NmUzYckyExvrtP1KWc7xqMwGq38C1BlWoefwM8_6OJZQUs040KfkWMeaIvhm99NReDSMnW9Fjnl0DKz5O1dl2PWmz6DjySv9fovV6395CLdJ11NsUSlJI0HzXm3bfLLGcKPvKonFKoXugJ9my-v9gUPlVt_97OWd6g9vGK8oBUpUug5XZejOyAhDhLHxsW-njxnR6uj6lYjpw2LKsLGLRkoIHnyKK8kXruj4WYlznoJkfEEdM9i2dgZB4Xn70IKh_rgNAoTn_SmEbla4sM7NBkNBMJngbRUsrrafcnTIhkULg
+                            - img "Why WHAT HI-FI & Homereview recommend our ALR screen?" [ref=f1e602]
+                      - listitem [ref=f1e603]:
+                        - generic [ref=f1e604]:
+                          - link [ref=f1e605] [cursor=pointer]:
+                            - /url: https://alb.reddit.com/cr?za=miC39ZXLfkz1itFADzlVpxkStRcniTY9CFbiBZfuV-zcuw9xt9J4oCoBnZ3ZS7Bj2YPF1A0l1xXNM_UureAZ8vzWKwd-Bf9doKCXwy3dNFsAaEQhOyR2UY4upQBzNUsrlnpVpLFPXPCK-XfjkDdbq7lUdAznjIzROckGBOgncShHNGKMujoH6qGSueRHbH-SB8yjceOeugMtRRhbWpMbvhsBhGh0knpfImpE1nQ39VAwQPKR-erFPfTgGrT3OE5bGM6o7dVobekCZw2IOebs7iwy9kcCQswrCujvdxQZ3vX72rmyrshjRZBJy-4SjeX5fjIgg-VDmcWLJSg3_9h90F3O7DaZyIO8vfd4XAVqAhtZejXefjjgn4oMI-ZsvlYbFOo05BN6aFJ8WlJYW8SMHO-HNX-zxflVk-AaUVNzb6uL35qmavWdFlkz7164MrefsTArKblpnBynWscHUGDRTqYisSFsTx11MZeqJrg4t23tNy8ynt39tljIoM2GGfXT4951vzlHO-loyvLwqFWtVVeu6zw8-N1-HJ2tPf8IABHgslRZjA7f1XrDEyuK8mARbSaCV0leWXa0SkBbSUQGoSAUYDA-w-IlaNVWL0XJvEJNcI4r_BSwikImG_7peF-zZoCsKENrMJnwN18Z3bWKjbzoVVWoLkK9q9PuS4gdDQnYycTBVlQppdjg_Q1nUi7lQTZ6wWSzlliuHDOOw5LGHl8Z&zp=UZ9VJnlHbdCC-69iSVSIONrpfJxeGCsM2uoeW_FlYtHRed9FTI6HZvJLWT0_7JaNoFTAlkkOb56D1ZhrR37pEMCVDKdAR9HagIXpT6INhVdRQLd0qIXM7f1Xsnjb14LWzvgVmoKslYkK94z4LV7N0uXe7SPpEur7YVoIxoSLbH8Z4sE7HAZ9fzAd8QSd9ZJcQn_NNkpThaqNt-H2F0YZ5x8DZYfDZiHIljjTCSUAynkyTJrUrqepfmcZnfHvOZ4IqpYG7RuPy_L5dlejNnOZe-v_PNGBBD5KsB54Jnf8w8wozicXCGq0ke5kT-B9yxxVfq8Kbf_qM8DhqLnjfRl6uLuRwHA9mT7XvEa-vVkfu_3ROMs6mhjqSZS2ReNax_C4-0CLnzoWYnIHUgdPY-IjetNnh7AHwTpiZaJPs8TeebffbVZi__L5gA
+                          - link [ref=f1e606] [cursor=pointer]:
+                            - /url: https://alb.reddit.com/cr?za=miC39ZXLfkz1itFADzlVpxkStRcniTY9CFbiBZfuV-zcuw9xt9J4oCoBnZ3ZS7Bj2YPF1A0l1xXNM_UureAZ8vzWKwd-Bf9doKCXwy3dNFsAaEQhOyR2UY4upQBzNUsrlnpVpLFPXPCK-XfjkDdbq7lUdAznjIzROckGBOgncShHNGKMujoH6qGSueRHbH-SB8yjceOeugMtRRhbWpMbvhsBhGh0knpfImpE1nQ39VAwQPKR-erFPfTgGrT3OE5bGM6o7dVobekCZw2IOebs7iwy9kcCQswrCujvdxQZ3vX72rmyrshjRZBJy-4SjeX5fjIgg-VDmcWLJSg3_9h90F3O7DaZyIO8vfd4XAVqAhtZejXefjjgn4oMI-ZsvlYbFOo05BN6aFJ8WlJYW8SMHO-HNX-zxflVk-AaUVNzb6uL35qmavWdFlkz7164MrefsTArKblpnBynWscHUGDRTqYisSFsTx11MZeqJrg4t23tNy8ynt39tljIoM2GGfXT4951vzlHO-loyvLwqFWtVVeu6zw8-N1-HJ2tPf8IABHgslRZjA7f1XrDEyuK8mARbSaCV0leWXa0SkBbSUQGoSAUYDA-w-IlaNVWL0XJvEJNcI4r_BSwikImG_7peF-zZoCsKENrMJnwN18Z3bWKjbzoVVWoLkK9q9PuS4gdDQnYycTBVlQppdjg_Q1nUi7lQTZ6wWSzlliuHDOOw5LGHl8Z&zp=UZ9VJnlHbdCC-69iSVSIONrpfJxeGCsM2uoeW_FlYtHRed9FTI6HZvJLWT0_7JaNoFTAlkkOb56D1ZhrR37pEMCVDKdAR9HagIXpT6INhVdRQLd0qIXM7f1Xsnjb14LWzvgVmoKslYkK94z4LV7N0uXe7SPpEur7YVoIxoSLbH8Z4sE7HAZ9fzAd8QSd9ZJcQn_NNkpThaqNt-H2F0YZ5x8DZYfDZiHIljjTCSUAynkyTJrUrqepfmcZnfHvOZ4IqpYG7RuPy_L5dlejNnOZe-v_PNGBBD5KsB54Jnf8w8wozicXCGq0ke5kT-B9yxxVfq8Kbf_qM8DhqLnjfRl6uLuRwHA9mT7XvEa-vVkfu_3ROMs6mhjqSZS2ReNax_C4-0CLnzoWYnIHUgdPY-IjetNnh7AHwTpiZaJPs8TeebffbVZi__L5gA
+                            - img "Why WHAT HI-FI & Homereview recommend our ALR screen?" [ref=f1e607]
+                      - listitem [ref=f1e608]:
+                        - generic [ref=f1e609]:
+                          - link [ref=f1e610] [cursor=pointer]:
+                            - /url: https://alb.reddit.com/cr?za=miC39ZXLfkz1itFADzlVpxkStRcniTY9CFbiBZfuV-zcuw9xt9J4oCoBnZ3ZS7Bj2YPF1A0l1xXNM_UureAZ8vzWKwd-Bf9doKCXwy3dNFsAaEQhOyR2UY4upQBzNUsrlnpVpLFPXPCK-XfjkDdbq7lUdAznjIzROckGBOgncShHNGKMujoH6qGSueRHbH-SB8yjceOeugMtRRhbWpMbvhsBhGh0knpfImpE1nQ39VAwQPKR-erFPfTgGrT3OE5bGM6o7dVobekCZw2IOebs7iwy9kcCQswrCujvdxQZ3vX72rmyrshjRZBJy-4SjeX5fjIgg-VDmcWLJSg3_9h90F3O7DaZyIO8vfd4XAVqAhtZejXefjjgn4oMI-ZsvlYbFOo05BN6aFJ8WlJYW8SMHO-HNX-zxflVk-AaUVNzb6uL35qmavWdFlkz7164MrefsTArKblpnBynWscHUGDRTqYisSFsTx11MZeqJrg4t23tNy8ynt39tljIoM2GGfXT4951vzlHO-loyvLwqFWtVVeu6zw8-N1-HJ2tPf8IABHgslRZjA7f1XrDEyuK8mARbSaCV0leWXa0SkBbSUQGoSAUYDA-w-IlaNVWL0XJvEJNcI4r_BSwikImG_7peF-zZoCsKENrMJnwN18Z3bWKjbzoVVWoLkK9q9PuS4gdDQnYycTBVlQppdjg_Q1nUi7lQTZ6wWSzlliuHDOOw5LGHl8Z&zp=hrKg5N2Olduyw2Da7DXsTJC0HX_OfsUzXufVq9rPYH6oLMC0rARQENo3LTKpEe9RfQzViX66VtTdKPEaVL2EEK8MSRhcmW2qMf1R1liAlH7lb2SXcNcrJwYHdbZ2RBu4z8BOLiVCs4gcH5DEfHwp06TmWhR39t1PwUl7cUnPt3jvgPMD0iEuBiXfqid4I40D-sSZJUubO1SAXSdJpVnNRej4j1fTVtryI_hDigyiisie3b56OrgwEgRhd-hExas_kL5YJevm-wmMtONmaowQiJhOOaysPjFSctzV85T66m676f5w6hGtM919EH8d7jbw0FkVPL_60LtNEIeu7bpJQw9KMsGgB1fSIiG0aoyUGKVndkckPMZGbVa1dQ5NtZb3-X0Fn1T03_Ft-xY7O4Bhy_rj2lkROX7F0ms18Vrm1RAzkxFa7hH6Xw
+                          - link [ref=f1e611] [cursor=pointer]:
+                            - /url: https://alb.reddit.com/cr?za=miC39ZXLfkz1itFADzlVpxkStRcniTY9CFbiBZfuV-zcuw9xt9J4oCoBnZ3ZS7Bj2YPF1A0l1xXNM_UureAZ8vzWKwd-Bf9doKCXwy3dNFsAaEQhOyR2UY4upQBzNUsrlnpVpLFPXPCK-XfjkDdbq7lUdAznjIzROckGBOgncShHNGKMujoH6qGSueRHbH-SB8yjceOeugMtRRhbWpMbvhsBhGh0knpfImpE1nQ39VAwQPKR-erFPfTgGrT3OE5bGM6o7dVobekCZw2IOebs7iwy9kcCQswrCujvdxQZ3vX72rmyrshjRZBJy-4SjeX5fjIgg-VDmcWLJSg3_9h90F3O7DaZyIO8vfd4XAVqAhtZejXefjjgn4oMI-ZsvlYbFOo05BN6aFJ8WlJYW8SMHO-HNX-zxflVk-AaUVNzb6uL35qmavWdFlkz7164MrefsTArKblpnBynWscHUGDRTqYisSFsTx11MZeqJrg4t23tNy8ynt39tljIoM2GGfXT4951vzlHO-loyvLwqFWtVVeu6zw8-N1-HJ2tPf8IABHgslRZjA7f1XrDEyuK8mARbSaCV0leWXa0SkBbSUQGoSAUYDA-w-IlaNVWL0XJvEJNcI4r_BSwikImG_7peF-zZoCsKENrMJnwN18Z3bWKjbzoVVWoLkK9q9PuS4gdDQnYycTBVlQppdjg_Q1nUi7lQTZ6wWSzlliuHDOOw5LGHl8Z&zp=hrKg5N2Olduyw2Da7DXsTJC0HX_OfsUzXufVq9rPYH6oLMC0rARQENo3LTKpEe9RfQzViX66VtTdKPEaVL2EEK8MSRhcmW2qMf1R1liAlH7lb2SXcNcrJwYHdbZ2RBu4z8BOLiVCs4gcH5DEfHwp06TmWhR39t1PwUl7cUnPt3jvgPMD0iEuBiXfqid4I40D-sSZJUubO1SAXSdJpVnNRej4j1fTVtryI_hDigyiisie3b56OrgwEgRhd-hExas_kL5YJevm-wmMtONmaowQiJhOOaysPjFSctzV85T66m676f5w6hGtM919EH8d7jbw0FkVPL_60LtNEIeu7bpJQw9KMsGgB1fSIiG0aoyUGKVndkckPMZGbVa1dQ5NtZb3-X0Fn1T03_Ft-xY7O4Bhy_rj2lkROX7F0ms18Vrm1RAzkxFa7hH6Xw
+                            - img "Why WHAT HI-FI & Homereview recommend our ALR screen?" [ref=f1e612]
+                  - generic [ref=f1e613]:
+                    - link [ref=f1e614] [cursor=pointer]:
+                      - /url: https://alb.reddit.com/cr?za=miC39ZXLfkz1itFADzlVpxkStRcniTY9CFbiBZfuV-zcuw9xt9J4oCoBnZ3ZS7Bj2YPF1A0l1xXNM_UureAZ8vzWKwd-Bf9doKCXwy3dNFsAaEQhOyR2UY4upQBzNUsrlnpVpLFPXPCK-XfjkDdbq7lUdAznjIzROckGBOgncShHNGKMujoH6qGSueRHbH-SB8yjceOeugMtRRhbWpMbvhsBhGh0knpfImpE1nQ39VAwQPKR-erFPfTgGrT3OE5bGM6o7dVobekCZw2IOebs7iwy9kcCQswrCujvdxQZ3vX72rmyrshjRZBJy-4SjeX5fjIgg-VDmcWLJSg3_9h90F3O7DaZyIO8vfd4XAVqAhtZejXefjjgn4oMI-ZsvlYbFOo05BN6aFJ8WlJYW8SMHO-HNX-zxflVk-AaUVNzb6uL35qmavWdFlkz7164MrefsTArKblpnBynWscHUGDRTqYisSFsTx11MZeqJrg4t23tNy8ynt39tljIoM2GGfXT4951vzlHO-loyvLwqFWtVVeu6zw8-N1-HJ2tPf8IABHgslRZjA7f1XrDEyuK8mARbSaCV0leWXa0SkBbSUQGoSAUYDA-w-IlaNVWL0XJvEJNcI4r_BSwikImG_7peF-zZoCsKENrMJnwN18Z3bWKjbzoVVWoLkK9q9PuS4gdDQnYycTBVlQppdjg_Q1nUi7lQTZ6wWSzlliuHDOOw5LGHl8Z&zp=TNKP54R5L7kIHCjfogSzAc0doFU37Jj3VBR9YqkdpRoBGzOEElDnWDz25LVhWV2OCF_kpUAGGeA13VP6yVsMPV-stPfAEmmRoCbb31NHEctOUo-8xkgwWLxO0zK5b5Q_y7kFRxXYDq0CJQswqGNOJV0XJjtlDdqfR14zCugWcCTaFHcOaFxLXk0TaJS0AqXJgQfQQMaVGZsli0XZuHnKphRvxyY-HJgWspcDV65PjvTKuQTXohZQmDM-skyBrMvLWvWcJbYeyLzpz1yOtJb7eUK7zimdHITja9pPMICd5B2ixPzm03WZqUgIoQ1JzJ4oruvUmOhCuskDCUzS7weMjGGlQhBnBWZ7bIJ3Ndm5SIVJskphc9jie0Y7p2AkJPdpINsYTmITQokhX9qP-oGVYVGK4pAZl5dejsEpvMXn7cjXQp_Ev7pryA
+                    - generic [ref=f1e615]:
+                      - link "nothingprojector.com" [ref=f1e618] [cursor=pointer]:
+                        - /url: https://alb.reddit.com/cr?za=miC39ZXLfkz1itFADzlVpxkStRcniTY9CFbiBZfuV-zcuw9xt9J4oCoBnZ3ZS7Bj2YPF1A0l1xXNM_UureAZ8vzWKwd-Bf9doKCXwy3dNFsAaEQhOyR2UY4upQBzNUsrlnpVpLFPXPCK-XfjkDdbq7lUdAznjIzROckGBOgncShHNGKMujoH6qGSueRHbH-SB8yjceOeugMtRRhbWpMbvhsBhGh0knpfImpE1nQ39VAwQPKR-erFPfTgGrT3OE5bGM6o7dVobekCZw2IOebs7iwy9kcCQswrCujvdxQZ3vX72rmyrshjRZBJy-4SjeX5fjIgg-VDmcWLJSg3_9h90F3O7DaZyIO8vfd4XAVqAhtZejXefjjgn4oMI-ZsvlYbFOo05BN6aFJ8WlJYW8SMHO-HNX-zxflVk-AaUVNzb6uL35qmavWdFlkz7164MrefsTArKblpnBynWscHUGDRTqYisSFsTx11MZeqJrg4t23tNy8ynt39tljIoM2GGfXT4951vzlHO-loyvLwqFWtVVeu6zw8-N1-HJ2tPf8IABHgslRZjA7f1XrDEyuK8mARbSaCV0leWXa0SkBbSUQGoSAUYDA-w-IlaNVWL0XJvEJNcI4r_BSwikImG_7peF-zZoCsKENrMJnwN18Z3bWKjbzoVVWoLkK9q9PuS4gdDQnYycTBVlQppdjg_Q1nUi7lQTZ6wWSzlliuHDOOw5LGHl8Z&zp=TNKP54R5L7kIHCjfogSzAc0doFU37Jj3VBR9YqkdpRoBGzOEElDnWDz25LVhWV2OCF_kpUAGGeA13VP6yVsMPV-stPfAEmmRoCbb31NHEctOUo-8xkgwWLxO0zK5b5Q_y7kFRxXYDq0CJQswqGNOJV0XJjtlDdqfR14zCugWcCTaFHcOaFxLXk0TaJS0AqXJgQfQQMaVGZsli0XZuHnKphRvxyY-HJgWspcDV65PjvTKuQTXohZQmDM-skyBrMvLWvWcJbYeyLzpz1yOtJb7eUK7zimdHITja9pPMICd5B2ixPzm03WZqUgIoQ1JzJ4oruvUmOhCuskDCUzS7weMjGGlQhBnBWZ7bIJ3Ndm5SIVJskphc9jie0Y7p2AkJPdpINsYTmITQokhX9qP-oGVYVGK4pAZl5dejsEpvMXn7cjXQp_Ev7pryA
+                      - link "Learn More" [ref=f1e619] [cursor=pointer]:
+                        - /url: https://alb.reddit.com/cr?za=miC39ZXLfkz1itFADzlVpxkStRcniTY9CFbiBZfuV-zcuw9xt9J4oCoBnZ3ZS7Bj2YPF1A0l1xXNM_UureAZ8vzWKwd-Bf9doKCXwy3dNFsAaEQhOyR2UY4upQBzNUsrlnpVpLFPXPCK-XfjkDdbq7lUdAznjIzROckGBOgncShHNGKMujoH6qGSueRHbH-SB8yjceOeugMtRRhbWpMbvhsBhGh0knpfImpE1nQ39VAwQPKR-erFPfTgGrT3OE5bGM6o7dVobekCZw2IOebs7iwy9kcCQswrCujvdxQZ3vX72rmyrshjRZBJy-4SjeX5fjIgg-VDmcWLJSg3_9h90F3O7DaZyIO8vfd4XAVqAhtZejXefjjgn4oMI-ZsvlYbFOo05BN6aFJ8WlJYW8SMHO-HNX-zxflVk-AaUVNzb6uL35qmavWdFlkz7164MrefsTArKblpnBynWscHUGDRTqYisSFsTx11MZeqJrg4t23tNy8ynt39tljIoM2GGfXT4951vzlHO-loyvLwqFWtVVeu6zw8-N1-HJ2tPf8IABHgslRZjA7f1XrDEyuK8mARbSaCV0leWXa0SkBbSUQGoSAUYDA-w-IlaNVWL0XJvEJNcI4r_BSwikImG_7peF-zZoCsKENrMJnwN18Z3bWKjbzoVVWoLkK9q9PuS4gdDQnYycTBVlQppdjg_Q1nUi7lQTZ6wWSzlliuHDOOw5LGHl8Z&zp=TNKP54R5L7kIHCjfogSzAc0doFU37Jj3VBR9YqkdpRoBGzOEElDnWDz25LVhWV2OCF_kpUAGGeA13VP6yVsMPV-stPfAEmmRoCbb31NHEctOUo-8xkgwWLxO0zK5b5Q_y7kFRxXYDq0CJQswqGNOJV0XJjtlDdqfR14zCugWcCTaFHcOaFxLXk0TaJS0AqXJgQfQQMaVGZsli0XZuHnKphRvxyY-HJgWspcDV65PjvTKuQTXohZQmDM-skyBrMvLWvWcJbYeyLzpz1yOtJb7eUK7zimdHITja9pPMICd5B2ixPzm03WZqUgIoQ1JzJ4oruvUmOhCuskDCUzS7weMjGGlQhBnBWZ7bIJ3Ndm5SIVJskphc9jie0Y7p2AkJPdpINsYTmITQokhX9qP-oGVYVGK4pAZl5dejsEpvMXn7cjXQp_Ev7pryA
+            - article "Comment from b_lett 4 hours ago" [ref=f1e623]:
+              - generic [ref=f1e624] [cursor=pointer]:
+                - link "b_lett's profile --- avatar" [ref=f1e629]:
+                  - /url: https://www.reddit.com/user/b_lett/
+                  - img "u/b_lett avatar" [ref=f1e632]
+                - generic [ref=f1e636]:
+                  - link "b_lett's profile" [ref=f1e639]:
+                    - /url: https://www.reddit.com/user/b_lett/
+                    - text: b_lett
+                  - generic [ref=f1e640]: •
+                  - link [ref=f1e642]:
+                    - /url: https://www.reddit.com/r/FL_Studio/comments/1uz534s/comment/oy534ow/
+                    - time [ref=f1e644]: 4h ago
+              - generic [ref=f1e646]:
+                - generic [ref=f1e650]:
+                  - paragraph [ref=f1e651]: Also, want to share some feedback on your saturation modes, because it feels like you're trying to model Pro Q 4 directly here, but there's some differences still. Here's what I have noticed.
+                  - paragraph [ref=f1e652]: Clean
+                  - paragraph [ref=f1e653]: Your default Clean has the same noise floor as Pro Q-4's Subtle, so it's already adding probably more noise than Clean should.
+                  - paragraph [ref=f1e654]: Subtle
+                  - paragraph [ref=f1e655]: Your harmonics generally line up with Pro-Q 4, but Pro-Q 4 seems to have some partials in between. Maybe something like even/odd harmonics only vs. even+odd?
+                  - paragraph [ref=f1e656]: Warm
+                  - paragraph [ref=f1e657]: Your first partial lines up pretty well with what Pro-Q 4 does, but the rest of your saturation is way too strong from there. Pro-Q 4's Warm saturation seems to taper off pretty significantly after the 1st partial.
+                  - paragraph [ref=f1e658]: Some footage with PluginDoctor for harmonics analysis.
+                  - figure [ref=f1e659]:
+                    - link [ref=f1e661] [cursor=pointer]:
+                      - /url: https://i.redd.it/jvrg1xj6ztdh1.gif
+                      - button [disabled] [ref=f1e666]
+                  - paragraph [ref=f1e669]: Overall, this means your EQ is going to color people's sound more than people may want if they are expecting a slick clean digital EQ. And if they are expecting this to kind of emulate others, some of your modes may be bit overpowering on the coloration. I'd recommend dialing your Clean mode back even further, and touch up the Warm mode to somehow dial back Partials immediately after the 1st, it's just a bit too heavyhanded.
+                - generic [ref=f1e670]: "1"
+            - article "Comment from kirk11111 4 hours ago" [ref=f1e678]:
+              - generic [ref=f1e679] [cursor=pointer]:
+                - link "kirk11111's profile --- avatar" [ref=f1e684]:
+                  - /url: https://www.reddit.com/user/kirk11111/
+                  - img "u/kirk11111 avatar" [ref=f1e687]
+                - generic [ref=f1e691]:
+                  - link "kirk11111's profile" [ref=f1e694]:
+                    - /url: https://www.reddit.com/user/kirk11111/
+                    - text: kirk11111
+                  - generic [ref=f1e695]: •
+                  - link [ref=f1e697]:
+                    - /url: https://www.reddit.com/r/FL_Studio/comments/1uz534s/comment/oy4s4xi/
+                    - time [ref=f1e699]: 4h ago
+              - generic [ref=f1e701]:
+                - paragraph [ref=f1e705]: As a free alternative to Pro-Q3 this is amazing well done man!
+                - generic [ref=f1e706]: "1"
+            - article "Comment from eljesT_ 50 minutes ago" [ref=f1e714]:
+              - generic [ref=f1e715] [cursor=pointer]:
+                - link "eljesT_'s profile --- avatar" [ref=f1e720]:
+                  - /url: https://www.reddit.com/user/eljesT_/
+                - generic [ref=f1e730]:
+                  - link "eljesT_'s profile" [ref=f1e733]:
+                    - /url: https://www.reddit.com/user/eljesT_/
+                    - text: eljesT_
+                  - generic [ref=f1e734]: •
+                  - link [ref=f1e736]:
+                    - /url: https://www.reddit.com/r/FL_Studio/comments/1uz534s/comment/oy64p94/
+                    - time [ref=f1e738]: 50m ago
+              - generic [ref=f1e740]:
+                - paragraph [ref=f1e744]: Oh this looks awesome, gonna try it for sure!
+                - generic [ref=f1e745]: "1"
+        - generic [ref=f1e752]:
+          - generic [ref=f1e753]:
+            - complementary "People also ask about section" [ref=f1e755]:
+              - heading "People also ask about section" [level=1] [ref=f1e756]
+              - generic [ref=f1e757]: People also ask about
+              - generic [ref=f1e762]:
+                - link "Top plugins for enhancing FL Studio tracks" [ref=f1e764] [cursor=pointer]:
+                  - /url: https://www.reddit.com/answers/05784769-e132-464f-8738-4a0d84a49b56/?q=Top+plugins+for+enhancing+FL+Studio+tracks&source=PDP
+                - link "Best practices for mixing in FL Studio" [ref=f1e773] [cursor=pointer]:
+                  - /url: https://www.reddit.com/answers/64d7e1a8-aa20-4ff6-a312-3b6b14b348be/?q=Best+practices+for+mixing+in+FL+Studio&source=PDP
+                - link "Unique sound design techniques in FL Studio" [ref=f1e782] [cursor=pointer]:
+                  - /url: https://www.reddit.com/answers/3cd89b42-56b5-4cfe-9506-59fa15e98506/?q=Unique+sound+design+techniques+in+FL+Studio&source=PDP
+                - link "How to create a professional-sounding mix" [ref=f1e791] [cursor=pointer]:
+                  - /url: https://www.reddit.com/answers/27d53c61-d0b6-4409-92de-7cfaf2e1ba34/?q=How+to+create+a+professional-sounding+mix&source=PDP
+                - link "Tips for organizing projects in FL Studio" [ref=f1e800] [cursor=pointer]:
+                  - /url: https://www.reddit.com/answers/778f3624-4674-4dc9-9c0a-748e8f455545/?q=Tips+for+organizing+projects+in+FL+Studio&source=PDP
+            - complementary "Related Posts Section" [ref=f1e808]:
+              - heading "Related Posts Section" [level=1] [ref=f1e809]: More posts you may like
+              - generic [ref=f1e810]: Related posts
+              - list [ref=f1e816]:
+                - listitem [ref=f1e817]:
+                  - generic [ref=f1e818]:
+                    - generic [ref=f1e819]:
+                      - link [ref=f1e820] [cursor=pointer]:
+                        - /url: https://www.reddit.com/r/FL_Studio/comments/1pdqs7l/best_free_vst_plugins_a_list_every_producer_can/
+                      - generic [ref=f1e822]:
+                        - generic [ref=f1e823]:
+                          - generic [ref=f1e825]:
+                            - link "r/FL_Studio" [ref=f1e826] [cursor=pointer]:
+                              - /url: https://www.reddit.com/r/FL_Studio/
+                            - generic [ref=f1e831]: •
+                            - time [ref=f1e833]: 8mo ago
+                          - link [ref=f1e835] [cursor=pointer]:
+                            - /url: /r/FL_Studio/comments/1pdqs7l/best_free_vst_plugins_a_list_every_producer_can/
+                            - 'heading "List item post - Best Free VST Plugins: A List Every Producer Can Use | MUSC..." [level=3] [ref=f1e838]': "Best Free VST Plugins: A List Every Producer Can Use | MUSCO SOUND"
+                        - generic [ref=f1e840]:
+                          - 'link "r/FL_Studio - Best Free VST Plugins: A List Every Producer Can Use | MUSCO SOUND" [ref=f1e841] [cursor=pointer]':
+                            - /url: https://www.michaelmusco.com/2017/01/best-free-vst-plugins-list-every.html
+                            - 'img "r/FL_Studio - Best Free VST Plugins: A List Every Producer Can Use | MUSCO SOUND" [ref=f1e842]'
+                          - generic: michaelmusco
+                      - generic [ref=f1e844]:
+                        - generic [ref=f1e845]: "113"
+                        - text: upvotes ·
+                        - generic [ref=f1e846]: "34"
+                        - text: comments
+                    - separator [ref=f1e847]
+                - listitem [ref=f1e848]:
+                  - generic [ref=f1e849]:
+                    - generic [ref=f1e850]:
+                      - link [ref=f1e851] [cursor=pointer]:
+                        - /url: https://www.reddit.com/r/FL_Studio/comments/1ra5q74/i_built_a_free_bandsplit_panning_vst3_for_windows/
+                      - generic [ref=f1e853]:
+                        - generic [ref=f1e854]:
+                          - generic [ref=f1e856]:
+                            - link "r/FL_Studio" [ref=f1e857] [cursor=pointer]:
+                              - /url: https://www.reddit.com/r/FL_Studio/
+                            - generic [ref=f1e862]: •
+                            - time [ref=f1e864]: 5mo ago
+                          - link [ref=f1e866] [cursor=pointer]:
+                            - /url: /r/FL_Studio/comments/1ra5q74/i_built_a_free_bandsplit_panning_vst3_for_windows/
+                            - heading "List item post - I built a free band-split panning VST3 for Windows (HiPan)" [level=3] [ref=f1e869]: I built a free band-split panning VST3 for Windows (HiPan)
+                        - generic [ref=f1e871]:
+                          - link "r/FL_Studio - I built a free band-split panning VST3 for Windows (HiPan)" [ref=f1e872] [cursor=pointer]:
+                            - /url: https://www.reddit.com/r/FL_Studio/comments/1ra5q74/i_built_a_free_bandsplit_panning_vst3_for_windows/
+                            - img "r/FL_Studio - I built a free band-split panning VST3 for Windows (HiPan)" [ref=f1e873]
+                          - generic: 0:45
+                      - generic [ref=f1e875]:
+                        - generic [ref=f1e876]: "54"
+                        - text: upvotes ·
+                        - generic [ref=f1e877]: "10"
+                        - text: comments
+                    - separator [ref=f1e878]
+                - listitem [ref=f1e879]:
+                  - generic [ref=f1e880]:
+                    - generic [ref=f1e881]:
+                      - link [ref=f1e882] [cursor=pointer]:
+                        - /url: https://www.reddit.com/r/FL_Studio/comments/1sg2dnz/what_are_these_plugins/
+                      - generic [ref=f1e884]:
+                        - generic [ref=f1e885]:
+                          - generic [ref=f1e887]:
+                            - link "r/FL_Studio" [ref=f1e888] [cursor=pointer]:
+                              - /url: https://www.reddit.com/r/FL_Studio/
+                            - generic [ref=f1e893]: •
+                            - time [ref=f1e895]: 3mo ago
+                          - link [ref=f1e897] [cursor=pointer]:
+                            - /url: /r/FL_Studio/comments/1sg2dnz/what_are_these_plugins/
+                            - heading "List item post - What are these plugins?" [level=3] [ref=f1e900]: What are these plugins?
+                        - link "r/FL_Studio - What are these plugins?" [ref=f1e903] [cursor=pointer]:
+                          - /url: https://www.reddit.com/r/FL_Studio/comments/1sg2dnz/what_are_these_plugins/
+                          - img "r/FL_Studio - What are these plugins?" [ref=f1e904]
+                      - generic [ref=f1e906]:
+                        - generic [ref=f1e907]: "142"
+                        - text: upvotes ·
+                        - generic [ref=f1e908]: "15"
+                        - text: comments
+                    - separator [ref=f1e909]
+                - listitem [ref=f1e910]:
+                  - article [ref=f1e914]:
+                    - generic [ref=f1e915]:
+                      - generic [ref=f1e916]: Promoted
+                      - button "Open user actions" [ref=f1e922] [cursor=pointer]
+                    - link [ref=f1e927] [cursor=pointer]:
+                      - /url: https://alb.reddit.com/cr?za=jyWcNOKE3Fbu5o0-BrmS3Z1lTVH3sCHr2CNNWyiIToIIeeINFwGMXaa2_QnINFNCtAZ5n4OEbTu7tl1PNdNI8jaNJS9aI7tCoATx5b7PuVU8u1UGnO8n2bGvXdynJBBUTZKbFNZwSIE_j8eAq_A19GL8-Qf-A565T1KMG0tJn9_05Ub_LigEkcgM8VLAa7XfrhCvvZCYhk8owATgQdbhavgpaGlvLsv6aJY3jum3WN4E7x76G4H4EFnQ1tXCANlhGB1VoSsDVYsspRlq02Ntg541D9bl8TK5i9fw3Qm_cNuVARuxpMD1eaSJOoatENxzVT8dSOhhOA5B2sndL3n7h8IF11DELTmkDInyyk9vfP2MPsoGCKSz0lVuSSiLtxPndxQPjqbM7J5tnSl9wyu7FZlLER_YBpGGSQQ_BvPLjXaEQ9ZSIFu-KVYkqfepyfLwrSczg_FX1fjE9xF5p5F4_A-eVexLeKjegOU30YVFzFY3elk9Y-omaS-K9StMQ2aiu0cvvkcZUnPUg0hlWDZYuBgeUuJKu4Spk_BzUbUI-Js872hfKGc9ciVPeUb8k9nQziIi5_nS7-Eh6RBvvr2Hiiu5agfGBhUc6KtPlkLHicO-bDJMywqQbzALyh9RcVIPXUldeCtylgiUbjnA4I1j88XiqQJKg3YsvBBSsT7Q&zp=1yf7RlxuSYotdWYA6NCMwCxFknZi0da0ABHJWUctRI1CkhdeGNmPfKUp2fkwpUn4x04nILtlW-5cB1zjdgtTt4NVxWwbs_9d1bPBYtb41iZrHOrUhil17vPGtgmetHo4kwAWySTE5QSG_MMtRd94bmefiDxdFvQmFqwMPS4T7eJgA7WI259EckznZsoSAf75gPBqI1Iv3QgShWEMCEvfSn4aTTLiWPEuTK-RvscSx5WQ-5zfkrUd6Sr5jUPs38K31eP9RhcHysj-oZGC0p4ZS7ivfa-INQ8pv-we7XeDxzWCa785wxQKdyIB_JZMy-q-7Zl1lh1C8AsqXrVpMw5XCBon_XC4D6dlKFiIOcpO8hatFuPixsV9wmV9lIZGT4VpgA
+                      - img "sidebar promoted post thumbnail" [ref=f1e929]
+                  - separator [ref=f1e930]
+                - listitem [ref=f1e931]:
+                  - generic [ref=f1e932]:
+                    - generic [ref=f1e933]:
+                      - link [ref=f1e934] [cursor=pointer]:
+                        - /url: https://www.reddit.com/r/FL_Studio/comments/1ndfiro/anyone_knows_what_plugin_is_this/
+                      - generic [ref=f1e936]:
+                        - generic [ref=f1e937]:
+                          - generic [ref=f1e939]:
+                            - link "r/FL_Studio" [ref=f1e940] [cursor=pointer]:
+                              - /url: https://www.reddit.com/r/FL_Studio/
+                            - generic [ref=f1e945]: •
+                            - time [ref=f1e947]: 10mo ago
+                          - link [ref=f1e949] [cursor=pointer]:
+                            - /url: /r/FL_Studio/comments/1ndfiro/anyone_knows_what_plugin_is_this/
+                            - heading "List item post - Anyone knows what plugin is this" [level=3] [ref=f1e952]: Anyone knows what plugin is this
+                        - generic [ref=f1e954]:
+                          - link "r/FL_Studio - Anyone knows what plugin is this" [ref=f1e955] [cursor=pointer]:
+                            - /url: https://www.reddit.com/r/FL_Studio/comments/1ndfiro/anyone_knows_what_plugin_is_this/
+                            - img "r/FL_Studio - Anyone knows what plugin is this" [ref=f1e956]
+                          - generic: "2"
+                      - generic [ref=f1e958]:
+                        - generic [ref=f1e959]: "152"
+                        - text: upvotes ·
+                        - generic [ref=f1e960]: "46"
+                        - text: comments
+                    - separator [ref=f1e961]
+                - listitem [ref=f1e962]:
+                  - generic [ref=f1e963]:
+                    - generic [ref=f1e964]:
+                      - link [ref=f1e965] [cursor=pointer]:
+                        - /url: https://www.reddit.com/r/FL_Studio/comments/1sfmhua/where_can_i_get_these_plugins_from/
+                      - generic [ref=f1e967]:
+                        - generic [ref=f1e968]:
+                          - generic [ref=f1e970]:
+                            - link "r/FL_Studio" [ref=f1e971] [cursor=pointer]:
+                              - /url: https://www.reddit.com/r/FL_Studio/
+                            - generic [ref=f1e976]: •
+                            - time [ref=f1e978]: 3mo ago
+                          - link [ref=f1e980] [cursor=pointer]:
+                            - /url: /r/FL_Studio/comments/1sfmhua/where_can_i_get_these_plugins_from/
+                            - heading "List item post - where can i get these plugins from?" [level=3] [ref=f1e983]: where can i get these plugins from?
+                        - link "r/FL_Studio - where can i get these plugins from?" [ref=f1e986] [cursor=pointer]:
+                          - /url: https://www.reddit.com/r/FL_Studio/comments/1sfmhua/where_can_i_get_these_plugins_from/
+                          - img "r/FL_Studio - where can i get these plugins from?" [ref=f1e987]
+                      - generic [ref=f1e989]:
+                        - generic [ref=f1e990]: "7"
+                        - text: upvotes ·
+                        - generic [ref=f1e991]: "15"
+                        - text: comments
+                    - separator [ref=f1e992]
+                - listitem [ref=f1e993]:
+                  - generic [ref=f1e994]:
+                    - generic [ref=f1e995]:
+                      - link [ref=f1e996] [cursor=pointer]:
+                        - /url: https://www.reddit.com/r/FL_Studio/comments/1q018by/hey_guys_rate_my_mixing_plugins/
+                      - generic [ref=f1e998]:
+                        - generic [ref=f1e999]:
+                          - generic [ref=f1e1001]:
+                            - link "r/FL_Studio" [ref=f1e1002] [cursor=pointer]:
+                              - /url: https://www.reddit.com/r/FL_Studio/
+                            - generic [ref=f1e1007]: •
+                            - time [ref=f1e1009]: 7mo ago
+                          - link [ref=f1e1011] [cursor=pointer]:
+                            - /url: /r/FL_Studio/comments/1q018by/hey_guys_rate_my_mixing_plugins/
+                            - heading "List item post - hey guys rate my mixing plugins" [level=3] [ref=f1e1014]: hey guys rate my mixing plugins
+                        - link "r/FL_Studio - hey guys rate my mixing plugins" [ref=f1e1017] [cursor=pointer]:
+                          - /url: https://www.reddit.com/r/FL_Studio/comments/1q018by/hey_guys_rate_my_mixing_plugins/
+                          - img "r/FL_Studio - hey guys rate my mixing plugins" [ref=f1e1018]
+                      - generic [ref=f1e1020]:
+                        - generic [ref=f1e1021]: "762"
+                        - text: upvotes ·
+                        - generic [ref=f1e1022]: "42"
+                        - text: comments
+                    - separator [ref=f1e1023]
+                - listitem [ref=f1e1024]:
+                  - generic [ref=f1e1025]:
+                    - generic [ref=f1e1026]:
+                      - link [ref=f1e1027] [cursor=pointer]:
+                        - /url: https://www.reddit.com/r/FL_Studio/comments/1ndtd29/anyone_know_what_vst_this_is/
+                      - generic [ref=f1e1029]:
+                        - generic [ref=f1e1030]:
+                          - generic [ref=f1e1032]:
+                            - link "r/FL_Studio" [ref=f1e1033] [cursor=pointer]:
+                              - /url: https://www.reddit.com/r/FL_Studio/
+                            - generic [ref=f1e1038]: •
+                            - time [ref=f1e1040]: 10mo ago
+                          - link [ref=f1e1042] [cursor=pointer]:
+                            - /url: /r/FL_Studio/comments/1ndtd29/anyone_know_what_vst_this_is/
+                            - heading "List item post - Anyone know what vst this is?" [level=3] [ref=f1e1045]: Anyone know what vst this is?
+                        - link "r/FL_Studio - Anyone know what vst this is?" [ref=f1e1048] [cursor=pointer]:
+                          - /url: https://www.reddit.com/r/FL_Studio/comments/1ndtd29/anyone_know_what_vst_this_is/
+                          - img "r/FL_Studio - Anyone know what vst this is?" [ref=f1e1049]
+                      - generic [ref=f1e1051]:
+                        - generic [ref=f1e1052]: "81"
+                        - text: upvotes ·
+                        - generic [ref=f1e1053]: "26"
+                        - text: comments
+                    - separator [ref=f1e1054]
+                - listitem [ref=f1e1055]:
+                  - generic [ref=f1e1056]:
+                    - generic [ref=f1e1057]:
+                      - link [ref=f1e1058] [cursor=pointer]:
+                        - /url: https://www.reddit.com/r/FL_Studio/comments/1ojm10i/top_vsti_vst_plugins_for_hip_hop_trap_beats_in/
+                      - generic [ref=f1e1061]:
+                        - generic [ref=f1e1063]:
+                          - link "r/FL_Studio" [ref=f1e1064] [cursor=pointer]:
+                            - /url: https://www.reddit.com/r/FL_Studio/
+                          - generic [ref=f1e1069]: •
+                          - time [ref=f1e1071]: 9mo ago
+                        - link [ref=f1e1073] [cursor=pointer]:
+                          - /url: /r/FL_Studio/comments/1ojm10i/top_vsti_vst_plugins_for_hip_hop_trap_beats_in/
+                          - heading "List item post - Top VSTi / VST Plugins for Hip Hop & Trap Beats in 2025/26?" [level=3] [ref=f1e1076]: Top VSTi / VST Plugins for Hip Hop & Trap Beats in 2025/26?
+                      - generic [ref=f1e1078]:
+                        - generic [ref=f1e1079]: "12"
+                        - text: upvotes ·
+                        - generic [ref=f1e1080]: "15"
+                        - text: comments
+                    - separator [ref=f1e1081]
+                - listitem [ref=f1e1082]:
+                  - article [ref=f1e1086]:
+                    - generic [ref=f1e1087]:
+                      - generic [ref=f1e1088]: Promoted
+                      - button "Open user actions" [ref=f1e1094] [cursor=pointer]
+                    - link [ref=f1e1099] [cursor=pointer]:
+                      - /url: https://alb.reddit.com/cr?za=eyhwQlYf1E-Lex8GU1-fxFr5exA_jT9PTIY3SaLzqe12kl0hb9XVws-MksrMYr7pvmtuXDrOQP1u6n47rBbhZc9U6tS45fQRR2VtSTI3sfCi4ZE_vxJiKxUTqJ8i-u22Boh_ZBNLySbFO-24MOUp-fc4-CTErTEyv-PkdItfo2Unw74xgRl58TcK7dlEFzzsWiv_sRDOFzBWgOOxqZ2hIJWlwb4JAuoakUV5Q7Vnpi3Ust2DgblqNLQBl3VaAWLb_t11aGMl3-leEu2LbmHn6BeAicqR1ahkDTPPJ__4-uk45ODzREOb1tYOuilFcVjPQfMTvaP3lsVuO_05dAIKW4IYbsxzKXu46WjZwjmYwA0-8OjVqGaUIbNWWYT2yWM0Y59j8Bfl1gcG2zZkrXK-6mvn4DqnXEIoSOAZNU_YhUzkZAva9EDlQa5suQ_8V8BQTt1-NUKE2NaFPSrdbbwM7y8lk8no07WwM7oOtQCNfubNZeFLf5kP1aLPzZuijVFeGomxhJ9aGSDY4rX3ReVfITzKUai8yIz2CirJKWVG4RjPRT39iitr1LV_pCjZ9F0Pl--pkbJ6sUXsw0zwq1LSMk1l5k6bA70KhmjIGiqbaSbq2RtQGoEYsb5tFNa6P-_l3WTaGVQk411i8CwvGLBg6zLo6iFdtXwgEA4rNCXq&zp=BJvGfsLVyHZe5KIIzlhd-AkrvWYai6Mtj-EQj4DLMvXycIfZi5vyUEFGPA73wmJpVt0W3A2_cypsaEcGFdn7unaFvlTXeqVfrJoz5hIbWy_eNM-bMomCGHIvdL1RfqNODOQNQbF7nNvFkUvFgbQyV-4Q65vd23Hy4NpMR3o-sWgGCKdvK984SkNPcgeq_xiGO-3ZGyHqGgKWJQXN6R_bT7zyU7LE6VLHKeiiruiIUXllbi2navkfxslXtpcm3guD7o-g5gSgWYnWbecrii57ZV7TODBxZ41pXvHW8EhwGT0ncYlsG2NzJjB1S-ToFlDvVW576ehWBkUCqg9g-KvPOwcgFHrlkvm0Al4TuAHAAumGLAKtKSxJAHZyrBlCIO6g4g
+                      - img "sidebar promoted post thumbnail" [ref=f1e1101]
+                  - separator [ref=f1e1102]
+                - listitem [ref=f1e1103]:
+                  - generic [ref=f1e1104]:
+                    - generic [ref=f1e1105]:
+                      - link [ref=f1e1106] [cursor=pointer]:
+                        - /url: https://www.reddit.com/r/FL_Studio/comments/1m91zco/what_fl_studio_or_general_production_tips_or/
+                      - generic [ref=f1e1108]:
+                        - generic [ref=f1e1109]:
+                          - generic [ref=f1e1111]:
+                            - link "r/FL_Studio" [ref=f1e1112] [cursor=pointer]:
+                              - /url: https://www.reddit.com/r/FL_Studio/
+                            - generic [ref=f1e1117]: •
+                            - time [ref=f1e1119]: 1y ago
+                          - link [ref=f1e1121] [cursor=pointer]:
+                            - /url: /r/FL_Studio/comments/1m91zco/what_fl_studio_or_general_production_tips_or/
+                            - heading "List item post - What FL Studio (or general production) tips or tricks have ..." [level=3] [ref=f1e1124]: What FL Studio (or general production) tips or tricks have you learned during your production journey that you wish to share?
+                        - link "r/FL_Studio - What FL Studio (or general production) tips or tricks have you learned during your production journey that you wish to share?" [ref=f1e1127] [cursor=pointer]:
+                          - /url: https://www.reddit.com/r/FL_Studio/comments/1m91zco/what_fl_studio_or_general_production_tips_or/
+                          - img "r/FL_Studio - What FL Studio (or general production) tips or tricks have you learned during your production journey that you wish to share?" [ref=f1e1128]
+                      - generic [ref=f1e1130]:
+                        - generic [ref=f1e1131]: "77"
+                        - text: upvotes ·
+                        - generic [ref=f1e1132]: "63"
+                        - text: comments
+                    - separator [ref=f1e1133]
+                - listitem [ref=f1e1134]:
+                  - generic [ref=f1e1135]:
+                    - generic [ref=f1e1136]:
+                      - link [ref=f1e1137] [cursor=pointer]:
+                        - /url: https://www.reddit.com/r/FL_Studio/comments/1pu3xdh/fl_studio_or_garageband_for_me/
+                      - generic [ref=f1e1140]:
+                        - generic [ref=f1e1142]:
+                          - link "r/FL_Studio" [ref=f1e1143] [cursor=pointer]:
+                            - /url: https://www.reddit.com/r/FL_Studio/
+                          - generic [ref=f1e1148]: •
+                          - time [ref=f1e1150]: 7mo ago
+                        - link [ref=f1e1152] [cursor=pointer]:
+                          - /url: /r/FL_Studio/comments/1pu3xdh/fl_studio_or_garageband_for_me/
+                          - heading "List item post - FL Studio or GarageBand for me?" [level=3] [ref=f1e1155]: FL Studio or GarageBand for me?
+                      - generic [ref=f1e1157]:
+                        - generic [ref=f1e1158]: "11"
+                        - text: upvotes ·
+                        - generic [ref=f1e1159]: "17"
+                        - text: comments
+                    - separator [ref=f1e1160]
+                - listitem [ref=f1e1161]:
+                  - generic [ref=f1e1162]:
+                    - generic [ref=f1e1163]:
+                      - link [ref=f1e1164] [cursor=pointer]:
+                        - /url: https://www.reddit.com/r/FL_Studio/comments/1nergx9/are_these_specs_good_enough_to_run_flstudio_well/
+                      - generic [ref=f1e1166]:
+                        - generic [ref=f1e1167]:
+                          - generic [ref=f1e1169]:
+                            - link "r/FL_Studio" [ref=f1e1170] [cursor=pointer]:
+                              - /url: https://www.reddit.com/r/FL_Studio/
+                            - generic [ref=f1e1175]: •
+                            - time [ref=f1e1177]: 10mo ago
+                          - link [ref=f1e1179] [cursor=pointer]:
+                            - /url: /r/FL_Studio/comments/1nergx9/are_these_specs_good_enough_to_run_flstudio_well/
+                            - heading "List item post - Are these specs good enough to run FLStudio well?" [level=3] [ref=f1e1182]: Are these specs good enough to run FLStudio well?
+                        - link "r/FL_Studio - Are these specs good enough to run FLStudio well?" [ref=f1e1185] [cursor=pointer]:
+                          - /url: https://www.reddit.com/r/FL_Studio/comments/1nergx9/are_these_specs_good_enough_to_run_flstudio_well/
+                          - img "r/FL_Studio - Are these specs good enough to run FLStudio well?" [ref=f1e1186]
+                      - generic [ref=f1e1188]:
+                        - generic [ref=f1e1189]: "17"
+                        - text: upvotes ·
+                        - generic [ref=f1e1190]: "30"
+                        - text: comments
+                    - separator [ref=f1e1191]
+                - listitem [ref=f1e1192]:
+                  - generic [ref=f1e1193]:
+                    - generic [ref=f1e1194]:
+                      - link [ref=f1e1195] [cursor=pointer]:
+                        - /url: https://www.reddit.com/r/FL_Studio/comments/1raymm7/so_you_guys_use_this_plugin/
+                      - generic [ref=f1e1197]:
+                        - generic [ref=f1e1198]:
+                          - generic [ref=f1e1200]:
+                            - link "r/FL_Studio" [ref=f1e1201] [cursor=pointer]:
+                              - /url: https://www.reddit.com/r/FL_Studio/
+                            - generic [ref=f1e1206]: •
+                            - time [ref=f1e1208]: 5mo ago
+                          - link [ref=f1e1210] [cursor=pointer]:
+                            - /url: /r/FL_Studio/comments/1raymm7/so_you_guys_use_this_plugin/
+                            - heading "List item post - So you guys use this plugin?" [level=3] [ref=f1e1213]: So you guys use this plugin?
+                        - generic [ref=f1e1215]:
+                          - link "r/FL_Studio - So you guys use this plugin?" [ref=f1e1216] [cursor=pointer]:
+                            - /url: https://www.reddit.com/r/FL_Studio/comments/1raymm7/so_you_guys_use_this_plugin/
+                            - img "r/FL_Studio - So you guys use this plugin?" [ref=f1e1217]
+                          - generic: 0:18
+                      - generic [ref=f1e1219]:
+                        - generic [ref=f1e1220]: "25"
+                        - text: upvotes ·
+                        - generic [ref=f1e1221]: "19"
+                        - text: comments
+                    - separator [ref=f1e1222]
+                - listitem [ref=f1e1223]:
+                  - generic [ref=f1e1224]:
+                    - generic [ref=f1e1225]:
+                      - link [ref=f1e1226] [cursor=pointer]:
+                        - /url: https://www.reddit.com/r/FL_Studio/comments/1tw2nr6/after_years_of_recording_metal_bands_in_fl_studio/
+                      - generic [ref=f1e1228]:
+                        - generic [ref=f1e1229]:
+                          - generic [ref=f1e1231]:
+                            - link "r/FL_Studio" [ref=f1e1232] [cursor=pointer]:
+                              - /url: https://www.reddit.com/r/FL_Studio/
+                            - generic [ref=f1e1237]: •
+                            - time [ref=f1e1239]: 1mo ago
+                          - link [ref=f1e1241] [cursor=pointer]:
+                            - /url: /r/FL_Studio/comments/1tw2nr6/after_years_of_recording_metal_bands_in_fl_studio/
+                            - heading "List item post - After years of recording metal bands in FL Studio, this is ..." [level=3] [ref=f1e1244]: After years of recording metal bands in FL Studio, this is the routing template I finally settled on
+                        - link "r/FL_Studio - After years of recording metal bands in FL Studio, this is the routing template I finally settled on" [ref=f1e1247] [cursor=pointer]:
+                          - /url: https://www.reddit.com/r/FL_Studio/comments/1tw2nr6/after_years_of_recording_metal_bands_in_fl_studio/
+                          - img "r/FL_Studio - After years of recording metal bands in FL Studio, this is the routing template I finally settled on" [ref=f1e1248]
+                      - generic [ref=f1e1250]:
+                        - generic [ref=f1e1251]: "39"
+                        - text: upvotes ·
+                        - generic [ref=f1e1252]: "24"
+                        - text: comments
+                    - separator [ref=f1e1253]
+                - listitem [ref=f1e1254]:
+                  - generic [ref=f1e1255]:
+                    - generic [ref=f1e1256]:
+                      - link [ref=f1e1257] [cursor=pointer]:
+                        - /url: https://www.reddit.com/r/FL_Studio/comments/1muds2g/what_is_your_top_5_best_vstplugins/
+                      - generic [ref=f1e1260]:
+                        - generic [ref=f1e1262]:
+                          - link "r/FL_Studio" [ref=f1e1263] [cursor=pointer]:
+                            - /url: https://www.reddit.com/r/FL_Studio/
+                          - generic [ref=f1e1268]: •
+                          - time [ref=f1e1270]: 1y ago
+                        - link [ref=f1e1272] [cursor=pointer]:
+                          - /url: /r/FL_Studio/comments/1muds2g/what_is_your_top_5_best_vstplugins/
+                          - heading "List item post - what is your top 5 best vst/plugins" [level=3] [ref=f1e1275]: what is your top 5 best vst/plugins
+                      - generic [ref=f1e1277]:
+                        - generic [ref=f1e1278]: "13"
+                        - text: upvotes ·
+                        - generic [ref=f1e1279]: "39"
+                        - text: comments
+                    - separator [ref=f1e1280]
+                - listitem [ref=f1e1281]:
+                  - generic [ref=f1e1282]:
+                    - generic [ref=f1e1283]:
+                      - link [ref=f1e1284] [cursor=pointer]:
+                        - /url: https://www.reddit.com/r/FL_Studio/comments/1tig96b/am_i_using_this_eq_right/
+                      - generic [ref=f1e1286]:
+                        - generic [ref=f1e1287]:
+                          - generic [ref=f1e1289]:
+                            - link "r/FL_Studio" [ref=f1e1290] [cursor=pointer]:
+                              - /url: https://www.reddit.com/r/FL_Studio/
+                            - generic [ref=f1e1295]: •
+                            - time [ref=f1e1297]: 2mo ago
+                          - link [ref=f1e1299] [cursor=pointer]:
+                            - /url: /r/FL_Studio/comments/1tig96b/am_i_using_this_eq_right/
+                            - heading "List item post - am i using this EQ right" [level=3] [ref=f1e1302]: am i using this EQ right
+                        - generic [ref=f1e1304]:
+                          - link "r/FL_Studio - am i using this EQ right" [ref=f1e1305] [cursor=pointer]:
+                            - /url: https://www.reddit.com/r/FL_Studio/comments/1tig96b/am_i_using_this_eq_right/
+                            - img "r/FL_Studio - am i using this EQ right" [ref=f1e1306]
+                          - generic: 1:00
+                      - generic [ref=f1e1308]:
+                        - generic [ref=f1e1309]: "25"
+                        - text: upvotes ·
+                        - generic [ref=f1e1310]: "47"
+                        - text: comments
+                    - separator [ref=f1e1311]
+                - listitem [ref=f1e1312]:
+                  - generic [ref=f1e1313]:
+                    - generic [ref=f1e1314]:
+                      - link [ref=f1e1315] [cursor=pointer]:
+                        - /url: https://www.reddit.com/r/FL_Studio/comments/1oupenl/pure_hell_who_says_fl_studio_isnt_good_for_metal/
+                      - generic [ref=f1e1317]:
+                        - generic [ref=f1e1318]:
+                          - generic [ref=f1e1320]:
+                            - link "r/FL_Studio" [ref=f1e1321] [cursor=pointer]:
+                              - /url: https://www.reddit.com/r/FL_Studio/
+                            - generic [ref=f1e1326]: •
+                            - time [ref=f1e1328]: 8mo ago
+                          - link [ref=f1e1330] [cursor=pointer]:
+                            - /url: /r/FL_Studio/comments/1oupenl/pure_hell_who_says_fl_studio_isnt_good_for_metal/
+                            - heading "List item post - Pure Hell. Who says FL studio isn’t good for metal?" [level=3] [ref=f1e1333]: Pure Hell. Who says FL studio isn’t good for metal?
+                        - generic [ref=f1e1335]:
+                          - link "r/FL_Studio - Pure Hell. Who says FL studio isn’t good for metal?" [ref=f1e1336] [cursor=pointer]:
+                            - /url: https://www.reddit.com/r/FL_Studio/comments/1oupenl/pure_hell_who_says_fl_studio_isnt_good_for_metal/
+                            - img "r/FL_Studio - Pure Hell. Who says FL studio isn’t good for metal?" [ref=f1e1337]
+                          - generic: 0:48
+                      - generic [ref=f1e1339]:
+                        - generic [ref=f1e1340]: "61"
+                        - text: upvotes ·
+                        - generic [ref=f1e1341]: "30"
+                        - text: comments
+                    - separator [ref=f1e1342]
+                - listitem [ref=f1e1343]:
+                  - generic [ref=f1e1344]:
+                    - generic [ref=f1e1345]:
+                      - link [ref=f1e1346] [cursor=pointer]:
+                        - /url: https://www.reddit.com/r/FL_Studio/comments/1sweyko/why_does_my_fl_studio_sound_like_this_sometimes/
+                      - generic [ref=f1e1348]:
+                        - generic [ref=f1e1349]:
+                          - generic [ref=f1e1351]:
+                            - link "r/FL_Studio" [ref=f1e1352] [cursor=pointer]:
+                              - /url: https://www.reddit.com/r/FL_Studio/
+                            - generic [ref=f1e1357]: •
+                            - time [ref=f1e1359]: 3mo ago
+                          - link [ref=f1e1361] [cursor=pointer]:
+                            - /url: /r/FL_Studio/comments/1sweyko/why_does_my_fl_studio_sound_like_this_sometimes/
+                            - heading "List item post - Why does my FL studio sound like this sometimes" [level=3] [ref=f1e1364]: Why does my FL studio sound like this sometimes
+                        - generic [ref=f1e1366]:
+                          - link "r/FL_Studio - Why does my FL studio sound like this sometimes" [ref=f1e1367] [cursor=pointer]:
+                            - /url: https://www.reddit.com/r/FL_Studio/comments/1sweyko/why_does_my_fl_studio_sound_like_this_sometimes/
+                            - img "r/FL_Studio - Why does my FL studio sound like this sometimes" [ref=f1e1368]
+                          - generic: 0:06
+                      - generic [ref=f1e1370]:
+                        - generic [ref=f1e1371]: "5"
+                        - text: upvotes ·
+                        - generic [ref=f1e1372]: "7"
+                        - text: comments
+                    - separator [ref=f1e1373]
+                - listitem [ref=f1e1374]:
+                  - generic [ref=f1e1375]:
+                    - generic [ref=f1e1376]:
+                      - link [ref=f1e1377] [cursor=pointer]:
+                        - /url: https://www.reddit.com/r/FL_Studio/comments/1qugqxu/700_vst_update_the_beginnings_of_a_humble/
+                      - generic [ref=f1e1379]:
+                        - generic [ref=f1e1380]:
+                          - generic [ref=f1e1382]:
+                            - link "r/FL_Studio" [ref=f1e1383] [cursor=pointer]:
+                              - /url: https://www.reddit.com/r/FL_Studio/
+                            - generic [ref=f1e1388]: •
+                            - time [ref=f1e1390]: 5mo ago
+                          - link [ref=f1e1392] [cursor=pointer]:
+                            - /url: /r/FL_Studio/comments/1qugqxu/700_vst_update_the_beginnings_of_a_humble/
+                            - 'heading "List item post - 700$ VST update: the beginnings of a humble beatmaker" [level=3] [ref=f1e1395]': "700$ VST update: the beginnings of a humble beatmaker"
+                        - generic [ref=f1e1397]:
+                          - 'link "r/FL_Studio - 700$ VST update: the beginnings of a humble beatmaker" [ref=f1e1398] [cursor=pointer]':
+                            - /url: https://www.reddit.com/r/FL_Studio/comments/1qugqxu/700_vst_update_the_beginnings_of_a_humble/
+                            - 'img "r/FL_Studio - 700$ VST update: the beginnings of a humble beatmaker" [ref=f1e1399]'
+                          - generic: 1:41
+                      - generic [ref=f1e1401]:
+                        - generic [ref=f1e1402]: "86"
+                        - text: upvotes ·
+                        - generic [ref=f1e1403]: "43"
+                        - text: comments
+                    - separator [ref=f1e1404]
+                - listitem [ref=f1e1405]:
+                  - generic [ref=f1e1406]:
+                    - generic [ref=f1e1407]:
+                      - link [ref=f1e1408] [cursor=pointer]:
+                        - /url: https://www.reddit.com/r/FL_Studio/comments/1ndw62g/good_free_realistic_piano_vsts/
+                      - generic [ref=f1e1411]:
+                        - generic [ref=f1e1413]:
+                          - link "r/FL_Studio" [ref=f1e1414] [cursor=pointer]:
+                            - /url: https://www.reddit.com/r/FL_Studio/
+                          - generic [ref=f1e1419]: •
+                          - time [ref=f1e1421]: 10mo ago
+                        - link [ref=f1e1423] [cursor=pointer]:
+                          - /url: /r/FL_Studio/comments/1ndw62g/good_free_realistic_piano_vsts/
+                          - heading "List item post - Good free realistic piano VST's" [level=3] [ref=f1e1426]: Good free realistic piano VST's
+                      - generic [ref=f1e1428]:
+                        - generic [ref=f1e1429]: "24"
+                        - text: upvotes ·
+                        - generic [ref=f1e1430]: "42"
+                        - text: comments
+                    - separator [ref=f1e1431]
+                - listitem [ref=f1e1432]:
+                  - generic [ref=f1e1433]:
+                    - generic [ref=f1e1434]:
+                      - link [ref=f1e1435] [cursor=pointer]:
+                        - /url: https://www.reddit.com/r/FL_Studio/comments/1p1bp8j/is_serum_and_buying_plugins_important_when_your/
+                      - generic [ref=f1e1438]:
+                        - generic [ref=f1e1440]:
+                          - link "r/FL_Studio" [ref=f1e1441] [cursor=pointer]:
+                            - /url: https://www.reddit.com/r/FL_Studio/
+                          - generic [ref=f1e1446]: •
+                          - time [ref=f1e1448]: 8mo ago
+                        - link [ref=f1e1450] [cursor=pointer]:
+                          - /url: /r/FL_Studio/comments/1p1bp8j/is_serum_and_buying_plugins_important_when_your/
+                          - heading "List item post - Is serum and buying plugins important when your an amateur ..." [level=3] [ref=f1e1453]: Is serum and buying plugins important when your an amateur still?
+                      - generic [ref=f1e1455]:
+                        - generic [ref=f1e1456]: "49"
+                        - text: upvotes ·
+                        - generic [ref=f1e1457]: "112"
+                        - text: comments
+                    - separator [ref=f1e1458]
+                - listitem [ref=f1e1459]:
+                  - generic [ref=f1e1460]:
+                    - generic [ref=f1e1461]:
+                      - link [ref=f1e1462] [cursor=pointer]:
+                        - /url: https://www.reddit.com/r/FL_Studio/comments/1p3eh5k/what_are_some_good_drum_plugins/
+                      - generic [ref=f1e1465]:
+                        - generic [ref=f1e1467]:
+                          - link "r/FL_Studio" [ref=f1e1468] [cursor=pointer]:
+                            - /url: https://www.reddit.com/r/FL_Studio/
+                          - generic [ref=f1e1473]: •
+                          - time [ref=f1e1475]: 8mo ago
+                        - link [ref=f1e1477] [cursor=pointer]:
+                          - /url: /r/FL_Studio/comments/1p3eh5k/what_are_some_good_drum_plugins/
+                          - heading "List item post - What are some good drum plugins?" [level=3] [ref=f1e1480]: What are some good drum plugins?
+                      - generic [ref=f1e1482]:
+                        - generic [ref=f1e1483]: "4"
+                        - text: upvotes ·
+                        - generic [ref=f1e1484]: "21"
+                        - text: comments
+                    - separator [ref=f1e1485]
+                - listitem [ref=f1e1486]:
+                  - generic [ref=f1e1487]:
+                    - generic [ref=f1e1488]:
+                      - link [ref=f1e1489] [cursor=pointer]:
+                        - /url: https://www.reddit.com/r/FL_Studio/comments/1rz5tqp/help_audio_is_stretching_too_far_when_using_the/
+                      - generic [ref=f1e1491]:
+                        - generic [ref=f1e1492]:
+                          - generic [ref=f1e1494]:
+                            - link "r/FL_Studio" [ref=f1e1495] [cursor=pointer]:
+                              - /url: https://www.reddit.com/r/FL_Studio/
+                            - generic [ref=f1e1500]: •
+                            - time [ref=f1e1502]: 4mo ago
+                          - link [ref=f1e1504] [cursor=pointer]:
+                            - /url: /r/FL_Studio/comments/1rz5tqp/help_audio_is_stretching_too_far_when_using_the/
+                            - heading "List item post - [HELP] Audio is stretching too far when using the stretch t..." [level=3] [ref=f1e1507]: "[HELP] Audio is stretching too far when using the stretch tool, therefore I can't match the rhythm of both samples"
+                        - generic [ref=f1e1509]:
+                          - link "r/FL_Studio - [HELP] Audio is stretching too far when using the stretch tool, therefore I can't match the rhythm of both samples" [ref=f1e1510] [cursor=pointer]:
+                            - /url: https://www.reddit.com/r/FL_Studio/comments/1rz5tqp/help_audio_is_stretching_too_far_when_using_the/
+                            - img "r/FL_Studio - [HELP] Audio is stretching too far when using the stretch tool, therefore I can't match the rhythm of both samples" [ref=f1e1511]
+                          - generic: 0:07
+                      - generic [ref=f1e1513]:
+                        - generic [ref=f1e1514]: "33"
+                        - text: upvotes ·
+                        - generic [ref=f1e1515]: "33"
+                        - text: comments
+                    - separator [ref=f1e1516]
+                - listitem [ref=f1e1517]:
+                  - generic [ref=f1e1518]:
+                    - generic [ref=f1e1519]:
+                      - link [ref=f1e1520] [cursor=pointer]:
+                        - /url: https://www.reddit.com/r/FL_Studio/comments/1tfvf9x/why_are_synthesizers_not_recommended_for_newbies/
+                      - generic [ref=f1e1523]:
+                        - generic [ref=f1e1525]:
+                          - link "r/FL_Studio" [ref=f1e1526] [cursor=pointer]:
+                            - /url: https://www.reddit.com/r/FL_Studio/
+                          - generic [ref=f1e1531]: •
+                          - time [ref=f1e1533]: 2mo ago
+                        - link [ref=f1e1535] [cursor=pointer]:
+                          - /url: /r/FL_Studio/comments/1tfvf9x/why_are_synthesizers_not_recommended_for_newbies/
+                          - heading "List item post - Why are synthesizers not recommended for newbies?" [level=3] [ref=f1e1538]: Why are synthesizers not recommended for newbies?
+                      - generic [ref=f1e1540]:
+                        - generic [ref=f1e1541]: "49"
+                        - text: upvotes ·
+                        - generic [ref=f1e1542]: "65"
+                        - text: comments
+                    - separator [ref=f1e1543]
+                - listitem [ref=f1e1544]:
+                  - generic [ref=f1e1545]:
+                    - generic [ref=f1e1546]:
+                      - link [ref=f1e1547] [cursor=pointer]:
+                        - /url: https://www.reddit.com/r/FL_Studio/comments/1uvm36j/ableton_or_fl_studio_for_techno_minimal_afro/
+                      - generic [ref=f1e1550]:
+                        - generic [ref=f1e1552]:
+                          - link "r/FL_Studio" [ref=f1e1553] [cursor=pointer]:
+                            - /url: https://www.reddit.com/r/FL_Studio/
+                          - generic [ref=f1e1558]: •
+                          - time [ref=f1e1560]: 4d ago
+                        - link [ref=f1e1562] [cursor=pointer]:
+                          - /url: /r/FL_Studio/comments/1uvm36j/ableton_or_fl_studio_for_techno_minimal_afro/
+                          - heading "List item post - Ableton or FL Studio for Techno, Minimal & Afro House? Begg..." [level=3] [ref=f1e1565]: Ableton or FL Studio for Techno, Minimal & Afro House? Begginer here
+                      - generic [ref=f1e1567]:
+                        - generic [ref=f1e1568]: "9"
+                        - text: upvotes ·
+                        - generic [ref=f1e1569]: "20"
+                        - text: comments
+                    - separator [ref=f1e1570]
+                - listitem [ref=f1e1571]:
+                  - generic [ref=f1e1573]:
+                    - link [ref=f1e1574] [cursor=pointer]:
+                      - /url: https://www.reddit.com/r/FL_Studio/comments/1ushzc0/is_there_too_much_going_on_in_this_pattern_any/
+                    - generic [ref=f1e1576]:
+                      - generic [ref=f1e1577]:
+                        - generic [ref=f1e1579]:
+                          - link "r/FL_Studio" [ref=f1e1580] [cursor=pointer]:
+                            - /url: https://www.reddit.com/r/FL_Studio/
+                          - generic [ref=f1e1585]: •
+                          - time [ref=f1e1587]: 8d ago
+                        - link [ref=f1e1589] [cursor=pointer]:
+                          - /url: /r/FL_Studio/comments/1ushzc0/is_there_too_much_going_on_in_this_pattern_any/
+                          - heading "List item post - Is there too much going on in this pattern? Any glaring iss..." [level=3] [ref=f1e1592]: Is there too much going on in this pattern? Any glaring issues with the mixing or synths? Feedback from literally anyone who has one or more ears would be so awesome.
+                      - generic [ref=f1e1594]:
+                        - link "r/FL_Studio - Is there too much going on in this pattern? Any glaring issues with the mixing or synths? Feedback from literally anyone who has one or more ears would be so awesome." [ref=f1e1595] [cursor=pointer]:
+                          - /url: https://www.reddit.com/r/FL_Studio/comments/1ushzc0/is_there_too_much_going_on_in_this_pattern_any/
+                          - img "r/FL_Studio - Is there too much going on in this pattern? Any glaring issues with the mixing or synths? Feedback from literally anyone who has one or more ears would be so awesome." [ref=f1e1596]
+                        - generic: 0:17
+                    - generic [ref=f1e1598]:
+                      - generic [ref=f1e1599]: "33"
+                      - text: upvotes ·
+                      - generic [ref=f1e1600]: "57"
+                      - text: comments
+            - generic [ref=f1e1601]:
+              - heading "View Post in" [level=2] [ref=f1e1603]
+              - generic [ref=f1e1605]:
+                - link "Français" [ref=f1e1607] [cursor=pointer]:
+                  - /url: https://www.reddit.com/r/FL_Studio/comments/1uz534s/free_24band_dynamic_eq_with_sidechain_perband_ms/?tl=fr
+                - link "Português (Brasil)" [ref=f1e1609] [cursor=pointer]:
+                  - /url: https://www.reddit.com/r/FL_Studio/comments/1uz534s/free_24band_dynamic_eq_with_sidechain_perband_ms/?tl=pt-br
+                - group [ref=f1e1610]:
+                  - generic "See more" [ref=f1e1611] [cursor=pointer]
+            - complementary "Community information" [ref=f1e1616]:
+              - generic [ref=f1e1618]:
+                - heading "Community Info Section" [level=1] [ref=f1e1619]
+                - generic [ref=f1e1620]:
+                  - link "r/FL_Studio" [ref=f1e1622] [cursor=pointer]:
+                    - /url: /r/FL_Studio/
+                  - button "Join" [ref=f1e1627] [cursor=pointer]
+                - generic [ref=f1e1628]:
+                  - generic [ref=f1e1629]: FL Studio on Reddit
+                  - generic [ref=f1e1630]: The unofficial subreddit of all things FL Studio. Community Discord Chatrooms Meet other FL Studio users by joining our discord server! https://discord.gg/27wgKfafmP
+                  - button "Show more" [ref=f1e1631] [cursor=pointer]
+                  - generic: Public
+          - list [ref=f1e1640]:
+            - listitem [ref=f1e1641]:
+              - link "Home" [ref=f1e1643] [cursor=pointer]:
+                - /url: /?feed=home
+            - listitem [ref=f1e1644]:
+              - link "Popular" [ref=f1e1646] [cursor=pointer]:
+                - /url: /r/popular/
+            - listitem [ref=f1e1647]:
+              - link "News" [ref=f1e1649] [cursor=pointer]:
+                - /url: /news/
+            - listitem [ref=f1e1650]:
+              - link "Explore" [ref=f1e1652] [cursor=pointer]:
+                - /url: /explore/
+            - listitem [ref=f1e1653]:
+              - link "Best of Reddit" [ref=f1e1655] [cursor=pointer]:
+                - /url: https://www.reddit.com/posts/2026/global/
+            - listitem [ref=f1e1656]:
+              - link "Best of Reddit in Portuguese" [ref=f1e1658] [cursor=pointer]:
+                - /url: https://www.reddit.com/posts/2026/tl-pt-BR/
+            - listitem [ref=f1e1659]:
+              - link "Best of Reddit in German" [ref=f1e1661] [cursor=pointer]:
+                - /url: https://www.reddit.com/posts/2026/tl-de/
+            - listitem [ref=f1e1662]:
+              - link "Reddit Rules" [ref=f1e1664] [cursor=pointer]:
+                - /url: https://www.redditinc.com/policies/content-policy
+            - listitem [ref=f1e1665]:
+              - link "Privacy Policy" [ref=f1e1667] [cursor=pointer]:
+                - /url: https://www.reddit.com/policies/privacy-policy
+            - listitem [ref=f1e1668]:
+              - link "User Agreement" [ref=f1e1670] [cursor=pointer]:
+                - /url: https://www.redditinc.com/policies/user-agreement
+            - listitem [ref=f1e1671]:
+              - link "Accessibility" [ref=f1e1673] [cursor=pointer]:
+                - /url: https://support.reddithelp.com/hc/sections/38303584022676-Accessibility
+            - listitem [ref=f1e1674]:
+              - link "OSA Information" [ref=f1e1676] [cursor=pointer]:
+                - /url: https://support.reddithelp.com/hc/articles/21856155897492-Information-for-Australian-users
+            - listitem [ref=f1e1677]:
+              - link "Reddit, Inc. © 2026. All rights reserved." [ref=f1e1678] [cursor=pointer]:
+                - /url: https://redditinc.com

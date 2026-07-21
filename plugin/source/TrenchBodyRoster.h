@@ -63,6 +63,12 @@ inline constexpr int kNoFilterIndex = 0;
 inline constexpr int kDefaultBodyIndex = kNoFilterIndex;
 inline constexpr const char* kNoFilterName = "NO FILTER";
 
+// Addressable USER-slot headroom beyond the startup body count. The Body
+// parameter's range is frozen at construction, so this reserves automation
+// slots for bodies dropped into Documents/TRENCH/bodies while the plug-in is
+// open, which a live rescan (rescanBodyRoster) then fills — no FL restart.
+inline constexpr int kUserSlotPool = 128;
+
 inline const BodyEntry* bakedRoster (int& countOut) noexcept;
 
 inline juce::File auditionSlotFile() noexcept
@@ -96,6 +102,16 @@ struct RosterStore
 inline std::string prettyBodyName (const std::string& stem)
 {
     juce::String s (stem);
+    // Candidate shelves carry a short content hash to keep same-named source
+    // bodies distinct on disk. It is provenance, not product copy, so keep it
+    // out of the TYPE row while retaining it in the filename.
+    const int hashSeparator = s.lastIndexOf ("__");
+    if (hashSeparator > 0)
+    {
+        const auto suffix = s.substring (hashSeparator + 2);
+        if (suffix.length() == 12 && suffix.containsOnly ("0123456789abcdefABCDEF"))
+            s = s.substring (0, hashSeparator);
+    }
     const int us = s.indexOfChar ('_');
     if (us > 0 && s.substring (0, us) == s.substring (0, us).toUpperCase())
         s = s.substring (us + 1);
@@ -118,14 +134,26 @@ inline std::string bodyStem (const juce::File& file)
     return file.getFileNameWithoutExtension().toStdString();
 }
 
-inline RosterStore& rosterStore()
+// User bodies are allowed to be organized on disk. Keep that relative folder
+// in the roster so the product menu can present the same hierarchy instead of
+// flattening every authoring export into one USER bucket.
+inline std::string bodyFolderCategory (const juce::File& root, const juce::File& file)
 {
-    static RosterStore store;
-    static bool built = false;
-    if (! built)
-    {
-        built = true;
-        int bakedCount = 0;
+    auto parent = file.getParentDirectory().getRelativePathFrom (root)
+                      .replaceCharacter ('\\', '/')
+                      .trimCharactersAtStart ("/")
+                      .trimCharactersAtEnd ("/");
+    return parent.isEmpty() ? std::string ("USER") : parent.toStdString();
+}
+
+inline void buildRosterStore (RosterStore& store)
+{
+    store.names.clear();
+    store.bases.clear();
+    store.categories.clear();
+    store.entries.clear();
+
+    int bakedCount = 0;
         const auto* baked = bakedRoster (bakedCount);
         for (int index = 0; index < bakedCount; ++index)
         {
@@ -141,7 +169,11 @@ inline RosterStore& rosterStore()
                              .getChildFile ("bodies");
         if (dir.isDirectory())
         {
-            auto files = dir.findChildFiles (juce::File::findFiles, false, "*.body240;*.cart.json;*.json");
+            // The folder tree is part of the authoring contract. Recursive
+            // discovery lets RECENT/CROSS4, RECENT/SHIPV2, etc. appear as
+            // real folders in the TYPE menu while retaining the existing
+            // root-level Documents/TRENCH/bodies workflow.
+            auto files = dir.findChildFiles (juce::File::findFiles, true, "*.body240;*.cart.json;*.json");
             std::sort (files.begin(), files.end(), [] (const juce::File& a, const juce::File& b)
             {
                 return a.getFullPathName() < b.getFullPathName();
@@ -149,12 +181,31 @@ inline RosterStore& rosterStore()
             for (const auto& file : files)
             {
                 const auto stem = bodyStem (file);
-                const auto pretty = prettyBodyName (stem);
-                if (stem.empty() || std::find (store.names.begin(), store.names.end(), pretty) != store.names.end())
+                const auto category = bodyFolderCategory (dir, file);
+                auto pretty = prettyBodyName (stem);
+                if (stem.empty())
                     continue;
+
+                const bool isRecentShelf = juce::String (category).startsWithIgnoreCase ("RECENT/");
+                if (! isRecentShelf
+                    && std::find (store.names.begin(), store.names.end(), pretty) != store.names.end())
+                    continue;
+
+                // Two recent bodies may intentionally share a descriptive
+                // source stem while differing in packed bytes. Keep both in
+                // the audition shelf; the ordinal is UI disambiguation only.
+                if (isRecentShelf)
+                {
+                    const auto baseName = pretty;
+                    for (int ordinal = 2;
+                         std::find (store.names.begin(), store.names.end(), pretty) != store.names.end();
+                         ++ordinal)
+                        pretty = baseName + " " + std::to_string (ordinal);
+                }
+
                 store.names.push_back (pretty);
                 store.bases.push_back (file.getFullPathName().toStdString());
-                store.categories.push_back ("LIBRARY");
+                store.categories.push_back (category);
             }
         }
 
@@ -162,10 +213,26 @@ inline RosterStore& rosterStore()
         for (size_t i = 0; i < store.names.size(); ++i)
             store.entries.push_back ({ store.names[i].c_str(), store.bases[i].c_str(),
                                        store.categories[i].c_str(), (int) TypeBehavior::Static });
+}
+
+inline RosterStore& rosterStore()
+{
+    static RosterStore store;
+    static bool built = false;
+    if (! built)
+    {
+        built = true;
+        buildRosterStore (store);
     }
     return store;
 }
 } // namespace detail
+
+// Re-scan Documents/TRENCH/bodies and rebuild the roster in place. MESSAGE
+// THREAD ONLY — the load path (handleAsyncUpdate), TYPE menu, and display all
+// read the roster on the message thread, so there is no audio-thread reader to
+// race. Lets a batch dropped on disk appear without an FL restart.
+inline void rescanBodyRoster() { detail::buildRosterStore (detail::rosterStore()); }
 
 inline const BodyEntry* bakedRoster (int& countOut) noexcept
 {
@@ -173,6 +240,7 @@ inline const BodyEntry* bakedRoster (int& countOut) noexcept
         { kNoFilterName, "identity", "SYSTEM", (int) TypeBehavior::Static },
 #define TRENCH_PRESET(displayName, resourceStem, categoryName) \
         { displayName, resourceStem, categoryName, (int) TypeBehavior::Static },
+#include "../presets/PresetRosterSignature.inc"   // curated ship set — leads the list
 #include "../presets/PresetRoster.inc"
 #undef TRENCH_PRESET
     };

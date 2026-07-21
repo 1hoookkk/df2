@@ -168,15 +168,14 @@ public:
                                : (decimals <= 0 ? juce::String (juce::roundToInt (pct))
                                                 : juce::String (pct, decimals));
 
-        // Slightly-aliased LCD numeral (render small, upscale nearest): crisper
-        // digits at the compact 350px face than antialiased vector type.
+        // Keep the counter digits on the same crisp vector path as the labels;
+        // the old low-resolution nearest-upscale produced visible glyph ghosts.
         const float fs = t.fontSize (id, 20.0f);
         auto textArea = b.reduced (4.0f, 1.0f);
         if (adjustCue)
             textArea = textArea.withTrimmedRight (7.0f);
-        drawAliasedText (g, textArea, numeric, fs,
-                         t.textColour (id, juce::Colour (0xff2a2722)),
-                         t.readoutAliasScale());
+        drawCrispText (g, textArea, numeric, fs,
+                       t.textColour (id, juce::Colour (0xff2a2722)), true);
 
         // Adjust cue: two tiny chevrons at the right edge — quiet ink that
         // says "this number moves" without becoming a spinner widget.

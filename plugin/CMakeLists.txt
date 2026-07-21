@@ -23,8 +23,28 @@ else()
     FetchContent_MakeAvailable(JUCE)
 endif()
 
+# The key detector uses RTNeural's allocation-free forward pass. Prefer the
+# local vendored checkout, with a pinned FetchContent fallback for clean clones.
+# Model parsing happens once in the processor constructor, never on audio.
+set(RTNEURAL_STL ON CACHE BOOL "Use RTNeural STL backend" FORCE)
+if(EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/libs/RTNeural/CMakeLists.txt")
+    add_subdirectory(libs/RTNeural EXCLUDE_FROM_ALL)
+else()
+    include(FetchContent)
+    FetchContent_Declare(
+        RTNeuralSource
+        GIT_REPOSITORY https://github.com/jatinchowdhury18/RTNeural.git
+        GIT_TAG 1fb1f075a5d66e85bfc8f488c3f3626840cb3a1d
+        GIT_SHALLOW FALSE)
+    FetchContent_MakeAvailable(RTNeuralSource)
+endif()
+target_compile_definitions(RTNeural PUBLIC RTNEURAL_NO_DEBUG=1)
+
+set(TRENCH_WORKSPACE_DIR "${CMAKE_CURRENT_SOURCE_DIR}/..")
+
 set(TRENCH_COMMON_DEFINITIONS
-    TRENCH_DEV_PANEL=1             # dev-only: right-edge arrow opens the all-params tuning panel. Set 0 for ship builds.
+    TRENCH_TABLE_STITCH_PANEL=0    # product face: no TABLES dev overlay (dev workstation can flip to 1).
+    TRENCH_TABLE_STITCH_ROOT="${TRENCH_WORKSPACE_DIR}"
     JUCE_WEB_BROWSER=0
     JUCE_USE_CURL=0
     JUCE_DISPLAY_SPLASH_SCREEN=0   # no "Made with JUCE" overlay (requires a paid/appropriate JUCE license at release)
@@ -55,6 +75,7 @@ juce_add_binary_data(TRENCHAssets
         assets/display_log_grid_rules.png
         assets/display_bitmap4613.png
         assets/thin_wheel_strip.png
+        assets/key_model_rtneural.json
         assets/bodies/identity.body240
         ${TRENCH_PRESET_BODY_FILES})
 
@@ -77,6 +98,8 @@ set(TRENCH_PLUGIN_SOURCES
     source/dsp/FixedRateTrenchIsland.h
     source/dsp/FixedRateTrenchIsland.cpp
     source/dsp/GestureEngine.h
+    source/dsp/KeyDetector.h
+    source/dsp/KeyDetector.cpp
     source/dsp/MotionEngine.h
     source/dsp/MoveMatrix.h
     source/dsp/SlamStage.h
@@ -88,6 +111,7 @@ set(TRENCH_PLUGIN_SOURCES
     source/ui/FaceplateView.h
     source/ui/FiveDButton.h
     source/ui/GraphDisplay.h
+    source/ui/KeySnapBox.h
     source/ui/LabelsLayer.h
     source/ui/MoveChip.h
     source/ui/MoveView.h
@@ -115,10 +139,10 @@ target_link_libraries(TRENCHPluginCommon
         juce_dsp
         juce_gui_basics
         juce_gui_extra
+        RTNeural
         juce::juce_recommended_config_flags
         juce::juce_recommended_warning_flags)
 
-set(TRENCH_WORKSPACE_DIR "${CMAKE_CURRENT_SOURCE_DIR}/..")
 set(TRENCH_CARGO_TARGET_DIR "${CMAKE_BINARY_DIR}/cargo-target")
 set(TRENCH_RUST_LIB_DIR "${TRENCH_CARGO_TARGET_DIR}/release")
 if(WIN32)
@@ -246,3 +270,18 @@ target_link_libraries(TRENCH_FaceShot PRIVATE
     juce::juce_recommended_config_flags
     juce::juce_recommended_warning_flags)
 add_dependencies(TRENCH_FaceShot trench_core_build)
+
+# Offline proof executable: compares the JUCE FFT frontend and RTNeural
+# probabilities with Python references for the same held-out audio window.
+juce_add_console_app(TRENCH_KeyModelParity PRODUCT_NAME "TRENCH Key Model Parity")
+target_sources(TRENCH_KeyModelParity PRIVATE
+    tools/KeyModelParity.cpp
+    source/dsp/KeyDetector.cpp
+    source/dsp/KeyDetector.h)
+target_include_directories(TRENCH_KeyModelParity PRIVATE "${CMAKE_CURRENT_SOURCE_DIR}/source")
+target_link_libraries(TRENCH_KeyModelParity PRIVATE
+    RTNeural
+    juce_audio_basics
+    juce_dsp
+    juce::juce_recommended_config_flags
+    juce::juce_recommended_warning_flags)

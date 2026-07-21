@@ -3,6 +3,7 @@ pub mod bank;
 pub mod hash;
 pub mod model;
 pub mod native;
+pub mod paths;
 pub mod proof;
 pub mod recipe_index;
 pub mod source_xml;

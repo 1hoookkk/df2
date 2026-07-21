@@ -25,6 +25,7 @@ extern "C"
     void trench_engine_set_agc_drive (void* engine, float drive);
     void trench_engine_set_coeff_ramp_scale (void* engine, float scale); // morph RATE: 1.0=80ms glide .. 0=32-sample snap
     void trench_engine_set_pitch_ratio (void* engine, float ratio);      // KEY TRACKING: transpose conjugate resonances; 1.0=off (bit-exact)
+    void trench_engine_set_key_snap (void* engine, int choice);          // MANUAL KEY SNAP: 0=off, 1..12 minor, 13..24 major
     void trench_engine_set_interstage_drive (void* engine, float drive); // BITE: inter-stage soft-clip inside the cascade; 0=linear (bit-exact)
     void trench_engine_process_block (void* engine, float* left, float* right, int numSamples, double morph, double q);
     void trench_engine_get_coeffs (void* engine, float* outCoeffs, float* outBoost);
@@ -68,6 +69,7 @@ struct TrenchParams
     float bite = 0.0f;  // BITE/Damage 0..1 — post-cascade harmonic grit
     float rampScale = 0.164f; // morph RATE: approach-time scale (0=SNAP 0.8ms, 0.164=TIGHT 13ms, 1=GLIDE 80ms)
     float pitchRatio = 1.0f;  // KEY TRACKING transpose ratio (1.0 = off)
+    int keySnap = 0;          // MANUAL KEY SNAP choice (0 = exact no-op)
     float interstageDrive = 0.0f; // BITE inter-stage drive (0 = linear cascade, bit-exact)
 };
 
@@ -243,6 +245,11 @@ public:
             trench_engine_set_pitch_ratio (engine, params.pitchRatio);
             lastPitchRatioSent = params.pitchRatio;
         }
+        if (params.keySnap != lastKeySnapSent)
+        {
+            trench_engine_set_key_snap (engine, params.keySnap);
+            lastKeySnapSent = params.keySnap;
+        }
         if (! juce::approximatelyEqual (params.interstageDrive, lastInterstageDriveSent))
         {
             trench_engine_set_interstage_drive (engine, params.interstageDrive);
@@ -380,6 +387,7 @@ private:
     void* engine = nullptr;
     float lastRampScaleSent = -1.0f; // sentinel: first block always sends RATE
     float lastPitchRatioSent = -1.0f; // sentinel: first block always sends KEY TRACK ratio
+    int lastKeySnapSent = -1;         // sentinel: first block always sends MANUAL KEY SNAP
     float lastInterstageDriveSent = -1.0f; // sentinel: first block always sends BITE drive
 
     // Lock-free seqlock snapshot: written by the audio thread (publishUiSnapshot),

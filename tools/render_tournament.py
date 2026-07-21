@@ -208,60 +208,73 @@ def build_html(items):
 TEMPLATE = r"""<!doctype html><meta charset=utf-8><title>TRENCH tournament</title>
 <style>
 :root{color-scheme:dark}
-body{background:#0b0f0e;color:#cdd;font:14px/1.4 monospace;margin:0;padding:0 24px 80px}
-header{position:sticky;top:0;background:#0b0f0e;padding:16px 0 10px;border-bottom:1px solid #1c2722;z-index:5}
-h1{color:#5bef6f;margin:0 0 8px;font-size:18px}
+body{background:#0b0f0e;color:#cdd;font:14px/1.4 monospace;margin:0;padding:0 18px 120px}
+header{position:sticky;top:0;background:#0b0f0e;padding:12px 0 8px;border-bottom:1px solid #1c2722;z-index:5}
+h1{color:#5bef6f;margin:0 0 6px;font-size:15px}
 .bar{display:flex;gap:8px;flex-wrap:wrap;align-items:center}
-button,select{background:#12201a;color:#cdd;border:1px solid #2a3d33;border-radius:5px;padding:6px 10px;font:13px monospace;cursor:pointer}
+button,select{background:#12201a;color:#cdd;border:1px solid #2a3d33;border-radius:5px;padding:5px 9px;font:13px monospace;cursor:pointer}
 button:hover{border-color:#5bef6f}
 .stat{color:#789}
-.pg{margin-left:auto}
-.card{display:flex;gap:12px;align-items:center;margin:8px 0;padding:8px 10px;border:1px solid #1c2722;border-radius:6px;background:#0e1512}
-.card.killed{opacity:.28;filter:grayscale(1)}
-.rank{color:#456;width:34px;text-align:right}
-.n{color:#ffd23e;min-width:220px}
-.s{color:#6a8;min-width:150px;font-size:12px}
-audio{height:32px}
-.plot{height:82px;border:1px solid #1c2722;border-radius:4px}
-.stars{display:flex;gap:2px}
-.star{color:#333c38;font-size:20px;cursor:pointer;user-select:none;line-height:1}
+.keys{color:#567;font-size:12px;margin-top:4px}
+.grp{color:#5bef6f;margin:14px 0 2px;font-size:13px;border-bottom:1px dashed #1c2722}
+.row{display:flex;gap:10px;align-items:center;padding:3px 8px;border-radius:5px;cursor:pointer}
+.row:nth-child(even){background:#0d1411}
+.row.cur{background:#15251d;outline:1px solid #2f5c42}
+.row.killed{opacity:.25;filter:grayscale(1)}
+.n{color:#ffd23e;flex:1 1 auto;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.plot{height:44px;width:220px;object-fit:cover;border:1px solid #1c2722;border-radius:3px}
+.stars{display:flex;gap:1px}
+.star{color:#333c38;font-size:17px;cursor:pointer;user-select:none;line-height:1}
 .star.on{color:#ffd23e}
-.kill{color:#e0555f;border-color:#5a2a2e}
+.kill{color:#e0555f;border-color:#5a2a2e;padding:2px 7px}
 .kill.on{background:#5a2a2e;color:#fff}
-.pagebtns{display:flex;gap:4px;align-items:center;flex-wrap:wrap}
-.pagebtns b{color:#5bef6f}
+.playmark{width:14px;color:#5bef6f}
+#deck{position:fixed;left:0;right:0;bottom:0;background:#0e1713;border-top:1px solid #2a3d33;padding:8px 18px;display:flex;gap:12px;align-items:center;z-index:9}
+#now{color:#ffd23e;min-width:260px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+#player{flex:1}
+audio{width:100%;height:34px}
 </style>
 <header>
 <h1>TRENCH tournament — pink noise · shipped engine · morph travel</h1>
 <div class=bar>
   <span class=stat id=stat></span>
   <select id=filter>
-    <option value=active>show: alive (not killed)</option>
-    <option value=all>show: everything</option>
-    <option value=rated>show: rated only</option>
-    <option value=unrated>show: unrated alive</option>
-    <option value=top20>show: TOP 20</option>
-    <option value=top10>show: TOP 10</option>
-    <option value=top5>show: TOP 5</option>
+    <option value=active>alive</option>
+    <option value=all>everything</option>
+    <option value=unrated>unrated alive</option>
+    <option value=rated>rated</option>
+    <option value=top20>TOP 20</option>
+    <option value=top10>TOP 10</option>
   </select>
+  <select id=fam><option value="">family: all</option></select>
   <select id=sort>
-    <option value=rank>sort: rating high→low</option>
-    <option value=orig>sort: original order</option>
+    <option value=orig>sort: roster</option>
+    <option value=rank>sort: rating</option>
   </select>
-  <button id=cull>cull unrated + 1★ (narrow)</button>
-  <button id=export>export ranking</button>
-  <button id=reset>reset all</button>
-  <span class=pg pagebtns id=pager></span>
+  <label><input type=checkbox id=auto checked> auto-advance</label>
+  <button id=cull>cull unrated+1&#9733;</button>
+  <button id=export>export</button>
+  <button id=reset>reset</button>
 </div>
+<div class=keys>SPACE play/pause &middot; &uarr;&darr; move &middot; ENTER play row &middot; 1&ndash;5 rate &middot; 0 clear &middot; X kill &middot; listening advances by itself</div>
 </header>
 <div id=list></div>
+<div id=deck><span id=now>&mdash;</span><span id=player><audio id=au controls preload=auto></audio></span></div>
 <script>
 const ITEMS=/*DATA*/[];
-const KEY='trench_tourney_v2'; // v2: verdicts keyed by NAME (roster-stable)
-let ST=JSON.parse(localStorage.getItem(KEY)||'{}'); // id -> {r:0-5, k:bool}
+const KEY='trench_tourney_v2';
+let ST=JSON.parse(localStorage.getItem(KEY)||'{}');
 function get(id){return ST[id]||(ST[id]={r:0,k:false});}
 function save(){localStorage.setItem(KEY,JSON.stringify(ST));}
-const PER=15; let page=0;
+function famOf(n){const m=n.match(/^([A-Za-z]+)[_-]/);return m?m[1]:'misc';}
+let cur=null;
+let shown=[];
+const au=document.getElementById('au');
+
+const famSel=document.getElementById('fam');
+[...new Set(ITEMS.map(x=>famOf(x.name)))].sort().forEach(f=>{
+  const o=document.createElement('option');o.value=f;o.textContent='family: '+f;famSel.appendChild(o);
+});
 
 function view(){
   let a=ITEMS.map(it=>({...it,...get(it.name)}));
@@ -269,58 +282,85 @@ function view(){
   if(f==='active')a=a.filter(x=>!x.k);
   else if(f==='rated')a=a.filter(x=>x.r>0);
   else if(f==='unrated')a=a.filter(x=>!x.k&&!x.r);
+  const fam=famSel.value;
+  if(fam)a=a.filter(x=>famOf(x.name)===fam);
   if(document.getElementById('sort').value==='rank'||f.startsWith('top'))
     a.sort((x,y)=>(y.r-x.r)||(x.id<y.id?-1:1));
   if(f==='top20')a=a.filter(x=>!x.k).slice(0,20);
   if(f==='top10')a=a.filter(x=>!x.k).slice(0,10);
-  if(f==='top5')a=a.filter(x=>!x.k).slice(0,5);
   return a;
 }
 function render(){
-  const a=view();
-  const pages=Math.max(1,Math.ceil(a.length/PER));
-  if(page>=pages)page=pages-1; if(page<0)page=0;
-  const slice=a.slice(page*PER,page*PER+PER);
+  const a=view();shown=a.map(x=>x.name);
   const alive=ITEMS.filter(x=>!get(x.name).k).length;
   const rated=ITEMS.filter(x=>get(x.name).r>0).length;
   document.getElementById('stat').textContent=
-    `${ITEMS.length} bodies · ${alive} alive · ${rated} rated · showing ${a.length}`;
+    ITEMS.length+' bodies | '+alive+' alive | '+rated+' rated | showing '+a.length;
   const L=document.getElementById('list');L.innerHTML='';
-  slice.forEach((x,i)=>{
-    const idx=page*PER+i+1;
-    const d=document.createElement('div');d.className='card'+(x.k?' killed':'');
+  let lastFam=null;
+  a.forEach(x=>{
+    const f=famOf(x.name);
+    if(f!==lastFam){const h=document.createElement('div');h.className='grp';h.textContent=f;L.appendChild(h);lastFam=f;}
+    const d=document.createElement('div');
+    d.className='row'+(x.k?' killed':'')+(x.name===cur?' cur':'');
+    d.dataset.row=x.name;
     d.innerHTML=
-      `<span class=rank>${idx}</span>`+
-      `<span class=n>${x.name}</span>`+
-      `<span class=s>${x.src}${x.r?'  '+'★'.repeat(x.r):''}</span>`+
-      `<img class=plot loading=lazy src="${x.plot}">`+
-      `<audio controls preload=none src="${x.wav}"></audio>`+
-      `<span class=stars>${[1,2,3,4,5].map(s=>`<span class="star${x.r>=s?' on':''}" data-id="${x.name}" data-s="${s}">★</span>`).join('')}</span>`+
-      `<button class="kill${x.k?' on':''}" data-kill="${x.name}">${x.k?'killed':'KILL'}</button>`;
+      '<span class=playmark>'+(x.name===cur?'&#9654;':'')+'</span>'+
+      '<span class=n>'+x.name+'</span>'+
+      '<span class=stars>'+[1,2,3,4,5].map(s=>'<span class="star'+(x.r>=s?' on':'')+'" data-id="'+x.name+'" data-s="'+s+'">&#9733;</span>').join('')+'</span>'+
+      '<button class="kill'+(x.k?' on':'')+'" data-kill="'+x.name+'">'+(x.k?'dead':'X')+'</button>'+
+      '<img class=plot loading=lazy src="'+x.plot+'">';
     L.appendChild(d);
   });
-  const pg=document.getElementById('pager');
-  pg.innerHTML=`<button data-nav="-1">◀</button> <b>${page+1}</b>/${pages} <button data-nav="1">▶</button>`;
+  document.getElementById('now').textContent=cur||'&mdash;';
 }
+function play(name){
+  if(!name)return;
+  cur=name;
+  const it=ITEMS.find(x=>x.name===name);
+  au.src=it.wav;au.play();
+  render();
+  const el=document.querySelector('[data-row="'+CSS.escape(name)+'"]');
+  if(el)el.scrollIntoView({block:'center',behavior:'smooth'});
+}
+function step(d){
+  if(!shown.length)return;
+  let i=shown.indexOf(cur);
+  i=(i<0)?0:Math.min(shown.length-1,Math.max(0,i+d));
+  play(shown[i]);
+}
+au.onended=()=>{if(document.getElementById('auto').checked)step(1);};
 document.addEventListener('click',e=>{
   const t=e.target;
   if(t.dataset.s){const g=get(t.dataset.id);g.r=(g.r==+t.dataset.s?0:+t.dataset.s);save();render();}
   else if(t.dataset.kill){const g=get(t.dataset.kill);g.k=!g.k;save();render();}
-  else if(t.dataset.nav){page+=+t.dataset.nav;render();}
+  else{const row=t.closest('[data-row]');if(row)play(row.dataset.row);}
 });
-document.getElementById('filter').onchange=()=>{page=0;render();};
+document.addEventListener('keydown',e=>{
+  if(e.target.tagName==='SELECT'||e.target.tagName==='INPUT')return;
+  if(e.code==='Space'){e.preventDefault();au.paused?(au.src?au.play():step(1)):au.pause();}
+  else if(e.key==='ArrowDown'||e.key==='ArrowRight'){e.preventDefault();step(1);}
+  else if(e.key==='ArrowUp'||e.key==='ArrowLeft'){e.preventDefault();step(-1);}
+  else if(e.key==='Enter'){step(0);}
+  else if(e.key>='1'&&e.key<='5'&&cur){const g=get(cur);g.r=+e.key;save();render();}
+  else if(e.key==='0'&&cur){get(cur).r=0;save();render();}
+  else if((e.key==='x'||e.key==='X')&&cur){const g=get(cur);g.k=!g.k;save();
+    if(g.k&&document.getElementById('auto').checked)step(1);else render();}
+});
+document.getElementById('filter').onchange=()=>render();
+famSel.onchange=()=>render();
 document.getElementById('sort').onchange=render;
 document.getElementById('cull').onclick=()=>{
-  if(!confirm('Kill everything unrated or rated 1★? (narrows the field)'))return;
-  ITEMS.forEach(it=>{const g=get(it.name);if(!g.k&&g.r<=1)g.k=true;});save();page=0;render();
+  if(!confirm('Kill everything unrated or rated 1 star?'))return;
+  ITEMS.forEach(it=>{const g=get(it.name);if(!g.k&&g.r<=1)g.k=true;});save();render();
 };
 document.getElementById('reset').onclick=()=>{
-  if(!confirm('Wipe every verdict?'))return;ST={};save();page=0;render();
+  if(!confirm('Wipe every verdict?'))return;ST={};save();render();
 };
 document.getElementById('export').onclick=()=>{
   const a=ITEMS.map(it=>({...it,...get(it.name)})).filter(x=>!x.k&&x.r>0)
     .sort((x,y)=>(y.r-x.r)||(x.id<y.id?-1:1));
-  const txt=a.map((x,i)=>`${String(i+1).padStart(2)}. ${'★'.repeat(x.r)}${' '.repeat(5-x.r)}  ${x.name}  (${x.src})`).join('\n');
+  const txt=a.map((x,i)=>String(i+1).padStart(2)+'. '+'#'.repeat(x.r)+' '.repeat(5-x.r)+'  '+x.name+'  ('+x.src+')').join('\n');
   const blob=new Blob([txt||'(nothing kept + rated yet)'],{type:'text/plain'});
   const u=URL.createObjectURL(blob);const link=document.createElement('a');
   link.href=u;link.download='trench_ranking.txt';link.click();

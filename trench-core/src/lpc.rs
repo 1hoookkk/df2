@@ -153,7 +153,7 @@ fn steady_state(x: &[f64], sr: f64) -> (usize, usize) {
 }
 
 // ── autocorrelation LPC via Levinson-Durbin ──────────────────────────────────
-fn lpc_levinson(x: &[f64], order: usize) -> Option<Vec<f64>> {
+pub(crate) fn lpc_levinson(x: &[f64], order: usize) -> Option<Vec<f64>> {
     let n = x.len();
     if n <= order {
         return None;
@@ -166,7 +166,12 @@ fn lpc_levinson(x: &[f64], order: usize) -> Option<Vec<f64>> {
         }
         *rk = acc;
     }
-    if r[0] <= 0.0 {
+    levinson_from_autocorr(&r, order)
+}
+
+/// Levinson-Durbin from a precomputed autocorrelation sequence r[0..=order].
+pub(crate) fn levinson_from_autocorr(r: &[f64], order: usize) -> Option<Vec<f64>> {
+    if r.len() <= order || r[0] <= 0.0 {
         return None;
     }
     let mut a = vec![0.0f64; order + 1];

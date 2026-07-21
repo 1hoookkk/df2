@@ -1,100 +1,39 @@
-# TRENCH Workstation Agent Contract
+# TRENCH Workspace Contract
 
-This branch has one job:
+1. **The DSP Bible:** `C:\Users\hooki\df2-workstation\FILTER_NOTEBOOK.md` holds the absolute DSP laws, historical verdicts, dead ends, and architecture rules. Read the relevant section before authoring, fitting, or judging. Do not invent new doctrine.
 
-```text
-typed grammar / LPC / measured evidence
-  -> four authored poses
-  -> six registered pole-zero lanes per pose
-  -> exact packed .body240
-  -> packed-runtime response + audio
-  -> sampled stability/audibility certification
-  -> reproducible body + session + proof bundle
-```
+2. **The Engine:** `trench-core` is the only audio engine, compiler, codec, and runtime authority. Validate through the code and bytes that actually ship.
 
-Do not restore deleted Forge applications, production-training systems, study
-corpora, sidecar editors, or plugin UI from Git history unless Tyson explicitly
-asks. Build the workstation from the retained runtime contracts.
+3. **Evidence Boundaries:** P2K/X3/reference material is study evidence only. Never copy protected bytes, names, or assets into this branch. Follow the notebook's provenance and clean-room rules.
 
-## Runtime facts
+4. **Start From Reality:** Inspect the live worktree, current artifact, runtime path, and existing tools before changing anything. Reuse proven scripts and code paths. Never infer the current state from memory, a handoff summary, or a plausible story when the repository can answer directly.
 
-- A body is exactly 240 bytes: 4 corners × 6 stages × 5 u16 words × 2 bytes.
-- Corner order is `M0_Q0`, `M100_Q0`, `M0_Q100`, `M100_Q100`.
-- All four corners are authored. Q100 is a second pose, never derived.
-- Stage index is sacred correspondence across corners; never sort lanes per pose.
-- Packed-u16 Morph-first, then Q interpolation is runtime authority.
-- Runtime decode produces direct `[b0,b1,b2,a1,a2]` DF2T sections.
-- The six sections run as a serial cascade.
+5. **Hold the Literal Task:** Keep the current target, locked constraints, and next concrete proof in view. Tyson's latest wording overrides your interpretation. When he names a file, preset, stage, law, render, or prior version, inspect that exact thing before generalising. If redirected, drop assumptions from the old interpretation and continue from the correction; do not merely rename the old plan.
 
-`trench-core` is the only packing, interpolation, response, certification, and
-audio-engine owner. Do not create a second kernel or compiler.
+6. **No Invented Abstractions:** Do not create new laws, stage classes, families, vocabularies, schemas, wrappers, pipelines, or architectural layers unless they already exist in the repository or Tyson explicitly asks for them. Use the repository's actual nouns and data structures. Treat every inferred model as a temporary hypothesis, not a foundation. One successful example never proves a universal decode, mapping, or law.
 
-## Stage authoring law
+7. **Momentum Loop:** Work in a tight loop: inspect → make the smallest reversible change → run it → inspect the real evidence → decide the next change. Keep one scoped change per verification step. Do not stop for a long explanation, retrospective, report, or menu of options while the next evidence-bearing action is clear and authorised. Continue until the result passes, a real blocker is proven, or an explicit approval boundary is reached.
 
-Every corner/lane exposes:
+8. **Smallest Real Proof First:** Before a batch, generator, refactor, full bake, roster change, asset swap, install, or success report, prove one representative case end-to-end. Test on the surface that makes the decision:
 
-```text
-pole geometry
-zero geometry
-SCALE = b0
-identity/active state
-evidence provenance
-```
+   * DSP: packed shipping runtime, then the ear on suitable broadband material.
+   * Visuals: true runtime/plugin scale and context, not an attractive viewport or enlarged proxy.
+   * Formats and serialization: emitted bytes, round-trip/no-op identity, parity tests, and the shipping reader.
 
-Conjugate roots use Hz/radius. Independent real-root pairs remain explicit and
-must never be clamped into conjugate controls. Inactive means the exact identity
-biquad; there is no packed on/off bit.
+   A plot, stability gate, successful build, or proxy metric proves only itself; it does not prove musical character, visual correctness, or usefulness.
 
-No hidden normalization, Q derivation, reordering, smoothing, gain correction,
-or smart repair. Every selected action must report exactly which corners, lanes,
-and packed words changed.
+9. **Method Before Tuning:** When repeated parameter changes preserve the same failure, stop tuning and challenge the method, representation, target, or decoder. Do not force different sources through one generic transform and then claim the outputs are meaningfully different. Prefer a direct null, comparison, render, or audition against the real target over an aggregate model or family average.
 
-## Evidence boundary
+10. **Corrections Are Constraints:** A user correction is new ground truth. Apply it immediately and invalidate downstream conclusions built on the old assumption. Do not defend the prior interpretation, over-explain the mistake, or continue work that depended on it. If Tyson says “stay on track,” resume the active target and next proof immediately.
 
-`C:\Users\hooki\trench-filters` is external and read-only. A source session may
-store its repository commit, relative path, file hash, and extracted evidence.
-Do not copy its compiler code or promote its prose into runtime law.
+11. **Productive Tooling Only:** Search for an existing implementation before writing an analyzer, decoder, framework, or helper. Create tooling only when it directly enables the next proof or is clearly durable. Exploration must end in one of three useful outcomes: a changed artifact, a confirmed or falsified hypothesis, or a proven blocker. Do not manufacture activity through broad scans, rankings, taxonomies, or documentation that do not change the next decision.
 
-P2K/reference material is study evidence only. Do not copy protected bytes,
-names, coefficient rows, tables, or presets into this branch.
+12. **Scale Only After Validation:** Do not fan one unproven idea into many presets, files, frames, or installed artifacts. First prove that the representative result is genuinely distinct and correct on the final decision surface. Respect explicit approval boundaries for accepted assets, roster changes, builds, installs, and promotion. Preserve the dirty worktree, backups, and accepted masters.
 
-## Required product modes
+13. **Interaction:** Be direct and concise. Status updates should state what changed, what the evidence says, and what happens next. Answer subjective opinions, visual judgments, and casual questions directly without triggering an audit unless requested. Do not repeatedly ask permission already given, and do not ask Tyson to choose between technical branches that repository evidence can decide.
 
-- Default: packed response, four-pose selector, selected lane controls.
-- Inspect: z-plane, all lanes, packed words, decoded coefficients, quantization
-  diffs, per-corner diffs, and Morph×Q certification.
-- BODY SOLO: cascade-only audio at unity I/O.
-- PRODUCT: full retained `FilterEngine` path.
+14. **No Premature Success:** Never call something done, fixed, correct, decoded, approved, or “the one” on a first pass. Review the actual rendered, measured, audible, or byte-level evidence first. Show the proof, invite the verdict where taste or approval is required, and correct your own claim before Tyson has to. A confident wrong claim costs far more than an honest “not there yet.”
 
-Technical data is available on demand, not used as decorative jargon.
+15. **Durable Memory:** Record only verified, reusable truths. Do not write a success report while the result is still moving. When work changes a durable DSP rule, verdict, tool path, or dead end, update the pointer in `FILTER_NOTEBOOK.md` in the same commit. Remove or correct stale claims as soon as they are disproven.
 
-## Proof gates
-
-Before UI implementation, prove:
-
-- no-op load/save is byte-identical;
-- a declared edit changes only declared words/corners;
-- raw body and JSON `packedWords` converge to identical packed corners;
-- real-root rows cannot enter the conjugate editor silently;
-- plots use packed/runtime-decoded coefficients and a shared dB scale;
-- raw audio is not replaced by per-render normalization;
-- body/cart parity is mandatory;
-- zero unstable and zero nonfinite sampled rows;
-- sessions and proof bundles are versioned and reproducible.
-
-Call grid results sampled certification, never continuum proof.
-
-## Work discipline
-
-Inspect Git state and concurrent processes before editing. Work only in
-`C:\Users\hooki\df2-workstation`. Keep one scoped change per verification step.
-Do not modify model memory, lockfiles, docs, or unrelated files as a side effect.
-
-Use claim labels when needed:
-
-- `OBSERVED`: file, test, artifact, or runtime probe proves it.
-- `INFERRED`: useful but not proven.
-- `UNKNOWN`: evidence is missing.
-- `REJECTED`: current evidence contradicts it.
-
-Prefer probes, diffs, plots, and audio over additional doctrine.
+16. **Finish Cleanly:** Leave the workspace with scoped changes, clean evidence, and no unrelated churn. Report the artifacts changed, the exact proofs run, the current result, and any honest remaining caveat. Ensure byte-identical no-op saves, body/cart parity, and clean Git history.

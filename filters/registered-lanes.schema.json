@@ -1,0 +1,218 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "trench/registered-lanes.schema.json",
+  "title": "TRENCH registered-lane IR",
+  "description": "The authoring layer between source evidence and geometry.json. A body is a six-lane animation with four keyframes: lane identity is stable across all four corners; nothing is sorted, matched, repaired, normalized, or derived. Corner order is exactly M0_Q0, M100_Q0, M0_Q100, M100_Q100. Compiled to geometry.json by tools/register_lanes.py emit, and to .body240 exclusively through tools/filter_cli pack.",
+  "type": "object",
+  "required": ["schema_version", "name", "corner_order", "secondary_axis", "stage_plan", "lanes"],
+  "additionalProperties": false,
+  "properties": {
+    "schema_version": { "const": 1 },
+    "name": { "type": "string", "minLength": 1 },
+    "corner_order": {
+      "const": ["M0_Q0", "M100_Q0", "M0_Q100", "M100_Q100"]
+    },
+    "secondary_axis": {
+      "type": "object",
+      "required": ["authored", "note"],
+      "additionalProperties": false,
+      "properties": {
+        "authored": {
+          "const": true,
+          "description": "Q100 is a second authored pose. A document that derived Q100 may not claim authored=true; there is no other accepted value — derived Q100 is rejected."
+        },
+        "note": { "type": "string", "minLength": 1 }
+      }
+    },
+    "source_catalog": {
+      "type": ["string", "null"],
+      "description": "Optional path to a source-catalog.schema.json catalog. When set, every non-null candidate.catalog_record must resolve in it and must not be a study_reference."
+    },
+    "stage_plan": {
+      "type": "array",
+      "minItems": 6,
+      "maxItems": 6,
+      "items": {
+        "type": "object",
+        "required": ["slot", "lane_id", "role", "law", "topology", "pole_zero_relation", "limits"],
+        "additionalProperties": false,
+        "properties": {
+          "slot": { "type": "integer", "minimum": 0, "maximum": 5 },
+          "lane_id": { "type": "string", "pattern": "^[a-z0-9][a-z0-9._-]*$" },
+          "role": { "type": "string", "minLength": 1 },
+          "law": {
+            "type": "string",
+            "enum": ["local_peak_notch", "high_zero_cliff", "low_zero_sub_cut", "free"]
+          },
+          "topology": {
+            "type": "string",
+            "enum": ["conjugate", "real_pair"],
+            "description": "Expected root topology for every ACTIVE assignment of this lane, all four corners. Real pairs are accepted in the IR as exact inspection data but are rejected at emit because canonical geometry stages are conjugate-only."
+          },
+          "pole_zero_relation": { "type": "string", "minLength": 1 },
+          "law_params": {
+            "type": "object",
+            "additionalProperties": { "type": "number" },
+            "description": "Law thresholds, inspectable and editable — e.g. colocate_max_octaves (local_peak_notch), min_separation_octaves (cliff/sub-cut)."
+          },
+          "analysis": {
+            "type": "object",
+            "required": ["source", "pole_band_hz", "zero_band_hz", "pole_radius", "zero_radius"],
+            "additionalProperties": false,
+            "properties": {
+              "source": {
+                "type": "string",
+                "enum": ["macro_body", "residual"],
+                "description": "Which peeled contour owns this lane. A profiler plan has exactly one macro_body lane at slot 0 and five residual lanes."
+              },
+              "pole_band_hz": {
+                "type": "array",
+                "minItems": 2,
+                "maxItems": 2,
+                "prefixItems": [
+                  { "type": "number", "minimum": 55, "maximum": 10500 },
+                  { "type": "number", "minimum": 55, "maximum": 10500 }
+                ],
+                "items": false,
+                "description": "Hard authored search bounds [minimum, maximum] for this lane's pole feature."
+              },
+              "zero_band_hz": {
+                "type": "array",
+                "minItems": 2,
+                "maxItems": 2,
+                "prefixItems": [
+                  { "type": "number", "minimum": 55, "maximum": 10500 },
+                  { "type": "number", "minimum": 55, "maximum": 10500 }
+                ],
+                "items": false,
+                "description": "Hard authored search bounds [minimum, maximum] for this lane's zero/notch feature."
+              },
+              "pole_radius": {
+                "type": "array",
+                "minItems": 2,
+                "maxItems": 2,
+                "prefixItems": [
+                  { "type": "number", "minimum": 0, "maximum": 0.9985 },
+                  { "type": "number", "minimum": 0, "maximum": 0.9985 }
+                ],
+                "items": false,
+                "description": "Hard authored pole-radius bounds [minimum, maximum]."
+              },
+              "zero_radius": {
+                "type": "array",
+                "minItems": 2,
+                "maxItems": 2,
+                "prefixItems": [
+                  { "type": "number", "minimum": 0, "maximum": 0.995 },
+                  { "type": "number", "minimum": 0, "maximum": 0.995 }
+                ],
+                "items": false,
+                "description": "Hard authored zero-radius bounds [minimum, maximum]; choose a positive minimum when the notch must survive packing."
+              }
+            },
+            "description": "Optional acoustic-profiler ownership. When present on one lane it must be authored on all six lanes; tools/register_lanes.py enforces the complete-plan law."
+          },
+          "limits": {
+            "type": "object",
+            "additionalProperties": false,
+            "properties": {
+              "max_pole_octave_step": { "type": ["number", "null"], "exclusiveMinimum": 0 },
+              "max_radius_step": { "type": ["number", "null"], "exclusiveMinimum": 0 },
+              "max_scale_step_db": { "type": ["number", "null"], "exclusiveMinimum": 0 }
+            },
+            "description": "Continuity limits across the four adjacent Morph/Q edges. null disables that check for this lane."
+          }
+        }
+      }
+    },
+    "lanes": {
+      "type": "object",
+      "minProperties": 6,
+      "maxProperties": 6,
+      "additionalProperties": {
+        "type": "object",
+        "required": ["assignments"],
+        "additionalProperties": false,
+        "properties": {
+          "assignments": {
+            "type": "object",
+            "required": ["M0_Q0", "M100_Q0", "M0_Q100", "M100_Q100"],
+            "additionalProperties": false,
+            "properties": {
+              "M0_Q0": { "$ref": "#/$defs/assignment" },
+              "M100_Q0": { "$ref": "#/$defs/assignment" },
+              "M0_Q100": { "$ref": "#/$defs/assignment" },
+              "M100_Q100": { "$ref": "#/$defs/assignment" }
+            }
+          }
+        }
+      }
+    }
+  },
+  "$defs": {
+    "conjugate_pair": {
+      "type": "object",
+      "required": ["hz", "r"],
+      "additionalProperties": false,
+      "properties": {
+        "hz": { "type": "number", "minimum": 0, "maximum": 19531.25 },
+        "r": { "type": "number", "minimum": 0 }
+      }
+    },
+    "real_pair": {
+      "type": "object",
+      "required": ["real_roots"],
+      "additionalProperties": false,
+      "properties": {
+        "real_roots": {
+          "type": "array",
+          "minItems": 2,
+          "maxItems": 2,
+          "items": { "type": "number" }
+        }
+      }
+    },
+    "root_geometry": {
+      "oneOf": [
+        { "$ref": "#/$defs/conjugate_pair" },
+        { "$ref": "#/$defs/real_pair" }
+      ]
+    },
+    "assignment": {
+      "type": "object",
+      "required": ["state", "candidate", "pole", "zero", "scale", "provenance"],
+      "additionalProperties": false,
+      "properties": {
+        "state": {
+          "type": "string",
+          "enum": ["active", "identity"],
+          "description": "identity means the EXACT identity biquad: pole {hz:0,r:0}, zero {hz:0,r:0}, scale 1.0. Inexact identity is rejected."
+        },
+        "candidate": {
+          "type": "object",
+          "required": ["catalog_record", "selector"],
+          "additionalProperties": false,
+          "properties": {
+            "catalog_record": { "type": ["string", "null"] },
+            "selector": {
+              "type": "object",
+              "description": "Whatever is needed to reproduce the extraction from the source (axis picks, frame index, fit window, ...). Opaque to the validator."
+            }
+          }
+        },
+        "pole": { "$ref": "#/$defs/root_geometry" },
+        "zero": { "$ref": "#/$defs/root_geometry" },
+        "scale": { "type": "number", "exclusiveMinimum": 0, "maximum": 4.0 },
+        "provenance": {
+          "type": "object",
+          "required": ["source", "method"],
+          "additionalProperties": true,
+          "properties": {
+            "source": { "type": "string", "minLength": 1 },
+            "method": { "type": "string", "minLength": 1 }
+          }
+        }
+      }
+    }
+  }
+}

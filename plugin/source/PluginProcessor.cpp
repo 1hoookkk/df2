@@ -148,6 +148,12 @@ PluginProcessor::PluginProcessor()
 
     dspBridge.setSpatialMode (kSpatialOff);
     dspBridge.setQSoundFallbackPan (1.0f);
+    {
+        int modelBytes = 0;
+        const auto* modelJson = BinaryData::getNamedResource ("key_model_rtneural_json", modelBytes);
+        const bool modelReady = keyDetector.loadModel (modelJson, (size_t) juce::jmax (0, modelBytes));
+        juce::Logger::writeToLog (juce::String ("key model -> ") + (modelReady ? "ready" : "FAILED"));
+    }
     apvts.addParameterListener (ParamID::body, this);
     apvts.addParameterListener (ParamID::motionOn, this);
     morphParamForGesture = apvts.getParameter (ParamID::morph);
@@ -765,7 +771,6 @@ void PluginProcessor::prepareToPlay (double sampleRate, int samplesPerBlock)
     teleportEngine.prepare (sampleRate);
     motionEngine.prepare (sampleRate);
     gestureEngine.prepare (sampleRate);
-    keyTracker.prepare (sampleRate);
     outputGain.reset (sampleRate, 0.02); // 20 ms ramp
     const float outDb = apvts.getRawParameterValue (ParamID::output)->load();
     outputGain.setCurrentAndTargetValue (juce::Decibels::decibelsToGain (outDb));
@@ -782,11 +787,16 @@ void PluginProcessor::prepareToPlay (double sampleRate, int samplesPerBlock)
 
     captureRing.prepare (sampleRate, kCaptureMaxSeconds);
     dryRing.prepare (sampleRate, kCaptureMaxSeconds);
+    // MIX blend: align the dry copy to the island's reported latency.
+    punchBlend.prepare (sampleRate, fixedRateIsland.getLatencySamples(), samplesPerBlock);
+    punchBlend.setLatency (fixedRateIsland.getLatencySamples());
+    keyDetector.prepare (sampleRate);
 }
 
 void PluginProcessor::releaseResources()
 {
     dspBridge.reset();
+    keyDetector.reset();
 }
 
 bool PluginProcessor::isBusesLayoutSupported (const BusesLayout& layouts) const
@@ -863,6 +873,10 @@ void PluginProcessor::processBlock (juce::AudioBuffer<float>& buffer, juce::Midi
         if (inPk < 1.0e-4f)
             generateDemoBlock (buffer);
     }
+
+    // Capture dry input before any product processing. This is a preallocated
+    // copy only; resampling, FFT, and inference run from timerCallback.
+    keyDetector.pushAudio (buffer);
 
     // Dry (pre-filter) source for the Take-tray waveform previews.
     if (buffer.getNumSamples() > 0 && ! captureFrozen.load (std::memory_order_relaxed))
@@ -1229,13 +1243,14 @@ void PluginProcessor::processBlock (juce::AudioBuffer<float>& buffer, juce::Midi
     }
 #endif // TRENCH_PLAYER_EXTRAS
 
-    // AMOUNT — honest dose. A coefficient-domain blend toward identity inside
-    // the engine (see trench-core FilterEngine::set_amount), not a post-filter
-    // audio crossfade — so the on-screen curve (read from the same cascade
-    // coefficients) moves with it. Ramped the same way morph/q already are,
-    // via Cascade's own per-block coefficient ramp — no separate JUCE-side
-    // smoothing needed.
-    params.amount = juce::jlimit (0.0f, 1.0f, apvts.getRawParameterValue (ParamID::amount)->load());
+    // MIX — punch-preserving parallel blend (was the serial AMOUNT dose). The
+    // engine now always runs FULL imprint, so the on-screen curve always shows the
+    // whole filter (it does NOT move with MIX). The dry/wet punch blend happens
+    // post-island at host rate (see punchBlend.blend below): the sub and the
+    // transients stay dry while the melodic body comes in early, so 25% reads as
+    // "the drum impact with a TRENCH melody wrapped around it", not a faint effect.
+    const float mixTarget = juce::jlimit (0.0f, 1.0f, apvts.getRawParameterValue (ParamID::amount)->load());
+    params.amount = 1.0f;
 
     // RATE — morph approach time (US5170369's selectable menu). AUTO picks
     // per motion: fast divisions articulate (TIGHT 13 ms — ~96% of full
@@ -1259,16 +1274,24 @@ void PluginProcessor::processBlock (juce::AudioBuffer<float>& buffer, juce::Midi
         }
     }
 
-    // KEY TRACKING — the body's resonances follow the input's note (pitch-class
-    // snap, C anchor, ±6 semitones). The buffer still holds dry input here; the
-    // engine's coeff ramp glides each transpose exactly like a morph move.
-    if (apvts.getRawParameterValue (ParamID::keyTrack)->load() > 0.5f)
-        params.pitchRatio = keyTracker.process (buffer.getReadPointer (0), buffer.getNumSamples());
-    else
-        params.pitchRatio = 1.0f;
+    // KEY SNAP — keyTrack may update this persisted choice on the message
+    // thread; the Rust owner still receives one ordinary manual scale index.
+    // Auto detection therefore never creates a second DSP path.
+    params.pitchRatio = 1.0f;
+    params.keySnap = juce::jlimit (0, 24,
+        (int) apvts.getRawParameterValue (ParamID::keySnap)->load());
+
+    // Capture the pristine dry BEFORE the island overwrites the buffer, then blend
+    // it back in after — the dry path is latency-aligned to the island inside blend().
+    punchBlend.captureDry (buffer.getArrayOfReadPointers(), buffer.getNumChannels(), buffer.getNumSamples());
 
     // Always. NO FILTER is a body (exact identity), not a bypass — see loadBody().
     fixedRateIsland.process (buffer, dspBridge, params);
+
+    // MIX — parallel punch blend of the aligned dry against the full-imprint wet.
+    // Wraps the FILTER stage (the thing that smears transients); the downstream
+    // desk/output/SLAM then finish the mixed bus.
+    punchBlend.blend (buffer.getArrayOfWritePointers(), buffer.getNumChannels(), buffer.getNumSamples(), mixTarget);
 
     // GUARD — MOVE output safety/compensation. The gesture's GUARD lane ducks the wet
     // output (up to kGuardMaxDb) at the gesture's peak so a build/suck/pulse cannot throw
@@ -1960,6 +1983,53 @@ void PluginProcessor::timerCallback()
     // Always (message thread): release the body the audio thread retired after a
     // swap, so a body switch's old cartridge memory is freed promptly.
     dspBridge.reclaim();
+
+    trench::KeyDetector::Result keyResult;
+    if (keyDetector.analyse (keyResult))
+    {
+        for (size_t index = 0; index < keyProbabilitySum.size(); ++index)
+            keyProbabilitySum[index] += keyResult.probabilities[index];
+        ++keyProbabilityWindows;
+
+        // Passive suggestions use the measured three-window gate. They never
+        // rewrite Key Snap: the listener confirms one from the menu first.
+        if (keyProbabilityWindows >= 3)
+        {
+            std::array<float, 24> average {};
+            for (size_t index = 0; index < average.size(); ++index)
+                average[index] = keyProbabilitySum[index] / (float) keyProbabilityWindows;
+            int best = 0, second = 1;
+            if (average[(size_t) second] > average[(size_t) best])
+                std::swap (best, second);
+            for (int index = 2; index < (int) average.size(); ++index)
+            {
+                if (average[(size_t) index] > average[(size_t) best])
+                {
+                    second = best;
+                    best = index;
+                }
+                else if (average[(size_t) index] > average[(size_t) second])
+                {
+                    second = index;
+                }
+            }
+            const float confidence = average[(size_t) best];
+            const float margin = confidence - average[(size_t) second];
+            keyConfidenceForUi.store (confidence, std::memory_order_relaxed);
+            if (confidence >= 0.25f && margin >= 0.05f)
+            {
+                detectedKeyForUi.store (best, std::memory_order_relaxed);
+                detectedAltKeyForUi.store (second, std::memory_order_relaxed);
+            }
+            else
+            {
+                detectedKeyForUi.store (-1, std::memory_order_relaxed);
+                detectedAltKeyForUi.store (-1, std::memory_order_relaxed);
+            }
+            keyProbabilitySum.fill (0.0f);
+            keyProbabilityWindows = 0;
+        }
+    }
 
 #ifndef TRENCH_PLAYER_DIAGNOSTICS
     return;

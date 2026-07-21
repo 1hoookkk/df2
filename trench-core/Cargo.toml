@@ -39,6 +39,14 @@ name = "tf_harness"
 path = "src/bin/tf_harness_routed.rs"
 
 [[bin]]
+name = "fit-candidates"
+path = "src/bin/fit_candidates.rs"
+
+[[bin]]
+name = "fit-complex-candidates"
+path = "src/bin/fit_complex_candidates.rs"
+
+[[bin]]
 name = "rate-ab"
 path = "src/bin/rate_ab.rs"
 

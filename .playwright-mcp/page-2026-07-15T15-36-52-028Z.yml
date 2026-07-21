@@ -1,0 +1,50 @@
+- generic [active] [ref=e1]:
+  - banner [ref=e2]:
+    - generic [ref=e3]:
+      - heading "Trench Cull" [level=1] [ref=e4]
+      - generic [ref=e5]: A/B elimination
+    - generic [ref=e6]:
+      - generic [ref=e7]:
+        - generic [ref=e8]: "132"
+        - text: in play
+      - generic [ref=e9]:
+        - generic [ref=e10]: "0"
+        - text: kept
+      - generic [ref=e11]:
+        - generic [ref=e12]: "0"
+        - text: killed
+    - generic [ref=e13]:
+      - generic [ref=e14]: Round 1
+      - generic [ref=e15]: duel 1 / 66
+  - main [ref=e16]:
+    - generic [ref=e17]:
+      - generic [ref=e18]:
+        - generic [ref=e19]: Sound A
+        - generic [ref=e20]: three_layer_vocal_uw_to_iy_male_low_shelf
+        - generic [ref=e21]:
+          - generic [ref=e22]: three
+          - generic [ref=e23]: M 0.75 Â· Q 1.00
+        - button "â–¶ Play" [ref=e24] [cursor=pointer]:
+          - generic [ref=e25]: â–¶
+          - generic [ref=e26]: Play
+        - generic [ref=e28]:
+          - button "Keep" [ref=e29] [cursor=pointer]
+          - button "Kill" [ref=e30] [cursor=pointer]
+      - generic [ref=e31]:
+        - generic [ref=e32]: Sound B
+        - generic [ref=e33]: three_layer_tube_oo_50cm_to_oo_10cm
+        - generic [ref=e34]:
+          - generic [ref=e35]: three
+          - generic [ref=e36]: M 1.00 Â· Q 1.00
+        - button "â–¶ Play" [ref=e37] [cursor=pointer]:
+          - generic [ref=e38]: â–¶
+          - generic [ref=e39]: Play
+        - generic [ref=e41]:
+          - button "Keep" [ref=e42] [cursor=pointer]
+          - button "Kill" [ref=e43] [cursor=pointer]
+    - button "Skip (both survive) â–¸" [ref=e44] [cursor=pointer]
+    - generic [ref=e45]:
+      - button "â†© Undo" [disabled] [ref=e46] [cursor=pointer]
+      - button "Copy keeps" [ref=e47] [cursor=pointer]
+      - button "Reset" [ref=e48] [cursor=pointer]
+    - generic [ref=e49]: "Each clip: drums through the hotspot, the morph move, then the Q bloom â€” level-matched. Keep the ones with real movement; kill the dead or one-note ones. Undecided come back next round."

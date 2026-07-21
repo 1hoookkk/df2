@@ -6,13 +6,14 @@
 #include "TrenchBodyRoster.h"
 #include "dsp/TrenchDspBridge.h"
 #include "dsp/FixedRateTrenchIsland.h"
-#include "dsp/KeyTrackDetector.h"
 #include "dsp/TeleportEngine.h"
 #include "dsp/MotionEngine.h"
 #include "dsp/GestureEngine.h"
+#include "dsp/KeyDetector.h"
 #include "SmartMotion.h"
 #include "dsp/TrenchCleanBody.h"
 #include "dsp/CaptureRing.h"
+#include "dsp/PunchBlend.h"
 #include "dsp/CapturePlan.h"
 #include "dsp/TakeWriter.h"
 
@@ -69,6 +70,10 @@ public:
     // longer exists now the leveller owns level. See processBlock for why "count the
     // clipped samples" cannot work here.
     float getOutClipForUi() const noexcept { return outClipForUi.load (std::memory_order_relaxed); }
+    bool isKeyModelReady() const noexcept { return keyDetector.isModelReady(); }
+    int getDetectedKeyForUi() const noexcept { return detectedKeyForUi.load (std::memory_order_relaxed); }
+    int getDetectedAltKeyForUi() const noexcept { return detectedAltKeyForUi.load (std::memory_order_relaxed); }
+    float getKeyConfidenceForUi() const noexcept { return keyConfidenceForUi.load (std::memory_order_relaxed); }
 
     // Motion pattern access (message-thread safe). The UI edits the pattern
     // via setMotionPattern; the audio thread snapshots it under patternLock.
@@ -233,6 +238,7 @@ private:
     trench::TeleportEngine        teleportEngine;
     trench::MotionEngine          motionEngine;
     trench::GestureEngine         gestureEngine;   // MOVE (Page 2) — Body Gesture phrases
+    trench::KeyDetector           keyDetector;
 
     int currentProgram = 0;   // selected factory MOVE preset (host program API)
 
@@ -257,7 +263,6 @@ private:
     float bakedDetState1[2] { 0.0f, 0.0f };        // cascaded one-pole detector states
     float bakedDetState2[2] { 0.0f, 0.0f };        // (audio thread only)
 
-    trench::KeyTrackDetector keyTracker;           // KEY TRACKING pitch follower (audio thread only)
     std::atomic<int>  loadedSecondaryTarget { 0 };
     std::atomic<int>  loadedMorphTaper { 0 };
     std::atomic<bool> lastLoadOk { true };
@@ -280,6 +285,11 @@ private:
     std::atomic<float> effectiveQForUi { 0.0f };
     std::atomic<bool> morphModulatedForUi { false };
     std::atomic<bool> qModulatedForUi { false };
+    std::atomic<int> detectedKeyForUi { -1 };
+    std::atomic<int> detectedAltKeyForUi { -1 };
+    std::atomic<float> keyConfidenceForUi { 0.0f };
+    std::array<float, 24> keyProbabilitySum {};
+    int keyProbabilityWindows = 0;
 
     // Motion pattern: UI writes via setMotionPattern (message thread) under
     // patternLock; audio thread snapshots it. The blob is mirrored on
@@ -368,6 +378,9 @@ private:
     // the real engine to draw the waveform thumbnail (visual only — drag-out still uses
     // the heard wet buffer, never this).
     trench::CaptureRing dryRing;
+    // MIX — punch-preserving parallel dry/wet (replaces the serial AMOUNT dose).
+    // Blends the latency-aligned pristine dry against the full-imprint island output.
+    trench::PunchBlend punchBlend;
     std::atomic<bool> captureFrozen { false };   // true while Page 2 is open (set by the editor)
     bool renderRecipe (const unsigned char* body, float morph, float q, float slam,
                        bool qsound, double seconds, juce::AudioBuffer<float>& out);

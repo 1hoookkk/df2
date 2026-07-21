@@ -1,23 +1,30 @@
+//! TRENCH Surface Forge — smallest useful native surface over the retained
+//! `AppState` API. One toolbar plus four working panes: travel pad,
+//! packed/runtime response, lane registration locker, edit/export.
+//!
+//! M50_Q50 is a view coordinate, never a stored keyframe. Tension (exact
+//! interior solve) is disabled in this build: no core-owned TensionRequest
+//! path exists yet, and the frontend must not fake exact interior edits.
+
 use eframe::egui::{
     self, Align, Align2, Color32, FontId, Layout, Pos2, Rect, Response, RichText, Rounding, Sense,
     Stroke, Vec2,
 };
 use rodio::{Decoder, OutputStream, Sink, Source};
-use std::collections::BTreeMap;
 use std::fs::{self, File};
-use std::io::{BufReader, Cursor};
+use std::io::BufReader;
 use std::path::{Path, PathBuf};
 use std::sync::{Arc, Mutex};
 use std::time::Duration;
 use trench_core::cartridge::Cartridge;
 use trench_core::engine::{FilterEngine, InputMode, SpatialMode};
-use trench_core::response::ResponseCurve;
+use trench_core::response::biquad_stage_mag_db;
 use trench_core::stage_law::STAGE_SR;
 use trench_workstation::app::AppState;
 use trench_workstation::model::{
-    render_audio_at, AudioMode, EditField, EditRequest, Excitation, RootGeometry, ScreenData,
-    Session, StageSnapshot,
+    AudioMode, EditField, EditRequest, RootGeometry, ScreenData, StageSnapshot,
 };
+use trench_workstation::source_xml::SourceEndpoint;
 
 const BG: Color32 = Color32::from_rgb(18, 20, 23);
 const PANEL: Color32 = Color32::from_rgb(24, 27, 31);
@@ -29,26 +36,11 @@ const ACCENT: Color32 = Color32::from_rgb(70, 184, 151);
 const ACCENT_SOFT: Color32 = Color32::from_rgb(42, 94, 82);
 const WARN: Color32 = Color32::from_rgb(232, 173, 81);
 const ERROR: Color32 = Color32::from_rgb(231, 102, 108);
+/// Fixed dB scale for the whole session. Never re-normalized per render.
 const DB_MIN: f64 = -48.0;
 const DB_MAX: f64 = 24.0;
-const CORNER_UI_LABELS: [&str; 4] = ["M0 Q0", "M100 Q0", "M0 Q100", "M100 Q100"];
-
-#[derive(Clone, Copy, PartialEq, Eq)]
-enum Triage {
-    Keep,
-    Repair,
-    Reject,
-}
-
-impl Triage {
-    fn label(self) -> &'static str {
-        match self {
-            Self::Keep => "KEEP",
-            Self::Repair => "REPAIR",
-            Self::Reject => "REJECT",
-        }
-    }
-}
+const CORNER_LABELS: [&str; 4] = ["M0_Q0", "M100_Q0", "M0_Q100", "M100_Q100"];
+const AUDITION_BLOCK: usize = 64;
 
 #[derive(Clone, Copy, PartialEq, Eq)]
 enum RootSide {
@@ -56,55 +48,146 @@ enum RootSide {
     Zero,
 }
 
-#[derive(Clone, Copy, PartialEq, Eq)]
-enum RootHandle {
-    Conjugate(RootSide),
-    Real(RootSide, bool),
-}
-
-#[derive(Clone, Copy, PartialEq, Eq, Debug)]
-enum Transport {
-    Sweeping,
-    Held,
+impl RootSide {
+    fn label(self) -> &'static str {
+        match self {
+            Self::Pole => "pole",
+            Self::Zero => "zero",
+        }
+    }
 }
 
 #[derive(Clone, Copy)]
-struct CaptureInfo {
+struct SideLocks {
+    pole: bool,
+    zero: bool,
+}
+
+impl SideLocks {
+    const LOCKED: Self = Self {
+        pole: true,
+        zero: true,
+    };
+
+    fn get(&self, side: RootSide) -> bool {
+        match side {
+            RootSide::Pole => self.pole,
+            RootSide::Zero => self.zero,
+        }
+    }
+
+    fn toggle(&mut self, side: RootSide) {
+        match side {
+            RootSide::Pole => self.pole = !self.pole,
+            RootSide::Zero => self.zero = !self.zero,
+        }
+    }
+}
+
+/// Fields the edit pane can target. Conjugate fields exist only for
+/// conjugate rows; real-root rows only ever expose their explicit roots.
+#[derive(Clone, Copy, PartialEq, Eq, Debug)]
+enum PaneField {
+    PoleHz,
+    PoleRadius,
+    PoleRootA,
+    PoleRootB,
+    ZeroHz,
+    ZeroRadius,
+    ZeroRootA,
+    ZeroRootB,
+    Scale,
+}
+
+impl PaneField {
+    fn side(self) -> Option<RootSide> {
+        match self {
+            Self::PoleHz | Self::PoleRadius | Self::PoleRootA | Self::PoleRootB => {
+                Some(RootSide::Pole)
+            }
+            Self::ZeroHz | Self::ZeroRadius | Self::ZeroRootA | Self::ZeroRootB => {
+                Some(RootSide::Zero)
+            }
+            Self::Scale => None,
+        }
+    }
+
+    #[cfg(test)]
+    fn is_real_root(self) -> bool {
+        matches!(
+            self,
+            Self::PoleRootA | Self::PoleRootB | Self::ZeroRootA | Self::ZeroRootB
+        )
+    }
+
+    fn label(self) -> &'static str {
+        match self {
+            Self::PoleHz => "Pole freq (oct)",
+            Self::PoleRadius => "Pole radius (Δ)",
+            Self::PoleRootA => "Pole root A (abs)",
+            Self::PoleRootB => "Pole root B (abs)",
+            Self::ZeroHz => "Zero freq (oct)",
+            Self::ZeroRadius => "Zero radius (Δ)",
+            Self::ZeroRootA => "Zero root A (abs)",
+            Self::ZeroRootB => "Zero root B (abs)",
+            Self::Scale => "Scale (oct)",
+        }
+    }
+
+    fn delta_hint(self) -> &'static str {
+        match self {
+            Self::PoleHz | Self::ZeroHz | Self::Scale => "octaves",
+            Self::PoleRadius | Self::ZeroRadius => "Δ radius",
+            _ => "Δ value",
+        }
+    }
+}
+
+/// Topology-filtered field list: a real-root row can never enter a
+/// conjugate editor from this surface.
+fn fields_for_geometry(geometry: &RootGeometry, side: RootSide) -> Vec<PaneField> {
+    match (geometry, side) {
+        (RootGeometry::Conjugate { .. }, RootSide::Pole) => {
+            vec![PaneField::PoleHz, PaneField::PoleRadius]
+        }
+        (RootGeometry::RealPair { .. }, RootSide::Pole) => {
+            vec![PaneField::PoleRootA, PaneField::PoleRootB]
+        }
+        (RootGeometry::Conjugate { .. }, RootSide::Zero) => {
+            vec![PaneField::ZeroHz, PaneField::ZeroRadius]
+        }
+        (RootGeometry::RealPair { .. }, RootSide::Zero) => {
+            vec![PaneField::ZeroRootA, PaneField::ZeroRootB]
+        }
+        (RootGeometry::Degenerate, _) => Vec::new(),
+    }
+}
+
+fn available_fields(stage: &StageSnapshot) -> Vec<PaneField> {
+    let mut fields = fields_for_geometry(&stage.pole, RootSide::Pole);
+    fields.extend(fields_for_geometry(&stage.zero, RootSide::Zero));
+    fields.push(PaneField::Scale);
+    fields
+}
+
+// ---------------------------------------------------------------------------
+// Audition monitor: UI thread owns AppState; the rodio thread owns the
+// FilterEngine. The only things crossing the boundary are bounded scalar
+// Morph/Q updates and a body swap (fresh engine) at a block boundary.
+// ---------------------------------------------------------------------------
+
+struct AuditionControl {
     morph: f64,
     q: f64,
+    reload: Option<FilterEngine>,
 }
 
-/// Shared control block between the egui main thread (writer of morph/q/transport)
-/// and the rodio audio thread (writer of the reported playhead/time). The audio
-/// engine itself is owned by the `AuditionStream` on the audio thread; only this
-/// small struct crosses the boundary.
-struct AuditionControl {
-    // GUI writes / audio reads:
-    q: f64,
-    morph: f64, // HELD target and sweep resume point
-    transport: Transport,
-    sweep_len_frames: u64,
-    reload: Option<FilterEngine>, // swap a fresh engine in at the next block boundary
-    // audio writes / GUI reads:
-    playhead: f64,
-    time_frames: u64,
-    held_at_end: bool,
-}
-
-const AUDITION_BLOCK: usize = 64;
-
-/// Continuous, looping audition source: owns a retained `FilterEngine` and the
-/// decoded WAV, and processes real audio one `AUDITION_BLOCK` at a time reading
-/// live Morph/Q/transport from `control`. This is the real-time streaming host
-/// the engine was already built for (`process_block` takes morph/q per block).
 struct AuditionStream {
     engine: FilterEngine,
     wav: Arc<Vec<f32>>,
-    wav_cursor: usize, // monotonic frames read (wraps mod wav.len for looping)
-    sweep_pos: u64,    // morph-clock position in frames
-    last_transport: Transport,
+    cursor: usize,
     control: Arc<Mutex<AuditionControl>>,
-    buf: Vec<f32>, // processed output block (yield source)
+    buf: Vec<f32>,
     right: Vec<f32>,
     pos: usize,
 }
@@ -112,71 +195,21 @@ struct AuditionStream {
 impl AuditionStream {
     fn refill(&mut self) {
         let wav_len = self.wav.len().max(1);
-        // ponytail: one Mutex lock per 64-sample block (~1.6 ms); go lock-free
-        // atomics only if it ever xruns.
-        let (q, morph_target, transport, sweep_len, reload) = {
+        let (morph, q, reload) = {
             let mut control = self.control.lock().unwrap();
-            (
-                control.q,
-                control.morph,
-                control.transport,
-                control.sweep_len_frames.max(1),
-                control.reload.take(),
-            )
+            (control.morph, control.q, control.reload.take())
         };
         if let Some(engine) = reload {
-            // Fresh engine: filter state reset deterministically; WAV cursor and
-            // morph are preserved because they live here, not in the engine.
-            // ponytail: dropping the old engine frees on the audio thread — fine
-            // for a desktop monitor; hand it back to the UI thread if it glitches.
             self.engine = engine;
         }
-
         self.buf.clear();
         for _ in 0..AUDITION_BLOCK {
-            self.buf.push(self.wav[self.wav_cursor % wav_len]);
-            self.wav_cursor += 1;
+            self.buf.push(self.wav[self.cursor % wav_len]);
+            self.cursor += 1;
         }
         self.right.clear();
         self.right.extend_from_slice(&self.buf);
-
-        let mut latched_end = false;
-        let morph = match transport {
-            Transport::Sweeping => {
-                if self.last_transport == Transport::Held {
-                    // Resume or scrub: re-anchor the sweep clock to the morph.
-                    self.sweep_pos = (morph_target * sweep_len as f64) as u64;
-                }
-                self.sweep_pos = self.sweep_pos.saturating_add(AUDITION_BLOCK as u64);
-                if self.sweep_pos >= sweep_len {
-                    latched_end = true;
-                    1.0
-                } else {
-                    self.sweep_pos as f64 / sweep_len as f64
-                }
-            }
-            Transport::Held => morph_target,
-        };
-        self.last_transport = if latched_end {
-            Transport::Held
-        } else {
-            transport
-        };
-
-        self.engine
-            .process_block(&mut self.buf, &mut self.right, morph, q);
-
-        let mut control = self.control.lock().unwrap();
-        control.playhead = morph;
-        control.time_frames = self.wav_cursor as u64;
-        if matches!(transport, Transport::Sweeping) {
-            control.morph = morph; // so a later HOLD freezes exactly here
-        }
-        if latched_end {
-            control.transport = Transport::Held;
-            control.morph = 1.0;
-            control.held_at_end = true;
-        }
+        self.engine.process_block(&mut self.buf, &mut self.right, morph, q);
         self.pos = 0;
     }
 }
@@ -212,121 +245,113 @@ impl Source for AuditionStream {
     }
 }
 
-struct StudioApp {
-    repo_root: PathBuf,
+// ---------------------------------------------------------------------------
+// Packed-runtime pole/zero markers, factored from probe rows. Never from
+// geometry JSON, never from authored structs: the plotted marker is what the
+// packed runtime actually decodes to at the current Morph/Q.
+// ---------------------------------------------------------------------------
+
+#[derive(Clone, Copy, Debug, PartialEq)]
+enum RootMark {
+    Conjugate { hz: f64, radius: f64 },
+    Real([f64; 2]),
+    Degenerate,
+}
+
+fn roots_from_probe_row(row: &[f64; 5], side: RootSide) -> RootMark {
+    // H(z) = (b0 + b1 z^-1 + b2 z^-2) / (1 + a1 z^-1 + a2 z^-2)
+    let (c2, c1, c0) = match side {
+        RootSide::Pole => (1.0, row[3], row[4]),
+        RootSide::Zero => (row[0], row[1], row[2]),
+    };
+    if c2.abs() < 1e-12 {
+        return RootMark::Degenerate;
+    }
+    let discriminant = c1 * c1 - 4.0 * c2 * c0;
+    if discriminant < 0.0 {
+        let re = -c1 / (2.0 * c2);
+        let im = (-discriminant).sqrt() / (2.0 * c2.abs());
+        let radius = (re * re + im * im).sqrt();
+        let hz = im.atan2(re) / std::f64::consts::TAU * STAGE_SR;
+        RootMark::Conjugate { hz, radius }
+    } else {
+        let root = discriminant.sqrt();
+        let a = (-c1 + root) / (2.0 * c2);
+        let b = (-c1 - root) / (2.0 * c2);
+        if a.abs() < 1e-9 && b.abs() < 1e-9 {
+            RootMark::Degenerate
+        } else {
+            RootMark::Real([a, b])
+        }
+    }
+}
+
+// ---------------------------------------------------------------------------
+// App
+// ---------------------------------------------------------------------------
+
+struct ForgeApp {
     state: AppState,
-    original_session: Session,
-    original_audit: trench_workstation::model::SampledAudit,
-    showing_original: bool,
-    bodies: Vec<PathBuf>,
-    selected_body: Option<PathBuf>,
-    query: String,
-    triage: BTreeMap<PathBuf, Triage>,
+    body_path: Option<PathBuf>,
+    locks: [[SideLocks; 6]; 4],
+    corner_mask: [bool; 4],
     mode: AudioMode,
-    inspect: bool,
-    dirty: bool,
     status: String,
     status_error: bool,
-    locks: [[StageLocks; 6]; 4],
+    receipt: String,
     stream: Option<OutputStream>,
     sink: Option<Sink>,
-    active_root: Option<RootHandle>,
-    wav_sources: Vec<PathBuf>,
-    selected_wav: usize,
-    audition: Option<Arc<Mutex<AuditionControl>>>,
-    audition_q: f64,
-    captured: [Option<CaptureInfo>; 4],
+    control: Option<Arc<Mutex<AuditionControl>>>,
+    wav_path: Option<PathBuf>,
+    actor_wavs: Vec<PathBuf>,
+    actor_wav: usize,
+    recipe_sel: usize,
+    source_sel: usize,
+    endpoint_high: bool,
+    field: PaneField,
+    delta: f64,
+    drag: Option<RootSide>,
 }
 
-#[derive(Clone, Copy)]
-struct StageLocks {
-    pole: bool,
-    zero: bool,
-}
-
-impl StageLocks {
-    const LOCKED: Self = Self {
-        pole: true,
-        zero: true,
-    };
-}
-
-impl StudioApp {
+impl ForgeApp {
     fn new(repo_root: PathBuf) -> Result<Self, String> {
-        let mut state = AppState::new(&repo_root).map_err(|error| error.to_string())?;
-        let mut bodies = fs::read_dir(repo_root.join("filters").join("bodies"))
-            .map_err(|error| format!("filter library could not be opened: {error}"))?
-            .filter_map(Result::ok)
-            .map(|entry| entry.path())
-            .filter(|path| path.extension().and_then(|value| value.to_str()) == Some("body240"))
-            .collect::<Vec<_>>();
-        bodies.sort_by_key(|path| body_name(path).to_lowercase());
-        let selected_body = bodies.first().cloned();
-        let (status, status_error) = if let Some(path) = &selected_body {
-            match state.load_body_as_session(path) {
-                Ok(_) => {
-                    state
-                        .set_morph_q(0.0, 0.0)
-                        .map_err(|error| error.to_string())?;
-                    (
-                        format!("Loaded {} · poles and zeros locked", body_name(path)),
-                        false,
-                    )
-                }
-                Err(error) => (error.to_string(), true),
-            }
-        } else {
-            ("No filter bodies found".to_owned(), true)
-        };
-        let original_session = state.session.clone();
-        let original_audit = state.audit.clone();
-        let mut wav_sources = Vec::new();
-        collect_wavs(&repo_root.join("wav-source-library"), &mut wav_sources)
-            .map_err(|error| format!("WAV library could not be read: {error}"))?;
-        wav_sources.sort();
-        let selected_wav = wav_sources
-            .iter()
-            .position(|path| body_name(path).to_lowercase().contains("cello"))
-            .unwrap_or(0);
-        Ok(Self {
-            repo_root,
+        let state = AppState::new(&repo_root).map_err(|error| error.to_string())?;
+        let mut app = Self {
             state,
-            original_session,
-            original_audit,
-            showing_original: true,
-            bodies,
-            selected_body,
-            query: String::new(),
-            triage: BTreeMap::new(),
+            body_path: None,
+            locks: [[SideLocks::LOCKED; 6]; 4],
+            corner_mask: [true; 4],
             mode: AudioMode::BodySolo,
-            inspect: false,
-            dirty: false,
-            status,
-            status_error,
-            locks: [[StageLocks::LOCKED; 6]; 4],
+            status: "Silent · open a body or audition the starter".to_owned(),
+            status_error: false,
+            receipt: String::new(),
             stream: None,
             sink: None,
-            active_root: None,
-            wav_sources,
-            selected_wav,
-            audition: None,
-            audition_q: 0.0,
-            captured: [None; 4],
-        })
+            control: None,
+            wav_path: first_audition_wav(&repo_root),
+            actor_wavs: collect_actor_wavs(&repo_root),
+            actor_wav: 0,
+            recipe_sel: 0,
+            source_sel: 0,
+            endpoint_high: false,
+            field: PaneField::PoleHz,
+            delta: 0.0,
+            drag: None,
+        };
+        if let Some(path) = first_body(&repo_root) {
+            app.load_body(path);
+        } else {
+            app.state
+                .set_morph_q(0.0, 0.0)
+                .map_err(|error| error.to_string())?;
+        }
+        Ok(app)
     }
 
+    /// Screen honors a pending preview so plots/markers/readouts show the
+    /// exact packed candidate; the committed audit stays attached.
     fn screen(&self) -> Result<ScreenData, String> {
-        if self.showing_original {
-            self.original_session
-                .screen_with_audit(
-                    self.state.selected_corner,
-                    self.state.selected_lane,
-                    self.state.morph,
-                    self.state.q,
-                    self.original_audit.clone(),
-                )
-                .map_err(|error| error.to_string())
-        } else if let Some(preview) = &self.state.pending_edit {
+        if let Some(preview) = &self.state.pending_edit {
             preview
                 .after_session
                 .screen_with_audit(
@@ -352,21 +377,37 @@ impl StudioApp {
         self.status_error = true;
     }
 
+    /// Travel pad is a read/audition coordinate. It writes two f64 fields and
+    /// the audition control block; it never touches session body bytes.
+    fn set_pad(&mut self, morph: f64, q: f64) {
+        let morph = morph.clamp(0.0, 1.0);
+        let q = q.clamp(0.0, 1.0);
+        if let Err(error) = self.state.set_morph_q(morph, q) {
+            self.set_error(error.to_string());
+            return;
+        }
+        if let Some(control) = &self.control {
+            let mut control = control.lock().unwrap();
+            control.morph = morph;
+            control.q = q;
+        }
+    }
+
     fn load_body(&mut self, path: PathBuf) {
-        self.stop_audio();
+        // Frictionless audition: keep the pad position and keep the monitor
+        // playing across a body switch — same listen point, new body.
         match self.state.load_body_as_session(&path) {
             Ok(_) => {
-                if let Err(error) = self.state.set_morph_q(0.0, 0.0) {
-                    self.set_error(error.to_string());
-                    return;
+                self.locks = [[SideLocks::LOCKED; 6]; 4];
+                self.drag = None;
+                self.receipt.clear();
+                self.body_path = Some(path.clone());
+                if let Some(control) = &self.control {
+                    let mut control = control.lock().unwrap();
+                    control.morph = self.state.morph;
+                    control.q = self.state.q;
                 }
-                self.selected_body = Some(path.clone());
-                self.original_session = self.state.session.clone();
-                self.original_audit = self.state.audit.clone();
-                self.showing_original = true;
-                self.dirty = false;
-                self.locks = [[StageLocks::LOCKED; 6]; 4];
-                self.captured = [None; 4];
+                self.reload_monitor();
                 self.set_status(format!(
                     "Loaded {} · poles and zeros locked",
                     body_name(&path)
@@ -376,93 +417,50 @@ impl StudioApp {
         }
     }
 
+    fn working_body_bytes(&self) -> Result<[u8; 240], String> {
+        self.state
+            .session
+            .to_body_bytes()
+            .map_err(|error| error.to_string())
+    }
+
+    fn reload_monitor(&mut self) {
+        let Some(control) = self.control.clone() else {
+            return;
+        };
+        let body = match self.working_body_bytes() {
+            Ok(body) => body,
+            Err(error) => {
+                self.set_error(error);
+                return;
+            }
+        };
+        match build_audition_engine(&body, self.mode) {
+            Ok(engine) => control.lock().unwrap().reload = Some(engine),
+            Err(error) => self.set_error(error),
+        }
+    }
+
     fn stop_audio(&mut self) {
         if let Some(sink) = self.sink.take() {
             sink.stop();
         }
         self.stream = None;
-        self.audition = None;
+        self.control = None;
     }
 
     fn toggle_audio(&mut self) {
-        if self.sink.as_ref().is_some_and(|sink| !sink.empty()) {
+        if self.sink.is_some() {
             self.stop_audio();
-            self.set_status("Audition stopped");
+            self.set_status("Audition stopped · silent");
             return;
         }
-        self.stop_audio();
-        let session = if self.showing_original {
-            &self.original_session
-        } else {
-            &self.state.session
-        };
-        let render = match render_audio_at(
-            session,
-            self.mode,
-            Excitation::Pink,
-            self.state.morph,
-            self.state.q,
-        ) {
-            Ok(render) => render,
-            Err(error) => {
-                self.set_error(error.to_string());
-                return;
-            }
-        };
-        let (stream, handle) = match OutputStream::try_default() {
-            Ok(value) => value,
-            Err(error) => {
-                self.set_error(format!("audio output is unavailable: {error}"));
-                return;
-            }
-        };
-        let sink = match Sink::try_new(&handle) {
-            Ok(value) => value,
-            Err(error) => {
-                self.set_error(format!("audio output could not start: {error}"));
-                return;
-            }
-        };
-        match Decoder::new(Cursor::new(render.wav_bytes)) {
-            Ok(source) => sink.append(source),
-            Err(error) => {
-                self.set_error(format!("audition buffer could not be decoded: {error}"));
-                return;
-            }
-        }
-        sink.play();
-        self.stream = Some(stream);
-        self.sink = Some(sink);
-        self.set_status(format!(
-            "Playing pink noise · {} · M{:.0} Q{:.0} · peak {:.3}",
-            if self.mode == AudioMode::BodySolo {
-                "BODY SOLO"
-            } else {
-                "PRODUCT"
-            },
-            self.state.morph * 100.0,
-            self.state.q * 100.0,
-            render.output_peak
-        ));
-    }
-
-    fn shown_body_bytes(&self) -> Result<[u8; 240], String> {
-        let session = if self.showing_original {
-            &self.original_session
-        } else {
-            &self.state.session
-        };
-        session.to_body_bytes().map_err(|error| error.to_string())
-    }
-
-    fn start_audition(&mut self) {
-        let Some(path) = self.wav_sources.get(self.selected_wav).cloned() else {
-            self.set_error("No WAV source is available for the audition");
+        let Some(wav_path) = self.wav_path.clone() else {
+            self.set_error("No WAV source under wav-source-library for the audition monitor");
             return;
         };
-        self.stop_audio();
-        let body = match self.shown_body_bytes() {
-            Ok(bytes) => bytes,
+        let body = match self.working_body_bytes() {
+            Ok(body) => body,
             Err(error) => {
                 self.set_error(error);
                 return;
@@ -475,7 +473,7 @@ impl StudioApp {
                 return;
             }
         };
-        let wav = match decode_wav_to_stage_sr(&path) {
+        let wav = match decode_wav_to_stage_sr(&wav_path) {
             Ok(samples) => Arc::new(samples),
             Err(error) => {
                 self.set_error(error);
@@ -497,37 +495,30 @@ impl StudioApp {
             }
         };
         let control = Arc::new(Mutex::new(AuditionControl {
-            q: self.audition_q,
-            morph: 0.0,
-            transport: Transport::Sweeping,
-            sweep_len_frames: wav.len() as u64,
+            morph: self.state.morph,
+            q: self.state.q,
             reload: None,
-            playhead: 0.0,
-            time_frames: 0,
-            held_at_end: false,
         }));
         let source = AuditionStream {
             engine,
             wav,
-            wav_cursor: 0,
-            sweep_pos: 0,
-            last_transport: Transport::Sweeping,
+            cursor: 0,
             control: control.clone(),
             buf: Vec::with_capacity(AUDITION_BLOCK),
             right: Vec::with_capacity(AUDITION_BLOCK),
             pos: 0,
         };
-        // Fixed monitor attenuation (~-12 dB); visible, and does not affect capture.
+        // Fixed monitor attenuation (~-12 dB); visible, conservative, and
+        // never touches the packed body or the saved renders.
         sink.set_volume(0.25);
         sink.append(source);
         sink.play();
         self.stream = Some(stream);
         self.sink = Some(sink);
-        self.audition = Some(control);
-        let _ = self.state.set_morph_q(0.0, self.audition_q);
+        self.control = Some(control);
         self.set_status(format!(
-            "Auditioning {} · {} · sweeping M0 → M100 · monitor -12 dB",
-            body_name(&path),
+            "Auditioning {} · {} · monitor -12 dB · pad drives Morph/Q live",
+            body_name(&wav_path),
             if self.mode == AudioMode::BodySolo {
                 "BODY SOLO"
             } else {
@@ -536,226 +527,174 @@ impl StudioApp {
         ));
     }
 
-    fn audition_is_held(&self) -> bool {
-        self.audition.as_ref().is_some_and(|control| {
-            matches!(control.lock().unwrap().transport, Transport::Held)
-        })
+    fn set_mode(&mut self, mode: AudioMode) {
+        self.mode = mode;
+        self.reload_monitor();
     }
 
-    fn hold_toggle(&mut self) {
-        let Some(control) = self.audition.clone() else {
-            self.set_error("Start an audition before holding");
-            return;
-        };
-        let resumed = {
-            let mut control = control.lock().unwrap();
-            control.held_at_end = false;
-            match control.transport {
-                Transport::Sweeping => {
-                    control.transport = Transport::Held;
-                    control.morph = control.playhead; // freeze at the current position
-                    false
+    /// Corners an edit may touch: explicit toggles intersected with the lane
+    /// locks. A lock is a refusal boundary, never a silent clamp.
+    fn editable_corners(&self, lane: usize, side: Option<RootSide>) -> Vec<usize> {
+        (0..4)
+            .filter(|&corner| {
+                self.corner_mask[corner]
+                    && side.map_or(true, |side| !self.locks[corner][lane].get(side))
+            })
+            .collect()
+    }
+
+    fn build_request(&self, screen: &ScreenData) -> Result<EditRequest, String> {
+        let lane = screen.selected_lane;
+        let side = self.field.side();
+        let corners = self.editable_corners(lane, side);
+        if corners.is_empty() {
+            return Err(format!(
+                "no editable corner contributes for {} on S{} — unlock the lane or enable a corner",
+                self.field.label(),
+                lane + 1
+            ));
+        }
+        let request = match self.field {
+            PaneField::PoleHz | PaneField::ZeroHz => EditRequest {
+                corner_indices: corners,
+                lane_indices: vec![lane],
+                field: if self.field == PaneField::PoleHz {
+                    EditField::PoleGeometry
+                } else {
+                    EditField::ZeroGeometry
+                },
+                value: self.delta,
+                secondary_value: Some(0.0),
+                relative: true,
+            },
+            PaneField::PoleRadius | PaneField::ZeroRadius => EditRequest {
+                corner_indices: corners,
+                lane_indices: vec![lane],
+                field: if self.field == PaneField::PoleRadius {
+                    EditField::PoleGeometry
+                } else {
+                    EditField::ZeroGeometry
+                },
+                value: 0.0,
+                secondary_value: Some(self.delta),
+                relative: true,
+            },
+            PaneField::Scale => EditRequest {
+                corner_indices: corners,
+                lane_indices: vec![lane],
+                field: EditField::Scale,
+                value: self.delta,
+                secondary_value: None,
+                relative: true,
+            },
+            PaneField::PoleRootA
+            | PaneField::PoleRootB
+            | PaneField::ZeroRootA
+            | PaneField::ZeroRootB => {
+                // Real-root edits stay explicit: one corner, absolute value.
+                if corners != [screen.selected_corner] {
+                    return Err(
+                        "real-root edits are explicit and single-corner — set the corner mask to the selected corner only"
+                            .to_owned(),
+                    );
                 }
-                Transport::Held => {
-                    control.transport = Transport::Sweeping;
-                    true
-                }
+                let geometry = match self.field.side() {
+                    Some(RootSide::Pole) => &screen.selected_stage.pole,
+                    _ => &screen.selected_stage.zero,
+                };
+                let current = match (geometry, self.field) {
+                    (RootGeometry::RealPair { root_a, .. }, PaneField::PoleRootA)
+                    | (RootGeometry::RealPair { root_a, .. }, PaneField::ZeroRootA) => *root_a,
+                    (RootGeometry::RealPair { root_b, .. }, PaneField::PoleRootB)
+                    | (RootGeometry::RealPair { root_b, .. }, PaneField::ZeroRootB) => *root_b,
+                    _ => {
+                        return Err(format!(
+                            "{} is not offered for this row's topology",
+                            self.field.label()
+                        ))
+                    }
+                };
+                let edit_field = match self.field {
+                    PaneField::PoleRootA => EditField::PoleRootA,
+                    PaneField::PoleRootB => EditField::PoleRootB,
+                    PaneField::ZeroRootA => EditField::ZeroRootA,
+                    _ => EditField::ZeroRootB,
+                };
+                EditRequest::single(
+                    screen.selected_corner,
+                    lane,
+                    edit_field,
+                    current + self.delta,
+                )
             }
         };
-        self.set_status(if resumed {
-            "Sweeping"
-        } else {
-            "Held · Morph and Q frozen, WAV still playing"
-        });
+        Ok(request)
     }
 
-    fn scrub_morph(&mut self, morph: f64) {
-        let morph = morph.clamp(0.0, 1.0);
-        if let Some(control) = self.audition.clone() {
-            let mut control = control.lock().unwrap();
-            control.morph = morph;
-            control.transport = Transport::Held;
-            control.held_at_end = false;
-        } else {
-            let _ = self.state.set_morph_q(morph, self.audition_q);
-        }
-    }
-
-    fn set_audition_q(&mut self, q: f64) {
-        self.audition_q = q.clamp(0.0, 1.0);
-        if let Some(control) = self.audition.clone() {
-            // Q stays live during a sweep — it does NOT force HELD. This is the
-            // headline feature (adjust Q while Morph keeps sweeping).
-            control.lock().unwrap().q = self.audition_q;
-        } else {
-            let _ = self.state.set_morph_q(self.state.morph, self.audition_q);
-        }
-    }
-
-    fn reload_audition_body(&mut self) {
-        let Some(control) = self.audition.clone() else {
-            return;
-        };
-        let body = match self.shown_body_bytes() {
-            Ok(bytes) => bytes,
-            Err(error) => {
-                self.set_error(error);
-                return;
-            }
-        };
-        match build_audition_engine(&body, self.mode) {
-            // Preserves WAV position + Morph/Q; only the body (and filter state) change.
-            Ok(engine) => control.lock().unwrap().reload = Some(engine),
-            Err(error) => self.set_error(error),
-        }
-    }
-
-    fn start_new_audition_from_working(&mut self) {
-        self.original_session = self.state.session.clone();
-        self.original_audit = self.state.audit.clone();
-        self.captured = [None; 4];
-        self.showing_original = true;
-        self.reload_audition_body();
-        self.set_status("New audition source set from working · capture provenance cleared");
-    }
-
-    fn set_current(&mut self, corner: usize) {
-        if corner >= 4 {
-            return;
-        }
-        let (morph, q) = if let Some(control) = self.audition.clone() {
-            // Freeze so the value cannot move between read and apply.
-            let mut control = control.lock().unwrap();
-            control.transport = Transport::Held;
-            control.morph = control.playhead;
-            control.held_at_end = false;
-            (control.playhead, control.q)
-        } else {
-            (self.state.morph, self.state.q)
-        };
-        let source = self.original_session.clone();
-        let wav = self
-            .wav_sources
-            .get(self.selected_wav)
-            .map(|path| body_name(path))
-            .unwrap_or_default();
-        match self.state.capture_runtime_position_to_corner(
-            &source,
-            morph,
-            q,
-            corner,
-            &wav,
-            self.mode.as_str(),
-        ) {
-            Ok(report) => {
-                self.captured[corner] = Some(CaptureInfo { morph, q });
-                self.dirty = true;
-                if let Err(error) = self.state.select(corner, self.state.selected_lane) {
-                    self.set_error(error.to_string());
-                    return;
-                }
+    fn preview_edit(&mut self, request: EditRequest) {
+        match self.state.preview(request) {
+            Ok(preview) => {
+                let corners = preview
+                    .request
+                    .corner_indices
+                    .iter()
+                    .map(|&corner| CORNER_LABELS[corner])
+                    .collect::<Vec<_>>()
+                    .join(" ");
                 self.set_status(format!(
-                    "{} set from Morph {:.3}, Q {:.3} · {} packed words changed",
-                    CORNER_UI_LABELS[corner],
-                    morph,
-                    q,
-                    report.changed_words.len()
+                    "Previewing {} on {} · S{} · Apply commits one undo step · monitor stays on committed body",
+                    preview.request.field.as_str(),
+                    corners,
+                    preview.request.lane_indices.first().map_or(0, |lane| lane + 1)
                 ));
             }
             Err(error) => self.set_error(error.to_string()),
         }
     }
 
-    fn preview(&mut self, request: EditRequest) {
-        match self.state.preview(request) {
-            Ok(_) => {
-                self.status_error = false;
-                self.status = "Previewing packed edit".to_owned();
-            }
-            Err(error) => self.set_error(error.to_string()),
+    fn preview_pane_request(&mut self, screen: &ScreenData) {
+        match self.build_request(screen) {
+            Ok(request) => self.preview_edit(request),
+            Err(error) => self.set_error(error),
         }
     }
 
-    fn apply_preview(&mut self) {
+    fn apply(&mut self) {
         if self.state.pending_edit.is_none() {
             return;
         }
         match self.state.apply() {
             Ok(result) => {
-                self.showing_original = false;
-                self.dirty = true;
-                let summary = result
-                    .changed_words
-                    .iter()
-                    .map(|word| {
-                        format!(
-                            "{} S{} W{} {:04X}->{:04X}",
-                            word.corner_label,
-                            word.lane_index + 1,
-                            word.word_index,
-                            word.before,
-                            word.after
-                        )
-                    })
-                    .collect::<Vec<_>>()
-                    .join(" · ");
-                self.set_status(if summary.is_empty() {
-                    "No packed words changed".to_owned()
-                } else {
-                    summary
-                });
+                self.receipt = apply_receipt(&result);
+                self.set_status(format!(
+                    "Applied · {} packed words changed · audit {} · parity {}",
+                    result.changed_words.len(),
+                    if result.audit_after.pass { "PASS" } else { "FAIL" },
+                    if result.cartridge_parity_after {
+                        "OK"
+                    } else {
+                        "MISMATCH"
+                    }
+                ));
+                self.reload_monitor();
             }
             Err(error) => self.set_error(error.to_string()),
         }
     }
 
-    fn root_locked(&self, corner: usize, lane: usize, side: RootSide) -> bool {
-        match side {
-            RootSide::Pole => self.locks[corner][lane].pole,
-            RootSide::Zero => self.locks[corner][lane].zero,
-        }
-    }
-
-    fn toggle_root_lock(&mut self, corner: usize, lane: usize, side: RootSide) {
-        self.showing_original = false;
-        self.focus_corner(corner);
-        let lock = &mut self.locks[corner][lane];
-        let value = match side {
-            RootSide::Pole => &mut lock.pole,
-            RootSide::Zero => &mut lock.zero,
-        };
-        *value = !*value;
-        let locked = *value;
-        self.set_status(format!(
-            "{} {} · S{}",
-            match side {
-                RootSide::Pole => "Poles",
-                RootSide::Zero => "Zeros",
-            },
-            if locked { "locked" } else { "unlocked" },
-            lane + 1
-        ));
-    }
-
-    fn focus_corner(&mut self, corner: usize) {
-        let (morph, q) = match corner {
-            0 => (0.0, 0.0),
-            1 => (1.0, 0.0),
-            2 => (0.0, 1.0),
-            3 => (1.0, 1.0),
-            _ => return,
-        };
-        if let Err(error) = self.state.set_morph_q(morph, q) {
-            self.set_error(error.to_string());
+    fn cancel_preview(&mut self) {
+        if self.state.pending_edit.is_some() {
+            self.state.discard_preview();
+            self.set_status("Preview discarded · committed body unchanged");
         }
     }
 
     fn undo(&mut self) {
         match self.state.undo() {
             Ok(()) => {
-                self.showing_original = false;
-                self.dirty = true;
+                self.receipt.clear();
                 self.set_status("Undid one edit gesture");
+                self.reload_monitor();
             }
             Err(error) => self.set_error(error.to_string()),
         }
@@ -764,848 +703,807 @@ impl StudioApp {
     fn redo(&mut self) {
         match self.state.redo() {
             Ok(()) => {
-                self.showing_original = false;
-                self.dirty = true;
+                self.receipt.clear();
                 self.set_status("Redid one edit gesture");
+                self.reload_monitor();
             }
             Err(error) => self.set_error(error.to_string()),
         }
     }
 
-    fn keep(&mut self) {
-        self.showing_original = false;
+    fn export(&mut self) {
         match self.state.keep() {
-            Ok(receipt) => {
-                self.dirty = false;
-                self.set_status(format!("Saved version · {}", receipt.directory));
+            Ok(receipt) => self.set_status(format!(
+                "Exported · {} · body_solo.wav + product.wav + session + audit inside",
+                receipt.directory
+            )),
+            Err(error) => self.set_error(error.to_string()),
+        }
+    }
+
+    // -- make paths: rich disk data -> certified body, all through AppState --
+
+    /// One retained pole scaffold from owned audio: LPC runs exactly once,
+    /// six registered actors, zeros stay the explicit authoring layer.
+    fn make_from_audio(&mut self) {
+        let Some(path) = self.actor_wavs.get(self.actor_wav).cloned() else {
+            self.set_error("No actor WAVs under wav-source-library/measured_objects");
+            return;
+        };
+        let result = decode_wav_mono(&path).and_then(|(samples, rate)| {
+            self.state
+                .load_fixed_actor_audio(&samples, rate as f64, &path)
+                .map_err(|error| error.to_string())
+        });
+        match result {
+            Ok(report) => {
+                self.reload_monitor();
+                self.set_status(format!(
+                    "Made body from {} · {} registered actors · audit {} · parity {}",
+                    body_name(&path),
+                    report.lanes.len(),
+                    if report.sampled_audit_after.pass {
+                        "PASS"
+                    } else {
+                        "FAIL"
+                    },
+                    if report.cartridge_parity_after {
+                        "OK"
+                    } else {
+                        "MISMATCH"
+                    }
+                ));
             }
             Err(error) => self.set_error(error.to_string()),
         }
     }
 
-    fn changed_word_count(&self) -> usize {
-        let Ok(original) = self.original_session.to_body_bytes() else {
-            return 0;
-        };
-        let Ok(working) = self.state.session.to_body_bytes() else {
-            return 0;
-        };
-        original
-            .chunks_exact(2)
-            .zip(working.chunks_exact(2))
-            .filter(|(left, right)| left != right)
-            .count()
-    }
-
-    fn reset_working(&mut self) {
-        let Some(path) = self.selected_body.clone() else {
-            self.set_error("There is no loaded body to restore");
-            return;
-        };
-        match self.state.load_body_as_session(&path) {
-            Ok(_) => {
-                self.locks = [[StageLocks::LOCKED; 6]; 4];
-                self.dirty = false;
-                self.showing_original = true;
-                self.set_status("Working copy reset to the loaded original");
+    /// One iconic recipe candidate applied to the current pole scaffold:
+    /// zero-only authoring, certified before it lands.
+    fn make_from_recipe(&mut self) {
+        let index = self.recipe_sel;
+        match self.state.apply_recipe(index) {
+            Ok(report) => {
+                self.reload_monitor();
+                self.set_status(format!(
+                    "Recipe {} applied · {} zero words opened · audit PASS",
+                    report.candidate.candidate_id,
+                    report.changed_words.len()
+                ));
             }
             Err(error) => self.set_error(error.to_string()),
         }
     }
 
-    fn triage_current(&mut self, value: Triage) {
-        let Some(path) = self.selected_body.clone() else {
-            self.set_error("Select a library filter before triage");
-            return;
+    /// Heritage designer stages fill the selected corner of the current body.
+    fn make_fill_corner(&mut self) {
+        let corner = self.state.selected_corner;
+        let endpoint = if self.endpoint_high {
+            SourceEndpoint::High
+        } else {
+            SourceEndpoint::Low
         };
-        self.triage.insert(path.clone(), value);
-        self.set_status(format!("{} · {}", value.label(), body_name(&path)));
-        if value == Triage::Reject {
-            self.advance_after_reject(&path);
+        let source_name = self
+            .state
+            .source_catalog
+            .sources
+            .get(self.source_sel)
+            .map(|source| source.name.clone())
+            .unwrap_or_default();
+        match self
+            .state
+            .fill_corner_from_source(corner, self.source_sel, endpoint)
+        {
+            Ok(report) => {
+                self.reload_monitor();
+                self.set_status(format!(
+                    "Filled {} from {} ({}) · {} words changed · audit {}",
+                    CORNER_LABELS[corner],
+                    source_name,
+                    endpoint.as_str(),
+                    report.changed_words.len(),
+                    if report.sampled_audit_after.pass {
+                        "PASS"
+                    } else {
+                        "FAIL"
+                    }
+                ));
+            }
+            Err(error) => self.set_error(error.to_string()),
         }
     }
 
-    fn advance_after_reject(&mut self, current: &Path) {
-        let Some(index) = self.bodies.iter().position(|path| path == current) else {
-            return;
-        };
-        let next = self
-            .bodies
-            .iter()
-            .cycle()
-            .skip(index + 1)
-            .take(self.bodies.len())
-            .find(|path| self.triage.get(*path) != Some(&Triage::Reject))
-            .cloned();
-        if let Some(path) = next {
-            self.load_body(path);
-        }
-    }
+    // -- panes --------------------------------------------------------------
 
-    fn top_bar(&mut self, ctx: &egui::Context, screen: &ScreenData) {
+    fn toolbar(&mut self, ctx: &egui::Context, screen: &ScreenData) {
         egui::TopBottomPanel::top("toolbar")
-            .exact_height(52.0)
+            .exact_height(46.0)
             .frame(
                 egui::Frame::none()
                     .fill(PANEL)
-                    .inner_margin(egui::Margin::symmetric(14.0, 8.0)),
+                    .inner_margin(egui::Margin::symmetric(12.0, 7.0)),
             )
             .show(ctx, |ui| {
                 ui.horizontal(|ui| {
-                    let playing = self.sink.as_ref().is_some_and(|sink| !sink.empty());
+                    if quiet_button(ui, "OPEN BODY…", true).clicked() {
+                        let dialog = rfd::FileDialog::new()
+                            .add_filter("TRENCH body", &["body240"])
+                            .set_directory(
+                                self.state.repo_root.join("filters").join("bodies"),
+                            );
+                        if let Some(path) = dialog.pick_file() {
+                            self.load_body(path);
+                        }
+                    }
+                    separator(ui);
+                    let playing = self.sink.is_some();
                     if primary_button(ui, if playing { "STOP" } else { "PLAY" }).clicked() {
                         self.toggle_audio();
                     }
-                    ui.label(RichText::new("PINK NOISE").size(11.0).color(MUTED));
-                    separator(ui);
-                    if quiet_button(ui, "UNDO", self.state.undo.len() > 0).clicked() {
-                        self.undo();
-                    }
-                    if quiet_button(ui, "REDO", self.state.redo.len() > 0).clicked() {
-                        self.redo();
-                    }
-                    if quiet_button(ui, "SAVE VERSION", true).clicked() {
-                        self.keep();
-                    }
-                    separator(ui);
-                    segmented(ui, "ORIGINAL", self.showing_original, || {
-                        self.showing_original = true;
-                        self.state.discard_preview();
-                        self.reload_audition_body();
-                        self.set_status("Auditioning loaded source");
-                    });
-                    segmented(ui, "WORKING", !self.showing_original, || {
-                        self.showing_original = false;
-                        self.reload_audition_body();
-                        self.set_status("Auditioning working copy");
-                    });
-                    if quiet_button(ui, "RESET", self.changed_word_count() > 0).clicked() {
-                        self.reset_working();
-                    }
-                    if quiet_button(ui, "SET AS SOURCE", self.changed_word_count() > 0).clicked() {
-                        self.start_new_audition_from_working();
-                    }
-                    let changed_words = self.changed_word_count();
-                    ui.label(
-                        RichText::new(format!("{changed_words} CHANGED"))
-                            .size(9.0)
-                            .color(if changed_words > 0 { WARN } else { MUTED }),
+                    segmented_group(
+                        ui,
+                        &["BODY SOLO", "PRODUCT"],
+                        (self.mode == AudioMode::Product) as usize,
+                        76.0,
+                        |index| {
+                            self.set_mode(if index == 0 {
+                                AudioMode::BodySolo
+                            } else {
+                                AudioMode::Product
+                            });
+                        },
                     );
                     separator(ui);
-                    segmented(ui, "BODY SOLO", self.mode == AudioMode::BodySolo, || {
-                        self.mode = AudioMode::BodySolo;
-                        self.reload_audition_body();
-                    });
-                    segmented(ui, "PRODUCT", self.mode == AudioMode::Product, || {
-                        self.mode = AudioMode::Product;
-                        self.reload_audition_body();
-                    });
+                    if quiet_button(ui, "UNDO", !self.state.undo.is_empty()).clicked() {
+                        self.undo();
+                    }
+                    if quiet_button(ui, "REDO", !self.state.redo.is_empty()).clicked() {
+                        self.redo();
+                    }
                     separator(ui);
-                    for value in [Triage::Keep, Triage::Repair, Triage::Reject] {
-                        if quiet_button(ui, value.label(), true).clicked() {
-                            self.triage_current(value);
-                        }
+                    if quiet_button(ui, "EXPORT", true).clicked() {
+                        self.export();
                     }
                     ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
-                        let inspect = ui.selectable_label(self.inspect, "INSPECT");
-                        if inspect.clicked() {
-                            self.inspect = !self.inspect;
-                        }
+                        let (badge, color) = if self.state.pending_edit.is_some() {
+                            ("PREVIEW — UNCOMMITTED", WARN)
+                        } else if screen.audit.pass {
+                            ("SAMPLED CERT PASS", ACCENT)
+                        } else {
+                            ("SAMPLED CERT FAIL", ERROR)
+                        };
+                        ui.label(RichText::new(badge).size(10.0).color(color));
                         ui.add_space(10.0);
                         ui.label(
-                            RichText::new(format!(
-                                "{}  /  S{}",
-                                screen.name,
-                                screen.selected_lane + 1
-                            ))
-                            .strong()
-                            .color(TEXT),
+                            RichText::new(screen.name.clone())
+                                .strong()
+                                .color(TEXT),
                         );
-                        if self.changed_word_count() > 0 {
-                            ui.label(RichText::new("UNSAVED").size(10.0).color(WARN));
-                        }
                     });
                 });
             });
     }
 
-    fn library(&mut self, ctx: &egui::Context) {
-        egui::SidePanel::left("library")
-            .default_width(238.0)
-            .width_range(190.0..=360.0)
-            .resizable(true)
-            .frame(panel_frame())
-            .show(ctx, |ui| {
-                section_heading(
-                    ui,
-                    "FILTER LIBRARY",
-                    &format!("{} BODIES", self.bodies.len()),
+    fn travel_pad(&mut self, ui: &mut egui::Ui) {
+        section_heading(ui, "TRAVEL PAD", "READ + AUDITION ONLY");
+        ui.add_space(4.0);
+        let width = ui.available_width();
+        let height = 268.0f32.min(width);
+        let (rect, response) =
+            ui.allocate_exact_size(Vec2::new(width, height), Sense::click_and_drag());
+        let painter = ui.painter_at(rect);
+        painter.rect_filled(rect, Rounding::ZERO, Color32::from_rgb(20, 23, 27));
+        let pad = rect.shrink2(Vec2::new(34.0, 24.0));
+        painter.rect_stroke(pad, Rounding::ZERO, Stroke::new(1.0, LINE));
+        for step in [25.0, 50.0, 75.0] {
+            let x = pad.left() + pad.width() * step / 100.0;
+            let y = pad.bottom() - pad.height() * step / 100.0;
+            painter.line_segment(
+                [Pos2::new(x, pad.top()), Pos2::new(x, pad.bottom())],
+                Stroke::new(0.5, LINE),
+            );
+            painter.line_segment(
+                [Pos2::new(pad.left(), y), Pos2::new(pad.right(), y)],
+                Stroke::new(0.5, LINE),
+            );
+        }
+        painter.text(
+            Pos2::new(pad.center().x, rect.bottom() - 8.0),
+            Align2::CENTER_BOTTOM,
+            "MORPH 0..100",
+            FontId::proportional(9.0),
+            MUTED,
+        );
+        painter.text(
+            Pos2::new(rect.left() + 10.0, pad.center().y),
+            Align2::CENTER_CENTER,
+            "Q",
+            FontId::proportional(9.0),
+            MUTED,
+        );
+        for (label, x, y) in [
+            ("M0_Q0", pad.left(), pad.bottom()),
+            ("M100_Q0", pad.right(), pad.bottom()),
+            ("M0_Q100", pad.left(), pad.top()),
+            ("M100_Q100", pad.right(), pad.top()),
+        ] {
+            painter.text(
+                Pos2::new(x, y),
+                Align2::CENTER_CENTER,
+                label,
+                FontId::proportional(8.0),
+                MUTED,
+            );
+        }
+        let morph = self.state.morph;
+        let q = self.state.q;
+        let puck = Pos2::new(
+            pad.left() + pad.width() * morph as f32,
+            pad.bottom() - pad.height() * q as f32,
+        );
+        painter.line_segment(
+            [Pos2::new(puck.x, pad.top()), Pos2::new(puck.x, pad.bottom())],
+            Stroke::new(0.5, ACCENT_SOFT),
+        );
+        painter.line_segment(
+            [Pos2::new(pad.left(), puck.y), Pos2::new(pad.right(), puck.y)],
+            Stroke::new(0.5, ACCENT_SOFT),
+        );
+        painter.circle_filled(puck, 7.0, ACCENT);
+        painter.circle_stroke(puck, 10.0, Stroke::new(1.0, ACCENT_SOFT));
+        if response.dragged() || response.clicked() {
+            if let Some(position) = response.interact_pointer_pos() {
+                let morph = ((position.x - pad.left()) / pad.width()).clamp(0.0, 1.0) as f64;
+                let q = ((pad.bottom() - position.y) / pad.height()).clamp(0.0, 1.0) as f64;
+                self.set_pad(morph, q);
+            }
+        }
+        ui.add_space(4.0);
+        ui.horizontal(|ui| {
+            ui.label(
+                RichText::new(format!("M{:.0}", self.state.morph * 100.0))
+                    .strong()
+                    .size(16.0)
+                    .color(TEXT),
+            );
+            ui.add_space(10.0);
+            ui.label(
+                RichText::new(format!("Q{:.0}", self.state.q * 100.0))
+                    .strong()
+                    .size(16.0)
+                    .color(TEXT),
+            );
+            ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
+                ui.label(
+                    RichText::new("pad moves no body bytes")
+                        .size(9.0)
+                        .color(MUTED),
                 );
-                ui.add(
-                    egui::TextEdit::singleline(&mut self.query)
-                        .hint_text("Search filters")
-                        .desired_width(f32::INFINITY),
-                );
-                ui.add_space(8.0);
-                if quiet_button(ui, "OPEN BODY…", true).clicked() {
-                    if let Some(path) = rfd::FileDialog::new()
-                        .add_filter("TRENCH body", &["body240"])
-                        .set_directory(self.repo_root.join("filters").join("bodies"))
-                        .pick_file()
-                    {
-                        self.load_body(path);
+            });
+        });
+    }
+
+    fn make_pane(&mut self, ui: &mut egui::Ui) {
+        section_heading(ui, "MAKE", "NEW BODY FROM DISK DATA");
+        ui.add_space(4.0);
+        let actor_names = self
+            .actor_wavs
+            .iter()
+            .map(|path| body_name(path))
+            .collect::<Vec<_>>();
+        ui.horizontal(|ui| {
+            ui.label(RichText::new("AUDIO").size(9.0).color(MUTED));
+            egui::ComboBox::from_id_salt("actor_wav")
+                .selected_text(
+                    actor_names
+                        .get(self.actor_wav)
+                        .cloned()
+                        .unwrap_or_else(|| "no measured wavs".to_owned()),
+                )
+                .width(160.0)
+                .show_ui(ui, |ui| {
+                    for (index, name) in actor_names.iter().enumerate() {
+                        ui.selectable_value(&mut self.actor_wav, index, name);
                     }
-                }
-                ui.add_space(8.0);
-                let query = self.query.trim().to_lowercase();
-                let visible = self
-                    .bodies
-                    .iter()
-                    .filter(|path| {
-                        query.is_empty() || body_name(path).to_lowercase().contains(&query)
-                    })
-                    .cloned()
-                    .collect::<Vec<_>>();
-                egui::ScrollArea::vertical()
-                    .auto_shrink([false, false])
-                    .show(ui, |ui| {
-                        for path in visible {
-                            let selected = self.selected_body.as_ref() == Some(&path);
-                            let name = body_name(&path);
-                            let response =
-                                library_row(ui, &name, self.triage.get(&path).copied(), selected);
-                            if response.clicked() {
-                                self.load_body(path);
-                            }
-                        }
-                    });
-            });
+                });
+            if quiet_button(ui, "LOAD ACTOR", !actor_names.is_empty()).clicked() {
+                self.make_from_audio();
+            }
+        });
+        ui.add_space(2.0);
+        let candidate_ids = self
+            .state
+            .recipe_catalog
+            .candidates
+            .iter()
+            .map(|candidate| candidate.candidate_id.clone())
+            .collect::<Vec<_>>();
+        if self.recipe_sel >= candidate_ids.len() {
+            self.recipe_sel = 0;
+        }
+        ui.horizontal(|ui| {
+            ui.label(RichText::new("RECIPE").size(9.0).color(MUTED));
+            egui::ComboBox::from_id_salt("recipe_candidate")
+                .selected_text(
+                    candidate_ids
+                        .get(self.recipe_sel)
+                        .cloned()
+                        .unwrap_or_else(|| "no candidates".to_owned()),
+                )
+                .width(160.0)
+                .show_ui(ui, |ui| {
+                    for (index, id) in candidate_ids.iter().enumerate() {
+                        ui.selectable_value(&mut self.recipe_sel, index, id);
+                    }
+                });
+            if quiet_button(ui, "APPLY", !candidate_ids.is_empty()).clicked() {
+                self.make_from_recipe();
+            }
+        });
+        ui.add_space(2.0);
+        let source_names = self
+            .state
+            .source_catalog
+            .sources
+            .iter()
+            .map(|source| source.name.clone())
+            .collect::<Vec<_>>();
+        if self.source_sel >= source_names.len() {
+            self.source_sel = 0;
+        }
+        ui.horizontal(|ui| {
+            ui.label(RichText::new("XML").size(9.0).color(MUTED));
+            egui::ComboBox::from_id_salt("xml_source")
+                .selected_text(
+                    source_names
+                        .get(self.source_sel)
+                        .cloned()
+                        .unwrap_or_else(|| "no heritage xml".to_owned()),
+                )
+                .width(130.0)
+                .show_ui(ui, |ui| {
+                    for (index, name) in source_names.iter().enumerate() {
+                        ui.selectable_value(&mut self.source_sel, index, name);
+                    }
+                });
+            segmented_group(
+                ui,
+                &["LOW", "HIGH"],
+                self.endpoint_high as usize,
+                42.0,
+                |index| self.endpoint_high = index == 1,
+            );
+            if quiet_button(ui, "FILL CORNER", !source_names.is_empty()).clicked() {
+                self.make_fill_corner();
+            }
+        });
+        ui.label(
+            RichText::new(
+                "actor = LPC poles from your wav · recipe = zero law on current poles · xml = heritage stages into the selected corner",
+            )
+            .size(8.0)
+            .color(MUTED),
+        );
     }
 
-    fn main_view(&mut self, ctx: &egui::Context, screen: &ScreenData) {
-        egui::CentralPanel::default()
-            .frame(
-                egui::Frame::none()
-                    .fill(BG)
-                    .inner_margin(egui::Margin::same(12.0)),
-            )
-            .show(ctx, |ui| {
-                let available = ui.available_size();
-                let lower_height = (available.y * 0.42).clamp(260.0, 390.0);
-                ui.allocate_ui_with_layout(
-                    Vec2::new(available.x, (available.y - lower_height - 12.0).max(230.0)),
-                    Layout::top_down(Align::Min),
-                    |ui| self.response_panel(ui, screen),
-                );
-                ui.add_space(12.0);
-                ui.columns(2, |columns| {
-                    columns[0].set_min_width(280.0);
-                    egui::Frame::none()
-                        .fill(PANEL)
-                        .rounding(Rounding::same(6.0))
-                        .inner_margin(egui::Margin::same(14.0))
-                        .show(&mut columns[0], |ui| self.audition_view(ui, screen));
-                    egui::Frame::none()
-                        .fill(PANEL)
-                        .rounding(Rounding::same(6.0))
-                        .inner_margin(egui::Margin::same(14.0))
-                        .show(&mut columns[1], |ui| self.stage_properties(ui, screen));
+    fn lane_locker(&mut self, ui: &mut egui::Ui, screen: &ScreenData) {
+        section_heading(
+            ui,
+            "LANE REGISTRATION LOCKER",
+            &format!("{} · permanent S1..S6", CORNER_LABELS[screen.selected_corner]),
+        );
+        ui.add_space(4.0);
+        let corner = screen.selected_corner;
+        for lane_view in &screen.corners[corner].lanes {
+            let lane = lane_view.lane_index;
+            egui::Frame::none()
+                .fill(PANEL_RAISED)
+                .rounding(Rounding::ZERO)
+                .inner_margin(egui::Margin::symmetric(8.0, 4.0))
+                .show(ui, |ui| {
+                    ui.horizontal(|ui| {
+                        ui.label(
+                            RichText::new(format!("S{}", lane + 1))
+                                .strong()
+                                .color(if lane == screen.selected_lane {
+                                    ACCENT
+                                } else {
+                                    TEXT
+                                }),
+                        );
+                        ui.add_space(6.0);
+                        let stage = &lane_view.stage;
+                        ui.label(
+                            RichText::new(topology_text(stage))
+                                .size(9.0)
+                                .color(MUTED),
+                        );
+                        ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
+                            for side in [RootSide::Zero, RootSide::Pole] {
+                                let locked = self.locks[corner][lane].get(side);
+                                let label = match side {
+                                    RootSide::Pole => "P",
+                                    RootSide::Zero => "Z",
+                                };
+                                if mini_lock_button(ui, label, locked).clicked() {
+                                    self.locks[corner][lane].toggle(side);
+                                    let now = self.locks[corner][lane].get(side);
+                                    self.set_status(format!(
+                                        "{} {} · {} S{}",
+                                        CORNER_LABELS[corner],
+                                        side.label(),
+                                        if now { "locked" } else { "unlocked" },
+                                        lane + 1
+                                    ));
+                                }
+                            }
+                        });
+                    });
+                    if let Some(source) = &lane_view.stage.source {
+                        ui.label(
+                            RichText::new(format!("role: {}", source.source_name))
+                                .size(8.0)
+                                .color(MUTED),
+                        );
+                    }
                 });
-            });
+            ui.add_space(3.0);
+        }
+        ui.label(
+            RichText::new("locks refuse edits; they never clamp or repair")
+                .size(8.0)
+                .color(MUTED),
+        );
     }
 
     fn response_panel(&mut self, ui: &mut egui::Ui, screen: &ScreenData) {
         egui::Frame::none()
             .fill(PANEL)
-            .rounding(Rounding::same(6.0))
-            .inner_margin(egui::Margin::same(14.0))
+            .rounding(Rounding::ZERO)
+            .inner_margin(egui::Margin::same(12.0))
             .show(ui, |ui| {
                 ui.horizontal(|ui| {
-                    section_heading(ui, "COMBINED RESPONSE", "PACKED RUNTIME");
+                    section_heading(ui, "PACKED/RUNTIME RESPONSE", "SIX-STAGE CASCADE");
                     ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
-                        let audit_color = if screen.audit.pass { ACCENT } else { ERROR };
                         ui.label(
-                            RichText::new(if screen.audit.pass {
-                                "SAMPLED CERTIFICATION PASS"
-                            } else {
-                                "SAMPLED CERTIFICATION FAIL"
-                            })
-                            .size(10.0)
-                            .color(audit_color),
+                            RichText::new("fixed -48..+24 dB · from trench_packed_probe rows")
+                                .size(9.0)
+                                .color(MUTED),
                         );
                     });
                 });
+                ui.add_space(4.0);
+                self.response_plot(ui, screen);
                 ui.add_space(6.0);
-                response_plot(
-                    ui,
-                    &screen.current_response,
-                    pole_frequency(&screen.selected_stage),
-                );
-                ui.add_space(8.0);
                 ui.horizontal(|ui| {
-                    ui.add_space(8.0);
-                    for lane in 0..6 {
-                        let selected = lane == screen.selected_lane;
-                        let button =
-                            egui::Button::new(RichText::new(format!("S{}", lane + 1)).strong())
-                                .selected(selected)
-                                .min_size(Vec2::new(48.0, 28.0));
-                        if ui.add(button).clicked() {
-                            if let Err(error) = self.state.select(screen.selected_corner, lane) {
+                    let selected = screen.selected_lane;
+                    segmented_group(
+                        ui,
+                        &["S1", "S2", "S3", "S4", "S5", "S6"],
+                        selected,
+                        40.0,
+                        |index| {
+                            if let Err(error) = self.state.select(screen.selected_corner, index)
+                            {
                                 self.set_error(error.to_string());
                             }
-                        }
-                    }
-                });
-            });
-    }
-
-    fn audition_view(&mut self, ui: &mut egui::Ui, screen: &ScreenData) {
-        section_heading(ui, "AUDITION", "REAL WAV · PACKED RUNTIME");
-        ui.add_space(6.0);
-        let source_label = self
-            .wav_sources
-            .get(self.selected_wav)
-            .map(|path| body_name(path))
-            .unwrap_or_else(|| "No WAV sources".to_owned());
-        ui.label(RichText::new("SOURCE WAV").size(9.0).color(MUTED));
-        egui::ComboBox::from_id_salt("audition_wav_source")
-            .selected_text(source_label)
-            .width(ui.available_width())
-            .show_ui(ui, |ui| {
-                for (index, path) in self.wav_sources.iter().enumerate() {
-                    ui.selectable_value(&mut self.selected_wav, index, body_name(path));
-                }
-            });
-        ui.add_space(8.0);
-
-        let (time_frames, held_at_end, auditioning) = match &self.audition {
-            Some(control) => {
-                let control = control.lock().unwrap();
-                (control.time_frames, control.held_at_end, true)
-            }
-            None => (0, false, false),
-        };
-        let held = self.audition_is_held();
-
-        // Persistent readout — follows the audio within one processing block.
-        ui.horizontal(|ui| {
-            ui.label(
-                RichText::new(format!("Morph {:.3}", screen.morph))
-                    .strong()
-                    .color(TEXT),
-            );
-            ui.add_space(12.0);
-            ui.label(RichText::new(format!("Q {:.3}", screen.q)).strong().color(TEXT));
-            ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
-                ui.label(RichText::new(format_transport_time(time_frames)).color(MUTED));
-            });
-        });
-        ui.add_space(6.0);
-
-        // Transport.
-        ui.horizontal(|ui| {
-            if quiet_button(ui, "⏮", auditioning).clicked() {
-                self.scrub_morph(0.0);
-            }
-            if auditioning {
-                if primary_button(ui, if held { "RESUME" } else { "HOLD" }).clicked() {
-                    self.hold_toggle();
-                }
-                if quiet_button(ui, "STOP", true).clicked() {
-                    self.stop_audio();
-                }
-            } else if primary_button(ui, "PLAY SWEEP").clicked() {
-                self.start_audition();
-            }
-            if quiet_button(ui, "⏭", auditioning).clicked() {
-                self.scrub_morph(1.0);
-            }
-            if held_at_end {
-                ui.label(RichText::new("HELD @ END").size(9.0).color(WARN));
-            }
-        });
-        ui.add_space(8.0);
-
-        // Precise native Morph and Q — not a drawing surface. Dragging Morph
-        // enters HELD; Q stays live so it can be adjusted during a sweep.
-        let mut morph = screen.morph;
-        ui.label(RichText::new("MORPH").size(9.0).color(MUTED));
-        if ui
-            .add(egui::Slider::new(&mut morph, 0.0..=1.0).show_value(false))
-            .changed()
-        {
-            self.scrub_morph(morph);
-        }
-        let mut q = self.audition_q;
-        ui.label(RichText::new("Q").size(9.0).color(MUTED));
-        if ui
-            .add(egui::Slider::new(&mut q, 0.0..=1.0).show_value(false))
-            .changed()
-        {
-            self.set_audition_q(q);
-        }
-        ui.add_space(10.0);
-        ui.separator();
-        ui.add_space(8.0);
-        self.corner_rack(ui, screen);
-    }
-
-    fn corner_rack(&mut self, ui: &mut egui::Ui, screen: &ScreenData) {
-        section_heading(ui, "CORNER RACK", "SET CURRENT → CORNER");
-        ui.add_space(4.0);
-        let captured = self.captured;
-        let selected_corner = screen.selected_corner;
-        let mut select: Option<usize> = None;
-        let mut set: Option<usize> = None;
-        for corner in 0..4 {
-            let is_selected = selected_corner == corner;
-            egui::Frame::none()
-                .fill(if is_selected {
-                    Color32::from_rgb(38, 57, 54)
-                } else {
-                    PANEL_RAISED
-                })
-                .rounding(Rounding::same(4.0))
-                .inner_margin(egui::Margin::symmetric(8.0, 6.0))
-                .show(ui, |ui| {
-                    ui.horizontal(|ui| {
-                        if ui
-                            .selectable_label(
-                                is_selected,
-                                RichText::new(CORNER_UI_LABELS[corner]).strong(),
-                            )
-                            .clicked()
-                        {
-                            select = Some(corner);
-                        }
-                        let provenance = match captured[corner] {
-                            Some(info) => format!("src M{:.3} / Q{:.3}", info.morph, info.q),
-                            None => "not set this session".to_owned(),
-                        };
-                        ui.label(RichText::new(provenance).size(9.0).color(MUTED));
-                        ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
-                            if quiet_button(ui, "SET CURRENT", true).clicked() {
-                                set = Some(corner);
-                            }
-                        });
+                        },
+                    );
+                    ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
+                        ui.label(
+                            RichText::new("amber = selected lane · drag its marker")
+                                .size(9.0)
+                                .color(MUTED),
+                        );
                     });
                 });
-            ui.add_space(4.0);
-        }
-        ui.label(
-            RichText::new("Exact interpolated u16 words from the source · Ctrl+1..4")
-                .size(9.0)
-                .color(MUTED),
+            });
+    }
+
+    fn response_plot(&mut self, ui: &mut egui::Ui, screen: &ScreenData) {
+        let desired = Vec2::new(
+            ui.available_width(),
+            (ui.available_height() - 44.0).max(200.0),
         );
-        if let Some(corner) = select {
-            if let Err(error) = self.state.select(corner, screen.selected_lane) {
-                self.set_error(error.to_string());
+        let (rect, response) = ui.allocate_exact_size(desired, Sense::click_and_drag());
+        let plot = rect.shrink2(Vec2::new(46.0, 20.0));
+        let painter = ui.painter_at(rect);
+        painter.rect_filled(plot, Rounding::ZERO, Color32::from_rgb(20, 23, 27));
+        draw_plot_grid(&painter, plot);
+        // Per-lane curves from the same packed runtime probe rows: editing a
+        // lane must show *which* bump in the combined curve is yours.
+        let grid = log_grid(96);
+        for lane in 0..6 {
+            let row = &screen.current_probe.rows[lane];
+            let points = grid
+                .iter()
+                .map(|&freq_hz| {
+                    Pos2::new(
+                        map_hz(plot, freq_hz),
+                        map_db(plot, biquad_stage_mag_db(row, freq_hz, STAGE_SR)),
+                    )
+                })
+                .collect::<Vec<_>>();
+            let selected = lane == screen.selected_lane;
+            let stroke = if selected {
+                Stroke::new(1.5, WARN)
+            } else {
+                Stroke::new(0.75, Color32::from_rgba_unmultiplied(143, 151, 161, 60))
+            };
+            painter.add(egui::Shape::line(points, stroke));
+        }
+        let points = screen
+            .current_response
+            .points
+            .iter()
+            .filter(|point| point.db.is_finite())
+            .map(|point| Pos2::new(map_hz(plot, point.freq_hz), map_db(plot, point.db)))
+            .collect::<Vec<_>>();
+        if points.len() > 1 {
+            painter.add(egui::Shape::line(points, Stroke::new(2.0, ACCENT)));
+        }
+
+        // Pole/zero markers for all six lanes, factored from the packed
+        // runtime probe rows at the current Morph/Q.
+        let mark_pos = |hz: f64, radius: f64| {
+            Pos2::new(
+                map_hz(plot, hz.clamp(20.0, 16_000.0)),
+                plot.top() + (1.0 - radius.clamp(0.0, 1.0)) as f32 * plot.height(),
+            )
+        };
+        for lane in 0..6 {
+            let row = &screen.current_probe.rows[lane];
+            let selected = lane == screen.selected_lane;
+            for side in [RootSide::Pole, RootSide::Zero] {
+                let mark = roots_from_probe_row(row, side);
+                let alpha: u8 = if selected { 255 } else { 90 };
+                let (fill, stroke) = match side {
+                    RootSide::Pole => (
+                        Color32::from_rgba_unmultiplied(70, 184, 151, alpha),
+                        Color32::from_rgba_unmultiplied(42, 94, 82, alpha),
+                    ),
+                    RootSide::Zero => (
+                        Color32::from_rgba_unmultiplied(24, 27, 31, alpha),
+                        Color32::from_rgba_unmultiplied(230, 233, 237, alpha),
+                    ),
+                };
+                match mark {
+                    RootMark::Conjugate { hz, radius } => {
+                        let pos = mark_pos(hz, radius);
+                        let size = if selected { 6.0 } else { 4.0 };
+                        painter.circle_filled(pos, size, fill);
+                        painter.circle_stroke(pos, size + 1.5, Stroke::new(1.0, stroke));
+                    }
+                    RootMark::Real(roots) => {
+                        for root in roots {
+                            let x = if root >= 0.0 {
+                                plot.left() + 8.0
+                            } else {
+                                plot.right() - 8.0
+                            };
+                            let y = plot.top()
+                                + (1.0 - root.abs().clamp(0.0, 1.0)) as f32 * plot.height();
+                            painter.rect_filled(
+                                Rect::from_center_size(Pos2::new(x, y), Vec2::splat(6.0)),
+                                1.0,
+                                fill,
+                            );
+                            painter.rect_stroke(
+                                Rect::from_center_size(Pos2::new(x, y), Vec2::splat(8.0)),
+                                1.0,
+                                Stroke::new(1.0, stroke),
+                            );
+                        }
+                    }
+                    RootMark::Degenerate => {}
+                }
             }
         }
-        if let Some(corner) = set {
-            self.set_current(corner);
-        }
-    }
 
-    fn stage_properties(&mut self, ui: &mut egui::Ui, screen: &ScreenData) {
-        let corner_label = screen
-            .corners
-            .get(screen.selected_corner)
-            .map(|corner| corner.label.as_str())
-            .unwrap_or("POSITION");
-        section_heading(
-            ui,
-            "SECTION PROPERTIES",
-            &format!(
-                "{} · S{} · AUDITION M{:.0} Q{:.0}",
-                corner_label,
-                screen.selected_lane + 1,
-                screen.morph * 100.0,
-                screen.q * 100.0
-            ),
-        );
-        ui.add_space(8.0);
-        ui.columns(2, |columns| {
-            columns[0].set_min_width(210.0);
-            self.z_plane(&mut columns[0], screen);
-            self.numeric_controls(&mut columns[1], screen);
-        });
-        if self.inspect {
-            ui.add_space(8.0);
-            ui.separator();
-            inspect_data(ui, &screen.selected_stage);
-        }
-    }
-
-    fn z_plane(&mut self, ui: &mut egui::Ui, screen: &ScreenData) {
-        ui.label(RichText::new("Z-PLANE").size(10.0).color(MUTED));
-        let side = ui
-            .available_width()
-            .min((ui.available_height() - 22.0).max(150.0));
-        let (rect, response) = ui.allocate_exact_size(Vec2::splat(side), Sense::click_and_drag());
-        let painter = ui.painter_at(rect);
-        painter.rect_filled(rect, Rounding::same(4.0), PANEL_RAISED);
-        let center = rect.center();
-        let radius = rect.width().min(rect.height()) * 0.41;
-        painter.circle_stroke(
-            center,
-            radius,
-            Stroke::new(1.0, Color32::from_rgb(82, 90, 100)),
-        );
-        painter.line_segment(
-            [
-                Pos2::new(center.x - radius, center.y),
-                Pos2::new(center.x + radius, center.y),
-            ],
-            Stroke::new(1.0, LINE),
-        );
-        painter.line_segment(
-            [
-                Pos2::new(center.x, center.y - radius),
-                Pos2::new(center.x, center.y + radius),
-            ],
-            Stroke::new(1.0, LINE),
-        );
-        draw_root_pair(
-            &painter,
-            center,
-            radius,
-            &screen.selected_stage.zero,
-            RootSide::Zero,
-        );
-        draw_root_pair(
-            &painter,
-            center,
-            radius,
-            &screen.selected_stage.pole,
-            RootSide::Pole,
-        );
+        // Drag: only the selected stage, only a conjugate marker, only when
+        // that side is unlocked. Preview rides the drag; commit on release.
         if response.drag_started() {
+            self.drag = None;
             if let Some(position) = response.interact_pointer_pos() {
-                if self.showing_original {
-                    self.active_root = None;
-                    self.set_error("Switch to WORKING before editing roots");
-                    return;
+                let lane = screen.selected_lane;
+                let row = &screen.current_probe.rows[lane];
+                let mut best: Option<(f32, RootSide)> = None;
+                for side in [RootSide::Pole, RootSide::Zero] {
+                    if let RootMark::Conjugate { hz, radius } = roots_from_probe_row(row, side)
+                    {
+                        let distance = mark_pos(hz, radius).distance(position);
+                        if distance <= 16.0 && best.map_or(true, |(d, _)| distance < d) {
+                            best = Some((distance, side));
+                        }
+                    }
                 }
-                self.active_root =
-                    nearest_root_handle(position, center, radius, &screen.selected_stage);
-                if let Some(handle) = self.active_root {
-                    let side = root_handle_side(handle);
-                    if self.root_locked(screen.selected_corner, screen.selected_lane, side) {
-                        self.active_root = None;
+                if let Some((_, side)) = best {
+                    if self.locks[screen.selected_corner][lane].get(side) {
                         self.set_error(format!(
-                            "Unlock {} for {} · S{} before editing",
-                            match side {
-                                RootSide::Pole => "poles",
-                                RootSide::Zero => "zeros",
-                            },
-                            screen.corners[screen.selected_corner].label,
-                            screen.selected_lane + 1
+                            "Unlock the {} for {} S{} before dragging",
+                            side.label(),
+                            CORNER_LABELS[screen.selected_corner],
+                            lane + 1
                         ));
                     } else {
-                        self.focus_corner(screen.selected_corner);
+                        self.drag = Some(side);
                     }
                 }
             }
         }
         if response.dragged() {
-            if let (Some(handle), Some(position)) =
-                (self.active_root, response.interact_pointer_pos())
-            {
-                let x = ((position.x - center.x) / radius).clamp(-1.0, 1.0) as f64;
-                let y = ((center.y - position.y) / radius).clamp(-1.0, 1.0) as f64;
-                let request = match handle {
-                    RootHandle::Conjugate(side) => {
-                        let root_radius = (x * x + y * y).sqrt().clamp(0.0, 0.999_98);
-                        let angle = y.abs().atan2(x).clamp(0.0, std::f64::consts::PI);
-                        let hz = angle / std::f64::consts::PI * STAGE_SR * 0.5;
-                        EditRequest::conjugate(
-                            vec![screen.selected_corner],
-                            screen.selected_lane,
-                            side == RootSide::Pole,
-                            hz,
-                            root_radius,
-                        )
-                    }
-                    RootHandle::Real(side, first) => EditRequest::single(
-                        screen.selected_corner,
-                        screen.selected_lane,
-                        match (side, first) {
-                            (RootSide::Pole, true) => EditField::PoleRootA,
-                            (RootSide::Pole, false) => EditField::PoleRootB,
-                            (RootSide::Zero, true) => EditField::ZeroRootA,
-                            (RootSide::Zero, false) => EditField::ZeroRootB,
-                        },
-                        x,
-                    ),
-                };
-                self.preview(request);
+            if let (Some(side), Some(position)) = (self.drag, response.interact_pointer_pos()) {
+                let hz = unmap_hz(plot, position.x).clamp(1.0, STAGE_SR * 0.5 - 1.0);
+                let radius = ((plot.bottom() - position.y) / plot.height()) as f64;
+                let radius = radius.clamp(0.0, 0.999_98);
+                self.preview_edit(EditRequest::conjugate(
+                    vec![screen.selected_corner],
+                    screen.selected_lane,
+                    side == RootSide::Pole,
+                    hz,
+                    radius,
+                ));
             }
         }
         if response.drag_stopped() {
-            self.active_root = None;
-            self.apply_preview();
+            if self.drag.is_some() {
+                self.drag = None;
+                self.apply();
+            }
         }
-        ui.horizontal(|ui| {
-            ui.label(
-                RichText::new(
-                    if self.root_locked(
-                        screen.selected_corner,
-                        screen.selected_lane,
-                        RootSide::Pole,
-                    ) {
-                        "POLE LOCKED"
-                    } else {
-                        "POLE EDITABLE"
-                    },
-                )
-                .size(9.0)
-                .color(ACCENT),
-            );
-            ui.label(
-                RichText::new(
-                    if self.root_locked(
-                        screen.selected_corner,
-                        screen.selected_lane,
-                        RootSide::Zero,
-                    ) {
-                        "ZERO LOCKED"
-                    } else {
-                        "ZERO EDITABLE"
-                    },
-                )
-                .size(9.0)
-                .color(TEXT),
-            );
-            ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
-                ui.label(RichText::new("DRAG ROOTS").size(9.0).color(MUTED));
-            });
-        });
     }
 
-    fn numeric_controls(&mut self, ui: &mut egui::Ui, screen: &ScreenData) {
-        let pole_locked =
-            self.root_locked(screen.selected_corner, screen.selected_lane, RootSide::Pole);
-        let zero_locked =
-            self.root_locked(screen.selected_corner, screen.selected_lane, RootSide::Zero);
-        ui.horizontal(|ui| {
-            if ui
-                .add_enabled_ui(!self.showing_original, |ui| {
-                    lock_button(ui, "POLES", pole_locked)
-                })
-                .inner
-                .clicked()
-            {
-                self.toggle_root_lock(screen.selected_corner, screen.selected_lane, RootSide::Pole);
-            }
-            if ui
-                .add_enabled_ui(!self.showing_original, |ui| {
-                    lock_button(ui, "ZEROS", zero_locked)
-                })
-                .inner
-                .clicked()
-            {
-                self.toggle_root_lock(screen.selected_corner, screen.selected_lane, RootSide::Zero);
-            }
-        });
-        ui.add_space(6.0);
-        ui.horizontal(|ui| {
-            ui.label(RichText::new("STATE").size(10.0).color(MUTED));
-            let label = if screen.selected_stage.identity {
-                "INACTIVE"
-            } else {
-                "ACTIVE"
-            };
-            if ui
-                .add_enabled(
-                    !self.showing_original,
-                    egui::SelectableLabel::new(!screen.selected_stage.identity, label),
-                )
-                .clicked()
-            {
-                self.preview(EditRequest::single(
-                    screen.selected_corner,
-                    screen.selected_lane,
-                    EditField::Identity,
-                    if screen.selected_stage.identity {
-                        0.0
-                    } else {
-                        1.0
-                    },
-                ));
-                self.apply_preview();
-            }
-        });
-        ui.add_space(6.0);
-        match &screen.selected_stage.pole {
-            RootGeometry::Conjugate { hz, radius } => {
-                self.number_control(
-                    ui,
-                    screen,
-                    "POLE FREQUENCY",
-                    *hz,
-                    EditField::PoleHz,
-                    1.0,
-                    "Hz",
-                    !pole_locked && !self.showing_original,
-                );
-                self.number_control(
-                    ui,
-                    screen,
-                    "POLE RADIUS",
-                    *radius,
-                    EditField::PoleRadius,
-                    0.0001,
-                    "",
-                    !pole_locked && !self.showing_original,
-                );
-            }
-            RootGeometry::RealPair { root_a, root_b } => {
-                self.number_control(
-                    ui,
-                    screen,
-                    "POLE 1",
-                    *root_a,
-                    EditField::PoleRootA,
-                    0.0001,
-                    "",
-                    !pole_locked && !self.showing_original,
-                );
-                self.number_control(
-                    ui,
-                    screen,
-                    "POLE 2",
-                    *root_b,
-                    EditField::PoleRootB,
-                    0.0001,
-                    "",
-                    !pole_locked && !self.showing_original,
-                );
-            }
-            RootGeometry::Degenerate => {
-                ui.label(RichText::new("POLE AT ORIGIN").size(10.0).color(MUTED));
-            }
-        }
-        match &screen.selected_stage.zero {
-            RootGeometry::Conjugate { hz, radius } => {
-                self.number_control(
-                    ui,
-                    screen,
-                    "ZERO FREQUENCY",
-                    *hz,
-                    EditField::ZeroHz,
-                    1.0,
-                    "Hz",
-                    !zero_locked && !self.showing_original,
-                );
-                self.number_control(
-                    ui,
-                    screen,
-                    "ZERO RADIUS",
-                    *radius,
-                    EditField::ZeroRadius,
-                    0.0001,
-                    "",
-                    !zero_locked && !self.showing_original,
-                );
-            }
-            RootGeometry::RealPair { root_a, root_b } => {
-                self.number_control(
-                    ui,
-                    screen,
-                    "ZERO 1",
-                    *root_a,
-                    EditField::ZeroRootA,
-                    0.0001,
-                    "",
-                    !zero_locked && !self.showing_original,
-                );
-                self.number_control(
-                    ui,
-                    screen,
-                    "ZERO 2",
-                    *root_b,
-                    EditField::ZeroRootB,
-                    0.0001,
-                    "",
-                    !zero_locked && !self.showing_original,
-                );
-            }
-            RootGeometry::Degenerate => {
-                ui.label(RichText::new("ZERO AT ORIGIN").size(10.0).color(MUTED));
-            }
-        }
-        self.number_control(
-            ui,
-            screen,
-            "SCALE",
-            screen.selected_stage.scale.value,
-            EditField::Scale,
-            0.0001,
-            "b0",
-            !self.showing_original,
-        );
-        ui.add_space(8.0);
-        ui.horizontal(|ui| {
-            if quiet_button(ui, "UNDO", !self.state.undo.is_empty()).clicked() {
-                self.undo();
-            }
-            if quiet_button(ui, "REVERT PREVIEW", self.state.pending_edit.is_some()).clicked() {
-                self.state.discard_preview();
-                self.set_status("Preview discarded");
-            }
-        });
-    }
-
-    fn number_control(
-        &mut self,
-        ui: &mut egui::Ui,
-        screen: &ScreenData,
-        label: &str,
-        current: f64,
-        field: EditField,
-        speed: f64,
-        suffix: &str,
-        enabled: bool,
-    ) {
-        ui.horizontal(|ui| {
-            ui.label(RichText::new(label).size(10.0).color(MUTED));
-            ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
-                let mut value = current;
-                let response = ui.add_enabled(
-                    enabled,
-                    egui::DragValue::new(&mut value)
-                        .speed(speed)
-                        .max_decimals(if speed >= 1.0 { 1 } else { 6 })
-                        .suffix(if suffix.is_empty() {
-                            "".to_owned()
+    fn edit_pane(&mut self, ui: &mut egui::Ui, screen: &ScreenData) {
+        egui::Frame::none()
+            .fill(PANEL)
+            .rounding(Rounding::ZERO)
+            .inner_margin(egui::Margin::same(12.0))
+            .show(ui, |ui| {
+                ui.horizontal(|ui| {
+                    section_heading(ui, "EDIT / EXPORT", "DECLARED EDITS ONLY");
+                    ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
+                        ui.label(
+                            RichText::new(
+                                "TENSION (exact M50) — disabled: no core-owned solver in this build",
+                            )
+                            .size(9.0)
+                            .color(WARN),
+                        );
+                    });
+                });
+                ui.add_space(6.0);
+                // Corner mask: checkbox declares edit scope, label selects the
+                // inspected corner. Four authored corners, never a fifth.
+                ui.horizontal(|ui| {
+                    ui.label(RichText::new("CORNERS").size(9.0).color(MUTED));
+                    for corner in 0..4 {
+                        let mut enabled = self.corner_mask[corner];
+                        if flat_checkbox(ui, &mut enabled).changed() {
+                            self.corner_mask[corner] = enabled;
+                        }
+                        let selected = screen.selected_corner == corner;
+                        if ui
+                            .selectable_label(
+                                selected,
+                                RichText::new(CORNER_LABELS[corner])
+                                    .size(10.0)
+                                    .color(if enabled { TEXT } else { MUTED }),
+                            )
+                            .clicked()
+                        {
+                            if let Err(error) = self.state.select(corner, screen.selected_lane)
+                            {
+                                self.set_error(error.to_string());
+                            }
+                        }
+                        ui.add_space(4.0);
+                    }
+                    ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
+                        if screen.selected_stage.identity {
+                            ui.label(
+                                RichText::new("S{} INACTIVE (identity biquad)")
+                                    .size(9.0)
+                                    .color(MUTED),
+                            );
                         } else {
-                            format!(" {suffix}")
-                        }),
-                );
-                if response.changed() {
-                    self.preview(EditRequest::single(
-                        screen.selected_corner,
-                        screen.selected_lane,
-                        field,
-                        value,
-                    ));
-                }
-                if response.drag_stopped() || response.lost_focus() {
-                    self.apply_preview();
+                            let both_unlocked = self.editable_corners(
+                                screen.selected_lane,
+                                Some(RootSide::Pole),
+                            ) == self.editable_corners(
+                                screen.selected_lane,
+                                Some(RootSide::Zero),
+                            );
+                            let corners = self.editable_corners(
+                                screen.selected_lane,
+                                Some(RootSide::Pole),
+                            );
+                            let enabled = both_unlocked && !corners.is_empty();
+                            if quiet_button(ui, "DEACTIVATE STAGE", enabled).clicked() {
+                                self.preview_edit(EditRequest {
+                                    corner_indices: corners,
+                                    lane_indices: vec![screen.selected_lane],
+                                    field: EditField::Identity,
+                                    value: 1.0,
+                                    secondary_value: None,
+                                    relative: false,
+                                });
+                            }
+                        }
+                    });
+                });
+                ui.add_space(6.0);
+                ui.horizontal(|ui| {
+                    ui.label(
+                        RichText::new(format!("STAGE S{}", screen.selected_lane + 1))
+                            .size(10.0)
+                            .color(TEXT),
+                    );
+                    let fields = available_fields(&screen.selected_stage);
+                    if !fields.contains(&self.field) {
+                        self.field = fields.first().copied().unwrap_or(PaneField::Scale);
+                    }
+                    egui::ComboBox::from_id_salt("pane_field")
+                        .selected_text(self.field.label())
+                        .show_ui(ui, |ui| {
+                            for field in &fields {
+                                ui.selectable_value(&mut self.field, *field, field.label());
+                            }
+                        });
+                    ui.label(
+                        RichText::new(format!("Δ ({})", self.field.delta_hint()))
+                            .size(9.0)
+                            .color(MUTED),
+                    );
+                    ui.add(
+                        egui::DragValue::new(&mut self.delta)
+                            .speed(0.01)
+                            .max_decimals(4),
+                    );
+                    if quiet_button(ui, "PREVIEW", true).clicked() {
+                        self.preview_pane_request(screen);
+                    }
+                    if primary_button(ui, "APPLY").clicked() {
+                        self.apply();
+                    }
+                    if quiet_button(ui, "CANCEL", self.state.pending_edit.is_some()).clicked() {
+                        self.cancel_preview();
+                    }
+                    if quiet_button(ui, "UNDO", !self.state.undo.is_empty()).clicked() {
+                        self.undo();
+                    }
+                    if quiet_button(ui, "EXPORT", true).clicked() {
+                        self.export();
+                    }
+                });
+                ui.add_space(6.0);
+                ui.horizontal_wrapped(|ui| {
+                    ui.label(RichText::new("STAGE").size(9.0).color(MUTED));
+                    ui.label(
+                        RichText::new(stage_readout(&screen.selected_stage))
+                            .size(10.0)
+                            .color(TEXT),
+                    );
+                });
+                if !self.receipt.is_empty() {
+                    ui.horizontal_wrapped(|ui| {
+                        ui.label(RichText::new("RECEIPT").size(9.0).color(MUTED));
+                        ui.label(
+                            RichText::new(&self.receipt)
+                                .size(9.0)
+                                .color(ACCENT),
+                        );
+                    });
                 }
             });
-        });
     }
 
     fn status_bar(&mut self, ctx: &egui::Context) {
         egui::TopBottomPanel::bottom("status")
-            .exact_height(28.0)
+            .exact_height(26.0)
             .frame(
                 egui::Frame::none()
                     .fill(PANEL)
-                    .inner_margin(egui::Margin::symmetric(12.0, 5.0)),
+                    .inner_margin(egui::Margin::symmetric(12.0, 4.0)),
             )
             .show(ctx, |ui| {
                 ui.horizontal(|ui| {
@@ -1614,42 +1512,13 @@ impl StudioApp {
                             .size(10.0)
                             .color(if self.status_error { ERROR } else { MUTED }),
                     );
-                    ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
-                        ui.label(
-                            RichText::new("39062.5 Hz · DF2T · 6 SECTIONS")
-                                .size(9.0)
-                                .color(MUTED),
-                        );
-                    });
                 });
             });
     }
 }
 
-impl eframe::App for StudioApp {
+impl eframe::App for ForgeApp {
     fn update(&mut self, ctx: &egui::Context, _frame: &mut eframe::Frame) {
-        // Response, z-plane, packed words, and the readout follow the audio
-        // within one processing block by reading the reported playhead/Q.
-        if let Some(control) = self.audition.clone() {
-            let (playhead, q) = {
-                let control = control.lock().unwrap();
-                (control.playhead, control.q)
-            };
-            let _ = self.state.set_morph_q(playhead, q);
-            ctx.request_repaint_after(Duration::from_millis(16));
-        }
-        // Ctrl/Cmd + 1..4 → Set Current into that corner.
-        let capture_corner = ctx.input(|input| {
-            if !input.modifiers.command {
-                return None;
-            }
-            [egui::Key::Num1, egui::Key::Num2, egui::Key::Num3, egui::Key::Num4]
-                .into_iter()
-                .position(|key| input.key_pressed(key))
-        });
-        if let Some(corner) = capture_corner {
-            self.set_current(corner);
-        }
         let screen = match self.screen() {
             Ok(screen) => screen,
             Err(error) => {
@@ -1657,141 +1526,139 @@ impl eframe::App for StudioApp {
                 return;
             }
         };
-        self.top_bar(ctx, &screen);
+        self.toolbar(ctx, &screen);
         self.status_bar(ctx);
-        self.library(ctx);
-        self.main_view(ctx, &screen);
+        egui::SidePanel::left("left")
+            .exact_width(380.0)
+            .frame(
+                egui::Frame::none()
+                    .fill(PANEL)
+                    .inner_margin(egui::Margin::same(12.0)),
+            )
+            .show(ctx, |ui| {
+                self.travel_pad(ui);
+                ui.add_space(8.0);
+                ui.separator();
+                ui.add_space(6.0);
+                self.make_pane(ui);
+                ui.add_space(8.0);
+                ui.separator();
+                ui.add_space(6.0);
+                egui::ScrollArea::vertical()
+                    .auto_shrink([false, false])
+                    .show(ui, |ui| self.lane_locker(ui, &screen));
+            });
+        egui::CentralPanel::default()
+            .frame(
+                egui::Frame::none()
+                    .fill(BG)
+                    .inner_margin(egui::Margin::same(10.0)),
+            )
+            .show(ctx, |ui| {
+                let available = ui.available_size();
+                let edit_height = 168.0f32.min(available.y * 0.4);
+                ui.allocate_ui_with_layout(
+                    Vec2::new(available.x, (available.y - edit_height - 10.0).max(240.0)),
+                    Layout::top_down(Align::Min),
+                    |ui| self.response_panel(ui, &screen),
+                );
+                ui.add_space(10.0);
+                self.edit_pane(ui, &screen);
+            });
         if self.sink.as_ref().is_some_and(Sink::empty) {
             self.stop_audio();
         }
     }
 }
 
-fn panel_frame() -> egui::Frame {
-    egui::Frame::none()
-        .fill(PANEL)
-        .inner_margin(egui::Margin::same(12.0))
-        .stroke(Stroke::new(1.0, LINE))
-}
+// ---------------------------------------------------------------------------
+// Rendering helpers
+// ---------------------------------------------------------------------------
 
-fn section_heading(ui: &mut egui::Ui, title: &str, detail: &str) {
-    ui.horizontal(|ui| {
-        ui.label(RichText::new(title).size(11.0).strong().color(TEXT));
-        ui.add_space(6.0);
-        ui.label(RichText::new(detail).size(9.0).color(MUTED));
-    });
-}
-
-fn separator(ui: &mut egui::Ui) {
-    ui.add_space(3.0);
-    let (rect, _) = ui.allocate_exact_size(Vec2::new(1.0, 24.0), Sense::hover());
-    ui.painter().rect_filled(rect, 0.0, LINE);
-    ui.add_space(3.0);
-}
-
-fn primary_button(ui: &mut egui::Ui, label: &str) -> Response {
-    ui.add(
-        egui::Button::new(
-            RichText::new(label)
-                .strong()
-                .color(Color32::from_rgb(8, 25, 21)),
-        )
-        .fill(ACCENT)
-        .stroke(Stroke::NONE)
-        .rounding(Rounding::same(4.0))
-        .min_size(Vec2::new(58.0, 30.0)),
+fn topology_text(stage: &StageSnapshot) -> String {
+    fn side_text(geometry: &RootGeometry) -> String {
+        match geometry {
+            RootGeometry::Conjugate { hz, radius } => format!("{hz:.0}Hz r{radius:.2}"),
+            RootGeometry::RealPair { root_a, root_b } => {
+                format!("real {root_a:+.2},{root_b:+.2}")
+            }
+            RootGeometry::Degenerate => "origin".to_owned(),
+        }
+    }
+    if stage.identity {
+        return "identity".to_owned();
+    }
+    format!(
+        "P {} · Z {}",
+        side_text(&stage.pole),
+        side_text(&stage.zero)
     )
 }
 
-fn quiet_button(ui: &mut egui::Ui, label: &str, enabled: bool) -> Response {
-    ui.add_enabled(
-        enabled,
-        egui::Button::new(RichText::new(label).size(10.0).color(TEXT))
-            .fill(PANEL_RAISED)
-            .stroke(Stroke::new(1.0, LINE))
-            .rounding(Rounding::same(4.0))
-            .min_size(Vec2::new(48.0, 28.0)),
+fn stage_readout(stage: &StageSnapshot) -> String {
+    let mut parts = vec![topology_text(stage)];
+    parts.push(format!("SCALE {}", stage.scale.display));
+    parts.push(
+        stage
+            .packed_words
+            .iter()
+            .enumerate()
+            .map(|(index, word)| format!("W{index} {word:04X}"))
+            .collect::<Vec<_>>()
+            .join(" "),
+    );
+    parts.join("  ·  ")
+}
+
+fn apply_receipt(result: &trench_workstation::model::EditResult) -> String {
+    let words = result
+        .changed_words
+        .iter()
+        .take(8)
+        .map(|word| {
+            format!(
+                "{} S{} W{} {:04X}->{:04X}",
+                word.corner_label,
+                word.lane_index + 1,
+                word.word_index,
+                word.before,
+                word.after
+            )
+        })
+        .collect::<Vec<_>>()
+        .join(" ");
+    let more = if result.changed_words.len() > 8 {
+        format!(" +{} more", result.changed_words.len() - 8)
+    } else {
+        String::new()
+    };
+    let quant = result
+        .targets
+        .iter()
+        .map(|target| target.quantisation.max_abs)
+        .fold(0.0, f64::max);
+    format!(
+        "{} word(s) · {} {more} · max |quant| {quant:.3e} · corners [{}] · lane(s) [{}]",
+        result.changed_words.len(),
+        words,
+        result
+            .request
+            .corner_indices
+            .iter()
+            .map(|&corner| CORNER_LABELS[corner])
+            .collect::<Vec<_>>()
+            .join(" "),
+        result
+            .request
+            .lane_indices
+            .iter()
+            .map(|lane| format!("S{}", lane + 1))
+            .collect::<Vec<_>>()
+            .join(" ")
     )
 }
 
-fn lock_button(ui: &mut egui::Ui, label: &str, locked: bool) -> Response {
-    ui.add(
-        egui::Button::new(
-            RichText::new(format!(
-                "{label} · {}",
-                if locked { "LOCKED" } else { "EDITABLE" }
-            ))
-            .size(9.0)
-            .color(if locked { MUTED } else { TEXT }),
-        )
-        .fill(if locked { PANEL_RAISED } else { ACCENT_SOFT })
-        .stroke(Stroke::new(1.0, if locked { LINE } else { ACCENT }))
-        .rounding(Rounding::same(4.0)),
-    )
-}
-
-fn segmented(ui: &mut egui::Ui, label: &str, selected: bool, mut action: impl FnMut()) {
-    let response = ui.add(
-        egui::Button::new(RichText::new(label).size(10.0).color(if selected {
-            TEXT
-        } else {
-            MUTED
-        }))
-        .selected(selected)
-        .min_size(Vec2::new(66.0, 28.0)),
-    );
-    if response.clicked() {
-        action();
-    }
-}
-
-fn library_row(ui: &mut egui::Ui, name: &str, triage: Option<Triage>, selected: bool) -> Response {
-    let height = 34.0;
-    let (rect, response) =
-        ui.allocate_exact_size(Vec2::new(ui.available_width(), height), Sense::click());
-    if selected || response.hovered() {
-        ui.painter().rect_filled(
-            rect,
-            Rounding::same(3.0),
-            if selected {
-                Color32::from_rgb(38, 57, 54)
-            } else {
-                PANEL_RAISED
-            },
-        );
-    }
-    ui.painter().text(
-        Pos2::new(rect.left() + 8.0, rect.center().y),
-        Align2::LEFT_CENTER,
-        name,
-        FontId::proportional(12.0),
-        if selected {
-            TEXT
-        } else {
-            Color32::from_rgb(197, 202, 209)
-        },
-    );
-    if let Some(value) = triage {
-        ui.painter().text(
-            Pos2::new(rect.right() - 7.0, rect.center().y),
-            Align2::RIGHT_CENTER,
-            value.label(),
-            FontId::proportional(9.0),
-            MUTED,
-        );
-    }
-    response
-}
-
-fn response_plot(ui: &mut egui::Ui, curve: &ResponseCurve, pole_hz: Option<f64>) -> Response {
-    let desired = Vec2::new(
-        ui.available_width(),
-        (ui.available_height() - 48.0).max(170.0),
-    );
-    let (rect, response) = ui.allocate_exact_size(desired, Sense::hover());
-    let plot = rect.shrink2(Vec2::new(48.0, 22.0));
-    let painter = ui.painter_at(rect);
-    painter.rect_filled(plot, Rounding::same(4.0), Color32::from_rgb(20, 23, 27));
+fn draw_plot_grid(painter: &egui::Painter, plot: Rect) {
     for db in [-48.0, -36.0, -24.0, -12.0, 0.0, 12.0, 24.0] {
         let y = map_db(plot, db);
         painter.line_segment(
@@ -1799,7 +1666,7 @@ fn response_plot(ui: &mut egui::Ui, curve: &ResponseCurve, pole_hz: Option<f64>)
             Stroke::new(if db == 0.0 { 1.0 } else { 0.5 }, LINE),
         );
         painter.text(
-            Pos2::new(plot.left() - 8.0, y),
+            Pos2::new(plot.left() - 6.0, y),
             Align2::RIGHT_CENTER,
             format!("{db:.0}"),
             FontId::proportional(9.0),
@@ -1821,7 +1688,7 @@ fn response_plot(ui: &mut egui::Ui, curve: &ResponseCurve, pole_hz: Option<f64>)
                 format!("{}", hz as i32)
             };
             painter.text(
-                Pos2::new(x, plot.bottom() + 7.0),
+                Pos2::new(x, plot.bottom() + 6.0),
                 Align2::CENTER_TOP,
                 label,
                 FontId::proportional(9.0),
@@ -1829,24 +1696,12 @@ fn response_plot(ui: &mut egui::Ui, curve: &ResponseCurve, pole_hz: Option<f64>)
             );
         }
     }
-    let points = curve
-        .points
-        .iter()
-        .filter(|point| point.db.is_finite())
-        .map(|point| Pos2::new(map_hz(plot, point.freq_hz), map_db(plot, point.db)))
-        .collect::<Vec<_>>();
-    if points.len() > 1 {
-        painter.add(egui::Shape::line(points, Stroke::new(2.0, ACCENT)));
-    }
-    if let Some(hz) = pole_hz.filter(|hz| *hz >= 20.0 && *hz <= 16_000.0) {
-        let x = map_hz(plot, hz);
-        painter.line_segment(
-            [Pos2::new(x, plot.top()), Pos2::new(x, plot.bottom())],
-            Stroke::new(1.0, Color32::from_rgba_unmultiplied(70, 184, 151, 90)),
-        );
-        painter.circle_filled(Pos2::new(x, plot.top() + 10.0), 3.5, ACCENT);
-    }
-    response
+}
+
+fn log_grid(points: usize) -> Vec<f64> {
+    (0..points)
+        .map(|index| 20.0 * (16_000.0_f64 / 20.0).powf(index as f64 / (points - 1) as f64))
+        .collect()
 }
 
 fn map_hz(rect: Rect, hz: f64) -> f32 {
@@ -1855,119 +1710,141 @@ fn map_hz(rect: Rect, hz: f64) -> f32 {
     egui::lerp(rect.x_range(), t)
 }
 
+fn unmap_hz(rect: Rect, x: f32) -> f64 {
+    let t = ((x - rect.left()) / rect.width()).clamp(0.0, 1.0) as f64;
+    (20.0_f64.ln() + t * (16_000.0_f64.ln() - 20.0_f64.ln())).exp()
+}
+
 fn map_db(rect: Rect, db: f64) -> f32 {
     let t = ((db.clamp(DB_MIN, DB_MAX) - DB_MIN) / (DB_MAX - DB_MIN)) as f32;
     egui::lerp(rect.y_range(), 1.0 - t)
 }
 
-fn pole_frequency(stage: &StageSnapshot) -> Option<f64> {
-    match stage.pole {
-        RootGeometry::Conjugate { hz, .. } => Some(hz),
-        _ => None,
-    }
+// ---------------------------------------------------------------------------
+// Widget helpers
+// ---------------------------------------------------------------------------
+
+fn section_heading(ui: &mut egui::Ui, title: &str, detail: &str) {
+    ui.horizontal(|ui| {
+        ui.label(RichText::new(title).size(11.0).strong().color(TEXT));
+        ui.add_space(6.0);
+        ui.label(RichText::new(detail).size(9.0).color(MUTED));
+    });
 }
 
-fn root_positions(center: Pos2, radius: f32, root: &RootGeometry) -> Vec<(Pos2, bool)> {
-    match root {
-        RootGeometry::Conjugate { hz, radius: r } => {
-            let angle = std::f64::consts::TAU * *hz / STAGE_SR;
-            let x = angle.cos() as f32 * *r as f32;
-            let y = angle.sin() as f32 * *r as f32;
-            vec![
-                (
-                    Pos2::new(center.x + x * radius, center.y - y * radius),
-                    true,
-                ),
-                (
-                    Pos2::new(center.x + x * radius, center.y + y * radius),
-                    false,
-                ),
-            ]
-        }
-        RootGeometry::RealPair { root_a, root_b } => vec![
-            (
-                Pos2::new(center.x + *root_a as f32 * radius, center.y),
-                true,
-            ),
-            (
-                Pos2::new(center.x + *root_b as f32 * radius, center.y),
-                false,
-            ),
-        ],
-        RootGeometry::Degenerate => vec![(center, true)],
-    }
+fn separator(ui: &mut egui::Ui) {
+    ui.add_space(3.0);
+    let (rect, _) = ui.allocate_exact_size(Vec2::new(1.0, 22.0), Sense::hover());
+    ui.painter().rect_filled(rect, 0.0, LINE);
+    ui.add_space(3.0);
 }
 
-fn draw_root_pair(
-    painter: &egui::Painter,
-    center: Pos2,
-    radius: f32,
-    root: &RootGeometry,
-    side: RootSide,
+fn primary_button(ui: &mut egui::Ui, label: &str) -> Response {
+    ui.add(
+        egui::Button::new(
+            RichText::new(label)
+                .strong()
+                .color(Color32::from_rgb(8, 25, 21)),
+        )
+        .fill(ACCENT)
+        .stroke(Stroke::NONE)
+        .rounding(Rounding::ZERO)
+        .min_size(Vec2::new(56.0, 24.0)),
+    )
+}
+
+fn quiet_button(ui: &mut egui::Ui, label: &str, enabled: bool) -> Response {
+    ui.add_enabled(
+        enabled,
+        egui::Button::new(RichText::new(label).size(10.0).color(TEXT))
+            .fill(PANEL_RAISED)
+            .stroke(Stroke::new(1.0, LINE))
+            .rounding(Rounding::ZERO)
+            .min_size(Vec2::new(48.0, 24.0)),
+    )
+}
+
+fn mini_lock_button(ui: &mut egui::Ui, label: &str, locked: bool) -> Response {
+    ui.add(
+        egui::Button::new(
+            RichText::new(label)
+                .size(10.0)
+                .monospace()
+                .color(if locked { MUTED } else { ACCENT }),
+        )
+        .fill(if locked { PANEL } else { ACCENT_SOFT })
+        .stroke(Stroke::new(1.0, if locked { LINE } else { ACCENT }))
+        .rounding(Rounding::ZERO)
+        .min_size(Vec2::new(24.0, 20.0)),
+    )
+}
+
+/// Joined segmented control — one bordered run, hairline cells, the selected
+/// cell carries the accent fill. Used for mode and stage selection.
+fn segmented_group(
+    ui: &mut egui::Ui,
+    options: &[&str],
+    selected: usize,
+    cell_width: f32,
+    mut on_select: impl FnMut(usize),
 ) {
-    for (position, _) in root_positions(center, radius, root) {
-        match side {
-            RootSide::Pole => {
-                painter.circle_filled(position, 5.5, ACCENT);
-                painter.circle_stroke(position, 8.5, Stroke::new(1.0, ACCENT_SOFT));
-            }
-            RootSide::Zero => {
-                painter.circle_filled(position, 5.5, PANEL_RAISED);
-                painter.circle_stroke(position, 5.5, Stroke::new(2.0, TEXT));
-            }
+    let height = 22.0;
+    let total = Vec2::new(cell_width * options.len() as f32, height);
+    let (rect, _) = ui.allocate_exact_size(total, Sense::hover());
+    let painter = ui.painter_at(rect);
+    painter.rect_stroke(rect, Rounding::ZERO, Stroke::new(1.0, LINE));
+    for (index, option) in options.iter().enumerate() {
+        let cell = Rect::from_min_size(
+            Pos2::new(rect.left() + cell_width * index as f32, rect.top()),
+            Vec2::new(cell_width, height),
+        );
+        let response = ui.interact(cell, ui.id().with(("segment", index)), Sense::click());
+        let is_selected = index == selected;
+        if is_selected {
+            painter.rect_filled(cell, Rounding::ZERO, ACCENT_SOFT);
+        } else if response.hovered() {
+            painter.rect_filled(cell, Rounding::ZERO, PANEL_RAISED);
+        }
+        if index > 0 {
+            painter.line_segment(
+                [cell.left_top(), cell.left_bottom()],
+                Stroke::new(1.0, LINE),
+            );
+        }
+        painter.text(
+            cell.center(),
+            Align2::CENTER_CENTER,
+            *option,
+            FontId::proportional(10.0),
+            if is_selected { TEXT } else { MUTED },
+        );
+        if response.clicked() {
+            on_select(index);
         }
     }
 }
 
-fn nearest_root_handle(
-    pointer: Pos2,
-    center: Pos2,
-    radius: f32,
-    stage: &StageSnapshot,
-) -> Option<RootHandle> {
-    let mut candidates = Vec::new();
-    for (side, root) in [(RootSide::Pole, &stage.pole), (RootSide::Zero, &stage.zero)] {
-        match root {
-            RootGeometry::Conjugate { .. } => {
-                if let Some((position, _)) = root_positions(center, radius, root).first() {
-                    candidates.push((position.distance(pointer), RootHandle::Conjugate(side)));
-                }
-            }
-            RootGeometry::RealPair { .. } => {
-                for (position, first) in root_positions(center, radius, root) {
-                    candidates.push((position.distance(pointer), RootHandle::Real(side, first)));
-                }
-            }
-            RootGeometry::Degenerate => {}
-        }
+/// Flat square checkbox for the corner mask: hairline cell, accent core.
+fn flat_checkbox(ui: &mut egui::Ui, value: &mut bool) -> Response {
+    let (rect, response) = ui.allocate_exact_size(Vec2::splat(14.0), Sense::click());
+    let painter = ui.painter_at(rect);
+    painter.rect_stroke(
+        rect,
+        Rounding::ZERO,
+        Stroke::new(1.0, if *value { ACCENT } else { LINE }),
+    );
+    if *value {
+        painter.rect_filled(rect.shrink(3.0), Rounding::ZERO, ACCENT);
     }
-    candidates
-        .into_iter()
-        .filter(|(distance, _)| *distance <= 18.0)
-        .min_by(|left, right| left.0.total_cmp(&right.0))
-        .map(|(_, handle)| handle)
+    if response.clicked() {
+        *value = !*value;
+    }
+    response
 }
 
-fn root_handle_side(handle: RootHandle) -> RootSide {
-    match handle {
-        RootHandle::Conjugate(side) | RootHandle::Real(side, _) => side,
-    }
-}
-
-fn inspect_data(ui: &mut egui::Ui, stage: &StageSnapshot) {
-    ui.horizontal_wrapped(|ui| {
-        ui.label(RichText::new("PACKED WORDS").size(9.0).color(MUTED));
-        for (index, word) in stage.packed_words.iter().enumerate() {
-            ui.monospace(format!("W{index} {word:04X}"));
-        }
-    });
-    ui.horizontal_wrapped(|ui| {
-        ui.label(RichText::new("DECODED DF2T").size(9.0).color(MUTED));
-        for (index, value) in stage.runtime_coefficients.iter().enumerate() {
-            ui.monospace(format!("C{index} {value:+.7}"));
-        }
-    });
-}
+// ---------------------------------------------------------------------------
+// Files / audio helpers
+// ---------------------------------------------------------------------------
 
 fn body_name(path: &Path) -> String {
     path.file_stem()
@@ -1976,11 +1853,36 @@ fn body_name(path: &Path) -> String {
         .replace('_', " ")
 }
 
-fn format_transport_time(frames: u64) -> String {
-    let seconds = frames as f64 / STAGE_SR;
-    let minutes = (seconds / 60.0).floor() as u64;
-    let remainder = seconds - (minutes as f64) * 60.0;
-    format!("{minutes:02}:{remainder:06.3}")
+fn first_body(repo_root: &Path) -> Option<PathBuf> {
+    let mut candidates = [
+        repo_root.join("filters").join("bodies"),
+        repo_root.join("plugin").join("presets").join("bodies"),
+    ]
+    .into_iter()
+    .filter_map(|dir| {
+        let mut bodies = fs::read_dir(dir)
+            .ok()?
+            .filter_map(Result::ok)
+            .map(|entry| entry.path())
+            .filter(|path| path.extension().and_then(|value| value.to_str()) == Some("body240"))
+            .collect::<Vec<_>>();
+        bodies.sort();
+        bodies.into_iter().next()
+    })
+    .collect::<Vec<_>>();
+    candidates.dedup();
+    candidates.into_iter().next()
+}
+
+fn first_audition_wav(repo_root: &Path) -> Option<PathBuf> {
+    let mut wavs = Vec::new();
+    collect_wavs(&repo_root.join("wav-source-library"), &mut wavs).ok()?;
+    wavs.sort();
+    let cello = wavs
+        .iter()
+        .position(|path| body_name(path).to_lowercase().contains("cello"));
+    cello.or(if wavs.is_empty() { None } else { Some(0) })
+        .map(|index| wavs[index].clone())
 }
 
 fn collect_wavs(root: &Path, output: &mut Vec<PathBuf>) -> std::io::Result<()> {
@@ -2002,8 +1904,8 @@ fn collect_wavs(root: &Path, output: &mut Vec<PathBuf>) -> std::io::Result<()> {
     Ok(())
 }
 
-/// One retained engine, prepared and loaded for cascade-only (BODY SOLO) or the
-/// full retained path (PRODUCT). Mirrors the audio setup the offline sweep used.
+/// One retained engine, prepared and loaded for cascade-only (BODY SOLO) or
+/// the full retained path (PRODUCT). Same setup the proof renders use.
 fn build_audition_engine(body: &[u8], mode: AudioMode) -> Result<FilterEngine, String> {
     let cartridge = Cartridge::from_body_bytes("workstation-audition", body, 1.0)
         .map_err(|error| error.to_string())?;
@@ -2022,16 +1924,13 @@ fn build_audition_engine(body: &[u8], mode: AudioMode) -> Result<FilterEngine, S
     Ok(engine)
 }
 
-/// Decode a WAV once, downmix to mono, resample to the engine rate. The audition
-/// loops this material, so a generous cap is enough.
+/// Decode a WAV once, downmix to mono, resample to the engine rate.
 fn decode_wav_to_stage_sr(path: &Path) -> Result<Vec<f32>, String> {
     let file = File::open(path).map_err(|error| format!("WAV could not be opened: {error}"))?;
     let decoder = Decoder::new(BufReader::new(file))
         .map_err(|error| format!("WAV could not be decoded: {error}"))?;
     let source_rate = decoder.sample_rate();
     let channels = decoder.channels() as usize;
-    // ponytail: cap decode at 60 s; the audition loops, so longer sources buy
-    // nothing but RAM. Raise it if a real use-case needs a longer one-shot.
     let interleaved = decoder
         .convert_samples::<f32>()
         .take_duration(Duration::from_secs(60))
@@ -2058,28 +1957,110 @@ fn decode_wav_to_stage_sr(path: &Path) -> Result<Vec<f32>, String> {
     Ok(source)
 }
 
+fn collect_actor_wavs(repo_root: &Path) -> Vec<PathBuf> {
+    let mut wavs = Vec::new();
+    let _ = collect_wavs(
+        &repo_root
+            .join("wav-source-library")
+            .join("measured_objects"),
+        &mut wavs,
+    );
+    wavs.sort();
+    wavs
+}
+
+/// Decode a WAV to mono f32 at its own sample rate for the actor loader.
+fn decode_wav_mono(path: &Path) -> Result<(Vec<f32>, u32), String> {
+    const MAX_ACTOR_SAMPLES: usize = 12_000_000;
+    let file = File::open(path).map_err(|error| format!("WAV could not be opened: {error}"))?;
+    let decoder = Decoder::new(BufReader::new(file))
+        .map_err(|error| format!("WAV could not be decoded: {error}"))?;
+    let rate = decoder.sample_rate();
+    let channels = decoder.channels() as usize;
+    let interleaved = decoder
+        .convert_samples::<f32>()
+        .take(MAX_ACTOR_SAMPLES)
+        .collect::<Vec<f32>>();
+    if channels == 0 || interleaved.len() < channels * 2_048 {
+        return Err("WAV is too short for an actor scaffold".to_owned());
+    }
+    let mono = interleaved
+        .chunks(channels)
+        .map(|frame| frame.iter().copied().sum::<f32>() / frame.len() as f32)
+        .collect::<Vec<_>>();
+    if mono.iter().any(|sample| !sample.is_finite()) {
+        return Err("WAV contains nonfinite samples".to_owned());
+    }
+    Ok((mono, rate))
+}
+
 fn configure_ui(ctx: &egui::Context) {
+    // Native type, loaded from the OS at runtime — nothing bundled, no stock
+    // toolkit font. Falls back silently if the OS fonts are missing.
+    let mut fonts = egui::FontDefinitions::default();
+    for (name, path, family) in [
+        (
+            "segoe",
+            r"C:\Windows\Fonts\segoeui.ttf",
+            egui::FontFamily::Proportional,
+        ),
+        (
+            "consolas",
+            r"C:\Windows\Fonts\consola.ttf",
+            egui::FontFamily::Monospace,
+        ),
+    ] {
+        if let Ok(bytes) = std::fs::read(path) {
+            fonts
+                .font_data
+                .insert(name.to_owned(), egui::FontData::from_owned(bytes));
+            fonts
+                .families
+                .entry(family)
+                .or_default()
+                .insert(0, name.to_owned());
+        }
+    }
+    ctx.set_fonts(fonts);
+
+    // Flat, segmented, load-bearing chrome: zero radius, hairlines, no shadows.
     let mut visuals = egui::Visuals::dark();
     visuals.panel_fill = PANEL;
     visuals.window_fill = PANEL;
-    visuals.extreme_bg_color = Color32::from_rgb(15, 17, 20);
-    visuals.faint_bg_color = PANEL_RAISED;
-    visuals.widgets.inactive.bg_fill = PANEL_RAISED;
-    visuals.widgets.inactive.weak_bg_fill = PANEL_RAISED;
-    visuals.widgets.inactive.bg_stroke = Stroke::new(1.0, LINE);
-    visuals.widgets.hovered.bg_fill = Color32::from_rgb(38, 43, 49);
-    visuals.widgets.hovered.bg_stroke = Stroke::new(1.0, Color32::from_rgb(79, 87, 97));
-    visuals.widgets.active.bg_fill = ACCENT_SOFT;
-    visuals.widgets.active.bg_stroke = Stroke::new(1.0, ACCENT);
+    visuals.extreme_bg_color = BG;
+    visuals.faint_bg_color = PANEL;
+    visuals.window_rounding = Rounding::ZERO;
+    visuals.window_shadow = egui::Shadow::NONE;
+    visuals.popup_shadow = egui::Shadow::NONE;
+    let widget_state = |fill: Color32| egui::style::WidgetVisuals {
+        bg_fill: fill,
+        weak_bg_fill: fill,
+        bg_stroke: Stroke::new(1.0, LINE),
+        fg_stroke: Stroke::new(1.0, TEXT),
+        rounding: Rounding::ZERO,
+        expansion: 0.0,
+    };
+    visuals.widgets.inactive = widget_state(PANEL_RAISED);
+    visuals.widgets.hovered = widget_state(Color32::from_rgb(35, 40, 46));
+    visuals.widgets.active = widget_state(ACCENT_SOFT);
+    visuals.widgets.open = widget_state(PANEL_RAISED);
     visuals.selection.bg_fill = ACCENT_SOFT;
     visuals.selection.stroke = Stroke::new(1.0, ACCENT);
     visuals.override_text_color = Some(TEXT);
-    visuals.window_rounding = Rounding::same(6.0);
     ctx.set_visuals(visuals);
+
     let mut style = (*ctx.style()).clone();
     style.spacing.item_spacing = Vec2::new(7.0, 6.0);
-    style.spacing.button_padding = Vec2::new(10.0, 6.0);
-    style.spacing.interact_size.y = 28.0;
+    style.spacing.button_padding = Vec2::new(10.0, 5.0);
+    style.spacing.interact_size.y = 24.0;
+    style.text_styles = [
+        (egui::TextStyle::Body, FontId::new(12.0, egui::FontFamily::Proportional)),
+        (egui::TextStyle::Small, FontId::new(10.0, egui::FontFamily::Proportional)),
+        (egui::TextStyle::Button, FontId::new(11.0, egui::FontFamily::Proportional)),
+        (egui::TextStyle::Monospace, FontId::new(11.0, egui::FontFamily::Monospace)),
+        (egui::TextStyle::Heading, FontId::new(13.0, egui::FontFamily::Proportional)),
+    ]
+    .into();
     ctx.set_style(style);
 }
 
@@ -2088,16 +2069,16 @@ fn main() -> eframe::Result<()> {
         .parent()
         .expect("workstation manifest must be inside the repository")
         .to_path_buf();
-    let app = StudioApp::new(repo_root).unwrap_or_else(|error| panic!("{error}"));
+    let app = ForgeApp::new(repo_root).unwrap_or_else(|error| panic!("{error}"));
     let options = eframe::NativeOptions {
         viewport: egui::ViewportBuilder::default()
-            .with_title("Filter Workstation")
-            .with_inner_size([1440.0, 920.0])
-            .with_min_inner_size([1050.0, 700.0]),
+            .with_title("TRENCH Surface Forge")
+            .with_inner_size([1440.0, 900.0])
+            .with_min_inner_size([1100.0, 720.0]),
         ..Default::default()
     };
     eframe::run_native(
-        "Filter Workstation",
+        "TRENCH Surface Forge",
         options,
         Box::new(|creation| {
             configure_ui(&creation.egui_ctx);
@@ -2106,89 +2087,382 @@ fn main() -> eframe::Result<()> {
     )
 }
 
+// ---------------------------------------------------------------------------
+// Proof gates (acceptance gates 1, 2, 4 + the audio-thread boundary)
+// ---------------------------------------------------------------------------
+
 #[cfg(test)]
 mod tests {
     use super::*;
+    use trench_workstation::model::{render_audio_at, Excitation};
+
+    fn repo_root() -> PathBuf {
+        PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+            .parent()
+            .unwrap()
+            .to_path_buf()
+    }
+
+    fn app() -> ForgeApp {
+        ForgeApp::new(repo_root()).unwrap()
+    }
 
     fn probe_wav(len: usize) -> Vec<f32> {
-        // Deterministic, non-silent material at the engine rate.
         (0..len).map(|i| (i as f32 * 0.031).sin() * 0.25).collect()
     }
 
-    fn loaded_body() -> [u8; 240] {
-        let repo_root = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
-            .parent()
-            .unwrap()
-            .to_path_buf();
-        StudioApp::new(repo_root)
-            .unwrap()
-            .original_session
-            .to_body_bytes()
-            .unwrap()
+    /// Gate 1: travel-pad movement changes only the read position.
+    #[test]
+    fn pad_travel_keeps_body_bytes_identical() {
+        let mut app = app();
+        let before = app.working_body_bytes().unwrap();
+        for step_m in 0..=10 {
+            for step_q in 0..=10 {
+                app.set_pad(step_m as f64 / 10.0, step_q as f64 / 10.0);
+            }
+        }
+        assert_eq!(app.state.morph, 1.0);
+        assert_eq!(app.state.q, 1.0);
+        let after = app.working_body_bytes().unwrap();
+        assert_eq!(before, after, "pad travel must not move body bytes");
+        let screen = app.screen().unwrap();
+        assert_eq!(screen.current_probe.morph, 1.0);
+        assert_eq!(screen.current_probe.q, 1.0);
     }
 
+    /// Gate 2: one selected-stage edit = one Preview/Apply undo step, and the
+    /// receipt names only the declared corner/lane/words.
     #[test]
-    fn audition_stream_sweeps_then_latches_held_and_stays_finite() {
-        let body = loaded_body();
-        let wav = Arc::new(probe_wav(4096));
-        let control = Arc::new(Mutex::new(AuditionControl {
-            q: 0.5,
-            morph: 0.0,
-            transport: Transport::Sweeping,
-            sweep_len_frames: (AUDITION_BLOCK as u64) * 8, // short sweep, latches fast
-            reload: None,
-            playhead: 0.0,
-            time_frames: 0,
-            held_at_end: false,
-        }));
-        let mut stream = AuditionStream {
-            engine: build_audition_engine(&body, AudioMode::BodySolo).unwrap(),
-            wav,
-            wav_cursor: 0,
-            sweep_pos: 0,
-            last_transport: Transport::Sweeping,
-            control: control.clone(),
-            buf: Vec::new(),
-            right: Vec::new(),
-            pos: 0,
+    fn preview_apply_reports_only_declared_words_and_one_undo_step() {
+        let mut app = app();
+        let screen = app.screen().unwrap();
+        let lane = screen.corners[0]
+            .lanes
+            .iter()
+            .position(|lane| matches!(lane.stage.pole, RootGeometry::Conjugate { .. }))
+            .expect("starter body must expose at least one conjugate pole lane");
+        app.state.select(0, lane).unwrap();
+        let screen = app.screen().unwrap();
+        let hz = match screen.corners[0].lanes[lane].stage.pole {
+            RootGeometry::Conjugate { hz, .. } => hz,
+            _ => unreachable!(),
         };
-        let out: Vec<f32> = (0..AUDITION_BLOCK * 12).map(|_| stream.next().unwrap()).collect();
-        assert!(out.iter().all(|sample| sample.is_finite()));
-        let control = control.lock().unwrap();
-        assert!(control.held_at_end, "sweep must latch HELD at the end");
-        assert!((control.playhead - 1.0).abs() < 1e-9, "playhead must reach 1.0");
-        assert_eq!(control.transport, Transport::Held);
+        app.corner_mask = [true, false, false, false];
+        app.locks[0][lane].pole = false;
+        app.field = PaneField::PoleHz;
+        app.delta = if hz < 9_000.0 { 1.0 } else { -1.0 };
+        let before = app.working_body_bytes().unwrap();
+        let undo_depth = app.state.undo.len();
+
+        let request = app.build_request(&screen).unwrap();
+        app.preview_edit(request);
+        assert!(app.state.pending_edit.is_some());
+        app.apply();
+        let result = app.state.last_edit.clone().expect("apply must record a result");
+        assert_eq!(app.state.undo.len(), undo_depth + 1, "apply pushes one undo step");
+        assert!(
+            !result.changed_words.is_empty(),
+            "a one-octave pole move must change packed words"
+        );
+        assert!(result
+            .changed_words
+            .iter()
+            .all(|word| word.corner_index == 0 && word.lane_index == lane));
+        let edited = app.working_body_bytes().unwrap();
+        assert_ne!(before, edited);
+
+        app.undo();
+        assert_eq!(
+            app.working_body_bytes().unwrap(),
+            before,
+            "undo restores the exact body bytes"
+        );
     }
 
+    /// Gate 4: real-root rows never enter the conjugate editor; empty masks
+    /// and multi-corner real-root edits are refused, not clamped.
     #[test]
-    fn held_block_equals_direct_process_block() {
-        let body = loaded_body();
-        let wav = Arc::new(probe_wav(AUDITION_BLOCK * 4));
-        let (morph, q) = (0.372, 0.64);
-        let control = Arc::new(Mutex::new(AuditionControl {
-            q,
-            morph,
-            transport: Transport::Held,
-            sweep_len_frames: wav.len() as u64,
-            reload: None,
-            playhead: 0.0,
-            time_frames: 0,
-            held_at_end: false,
-        }));
-        let mut stream = AuditionStream {
-            engine: build_audition_engine(&body, AudioMode::BodySolo).unwrap(),
-            wav: wav.clone(),
-            wav_cursor: 0,
-            sweep_pos: 0,
-            last_transport: Transport::Held,
+    fn real_root_rows_are_refused_conjugate_controls() {
+        let real = RootGeometry::RealPair {
+            root_a: 0.8,
+            root_b: -0.4,
+        };
+        assert!(fields_for_geometry(&real, RootSide::Pole)
+            .iter()
+            .all(|field| field.is_real_root()));
+        assert!(fields_for_geometry(&real, RootSide::Zero)
+            .iter()
+            .all(|field| field.is_real_root()));
+        let degenerate = RootGeometry::Degenerate;
+        assert!(fields_for_geometry(&degenerate, RootSide::Pole).is_empty());
+        assert!(fields_for_geometry(&degenerate, RootSide::Zero).is_empty());
+
+        let mut app = app();
+        let screen = app.screen().unwrap();
+        let lane = screen.selected_lane;
+        // Every side locked + every corner toggled on: refusal, not a clamp.
+        app.field = PaneField::PoleHz;
+        let error = app.build_request(&screen).unwrap_err();
+        assert!(
+            error.contains("no editable corner contributes"),
+            "expected a refusal boundary, got: {error}"
+        );
+        // Unlock pole side for all corners: a conjugate field builds a
+        // relative request across the declared mask.
+        for corner in 0..4 {
+            app.locks[corner][lane].pole = false;
+        }
+        let request = app.build_request(&screen).unwrap();
+        assert!(request.relative);
+        assert_eq!(request.corner_indices, vec![0, 1, 2, 3]);
+        assert_eq!(request.field, EditField::PoleGeometry);
+        // Real-root fields demand exactly the selected corner.
+        app.field = PaneField::PoleRootA;
+        let error = app.build_request(&screen).unwrap_err();
+        assert!(
+            error.contains("single-corner"),
+            "multi-corner real-root edit must be refused: {error}"
+        );
+        app.corner_mask = [true, false, false, false];
+        app.state.select(0, lane).unwrap();
+        let screen = app.screen().unwrap();
+        if matches!(screen.selected_stage.pole, RootGeometry::RealPair { .. }) {
+            let request = app.build_request(&screen).unwrap();
+            assert_eq!(request.corner_indices, vec![0]);
+            assert!(!request.relative);
+        }
+    }
+
+    /// Gate 3 support: markers factored from probe rows match the authored
+    /// packed snapshot when the pad sits on that corner.
+    #[test]
+    fn probe_row_roots_match_authored_corner_geometry() {
+        let mut app = app();
+        app.set_pad(0.0, 0.0);
+        let screen = app.screen().unwrap();
+        for lane in 0..6 {
+            let authored = &screen.corners[0].lanes[lane].stage;
+            if let RootGeometry::Conjugate { hz, radius } = authored.pole {
+                let mark = roots_from_probe_row(&screen.current_probe.rows[lane], RootSide::Pole);
+                let RootMark::Conjugate {
+                    hz: mark_hz,
+                    radius: mark_radius,
+                } = mark
+                else {
+                    panic!("conjugate authored pole must factor as conjugate: {mark:?}");
+                };
+                assert!(
+                    (mark_hz - hz).abs() < 1.0,
+                    "S{} pole hz: authored {hz} vs probe {mark_hz}",
+                    lane + 1
+                );
+                assert!(
+                    (mark_radius - radius).abs() < 1e-3,
+                    "S{} pole radius: authored {radius} vs probe {mark_radius}",
+                    lane + 1
+                );
+            }
+        }
+    }
+
+    /// Gate 6: BODY SOLO and PRODUCT renders are finite, use a fixed input,
+    /// and are never per-render normalized. Deterministic equality across
+    /// calls is what proves the fixed input.
+    #[test]
+    fn body_solo_and_product_renders_are_finite_fixed_and_unnormalized() {
+        let app = app();
+        for mode in [AudioMode::BodySolo, AudioMode::Product] {
+            let render =
+                render_audio_at(&app.state.session, mode, Excitation::Probe, 0.5, 0.5).unwrap();
+            let again =
+                render_audio_at(&app.state.session, mode, Excitation::Probe, 0.5, 0.5).unwrap();
+            assert!(!render.normalized, "{mode:?} must not be normalized");
+            assert!(render.input_peak > 0.0, "fixed input must be non-silent");
+            assert_eq!(
+                render.input_peak, again.input_peak,
+                "input stimulus must be identical across renders"
+            );
+            assert_eq!(
+                render.wav_bytes, again.wav_bytes,
+                "same body, same input, same mode: bytes must be identical"
+            );
+            assert!(render.output_peak.is_finite() && render.output_rms.is_finite());
+            assert!(render.output_peak > 0.0, "{mode:?} render must be non-silent");
+            // A body whose raw cascade exceeds unity must report that peak
+            // honestly; nothing here may clamp it away or re-normalize.
+            let pcm_peak = render
+                .wav_bytes
+                .chunks_exact(2)
+                .skip(22) // 44-byte RIFF header
+                .map(|bytes| i16::from_le_bytes([bytes[0], bytes[1]]).abs())
+                .max()
+                .unwrap_or(0);
+            assert!(pcm_peak > 0, "{mode:?} PCM container must be non-silent");
+        }
+    }
+
+    /// Gate 5/export: Export uses the retained keep() path. It either writes
+    /// a fresh content-addressed bundle (body240 + session + audit + both
+    /// renders) or refuses because that exact content was already exported —
+    /// never a silent overwrite of the source body or a previous run.
+    #[test]
+    fn export_keep_writes_bundle_or_refuses_duplicate_content() {
+        let mut app = app();
+        let source_bytes = app.body_path.as_ref().map(|path| fs::read(path).unwrap());
+        match app.state.keep() {
+            Ok(receipt) => {
+                let dir = PathBuf::from(&receipt.directory);
+                for artifact in [
+                    "body240",
+                    "session.json",
+                    "audit.json",
+                    "cartridge.json",
+                    "body_solo.wav",
+                    "product.wav",
+                ] {
+                    assert!(
+                        dir.join(artifact).exists(),
+                        "export bundle is missing {artifact}"
+                    );
+                }
+                let exported = fs::read(dir.join("body240")).unwrap();
+                assert_eq!(
+                    exported,
+                    app.working_body_bytes().unwrap(),
+                    "exported body must equal the working packed body"
+                );
+            }
+            Err(error) => {
+                let message = error.to_string();
+                assert!(
+                    message.contains("already exists"),
+                    "only a duplicate-content refusal is acceptable here: {message}"
+                );
+            }
+        }
+        if let Some(bytes) = source_bytes {
+            let path = app.body_path.clone().unwrap();
+            assert_eq!(
+                fs::read(&path).unwrap(),
+                bytes,
+                "export must never touch the source body file"
+            );
+        }
+    }
+
+    // -- make paths -----------------------------------------------------------
+
+    /// MAKE/FROM AUDIO: one owned wav becomes a certified six-actor scaffold
+    /// through the surface wiring, as one undo step.
+    #[test]
+    fn make_from_audio_produces_certified_scaffold() {
+        let mut app = app();
+        assert!(
+            !app.actor_wavs.is_empty(),
+            "measured_objects wavs must be present for the actor path"
+        );
+        let before = app.working_body_bytes().unwrap();
+        let undo_depth = app.state.undo.len();
+        let mut made = false;
+        for index in 0..app.actor_wavs.len().min(8) {
+            app.actor_wav = index;
+            app.make_from_audio();
+            if !app.status_error {
+                made = true;
+                break;
+            }
+        }
+        assert!(made, "no measured wav produced an actor scaffold");
+        assert_eq!(app.state.undo.len(), undo_depth + 1, "actor load is one undo step");
+        assert!(app.state.audit.pass && app.state.audit.certify_pass);
+        assert_ne!(app.working_body_bytes().unwrap(), before);
+    }
+
+    /// MAKE/FROM RECIPE: the catalog is populated from disk, and one apply is
+    /// certified, zero-scope-only, one undo step.
+    #[test]
+    fn make_from_recipe_is_certified_and_zero_scoped() {
+        let mut app = app();
+        assert!(
+            !app.state.recipe_catalog.candidates.is_empty(),
+            "recipe-index must yield candidates for the loaded scaffold"
+        );
+        let undo_depth = app.state.undo.len();
+        app.recipe_sel = 0;
+        app.make_from_recipe();
+        assert!(!app.status_error, "recipe apply failed: {}", app.status);
+        let report = app
+            .state
+            .last_recipe_apply
+            .clone()
+            .expect("apply must record a recipe report");
+        assert!(report.declared_zero_word_scope_only);
+        assert!(report.sampled_audit_after.pass && report.sampled_audit_after.certify_pass);
+        assert!(report.cartridge_parity_after);
+        assert_eq!(app.state.undo.len(), undo_depth + 1);
+    }
+
+    /// MAKE/FROM XML: heritage stages fill exactly the selected corner.
+    #[test]
+    fn make_fill_corner_touches_only_the_selected_corner() {
+        let mut app = app();
+        assert!(
+            !app.state.source_catalog.sources.is_empty(),
+            "heritage XML well must be discovered"
+        );
+        app.state.select(2, 0).unwrap();
+        let undo_depth = app.state.undo.len();
+        app.source_sel = 0;
+        app.endpoint_high = false;
+        app.make_fill_corner();
+        assert!(!app.status_error, "corner fill failed: {}", app.status);
+        let report = app
+            .state
+            .last_source_apply
+            .clone()
+            .expect("fill must record a source report");
+        assert_eq!(report.corner_index, 2);
+        assert_eq!(report.lane_indices.len(), 6, "fill assigns all six lanes");
+        assert!(report
+            .changed_words
+            .iter()
+            .all(|word| word.corner_index == 2));
+        assert!(report.sampled_audit_after.pass && report.cartridge_parity_after);
+        assert_eq!(app.state.undo.len(), undo_depth + 1);
+    }
+
+    // -- audio-thread boundary ----------------------------------------------
+
+    fn stream_for(
+        body: &[u8; 240],
+        wav: Arc<Vec<f32>>,
+        control: Arc<Mutex<AuditionControl>>,
+    ) -> AuditionStream {
+        AuditionStream {
+            engine: build_audition_engine(body, AudioMode::BodySolo).unwrap(),
+            wav,
+            cursor: 0,
             control,
             buf: Vec::new(),
             right: Vec::new(),
             pos: 0,
-        };
+        }
+    }
+
+    #[test]
+    fn held_stream_equals_direct_process_block() {
+        let app = app();
+        let body = app.working_body_bytes().unwrap();
+        let wav = Arc::new(probe_wav(AUDITION_BLOCK * 4));
+        let (morph, q) = (0.372, 0.64);
+        let control = Arc::new(Mutex::new(AuditionControl {
+            morph,
+            q,
+            reload: None,
+        }));
+        let mut stream = stream_for(&body, wav.clone(), control);
         let streamed: Vec<f32> = (0..AUDITION_BLOCK).map(|_| stream.next().unwrap()).collect();
 
-        // Same fresh engine, same input block, fixed (morph, q): must match.
         let mut left = wav[..AUDITION_BLOCK].to_vec();
         let mut right = left.clone();
         let mut direct = build_audition_engine(&body, AudioMode::BodySolo).unwrap();
@@ -2196,52 +2470,39 @@ mod tests {
         for (streamed, direct) in streamed.iter().zip(left.iter()) {
             assert!(
                 (streamed - direct).abs() < 1e-6,
-                "HELD stream must equal a direct process_block: {streamed} vs {direct}"
+                "monitor must equal a direct process_block: {streamed} vs {direct}"
             );
         }
     }
 
     #[test]
-    fn changing_control_q_mid_stream_changes_the_audio() {
-        // The marquee feature: Q is read live every block, not cached at start.
-        let body = loaded_body();
-        let held = |flip_q: bool| -> Vec<f32> {
+    fn mid_stream_pad_change_changes_the_audio() {
+        let app = app();
+        let body = app.working_body_bytes().unwrap();
+        let render = |flip: bool| -> Vec<f32> {
             let wav = Arc::new(probe_wav(AUDITION_BLOCK * 4));
             let control = Arc::new(Mutex::new(AuditionControl {
+                morph: 0.2,
                 q: 0.2,
-                morph: 0.5,
-                transport: Transport::Held,
-                sweep_len_frames: wav.len() as u64,
                 reload: None,
-                playhead: 0.0,
-                time_frames: 0,
-                held_at_end: false,
             }));
-            let mut stream = AuditionStream {
-                engine: build_audition_engine(&body, AudioMode::BodySolo).unwrap(),
-                wav,
-                wav_cursor: 0,
-                sweep_pos: 0,
-                last_transport: Transport::Held,
-                control: control.clone(),
-                buf: Vec::new(),
-                right: Vec::new(),
-                pos: 0,
-            };
+            let mut stream = stream_for(&body, wav, control.clone());
             let mut out = Vec::new();
             for _ in 0..AUDITION_BLOCK * 100 {
                 out.push(stream.next().unwrap());
             }
-            if flip_q {
-                control.lock().unwrap().q = 0.9; // change Q mid-stream
+            if flip {
+                let mut control = control.lock().unwrap();
+                control.morph = 0.9;
+                control.q = 0.9;
             }
             for _ in 0..AUDITION_BLOCK * 100 {
                 out.push(stream.next().unwrap());
             }
             out
         };
-        let steady = held(false);
-        let flipped = held(true);
+        let steady = render(false);
+        let flipped = render(true);
         let tail_delta: f32 = steady
             .iter()
             .zip(flipped.iter())
@@ -2250,7 +2511,54 @@ mod tests {
             .sum();
         assert!(
             tail_delta > 1e-3,
-            "changing control.q mid-stream must change the audio (delta {tail_delta})"
+            "pad writes must cross the boundary live (delta {tail_delta})"
         );
+    }
+
+    #[test]
+    fn reload_swaps_body_at_block_boundary() {
+        let app = app();
+        let body = app.working_body_bytes().unwrap();
+        // A declared Scale edit builds the swapped-in candidate body.
+        let request = EditRequest {
+            corner_indices: vec![0, 1, 2, 3],
+            lane_indices: vec![0],
+            field: EditField::Scale,
+            value: 1.0,
+            secondary_value: None,
+            relative: true,
+        };
+        let edited = app
+            .state
+            .session
+            .preview_edit(&request)
+            .unwrap()
+            .to_body_bytes()
+            .unwrap();
+        assert_ne!(body, edited);
+
+        let wav = Arc::new(probe_wav(AUDITION_BLOCK * 8));
+        let control = Arc::new(Mutex::new(AuditionControl {
+            morph: 0.4,
+            q: 0.3,
+            reload: None,
+        }));
+        let mut stream = stream_for(&body, wav.clone(), control.clone());
+        let _: Vec<f32> = (0..AUDITION_BLOCK).map(|_| stream.next().unwrap()).collect();
+        control.lock().unwrap().reload =
+            Some(build_audition_engine(&edited, AudioMode::BodySolo).unwrap());
+        let streamed: Vec<f32> = (0..AUDITION_BLOCK).map(|_| stream.next().unwrap()).collect();
+
+        // Second block, fresh engine over the edited body, same WAV segment.
+        let mut left = wav[AUDITION_BLOCK..AUDITION_BLOCK * 2].to_vec();
+        let mut right = left.clone();
+        let mut direct = build_audition_engine(&edited, AudioMode::BodySolo).unwrap();
+        direct.process_block(&mut left, &mut right, 0.4, 0.3);
+        for (streamed, direct) in streamed.iter().zip(left.iter()) {
+            assert!(
+                (streamed - direct).abs() < 1e-6,
+                "swapped engine must drive the next block: {streamed} vs {direct}"
+            );
+        }
     }
 }

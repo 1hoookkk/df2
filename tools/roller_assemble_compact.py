@@ -1,229 +1,296 @@
-# Assemble the TRENCH roller filmstrip at the compact editor's true aperture
-# size from the 4x headless batch passes (df2/dev/tmp/roller_batch_az90 — the
-# clean-side arc). No Blender needed for re-size / re-light / re-glow.
+# Build the compact-editor thumbwheel strip: THE AMBER WHEEL with THE GLOW
+# LOGIC (Tyson 2026-07-19: "Amber one looks best. Lacks the glow though" +
+# "follow the glow logic. You can read about it in the docs").
 #
-# SEAT (Tyson 2026-07-16, measured from the 07-13 reference): 150x34 frame =
-# the well bounds; drum 145x30 sits LOW — 3px dark socket above the crown,
-# bottom melting into the contact shadow, ends 2px inside the rounded mouth.
-# Union alpha>128 hard-crop first (the invisible-padding trap); uniform scale
-# only (never squash).
+# BODY = one deterministic graphite roller, generated below at 4x and reduced
+# once to the native 200x42 frame. The rejected AI/Blender body had two stacked
+# lobes and broken top geometry, so it read as a wheel clipping into itself.
 #
-# GLOW LAW (Tyson 2026-07-18, restated): the glow FOLLOWS the wheel — head
-# tracks the value exactly; the lit run reaches ~50% of the width at v=1;
-# frame 0 is completely dark. Cells light as units on the seated 3D drum.
+# GLOW = df2/dev/tmp/thumbwheel_blender/glow_pass.py, THE documented logic
+# (CLAUDE_HANDOFF_2026-06-13_GLOW_REFINEMENT.md), ported with y-geometry
+# adjusted from its 149x40 frames to this body's 200x42:
+#   - _detect_diode_centers: THIS wheel's physical slot positions per frame
+#     (detrended luma peaks in the channel band — survives the light gradient)
+#   - _bead_progress_profile: each diode rises dark->full in exactly 5
+#     authored frames, starts spread so the last diode finishes at frame 255;
+#     lit diodes age (trail exp(-age/40), hold floor 0.08) and diffuse wider
+#     with age; a soft leading bead tracks the current position
+#   - three passes: subtle internal halo + saturated bead band + bright core
+#     pin, gated by the wheel's ribs; weights lifted ~1.5x from the module's
+#     bone-body tuning because this smoked body is far darker, all gated by the wheel's
+#     own ribs (bright gap columns pass light, dark rib columns block)
+#   - palette = the module's own "bakelite" ramp (warm phosphor-amber):
+#     dim [168,84,22] / mid [255,178,70] / core [255,224,156]
+# Runtime note: our WheelControl maps v=1 to frame 256 (no loop contract),
+# so frame 256 holds the fully-lit pose instead of the old copy-of-frame-0.
 #
-# ROTATION LAW: the authored drum turns in the same perceived left-to-right
-# direction as the value packet. The Blender batch's frame order is opposite
-# to that screen-space travel, so source frames are read in reverse while the
-# parameter/glow head continues forward from v=0 to v=1.
+# REJECTED: this procedural capsule candidate is retained only as historical
+# evidence. It must not be run or used as a production visual source. The
+# production source is the supplied GLB pass pipeline in
+# tools/render_glb_wheel_257.py and tools/assemble_glb_wheel_257.py.
+raise SystemExit(
+    "Rejected procedural capsule candidate; use the supplied GLB wheel pipeline instead."
+)
+
+# The production atlas is 400x96 per frame. The old 200x42/300x68 candidates
+# remain below only as rejected historical code.
 import numpy as np
-from PIL import Image, ImageFilter
+from PIL import Image
 from pathlib import Path
 
-NF = 257
-# 2x-authored frames (drawn at half size with high-quality resampling in
-# WheelControl): downscale-only everywhere kills the DPI aliasing.
-FW, FH = 300, 68
-DRUM_H = 60
-GAP_TOP = 6
-
-GLOW_ON = True
-# The lit cell is EXTRACTED from the real X3 sheet (BITMAP4331 frame 096) —
-# real centre-bright profile, nothing invented.
-SHEET = Path(r"C:\Users\hooki\df2\dev\tmp\emu_bitmap_inspect\BITMAP4331_1_frame_096_85x16_8x.png")
-TEETH_VISIBLE = 14               # teeth across the front face — the trail math anchor
-
-BATCH = Path(r"C:\Users\hooki\df2\dev\tmp\roller_batch_az90")
 OUT = Path(r"C:\Users\hooki\df2-workstation\plugin\assets")
 
-def load(p):
-    return np.array(Image.open(p).convert("RGBA")).astype(np.float32)
+NF = 257
+SFW, SFH = 200, 42
+FW, FH = SFW, SFH
 
-# union hard-crop box across sample frames
-boxes = []
-for i in (0, 64, 128, 192, 256):
-    a = load(BATCH / "clean" / f"f{i:03d}.png")
-    ys, xs = np.where(a[..., 3] > 128)
-    boxes.append((xs.min(), xs.max(), ys.min(), ys.max()))
-x0 = min(b[0] for b in boxes); x1 = max(b[1] for b in boxes)
-y0 = min(b[2] for b in boxes); y1 = max(b[3] for b in boxes)
-raw_w, raw_h = x1 - x0 + 1, y1 - y0 + 1
-s = DRUM_H / raw_h
-drum_w = round(raw_w * s)
-print(f"raw drum {raw_w}x{raw_h} -> {drum_w}x{DRUM_H}, seat top {GAP_TOP}, "
-      f"ends {(FW-drum_w)//2}px inside, frame {FW}x{FH}")
+# glow_pass.py geometry, scaled 40 -> 42 rows
+GLOW_Y = 18.3
+BAND_ROWS = (13, 20)          # slot/rib detection rows
+HALO_ROWS = (6, 33)
+BEAD_ROWS = (9, 24)
+PIN_ROWS = (10, 23)
+AUTHORED_PROGRESS_FRAMES = 255.0
+DIODE_RISE_FRAMES = 5.0
 
-# Diode-cell ROW profile, once: union of glow frames says which rows carry light.
-row_profile = None
-sprite_rgb = sprite_wt = None
-if GLOW_ON:
-    acc = None
-    for j in (32, 96, 160, 224):
-        gj = np.array(Image.open(BATCH / "glow" / f"f{j:03d}.png").convert("L")).astype(np.float32)
-        acc = gj if acc is None else np.maximum(acc, gj)
-    row_profile = acc.max(axis=1)
-    row_profile = np.clip(row_profile / max(row_profile.max(), 1e-4), 0.0, 1.0) ** 0.5
+# palette: "bakelite" (warm phosphor-amber) or the face accent (#2BD8C3
+# family, one-lit-voice with the screen). The shipped face is bakelite.
+import os
+PALETTE = os.environ.get("WHEEL_PALETTE", "bakelite")
+_RAMPS = {
+    "bakelite": ([168.0, 84.0, 22.0], [255.0, 178.0, 70.0], [255.0, 224.0, 156.0]),
+    "accent_teal": ([10.0, 88.0, 80.0], [43.0, 216.0, 195.0], [166.0, 255.0, 240.0]),
+}
+DIM, MID, CORE = (np.array(c, dtype=np.float32) for c in _RAMPS[PALETTE])
 
-    # Extract the single HEAD cell from the real sheet at 8x resolution:
-    # cyanness = min(G,B)-R; cell bounds = the local separator dips either
-    # side of the brightest column (measured pitch ~6px native, 14 across).
-    sh = np.array(Image.open(SHEET).convert("RGB")).astype(np.float32)
-    cyan = np.clip(np.minimum(sh[..., 1], sh[..., 2]) - sh[..., 0], 0, None)
-    colc = cyan.max(axis=0)
-    p = int(colc.argmax())
-    half = 4 * 8                                      # < one native pitch, at 8x
-    ra = p - half + int(colc[max(0, p - half):p].argmin())
-    rb = p + 1 + int(colc[p:p + half + 1].argmin())
-    # ...then crop to the SOLID core (>=50% of peak): the separator falloff
-    # is re-created by the resize at stamp time.
-    core = np.where(colc[ra:rb] >= 0.5 * colc[p])[0]
-    ra, rb = ra + int(core.min()), ra + int(core.max()) + 1
-    rowc = cyan[:, ra:rb].max(axis=1)
-    rows = np.where(rowc > 0.25 * rowc.max())[0]
-    sr0, sr1 = int(rows.min()), int(rows.max()) + 1
-    sprite_rgb = sh[sr0:sr1, ra:rb]
-    # Plateau normalization: the sheet cell is a SOLID low-contrast square —
-    # mapping 55%-of-peak to full keeps the face solid to the cell edge.
-    sprite_wt = np.clip(cyan[sr0:sr1, ra:rb] / (0.55 * max(cyan[sr0:sr1, ra:rb].max(), 1e-4)), 0.0, 1.0)
-    # ONE LIT VOICE: the X3 sheet gives the STRUCTURE (cell profile, hot
-    # core); the COLOUR is the face's own accent (#2BD8C3 = rollerIllumination
-    # in UiLayout) so screen curve, active states and wheel lamp all speak
-    # the same light. Hot cores still bleach toward white like the sheet.
-    ACCENT = np.array([0x2b, 0xd8, 0xc3], dtype=np.float32) / 255.0
-    inten = sprite_rgb.max(axis=2, keepdims=True) / 255.0
-    wmix = np.clip((sprite_rgb[..., 0:1] / 255.0 - 0.15) / 0.45, 0.0, 1.0)
-    sprite_rgb = 255.0 * np.clip(inten ** 0.75 * 1.10, 0, 1) * (ACCENT[None, None] * (1.0 - wmix) + wmix)
-    print(f"sprite: head cell x{ra/8:.1f}-{rb/8:.1f} rows {sr0/8:.1f}-{sr1/8:.1f} (native), "
-          f"peak RGB {sprite_rgb.reshape(-1,3)[sprite_wt.ravel().argmax()].round().astype(int)}")
 
-frames = []
-glow_centroids = []
-glow_peak_rgb = []
+def smoothstep(e0, e1, x):
+    if e0 == e1:
+        return 1.0 if x >= e1 else 0.0
+    t = max(0.0, min(1.0, (x - e0) / (e1 - e0)))
+    return t * t * (3.0 - 2.0 * t)
+
+
+def smoothstep_arr(e0, e1, v):
+    t = np.clip((v - e0) / (e1 - e0), 0.0, 1.0)
+    return t * t * (3.0 - 2.0 * t)
+
+
+def detect_diode_centers(slot_smooth, x0, x1):
+    span = max(1, x1 - x0)
+    region = slot_smooth[x0:x1]
+    if len(region) < 16:
+        return np.linspace(0.0, float(span - 1), 13, dtype=np.float32)
+    smoothed = np.convolve(region, np.ones(5, np.float32) / 5.0, mode="same")
+    trend = np.convolve(smoothed, np.ones(15, np.float32) / 15.0, mode="same")
+    detrended = smoothed - trend
+    lo, hi = np.percentile(detrended, [10, 90])
+    norm = np.clip((detrended - lo) / max(1e-5, hi - lo), 0.0, 1.0)
+    peaks = []
+    min_dist = max(5, int(round(span / 22.0)))
+    for i in range(2, len(norm) - 2):
+        if norm[i] < 0.38:
+            continue
+        if norm[i] < norm[i - 1] or norm[i] < norm[i + 1]:
+            continue
+        if norm[i] < norm[i - 2] or norm[i] < norm[i + 2]:
+            continue
+        if not peaks or i - peaks[-1] >= min_dist:
+            peaks.append(i)
+        elif norm[i] > norm[peaks[-1]]:
+            peaks[-1] = i
+    centers = [float(p) for p in peaks if 5 < p < span - 5]
+    if len(centers) < 8 or len(centers) > 20:
+        return np.linspace(0.0, float(span - 1), 13, dtype=np.float32)
+    return np.asarray(centers, dtype=np.float32)
+
+
+def bead_progress_profile(value, span, diode_centers):
+    if value <= 0.002:
+        return np.zeros(span, dtype=np.float32)
+    if len(diode_centers) < 2:
+        diode_centers = np.linspace(0.0, float(span - 1), 13, dtype=np.float32)
+    frame = max(0.0, min(1.0, value)) * AUTHORED_PROGRESS_FRAMES
+    diode_count = len(diode_centers)
+    last_start = max(0.0, AUTHORED_PROGRESS_FRAMES - DIODE_RISE_FRAMES)
+    start_frames = np.linspace(0.0, last_start, diode_count, dtype=np.float32)
+    xs = np.arange(span, dtype=np.float32)
+    spacing = np.diff(diode_centers)
+    median_spacing = float(np.median(spacing)) if len(spacing) else span / 13.0
+    bead_sigma = max(1.45, median_spacing * 0.22)
+    profile = np.zeros(span, dtype=np.float32)
+    for start, center in zip(start_frames, diode_centers):
+        ramp = smoothstep(float(start), float(start + DIODE_RISE_FRAMES), frame)
+        if ramp <= 0.001:
+            continue
+        age = max(0.0, frame - float(start + DIODE_RISE_FRAMES))
+        trail = float(np.exp(-age / 40.0))
+        hold = 0.08 + 0.92 * trail
+        amp = ramp * hold
+        width_scale = 1.0 + 1.6 * (age / AUTHORED_PROGRESS_FRAMES)
+        profile += amp * np.exp(-((xs - center) / (bead_sigma * width_scale)) ** 2)
+    lead_x = float(np.interp(frame,
+                             start_frames + DIODE_RISE_FRAMES * 0.5,
+                             diode_centers,
+                             left=diode_centers[0], right=diode_centers[-1]))
+    lead = np.exp(-((xs - lead_x) / (bead_sigma * 2.5)) ** 2).astype(np.float32)
+    profile = profile * 0.90 + lead * 0.10
+    profile = np.convolve(profile, np.array([0.05, 0.16, 0.58, 0.16, 0.05], np.float32), mode="same")
+    return np.clip(profile, 0.0, 1.0)
+
+
+def apply_lamp(frame_rgba, value):
+    """The three documented lamp passes, on an already-finished body."""
+    out = frame_rgba.copy()
+    h, w = out.shape[:2]
+    alpha = out[..., 3].astype(np.float32) / 255.0
+    luma = out[..., :3].astype(np.float32).mean(axis=-1) / 255.0
+
+    band = alpha[BAND_ROWS[0]:BAND_ROWS[1], :].mean(axis=0) > 0.12
+    valid_x = np.nonzero(band)[0]
+    if len(valid_x) == 0 or value <= 0.002:
+        return out
+    x0, x1 = int(valid_x.min()) + 2, int(valid_x.max()) - 2
+    span = max(8, x1 - x0)
+
+    slot = luma[BAND_ROWS[0]:BAND_ROWS[1], :].mean(axis=0)
+    slot_smooth = np.convolve(slot, np.ones(3, np.float32) / 3.0, mode="same")
+    lo, hi = np.percentile(slot_smooth[x0:x1], [15, 85])
+    gate_all = np.clip((slot_smooth - lo) / max(1e-5, hi - lo), 0.15, 1.0)
+    diode_centers = detect_diode_centers(slot_smooth, x0, x1)
+
+    bead_profile = bead_progress_profile(value, span, diode_centers)
+    if float(bead_profile.max()) <= 0.001:
+        return out
+
+    rgbf = out[..., :3].astype(np.float32)
+    yy = np.arange(h, dtype=np.float32)
+    # gate floor 0.40->0.68: on this dark body a deep rib dip times an aged
+    # trail crushed mid-run beads to invisible (the circled void). The ribs
+    # still modulate; the trail now fades instead of strobing out.
+    internal_gate = np.clip(gate_all, 0.68, 1.0)
+
+    # Pass 1: subtle internal halo (screen, <=12%)
+    halo_columns = np.zeros(w, dtype=np.float32)
+    halo_columns[x0:x1] = bead_profile[:x1 - x0] * internal_gate[x0:x1]
+    halo_columns = np.convolve(
+        halo_columns,
+        np.array([0.015, 0.035, 0.065, 0.105, 0.155, 0.25, 0.155, 0.105, 0.065, 0.035, 0.015], np.float32),
+        mode="same")
+    lamp1 = DIM * 0.40 + MID * 0.60
+    vert1 = np.exp(-((yy - GLOW_Y) / 7.5) ** 2)
+    w1 = np.minimum(0.26, halo_columns[None, :] * vert1[:, None] * 0.26)
+    w1[:HALO_ROWS[0]] = 0; w1[HALO_ROWS[1]:] = 0
+    w1 = w1 * (alpha > 0.03)
+    screen1 = 255.0 - (255.0 - rgbf) * (255.0 - lamp1[None, None]) / 255.0
+    rgbf = rgbf * (1.0 - w1[..., None]) + screen1 * w1[..., None]
+
+    # Pass 2: saturated bead band (mix, <=78%)
+    glow_columns = np.zeros(w, dtype=np.float32)
+    glow_columns[x0:x1] = np.clip(bead_profile[:x1 - x0] ** 0.74, 0.0, 1.0) * internal_gate[x0:x1]
+    glow_columns = np.convolve(
+        glow_columns, np.array([0.04, 0.11, 0.21, 0.28, 0.21, 0.11, 0.04], np.float32), mode="same")
+    t2 = np.minimum(1.0, glow_columns)
+    lamp2 = DIM[None, :] * (1.0 - t2[:, None]) + MID[None, :] * t2[:, None]
+    vert2 = np.exp(-((yy - GLOW_Y) / 3.5) ** 2)
+    w2 = np.minimum(1.00, glow_columns[None, :] * vert2[:, None] * 1.80)
+    w2[:BEAD_ROWS[0]] = 0; w2[BEAD_ROWS[1]:] = 0
+    w2 = w2 * (alpha > 0.03)
+    rgbf = rgbf * (1.0 - w2[..., None]) + lamp2[None, :, :] * w2[..., None]
+
+    # Pass 3: bright core pin at the bead (screen, <=38%)
+    pin = np.zeros(w, dtype=np.float32)
+    pin[x0:x0 + span] = bead_profile ** 0.72 * (0.72 + gate_all[x0:x0 + span] * 0.28)
+    t3 = np.minimum(1.0, pin)
+    frac = np.clip((t3 - 0.85) / 0.15, 0.0, 1.0) * 0.5
+    lamp3 = np.where(t3[:, None] < 0.85,
+                     DIM[None, :] * (1.0 - t3[:, None]) + MID[None, :] * t3[:, None],
+                     MID[None, :] * (1.0 - frac[:, None]) + CORE[None, :] * frac[:, None])
+    dy = np.abs(yy - GLOW_Y)
+    vert3 = np.where(dy <= 1.2, 1.0, np.exp(-((dy - 1.2) / 1.7) ** 2))
+    w3 = np.minimum(0.80, t3[None, :] * vert3[:, None] * 0.80)
+    w3[:PIN_ROWS[0]] = 0; w3[PIN_ROWS[1]:] = 0
+    w3 = w3 * (alpha > 0.03) * (t3[None, :] > 0.045)
+    screen3 = 255.0 - (255.0 - rgbf) * (255.0 - lamp3[None, :, :]) / 255.0
+    rgbf = rgbf * (1.0 - w3[..., None]) + screen3 * w3[..., None]
+
+    out[..., :3] = np.clip(rgbf, 0, 255).astype(np.uint8)
+    return out
+
+
+def build_single_body_frame(frame_index):
+    """A single capsule at 4x: no seam, twin lobe, crop, or AI surface noise."""
+    scale = 4
+    h, w = SFH * scale, SFW * scale
+    yy, xx = np.mgrid[0:h, 0:w].astype(np.float32)
+    x = (xx + 0.5) / scale
+    y = (yy + 0.5) / scale
+
+    cy = (SFH - 1) * 0.5
+    radius = 17.8
+    left_centre = 8.0 + radius
+    right_centre = (SFW - 1) - 8.0 - radius
+    nearest_x = np.clip(x, left_centre, right_centre)
+    signed_distance = np.sqrt((x - nearest_x) ** 2 + (y - cy) ** 2) - radius
+    alpha = np.clip(0.65 - signed_distance, 0.0, 1.0)
+
+    yn = np.clip((y - cy) / radius, -1.0, 1.0)
+    crown = np.sqrt(np.clip(1.0 - yn * yn, 0.0, 1.0))
+    room_light = 12.0 + 50.0 * crown
+    room_light += 46.0 * np.exp(-((yn + 0.38) / 0.18) ** 2)
+    room_light -= 17.0 * np.exp(-((yn - 0.72) / 0.22) ** 2)
+
+    end_distance = np.minimum(x - 8.0, (SFW - 1) - 8.0 - x)
+    end_falloff = np.clip(end_distance / 20.0, 0.28, 1.0)
+    room_light *= 0.62 + 0.38 * end_falloff
+
+    # One family of traction grooves crosses the whole body. Rotating the
+    # phase gives movement without inventing a second stacked roller.
+    pitch = 10.6
+    travel = 4.0 * pitch * frame_index / max(NF - 1, 1)
+    phase_x = x + travel + (y - cy) * 0.16
+    cell = np.mod(phase_x + pitch * 0.5, pitch) - pitch * 0.5
+    groove = np.exp(-((cell / 0.78) ** 2))
+    shoulder = np.exp(-(((np.abs(cell) - 1.35) / 0.72) ** 2))
+    material = room_light * (1.0 - 0.66 * groove) + 13.0 * shoulder
+
+    # Thin rim catches make the silhouette legible at 326px editor width.
+    edge_catch = np.exp(-((signed_distance + 0.75) / 0.62) ** 2)
+    material += 27.0 * edge_catch
+    material = np.clip(material, 4.0, 132.0)
+
+    rgb = np.stack([material * 0.93, material * 0.97, material], axis=-1)
+    rgba = np.dstack([rgb, alpha[..., None] * 255.0])
+    hi = Image.fromarray(np.clip(rgba, 0, 255).astype(np.uint8), "RGBA")
+    return np.asarray(hi.resize((SFW, SFH), Image.Resampling.LANCZOS), dtype=np.uint8)
+
+
+base_frames = [build_single_body_frame(i) for i in range(NF)]
+
+# --- lamp per frame (v=1 -> fully lit; no loop contract) ---
+lit_frames = []
 for i in range(NF):
-    v = i / (NF - 1)
-    source_i = NF - 1 - i
-    c = load(BATCH / "clean" / f"f{source_i:03d}.png")
-    rgb = c[..., :3]
-    H, W = rgb.shape[:2]
+    v = min(i, 255) / 255.0
+    lit_frames.append(apply_lamp(base_frames[i], v))
 
-    xn = np.arange(W, dtype=np.float32) / W
-    # Dialled back toward the reference face (2026-07-18): even metallic
-    # light, a shade quieter than the full sheet match.
-    # PUNCHY GLOSS (measured off the real X3 filter page 2026-07-18: roller
-    # median 43, p90 104, speculars to 247): dark body, fins FLASH. The old
-    # highlight knee crushed exactly this — removed.
-    env = 0.86 + 0.28 * np.exp(-((xn - 0.22) ** 2) / (2 * 0.24 ** 2))
-    env *= 0.45 + 0.55 * np.minimum(np.minimum(xn, 1 - xn) / 0.06, 1.0)
-    n = np.clip((rgb * env[None, :, None] / 255.0 - 0.015) * 1.30, 0, 1) ** 0.86
-    # SEATED cylinder ("seems to stick out", 2026-07-18): crown rolls into the
-    # socket shadow, belly melts into the contact shadow.
-    yn = np.clip((np.arange(rgb.shape[0], dtype=np.float32) - y0) / max(raw_h - 1, 1), 0, 1)
-    vshade = 0.24 + 0.76 * np.clip(np.sin(np.pi * (0.02 + 0.90 * yn)), 0.0, 1.0) ** 1.5
-    # "Hanging out a bit": near-point specular band just above centre.
-    vshade += 0.65 * np.exp(-((yn - 0.42) ** 2) / (2 * 0.075 ** 2))
-    n *= vshade[:, None, None]
-    rgb = n * 255.0
-
-    if GLOW_ON:
-        a_mask = c[..., 3] / 255.0
-        # Cells sit on a UNIFORM pitch grid; whole cells light as units.
-        head = x0 + v * raw_w
-        x = np.arange(W, dtype=np.float32)
-        pitch = raw_w / float(TEETH_VISIBLE)
-        cells = []
-        for kc in range(TEETH_VISIBLE):
-            a = int(round(x0 + kc * pitch))
-            b = int(round(x0 + (kc + 1) * pitch))
-            if b - a > 2:
-                cells.append((a, b))
-        # Span law (Tyson 2026-07-18): the run reaches from ZERO up to the
-        # head, saturating at ~0.49 of the drum at v=1. Dark at v=0.
-        tail = min(0.49, v + 0.04) * raw_w
-        levels = {}
-        near = min(cells, key=lambda cc: abs(0.5 * (cc[0] + cc[1] - 1) - head))
-        levels[near] = 1.0                                # the value marker cell
-        for a, b in cells:
-            cctr = 0.5 * (a + b - 1)
-            if head - tail <= cctr <= head:
-                # Measured ramp (frame 096 cell peaks 21..156): near-linear
-                # rise from ~13% at the tail tip to 100% at the head.
-                lv = 1.0 - 0.87 * max(0.0, (head - cctr) / max(tail, 1e-3))
-                levels[(a, b)] = max(levels.get((a, b), 0.0), lv)
-        # Stamp the REAL sheet cell into each lit slot, scaled to the diode
-        # row band — colour and centre-bright profile come from the bitmap.
-        band = np.where(row_profile > 0.35)[0]
-        by0, by1 = int(band.min()), int(band.max()) + 1
-        E = np.zeros((H, W), dtype=np.float32)
-        C = np.tile(sprite_rgb.reshape(-1, 3).mean(axis=0) * 0.55, (H, W, 1)).astype(np.float32)
-        for (a, b), lv in levels.items():
-            # THIN OUT (Tyson 2026-07-18): the run tapers like a comet —
-            # full band height at the head, thinning toward the tail. Kills
-            # the square-block read; dim cells become slivers of light.
-            ch_full = by1 - by0
-            ch = max(2, int(round(ch_full * (0.30 + 0.70 * lv))))
-            cy0 = by0 + (ch_full - ch) // 2
-            cw = b - a
-            sw = np.array(Image.fromarray((sprite_wt * 255).astype(np.uint8))
-                          .resize((cw, ch), Image.LANCZOS)).astype(np.float32) / 255.0
-            sc = np.array(Image.fromarray(sprite_rgb.astype(np.uint8))
-                          .resize((cw, ch), Image.LANCZOS)).astype(np.float32)
-            # Measured separator: a SHALLOW dip (~50% depth, ~1 final px) at
-            # each cell boundary — cells read as units but never fuse.
-            xs_c = np.arange(cw, dtype=np.float32)
-            edge = 0.60 + 0.40 * np.clip(np.minimum(xs_c, cw - 1 - xs_c) / (0.10 * pitch), 0.0, 1.0)
-            # A dim diode is dim TEAL, not transparent: the ramp lives mostly
-            # in the COLOUR; coverage stays near-solid so tail cells read as
-            # lit units instead of stains on the metal.
-            E[cy0:cy0 + ch, a:b] = sw * edge[None, :] * (0.88 + 0.12 * lv)
-            C[cy0:cy0 + ch, a:b] = sc * (0.30 + 0.70 * lv)
-        # Real diode light blooms — a soft halo melts each cell's hard edge
-        # without erasing the separators.
-        Eim = Image.fromarray(np.clip(E * 255, 0, 255).astype(np.uint8)).filter(ImageFilter.GaussianBlur(1.3))
-        E = np.maximum(E * 0.95, np.array(Eim).astype(np.float32) / 255.0)
-        # EMBEDDED, not pasted (Tyson 2026-07-18): the drum owns the light.
-        # THIS frame's teeth ride dark over the glow (the fins occlude the
-        # lamp and scroll through it as the wheel turns), and the cylinder's
-        # own seat shading dims the glow into the socket/contact shadows.
-        lum = c[..., :3].mean(axis=2) / 255.0
-        band_rows = row_profile > 0.35
-        colbright = (lum * a_mask)[band_rows, :].max(axis=0)
-        toothness = np.clip(colbright / max(float(colbright.max()), 1e-4), 0.0, 1.0)
-        # RELIGHT, don't composite (method change 2026-07-18, 'still pasted'):
-        # the lamp is UNDER the drum. Gaps TRANSMIT the light; fin tops facing
-        # it CATCH a dimmer teal reflection scaled by the metal's own specular
-        # (lum) — so the drum's geometry modulates the light both ways and the
-        # metal texture always survives underneath (screen blend, not replace).
-        E_trans = E * (1.0 - 0.62 * toothness)[None, :]
-        E_refl = E * (toothness[None, :] * lum * 0.50)
-        Eall = (E_trans + E_refl) * np.clip(vshade, 0.25, 1.0)[:, None]
-        amp = 0.88 * min(1.0, v * 12.0)                                # frame 0 = no glow
-        caps = np.clip(np.minimum(x - x0, x1 - x) / (0.06 * raw_w), 0.0, 1.0) ** 2
-        E = Eall * amp * caps[None, :] * a_mask
-        k = E[..., None]
-        rgb = np.clip(rgb + C * k * (1.0 - rgb / 255.0), 0, 255)  # screen: add light, keep metal
-        cols = E.sum(axis=0)
-        glow_centroids.append(float((cols * np.arange(W)).sum() / max(cols.sum(), 1e-6)))
-        lit = E > 0.75
-        glow_peak_rgb.append(rgb[lit].mean(axis=0) if np.any(lit) else np.zeros(3))
-
-    a = np.dstack([np.clip(rgb, 0, 255), c[..., 3:4]])
-    img = Image.fromarray(a.astype(np.uint8))
-    img = img.crop((x0, y0, x1 + 1, y1 + 1))
-    img = img.resize((drum_w, DRUM_H), Image.LANCZOS)
-    fr = Image.new("RGBA", (FW, FH), (0, 0, 0, 0))
-    fr.paste(img, ((FW - drum_w) // 2, GAP_TOP), img)
-    frames.append(np.array(fr))
-
-strip = np.concatenate(frames, axis=1)
+# --- ship at NATIVE source resolution (200x42, kStripDrawScale=1): the old
+# 300x68 LANCZOS upscale + the widget's fractional downscale double-resampled
+# the fins into a ghosted "wheel rendering into itself" (2026-07-19 verdict).
+# ONE resample happens, at draw time, from the crisp source.
+strip = np.concatenate(lit_frames, axis=1)
+assert strip.shape == (SFH, SFW * NF, 4), strip.shape
 Image.fromarray(strip).save(OUT / "trench_roller_strip.png")
 print("strip:", strip.shape, "->", OUT / "trench_roller_strip.png")
 
-# Law checks: no glow at v=0; the packet tracks value; brightest pixels
-# stay chromatic instead of clipping toward white.
-print(f"v=0 glow energy {glow_peak_rgb[0].max():.2f} (law: 0, dark at rest)")
-for f in (64, 128, 192, 256):
-    centroid = (glow_centroids[f] - x0) / raw_w
-    peak = glow_peak_rgb[f]
-    chroma = peak.max() - peak.min()
-    print(f"v={f/(NF-1):.2f}  lit centroid={centroid:.2f}  "
-          f"bright RGB={peak.round().astype(int)} chroma={chroma:.0f}")
+# Law checks: dark at v=0; warm light advances left-to-right; v=1 fully lit.
+for f in (0, 64, 128, 192, 256):
+    a = strip[:, f * SFW:(f + 1) * SFW, :].astype(np.float32)
+    wrm = np.clip(a[..., 0] - a[..., 2] - 25, 0, None) * (a[..., 3] / 255.0)
+    v = f / (NF - 1)
+    if wrm.sum() < 1e-3:
+        print(f"v={v:.2f}  lamp dark")
+        continue
+    cols = wrm.sum(axis=0)
+    cx = float((cols * np.arange(SFW)).sum() / cols.sum())
+    lead = float(np.percentile(np.nonzero(cols > 0.10 * cols.max())[0], 98))
+    print(f"v={v:.2f}  lit centroid={cx / max(SFW - 1, 1):.2f}  lead edge={lead / max(SFW - 1, 1):.2f}")

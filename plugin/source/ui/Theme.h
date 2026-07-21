@@ -77,6 +77,7 @@ struct Theme
     juce::Colour curveHighlight() const { return layout.colour ("curveHighlight", juce::Colour (0xffe9a39b)); }
     juce::Colour telemetry() const { return layout.colour ("telemetry", accent()); }
     juce::Colour rollerIllumination() const { return layout.colour ("rollerIllumination", juce::Colour (0xff9b4f4a)); }
+    juce::Colour modulationLamp() const { return layout.colour ("modulationLamp", juce::Colour (0xffb86a2b)); }
     juce::Colour amber()       const { return layout.colour ("amber",       juce::Colour (0xffa9554e)); } // legacy name: active glow
     juce::Colour wellTop()     const { return layout.colour ("wellTop",     juce::Colour (0xffe7dec9)); }
     juce::Colour wellBottom()  const { return layout.colour ("wellBottom",  juce::Colour (0xffc9c0a8)); }
@@ -438,8 +439,24 @@ inline void drawEngravedText (juce::Graphics& g, const juce::String& text,
                               juce::Rectangle<int> area, juce::Justification just,
                               juce::Colour ink, float catchAlpha = 0.45f)
 {
-    g.setColour (juce::Colours::white.withAlpha (catchAlpha));
-    g.drawFittedText (text, area.translated (0, 1), just, 1);
+    // The reference silk has a tiny pale edge on both sides of the black ink.
+    // Keep it to one pixel so it reads as a stamped catch, not a sticker.
+    // Bone-white, not stark white (X3 FILTER bitmap reference, 2026-07-20) --
+    // the catch is warm ivory light off the plate, not a cold LED glow.
+    const auto boneWhite = juce::Colour (0xffe7dec9);
+    const auto edge = boneWhite.withAlpha (catchAlpha);
+    const auto soft = boneWhite.withAlpha (catchAlpha * 0.18f);
+    g.setColour (soft);
+    g.drawFittedText (text, area.translated (-2, 0), just, 1);
+    g.drawFittedText (text, area.translated ( 2, 0), just, 1);
+    g.drawFittedText (text, area.translated (0, -2), just, 1);
+    g.drawFittedText (text, area.translated (0,  2), just, 1);
+    g.setColour (edge);
+    g.drawFittedText (text, area.translated (0, -1), just, 1);
+    g.drawFittedText (text, area.translated (0,  1), just, 1);
+    g.setColour (boneWhite.withAlpha (catchAlpha * 0.72f));
+    g.drawFittedText (text, area.translated (-1, 0), just, 1);
+    g.drawFittedText (text, area.translated ( 1, 0), just, 1);
     g.setColour (ink);
     g.drawFittedText (text, area, just, 1);
 }
@@ -477,28 +494,14 @@ inline void drawEngravedTrackedText (juce::Graphics& g, const juce::String& text
     drawRun (ink, 0.0f);                                          // ink on top
 }
 
-// Slightly-aliased LCD numeral: render small, upscale nearest. `b` is local bounds.
-inline void drawAliasedText (juce::Graphics& g, juce::Rectangle<float> b, const juce::String& text,
-                             float fontSize, juce::Colour colour, float scale)
+// Crisp UI text. Keep small labels and readouts on the live vector path so
+// fractional-DPI rendering does not create a second, ghosted glyph image.
+inline void drawCrispText (juce::Graphics& g, juce::Rectangle<float> b, const juce::String& text,
+                           float fontSize, juce::Colour colour, bool emphasis = false)
 {
-    // DPI-aware: render the intermediate at PHYSICAL resolution so the styled
-    // LCD crunch stays constant — at 150% the old logical-res image was
-    // nearest-upscaled 1.5x on top of its own crunch (double aliasing).
-    const float dpi = g.getInternalContext().getPhysicalPixelScaleFactor();
-    const float eff = scale * juce::jmax (1.0f, dpi);
-    const auto r = b.toNearestInt();
-    const int iw = juce::jmax (1, juce::roundToInt (r.getWidth()  * eff));
-    const int ih = juce::jmax (1, juce::roundToInt (r.getHeight() * eff));
-    juce::Image img (juce::Image::ARGB, iw, ih, true);
-    {
-        juce::Graphics tg (img);
-        tg.setFont (displayFont (fontSize * eff, false));
-        tg.setColour (colour);
-        tg.drawFittedText (text, img.getBounds(), juce::Justification::centred, 1);
-    }
-    g.setOpacity (1.0f);   // drawImage is modulated by leftover colour alpha — the documented killer
-    g.setImageResamplingQuality (juce::Graphics::lowResamplingQuality);
-    g.drawImage (img, b, juce::RectanglePlacement::stretchToFit);
+    g.setFont (displayFont (fontSize, emphasis));
+    g.setColour (colour);
+    g.drawText (text, b.toNearestInt(), juce::Justification::centred, false);
 }
 
 } // namespace trench::ui

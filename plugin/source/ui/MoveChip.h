@@ -162,22 +162,26 @@ public:
         const auto chip = getLocalBounds().toFloat();
         const bool on = paramBool (motionOnParam) || orbitActive();
 
-        const float lampD = 5.5f;
+        const float lampD = 4.5f;
         const auto lamp = juce::Rectangle<float> (chip.getX(),
                                                    chip.getCentreY() - lampD * 0.5f,
                                                    lampD, lampD);
         // The lamp is lit exactly when something is actually modulating —
         // and PULSES with the pattern step (2026-07-18): motion you can see.
         // No pulse while the transport is stopped = the honest diagnostic.
-        auto lampCol = on ? t.rollerIllumination()
-                          : t.rollerIllumination().darker (0.72f).withAlpha (0.82f);
+        // The small modulation indicator is copper in the reference. Keep it
+        // separate from the teal wheel illumination so the two signals do not
+        // visually bleed into one another.
+        const auto lampBase = t.modulationLamp();
+        auto lampCol = on ? lampBase
+                          : lampBase.darker (0.72f).withAlpha (0.82f);
         if (on && lampFlash > 0.0f)
             lampCol = lampCol.brighter (lampFlash * 0.8f);
         g.setColour (lampCol);
         g.fillEllipse (lamp);
         if (on && lampFlash > 0.3f)
         {
-            g.setColour (t.rollerIllumination().withAlpha (0.30f * lampFlash));
+            g.setColour (lampBase.withAlpha (0.30f * lampFlash));
             g.fillEllipse (lamp.expanded (2.0f));
         }
         g.setColour (juce::Colours::black.withAlpha (0.45f));
@@ -185,8 +189,9 @@ public:
 
         g.setFont (displayFont (9.6f, false).withExtraKerningFactor (0.018f));
         const auto area = chip.withTrimmedLeft (lampD + 6.0f);
-        // Light ink: the tag prints on the dark teal display plate.
-        g.setColour (juce::Colour (0xffe4f2ec).withAlpha ((hover || on) ? 1.0f : 0.92f));
+        // Quiet ink: the tag is a status caption, not a headline — it must sit
+        // UNDER the curve, so it stays dim unless hovered or actively modulating.
+        g.setColour (juce::Colour (0xffe4f2ec).withAlpha (hover ? 0.85f : (on ? 0.6f : 0.42f)));
         g.drawText (displayText(), area, juce::Justification::centredLeft, false);
     }
 

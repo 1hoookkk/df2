@@ -1,0 +1,91 @@
+
+
+=== PAGE 1 ===
+1
+2
+5
+3
+4
+Filter Peak/Shelf Morph
+low morph frame high morph frameinitial offset
+Freq  :246Hz Freq  :4488Hz
+Shelf :-50 Shelf :30
+Peak :-24dB Peak :+1.5dB
+Peak   :-24dB
+Morph :0
+1 MORPH - This represents the starting position 
+of cutoff(filFreq) value 0 within the two filter frames.
+Left frame = 0
+Right frame = 255
+Setting of either of these values will provide the 
+most drastic filter. 
+Set one patch to 0 value, duplicate and set the other to 255 with 
+the same CC modulations. You have now inverted your filter and 
+layered it with the original.
+2 PEAK - This is master filter 
+volume and altering this value 
+modifies the peak filters 
+volume as a whole.
+Written by DillusionMan 22ndOctober2005
+EMU PEAK/SHELF MORPH.
+3 FREQ - There is not a fixed definition 
+of how this value affects the filter. Setting 
+this value has a different influence based 
+on what the 'SHELF' is set too.
+5 SHELF - This defines the filter tone for the two morphing frames. The figure represents the range of the filter, 
+-64 is low pass; 0 is a mid shelf and +63 is a high pass filter.
+The values between these defined boundaries blend the aspects of
+these filter types.
+Examples:
+-32 would be a mix between a low pass and a mid shelf.
+-45 would be the same, but have the emphasis on the low pass tone.
+-20 would have more emphasis on the mid shelf tone.
+These following examples are approximations 
+to illustrate this example:
++32 = 50% mid shelf and 50% highpass.
++45 = 25% mid shelf and 75% highpass
+-64 = 100% low pass
+-45 = 75% low pass and 25% mid shelf
+How does 'FREQ' interact with the 'SHELF' value?
+For a low pass filter, 'FREQ' defines the low pass rolloff, for mid shelf it defines the band, and for high pass it 
+defines the highpass boundary. It acts as a controller for the filter type.
+Uses of 'FREQ' and 'SHELF'
+To low pass a sub, set 'FREQ' to 63hz, and 'SHELF' to -63. To highpass a lead or some percussion, set 'FREQ' 
+to an upper range; 6000hz+ and 'SHELF' to +63. To cut mid from a lead that is taking too much wieght from the 
+snare, set 'FREQ' to a range between 1000-4000hz and 'SHELF' to 0.
+4 PEAK - Adjust this value within the 
+two frames to set the relative volumes 
+between them for the filter sweep.
+EXAMPLE SETTINGS
+The settings in the Emu screen shown above are from a reece 
+stab used in a Drum N Bass track. The 'SHELF' is set to -50 in 
+the 1st frame to keep a low tone to the open of the filter. It has 
+been set up from -64 to avoid pops and nasty distortions when 
+saturating the filter for big CC# sweeps. 
+The 'SHELF' of 30 in the 2nd frame with a 'PEAK' of 1.5dB mean 
+that when a CC controller is rotated to a higher value, a sudden 
+belching sound slightly highpassed and slightly mid shelved will 
+modulate out of the existing low passed tone.
+This filter was most prominant in the pre 2000 DnB era with 
+artsist such as Optical, Grooverider and Dillinja exploiting its 
+sound...
+General Tips and Hints
+Cord Setup
+To best modulate the filter, It is good to use the MidiA-
+MidiL controllers. Check what CC values these are set 
+to in Master > Midi > Cntrls2 and assign these to your 
+midi controller. 
+Set cords like this:
+MidiA   FilFreq   +100%
+MidiB   'FilRes   +100%
+Usage
+With Peak/Shelf selected as a filter the FilFreq will sweep the 
+'MORPH' value between the two frames. So if you have a Morph = 0, 
+FilFreq = 0 will represent the left frame, and FilFreq = 127 will 
+represent the right frame. Moving between these CC values creates 
+the Z-Plane affect of morphing the two selected filter frames into a 
+smooth transition.
+Saturate the Filter
+Set 'FilRes to a higher CC value to add harmonics to the filter. Making 
+this 127 will provide the most drastic filter as it acts like a Q on the 
+overall sweep. 

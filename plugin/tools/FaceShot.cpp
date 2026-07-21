@@ -47,6 +47,8 @@ int main()
 
     PluginProcessor processor;
     processor.prepareToPlay (48000.0, 512);
+    const bool keyModelPassed = processor.isKeyModelReady();
+    std::printf ("KEY MODEL  embedded RTNeural load  %s\n", keyModelPassed ? "PASS" : "FAIL");
 
     // Render a real authored response instead of the identity default so the
     // face proof exercises the restored trace treatment. This changes only
@@ -134,6 +136,12 @@ int main()
             juce::MessageManager::getInstance()->runDispatchLoopUntil (260);
         };
 
+        // Keep the component gesture probe manual. A restored host state may
+        // have MOVE armed, which legitimately writes Morph while the harness
+        // is trying to establish its before/after value.
+        if (auto* motion = processor.apvts.getParameter (ParamID::motionOn))
+            motion->setValueNotifyingHost (0.0f);
+
         const auto readCoeffs = [&]
         {
             std::array<float, 30> coeffs {};
@@ -190,11 +198,120 @@ int main()
 
         const bool morphPassed = turnAndProve ("Morph", *morphWheel, ParamID::morph);
         const bool qPassed = qWheel != nullptr && turnAndProve ("Q", *qWheel, ParamID::q);
-        wheelProofPassed = morphPassed && qPassed;
+        bool keySnapPassed = false;
+        if (auto* keyBox = findChildOfType<trench::ui::KeySnapBox> (*editor);
+            keyBox != nullptr)
+        {
+            auto* param = processor.apvts.getParameter (ParamID::keySnap);
+            param->setValueNotifyingHost (param->convertTo0to1 (0.0f));
 
-        // The interaction probe must not alter Claude's accepted beauty-shot
-        // pose. Restore it through the same public parameter path, republish,
-        // and only then render the final face.
+            // End-to-end passive suggestion proof: feed four C-major windows
+            // through processBlock, allow the message-thread detector to
+            // consume each complete capture, then inspect the real UI state.
+            juce::AudioBuffer<float> chord (2, 512);
+            juce::MidiBuffer chordMidi;
+            juce::int64 chordSample = 0;
+            const double frequencies[] = { 130.8128, 164.8138, 195.9977 };
+            for (int window = 0; window < 4; ++window)
+            {
+                for (int block = 0; block < 565; ++block)
+                {
+                    for (int sample = 0; sample < chord.getNumSamples(); ++sample, ++chordSample)
+                    {
+                        double value = 0.0;
+                        for (double frequency : frequencies)
+                            for (int harmonic = 1; harmonic <= 5; ++harmonic)
+                                value += std::sin (juce::MathConstants<double>::twoPi * frequency
+                                                  * harmonic * (double) chordSample / 48000.0)
+                                       / (double) harmonic;
+                        for (int channel = 0; channel < chord.getNumChannels(); ++channel)
+                            chord.setSample (channel, sample, (float) (value * 0.035));
+                    }
+                    processor.processBlock (chord, chordMidi);
+                }
+                juce::MessageManager::getInstance()->runDispatchLoopUntil (900);
+            }
+            keyBox->refreshSuggestion();
+            publishAndPaint();
+            const int suggestion = processor.getDetectedKeyForUi();
+            const int alternative = processor.getDetectedAltKeyForUi();
+
+            // Drive one fresh -1 -> result transition so the harness observes
+            // the arrival motion itself rather than whichever point the live
+            // vblank happened to catch while inference was completing.
+            auto animatedPrimary = std::make_shared<int> (-1);
+            auto animatedSecondary = std::make_shared<int> (-1);
+            keyBox->setSuggestionProviders (
+                [animatedPrimary] { return *animatedPrimary; },
+                [animatedSecondary] { return *animatedSecondary; });
+            keyBox->refreshSuggestion();
+            const auto listeningAssetA = keyBox->createComponentSnapshot (keyBox->getLocalBounds());
+            juce::MessageManager::getInstance()->runDispatchLoopUntil (140);
+            keyBox->refreshSuggestion();
+            const auto listeningAssetB = keyBox->createComponentSnapshot (keyBox->getLocalBounds());
+            const int listeningPixels = changedPixelCount (listeningAssetA, listeningAssetB);
+            *animatedPrimary = suggestion;
+            *animatedSecondary = alternative;
+            keyBox->refreshSuggestion();
+            const auto arrivingKeyAsset = keyBox->createComponentSnapshot (keyBox->getLocalBounds());
+            juce::MessageManager::getInstance()->runDispatchLoopUntil (500);
+            keyBox->refreshSuggestion();
+            publishAndPaint();
+            const auto settledKeyAsset = keyBox->createComponentSnapshot (keyBox->getLocalBounds());
+            const int arrivalPixels = changedPixelCount (arrivingKeyAsset, settledKeyAsset);
+            const bool suggestionPassed = suggestion == 0 && alternative >= 0
+                                          && listeningPixels > 0 && arrivalPixels > 0;
+            std::printf ("KEY SUGGEST  primary=%d alternate=%d confidence=%.3f listening pixels=%d arrival pixels=%d  %s\n",
+                         suggestion, alternative, processor.getKeyConfidenceForUi(),
+                         listeningPixels, arrivalPixels,
+                         suggestionPassed ? "PASS" : "FAIL");
+            {
+                const auto suggestionImage = holder.createComponentSnapshot (holder.getLocalBounds(), true, 1.5f);
+                auto suggestionFile = juce::File::getCurrentWorkingDirectory().getChildFile (
+                    "trench_face_key_suggest.png");
+                suggestionFile.deleteFile();
+                juce::FileOutputStream suggestionStream (suggestionFile);
+                juce::PNGImageFormat().writeImageToStream (suggestionImage, suggestionStream);
+                suggestionStream.flush();
+                std::printf ("KEY SUGGEST  wrote %s\n",
+                             suggestionFile.getFullPathName().toRawUTF8());
+            }
+            const auto coeffsBefore = readCoeffs();
+
+            // The first falling tile is the selection itself: one click, no
+            // secondary confirmation menu or tracking mode.
+            const auto pos = juce::Point<float> (17.0f, 25.0f);
+            const auto now = juce::Time::getCurrentTime();
+            juce::MouseEvent event (juce::Desktop::getInstance().getMainMouseSource(), pos,
+                                    juce::ModifierKeys {}, 0.5f, 0.0f, 0.0f, 0.0f, 0.0f,
+                                    keyBox, keyBox, now, pos, now, 0, false);
+            keyBox->mouseDown (event);
+            keyBox->mouseUp (event);
+            publishAndPaint();
+
+            const int selected = juce::roundToInt (param->convertFrom0to1 (param->getValue()));
+            const auto coeffsAfter = readCoeffs();
+            float maxCoeffDelta = 0.0f;
+            for (size_t i = 0; i < coeffsBefore.size(); ++i)
+                maxCoeffDelta = std::max (maxCoeffDelta,
+                                          std::abs (coeffsAfter[i] - coeffsBefore[i]));
+            keySnapPassed = keyModelPassed && suggestionPassed
+                         && selected == 13 && maxCoeffDelta > 1.0e-7f;
+            std::printf ("KEY SNAP  first tile -> %s  packed max-delta %.7f  %s\n",
+                         param->getCurrentValueAsText().toRawUTF8(), maxCoeffDelta,
+                         keySnapPassed ? "PASS" : "FAIL");
+            keyBox->setSuggestionProviders (
+                [&processor] { return processor.getDetectedKeyForUi(); },
+                [&processor] { return processor.getDetectedAltKeyForUi(); });
+        }
+        else
+        {
+            std::printf ("KEY SNAP  component not found  FAIL\n");
+        }
+        wheelProofPassed = morphPassed && qPassed && keySnapPassed;
+
+        // Key Snap deliberately stays at the confirmed first candidate so the
+        // final proof image also shows the quiet locked-key state.
         if (auto* morph = processor.apvts.getParameter (ParamID::morph))
             morph->setValueNotifyingHost (0.68f);
         if (auto* q = processor.apvts.getParameter (ParamID::q))

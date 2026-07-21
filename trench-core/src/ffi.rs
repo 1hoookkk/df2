@@ -761,6 +761,17 @@ pub unsafe extern "C" fn trench_engine_set_pitch_ratio(engine: *mut c_void, rati
     })
 }
 
+/// MANUAL KEY SNAP — 0=off, 1..12=C..B natural minor,
+/// 13..24=C..B major. The engine owns the per-lane scale landing.
+#[no_mangle]
+pub unsafe extern "C" fn trench_engine_set_key_snap(engine: *mut c_void, choice: i32) {
+    ffi_guard((), || {
+        if let Some(eng) = unsafe { engine_mut(engine) } {
+            eng.set_key_snap(choice);
+        }
+    })
+}
+
 /// Set the four `TrenchMatrix` knobs in one call.
 #[no_mangle]
 pub unsafe extern "C" fn trench_engine_set_trench_matrix(

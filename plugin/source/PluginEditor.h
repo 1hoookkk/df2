@@ -7,6 +7,7 @@
 #include "ui/GraphDisplay.h"
 #include "ui/SlotPad.h"
 #include "ui/MoveChip.h"
+#include "ui/KeySnapBox.h"
 #include "ui/TakeView.h"
 #include "ui/MoveView.h"
 // RouteView.h is shelved for V1 (ROUTE matrix editor not wired) — kept on disk for later.
@@ -58,6 +59,7 @@ private:
     std::unique_ptr<trench::ui::GraphDisplay>     graph;
     std::unique_ptr<trench::ui::SlotPad>          slotPad;
     std::unique_ptr<trench::ui::MoveChip>         moveChip; // curated MOVE status chip, inside the screen
+    std::unique_ptr<trench::ui::KeySnapBox>       keySnapBox; // passive two-key suggestion + confirmation
     std::unique_ptr<trench::ui::TakeView>         takeView;
     std::unique_ptr<trench::ui::MoveView>         moveView;   // Page 2 — MOVE / PLAY (V1)
     int currentPage = 0;
@@ -72,13 +74,12 @@ private:
     std::unique_ptr<trench::ui::TakeButton>       takeButton;    // TAKE: drag the last few seconds into the DAW
     std::unique_ptr<trench::ui::FiveDButton>      fiveDButton;   // 5D: latch the extreme spatial orbit
     std::unique_ptr<trench::ui::LabelsLayer>      labels;
-#if TRENCH_DEV_PANEL
-    // Dev-only: right-edge arrow opens a generic all-parameters panel so every
-    // hidden host param (hdMode, slamDrive, bite, keyTrack, space, ...) can be
-    // tuned by taste. Never ships: TRENCH_DEV_PANEL=0 for release.
-    std::unique_ptr<juce::TextButton>                 devArrow;
-    std::unique_ptr<juce::Viewport>                   devViewport;
-    std::unique_ptr<juce::GenericAudioProcessorEditor> devPanel;
+#if TRENCH_TABLE_STITCH_PANEL
+    // External raw-table authoring surface. The plugin only provides the
+    // TABLES launch point; the table picker lives outside the product face.
+    void openTableStitcher();
+    std::unique_ptr<juce::TextButton>                  tableStitchButton;
+    std::unique_ptr<juce::ChildProcess>                tableStitchProcess;
 #endif
     std::unique_ptr<trench::ui::DecalsLayer>      decalsLayer;
 

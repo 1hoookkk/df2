@@ -464,18 +464,33 @@ private:
 
         constexpr auto joint = juce::PathStrokeType::curved;
         constexpr auto cap   = juce::PathStrokeType::rounded;
-        // CHUNKY instrument stroke (reference 2026-07-18): a heavy light line
-        // with real presence — the curve IS the display's content. No fill.
         constexpr float lw = 2.6f;
-        g.setColour (phos.withAlpha (0.22f));
-        g.strokePath (responsePath, { lw + 1.6f, joint, cap });
-        g.setColour (phos);
-        g.strokePath (responsePath, { lw, joint, cap });
+        // The reference trace is a genuine low-res LCD readout: visible pixel
+        // steps along the line, not a smooth vector curve. Draw the bloom +
+        // core stack into a reduced-resolution offscreen image, then blit it
+        // back with nearest-neighbour scaling so the stair-stepping survives.
+        constexpr float aliasScale = 0.50f;
+        const int smallW = juce::jmax (1, juce::roundToInt (plot.getWidth()  * aliasScale));
+        const int smallH = juce::jmax (1, juce::roundToInt (plot.getHeight() * aliasScale));
+        juce::Image traceImg (juce::Image::ARGB, smallW, smallH, true);
+        {
+            juce::Graphics tg (traceImg);
+            tg.addTransform (juce::AffineTransform::translation (-plot.getX(), -plot.getY())
+                                  .followedBy (juce::AffineTransform::scale (aliasScale)));
+            // Hardware readout, not a software glow: one tight halo seats the
+            // trace on the glass, then a crisp core. No wide bloom haze.
+            tg.setColour (phos.withAlpha (0.16f));
+            tg.strokePath (responsePath, { lw + 1.4f, joint, cap });
+            tg.setColour (phos);
+            tg.strokePath (responsePath, { lw, joint, cap });
+        }
+        g.setImageResamplingQuality (juce::Graphics::lowResamplingQuality);
+        g.drawImage (traceImg, plot, juce::RectanglePlacement::stretchToFit);
 
         // Peak crosses (the reference's + ticks): small markers on the mode
         // crests — light ink on the dark teal plate, clinical annotation not sparkle.
         {
-            g.setColour (juce::Colour (0xffcfe8de).withAlpha (0.75f));
+            g.setColour (t.curveHighlight().withAlpha (0.95f));  // markers a shade lighter than the curve (2026-07-19)
             int marks = 0;
             const size_t r = juce::jmax ((size_t) 2, N / (size_t) 95);
             for (size_t i = r; i + r < N && marks < 8; ++i)

@@ -6,6 +6,7 @@
 
 #include <juce_audio_processors/juce_audio_processors.h>
 #include <memory>
+#include <vector>
 
 namespace trench::ui
 {
@@ -67,8 +68,22 @@ public:
     void mouseExit  (const juce::MouseEvent&) override { repaint(); }
     void mouseDown  (const juce::MouseEvent&) override
     {
+        refreshFromDisk();   // pick up any bodies dropped into Documents/TRENCH/bodies since last open
         showGroupedMenu();
         repaint();
+    }
+
+    // Re-scan the on-disk bodies folder and rebuild the item list in place so a
+    // batch dropped while the plug-in is open appears without an FL restart.
+    // Message thread (mouse handler); selection is preserved and not renotified,
+    // so the APVTS attachment is untouched.
+    void refreshFromDisk()
+    {
+        const int keep = selector.getSelectedId();
+        trench::rescanBodyRoster();
+        populate();
+        if (keep > 0)
+            selector.setSelectedId (keep, juce::dontSendNotification);
     }
 
     // Hover-audition row (2026-07-19, "I need to audition directly in the
@@ -154,10 +169,18 @@ public:
         juce::PopupMenu m;
         m.setLookAndFeel (&menuLookAndFeel);
         juce::PopupMenu fams[std::size (kFams)];
-        juce::PopupMenu userMenu;
-        // Scanned Documents/TRENCH/bodies entries carry a full path as base —
-        // they fold into USER, never the signature tier (216 loose dev files
-        // were flooding the top level: the monolith).
+        struct FolderMenu
+        {
+            juce::String label;
+            std::unique_ptr<juce::PopupMenu> menu = std::make_unique<juce::PopupMenu>();
+            std::vector<std::pair<juce::String, std::unique_ptr<juce::PopupMenu>>> children;
+            int itemCount = 0;
+        };
+        std::vector<FolderMenu> folders;
+
+        // Scanned Documents/TRENCH/bodies entries carry a full path as base.
+        // Their relative disk folder becomes the product menu folder instead
+        // of flattening the recent audition set into one USER bucket.
         auto isUser = [] (const char* base) { return juce::String (base).containsChar (':'); };
         auto famIndex = [&] (const char* base) -> int
         {
@@ -168,6 +191,50 @@ public:
                 if (b.startsWith (kFams[(size_t) f].prefix))
                     return f;
             return -1;
+        };
+
+        auto folderFor = [&folders] (const juce::String& label) -> FolderMenu&
+        {
+            for (auto& folder : folders)
+                if (folder.label == label)
+                    return folder;
+            folders.push_back ({ label });
+            return folders.back();
+        };
+
+        auto addToFolder = [&] (int index)
+        {
+            juce::String category (entries[index].category);
+            if (category.isEmpty())
+                category = "USER";
+            category = category.replaceCharacter ('\\', '/');
+
+            const int slash = category.indexOfChar ('/');
+            const auto top = slash >= 0 ? category.substring (0, slash) : category;
+            const auto leaf = slash >= 0 ? category.substring (slash + 1) : juce::String();
+            auto& folder = folderFor (top.isEmpty() ? juce::String ("USER") : top);
+
+            juce::PopupMenu* destination = folder.menu.get();
+            if (leaf.isNotEmpty())
+            {
+                for (auto& child : folder.children)
+                    if (child.first == leaf)
+                    {
+                        destination = child.second.get();
+                        break;
+                    }
+                if (destination == folder.menu.get())
+                {
+                    folder.children.emplace_back (leaf, std::make_unique<juce::PopupMenu>());
+                    destination = folder.children.back().second.get();
+                }
+            }
+
+            destination->addCustomItem (index + 1,
+                                        std::make_unique<AuditionItem> (*this, index,
+                                                                         entries[index].displayName,
+                                                                         index == current));
+            ++folder.itemCount;
         };
 
         // top level: NO FILTER + every named/signature body (not in a family).
@@ -182,15 +249,28 @@ public:
             if (f >= 0)
                 fams[f].addCustomItem (i + 1, std::make_unique<AuditionItem> (*this, i, entries[i].displayName, i == current));
             else if (f == -2)
-                userMenu.addCustomItem (i + 1, std::make_unique<AuditionItem> (*this, i, entries[i].displayName, i == current));
+                addToFolder (i);
         }
+
+        // Recent/user folders sit before the large legacy family menus. The
+        // current item state is still represented by the tick inside the row;
+        // the folder tick only tells the user where the active body lives.
+        for (auto& folder : folders)
+        {
+            for (auto& child : folder.children)
+                folder.menu->addSubMenu (child.first, *child.second, true, nullptr,
+                                         current >= 0 && isUser (entries[current].base)
+                                             && juce::String (entries[current].category).startsWithIgnoreCase (folder.label + "/" + child.first));
+            if (folder.itemCount > 0)
+                m.addSubMenu (folder.label, *folder.menu, true, nullptr,
+                              current >= 0 && isUser (entries[current].base)
+                                  && juce::String (entries[current].category).startsWithIgnoreCase (folder.label));
+        }
+
         for (int f = 0; f < (int) std::size (kFams); ++f)
             if (fams[f].getNumItems() > 0)
                 m.addSubMenu (kFams[(size_t) f].label, fams[f], true, nullptr,
                               current >= 0 && famIndex (entries[current].base) == f);
-        if (userMenu.getNumItems() > 0)
-            m.addSubMenu ("USER", userMenu, true, nullptr,
-                          current >= 0 && famIndex (entries[current].base) == -2);
 
         juce::Component::SafePointer<TypeSelectorView> self (this);
         m.showMenuAsync (juce::PopupMenu::Options().withTargetComponent (this),
@@ -242,10 +322,10 @@ public:
         
         // Large plain preset name, matching the reference UI's software-first
         // hierarchy. The plate supplies the material; the text stays crisp.
-        g.setFont (displayFont (t.fontSize ("typeName", 17.0f), false));
+        g.setFont (displayFont (t.fontSize ("typeName", 17.0f), true));  // bold preset name like the golden face (2026-07-20)
         g.setColour (hot ? juce::Colours::black : t.textColour ("typeName", juce::Colour (0xff0b0b0b)));
-        g.drawFittedText (typeText, textArea.toNearestInt(),
-                          juce::Justification::centredLeft, 1, 0.94f);
+        g.drawText (typeText, textArea.toNearestInt(),
+                    juce::Justification::centredLeft, false);
 
         // One clean divider before the arrow segment.
         g.setColour (juce::Colour (0xff6a6256).withAlpha (0.52f));
