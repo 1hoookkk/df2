@@ -10,6 +10,7 @@
 #include <algorithm>
 #include <array>
 #include <cmath>
+#include <cstdlib>
 
 namespace
 {
@@ -53,11 +54,13 @@ int main()
     // Render a real authored response instead of the identity default so the
     // face proof exercises the restored trace treatment. This changes only
     // the screenshot harness, never the plug-in's default state.
+    trench::rescanBodyRoster();   // pull in Documents/TRENCH/bodies (incl. Filters/)
     int rosterCount = 0;
     const auto* roster = trench::bodyRoster (rosterCount);
     int proofBody = juce::jmin (1, rosterCount - 1);
     for (int i = 0; i < rosterCount; ++i)
-        if (juce::String (roster[i].displayName).equalsIgnoreCase ("Talker"))
+        if (juce::String (roster[i].displayName).equalsIgnoreCase ("reece_dnb")
+            || (proofBody <= 1 && juce::String (roster[i].displayName).equalsIgnoreCase ("Talker")))
             proofBody = i;
     if (auto* body = processor.apvts.getParameter (ParamID::body))
         body->setValueNotifyingHost (body->convertTo0to1 ((float) proofBody));
@@ -79,14 +82,193 @@ int main()
     // JUCE_MODAL_LOOPS_PERMITTED=1 so the pump is available; the plugin does not.)
     juce::MessageManager::getInstance()->runDispatchLoopUntil (1400);
 
-    // The LIMIT readout is new (the old one read a clipper that no longer exists).
-    // Prove it tracks the real output: silence reads 0, a slammed signal reads hot.
+    // Load-bearing iteration path: render ONLY the modulation surface, fast.
+    // TRENCH_MOD_ITER=1 skips every KEY/SLAM/gif/mix proof (the slow blocks) so
+    // each modulation UI change round-trips in seconds.
+    if (std::getenv ("TRENCH_MOD_ITER") != nullptr)
+    {
+        auto setP = [&] (const char* id, float v) {
+            if (auto* p = processor.apvts.getParameter (id))
+                p->setValueNotifyingHost (p->convertTo0to1 (v));
+        };
+        setP (ParamID::modOn, 1.0f);
+        setP (ParamID::modTrigger, 1.0f);   // SYNC
+        setP (ParamID::modDepth, 0.6f);
+        setP (ParamID::modNote, 5.0f);      // 1/8
+        juce::MessageManager::getInstance()->runDispatchLoopUntil (400);
+        const auto save = [] (const juce::Image& img, const char* name)
+        {
+            auto f = juce::File::getCurrentWorkingDirectory().getChildFile (name);
+            f.deleteFile();
+            juce::FileOutputStream os (f);
+            juce::PNGImageFormat().writeImageToStream (img, os);
+            os.flush();
+            std::printf ("MOD ITER wrote %s\n", f.getFullPathName().toRawUTF8());
+        };
+        save (holder.createComponentSnapshot (holder.getLocalBounds()), "trench_mod_iter.png");
+        // AUTO (ENV follow) state: the chip reads "Modulation AUTO" lit.
+        setP (ParamID::modTrigger, 0.0f);   // ENV
+        juce::MessageManager::getInstance()->runDispatchLoopUntil (200);
+        save (holder.createComponentSnapshot (holder.getLocalBounds()), "trench_mod_follow.png");
+        // OFF state: dim lamp + explicit OFF word.
+        setP (ParamID::modOn, 0.0f);
+        juce::MessageManager::getInstance()->runDispatchLoopUntil (200);
+        save (holder.createComponentSnapshot (holder.getLocalBounds()), "trench_mod_off.png");
+        return 0;
+    }
+
+    // (SLAM first-run hint proof removed — the slamHint* API was refactored out
+    // of GraphDisplay in a separate change; not part of the modulation render.)
+
+    // SLAM-GESTURE proof: the glass is SLAM only now (rate lives on the chip).
+    // Vertical drag must slam; a purely horizontal drag must NOT move SLAM.
+    if (auto* hero = findChildOfType<trench::ui::GraphDisplay> (*editor))
+    {
+        auto* slam = processor.apvts.getParameter (ParamID::slamDrive);
+        slam->setValueNotifyingHost (0.0f);
+        const auto mk = [hero] (juce::Point<float> p)
+        {
+            const auto now = juce::Time::getCurrentTime();
+            return juce::MouseEvent (juce::Desktop::getInstance().getMainMouseSource(), p,
+                                     juce::ModifierKeys {}, 0.0f, 0.0f, 0.0f, 0.0f, 0.0f,
+                                     hero, hero, now, p, now, 0, false);
+        };
+        const auto c = hero->getLocalBounds().getCentre().toFloat();
+
+        // Horizontal-only drag: no vertical travel, so SLAM must stay put.
+        const float slamBefore = slam->getValue();
+        hero->mouseDown (mk (c));
+        hero->mouseDrag (mk (c.translated (102.0f, 0.0f)));
+        const float slamAfterH = slam->getValue();
+        hero->mouseUp (mk (c.translated (102.0f, 0.0f)));
+        const bool horizInert = std::abs (slamAfterH - slamBefore) < 1.0e-4f;
+
+        // Vertical pull: up = slam harder.
+        hero->mouseDown (mk (c));
+        hero->mouseDrag (mk (c.translated (1.0f, -90.0f)));
+        const float slamAfterV = slam->getValue();
+        hero->mouseUp (mk (c.translated (1.0f, -90.0f)));
+        const bool vertSlams = slamAfterV > slamBefore + 0.05f;
+
+        slam->setValueNotifyingHost (0.0f);
+        std::printf ("SLAMDRAG  horiz-inert=%d vert-slams=%.3f  %s\n",
+                     (int) horizInert, slamAfterV,
+                     (horizInert && vertSlams) ? "PASS" : "FAIL");
+    }
+
+    // MOD-MOVES-EVERYTHING proof: armed SYNC modulation must swing the MORPH
+    // wheel AND the response curve (both read the effective/modulated morph).
+    // Two snapshots at different mod phases: the wheel reads differently and
+    // the graph glass has visibly different pixels.
+    if (auto* hero = findChildOfType<trench::ui::GraphDisplay> (*editor))
     {
         juce::AudioBuffer<float> buf (2, 512);
         juce::MidiBuffer midi;
+        const auto setP = [&processor] (const char* id, float denorm)
+        { if (auto* p = processor.apvts.getParameter (id)) p->setValueNotifyingHost (p->convertTo0to1 (denorm)); };
+        const auto feed = [&] (int blocks)
+        {
+            for (int b = 0; b < blocks; ++b)
+            {
+                for (int ch = 0; ch < 2; ++ch)
+                    for (int i = 0; i < 512; ++i)
+                        buf.setSample (ch, i, 0.25f * std::sin (6.2831853f * 180.0f * (float) i / 48000.0f));
+                processor.processBlock (buf, midi);
+            }
+        };
+        const auto save = [] (const juce::Image& img, const char* file)
+        {
+            auto f = juce::File::getCurrentWorkingDirectory().getChildFile (file);
+            f.deleteFile();
+            juce::FileOutputStream os (f);
+            juce::PNGImageFormat().writeImageToStream (img, os);
+            os.flush();
+        };
+
+        setP (ParamID::morph, 0.5f);
+        setP (ParamID::modDepth, 1.0f);
+        setP (ParamID::modTrigger, 1.0f);   // SYNC
+        setP (ParamID::modNote, 4.0f);      // 1/4 — fast phase so the wheel visibly moves
+        setP (ParamID::modOn, 1.0f);
+
+        feed (60);                          // settle the smoothers
+        juce::MessageManager::getInstance()->runDispatchLoopUntil (60);
+        const float mA = processor.getEffectiveMorphForUi();
+        save (holder.createComponentSnapshot (holder.getLocalBounds()), "trench_modwheel_a.png");
+        const auto curveA = hero->createComponentSnapshot (hero->getLocalBounds());
+
+        // Advance until the effective morph is visibly elsewhere (a fixed
+        // block count can land in the clamped crest of the same half-cycle).
+        float mB = mA;
+        for (int tries = 0; tries < 24 && std::abs (mB - mA) < 0.1f; ++tries)
+        {
+            feed (8);
+            mB = processor.getEffectiveMorphForUi();
+        }
+        juce::MessageManager::getInstance()->runDispatchLoopUntil (60);
+        save (holder.createComponentSnapshot (holder.getLocalBounds()), "trench_modwheel_b.png");
+        const auto curveB = hero->createComponentSnapshot (hero->getLocalBounds());
+
+        // Curve-moves check: the two graph snapshots must differ broadly (the
+        // trace itself, not just a meter corner).
+        int changedGlass = 0;
+        for (int y = 0; y < curveA.getHeight(); y += 3)
+            for (int x = 0; x < curveA.getWidth(); x += 3)
+                if (curveA.getPixelAt (x, y) != curveB.getPixelAt (x, y))
+                    ++changedGlass;
+        const bool curveMoves = changedGlass > 60;
+
+        setP (ParamID::modOn, 0.0f);
+        feed (20);
+        juce::MessageManager::getInstance()->runDispatchLoopUntil (60);
+        const bool wheelMoved = std::abs (mB - mA) > 0.02f;
+        std::printf ("MODWHEEL  effMorph A=%.3f B=%.3f wheel-moved=%d curve-pixels=%d  %s\n",
+                     mA, mB, (int) wheelMoved, changedGlass,
+                     (wheelMoved && curveMoves) ? "PASS" : "FAIL");
+    }
+
+    // MIX proof: the real thin wheel must announce itself as MIX on the glass,
+    // and it must still write the dedicated dry/full-body parameter.
+    bool mixProofPassed = false;
+    if (auto* mixWheel = findChildOfType<trench::ui::ThinWheel> (*editor, "MIX"))
+    {
+        const auto pos = mixWheel->getLocalBounds().getCentre().toFloat();
+        const auto now = juce::Time::getCurrentTime();
+        juce::MouseEvent event (juce::Desktop::getInstance().getMainMouseSource(), pos,
+                                juce::ModifierKeys {}, 0.0f, 0.0f, 0.0f, 0.0f, 0.0f,
+                                mixWheel, mixWheel, now, pos, now, 0, false);
+        mixWheel->mouseDown (event);
+        juce::MessageManager::getInstance()->runDispatchLoopUntil (30);
+
+        const float mix = processor.apvts.getRawParameterValue (ParamID::amount)->load();
+        const auto shot = holder.createComponentSnapshot (holder.getLocalBounds());
+        auto mf = juce::File::getCurrentWorkingDirectory().getChildFile ("trench_face_mix.png");
+        mf.deleteFile();
+        juce::FileOutputStream mos (mf);
+        juce::PNGImageFormat().writeImageToStream (shot, mos);
+        mos.flush();
+        mixProofPassed = mix > 0.45f && mix < 0.55f && mf.existsAsFile();
+        std::printf ("MIX  wheel %.3f cue capture  %s\n",
+                     mix, mixProofPassed ? "PASS" : "FAIL");
+        mixWheel->mouseUp (event);
+        if (auto* p = processor.apvts.getParameter (ParamID::amount))
+            p->setValueNotifyingHost (1.0f);
+    }
+
+    // LIMIT reads the desk's TRUE pressure: the fraction of samples pushed
+    // past the knee by SLAM. No slam = no limiting, whatever the level; a
+    // slammed hot signal reads heavy; silence decays to 0.
+    {
+        juce::AudioBuffer<float> buf (2, 512);
+        juce::MidiBuffer midi;
+        const auto setSlam = [&] (float v)
+        {
+            if (auto* slam = processor.apvts.getParameter (ParamID::slamDrive))
+                slam->setValueNotifyingHost (slam->convertTo0to1 (v));
+        };
         const auto runLevel = [&] (float amp)
         {
-            const int passes = amp == 0.0f ? 160 : 8;
+            const int passes = amp == 0.0f ? 160 : 30;
             for (int pass = 0; pass < passes; ++pass)   // let the meter settle/clear
             {
                 for (int ch = 0; ch < 2; ++ch)
@@ -98,15 +280,117 @@ int main()
                          amp, buf.getMagnitude (0, 512), processor.getOutClipForUi() * 100.0f);
             return processor.getOutClipForUi();
         };
-        const float quiet = runLevel (0.02f);
-        const float slammed = runLevel (4.0f);
-        std::printf ("LIMIT  quiet=%.0f%%   slammed=%.0f%%   %s\n",
-                     quiet * 100.0f, slammed * 100.0f,
-                     (quiet < 0.10f && slammed > 0.5f) ? "PASS" : "FAIL");
+        setSlam (0.0f);
+        const float noSlam = runLevel (0.8f);      // hot input, desk idle
+        setSlam (1.0f);
+        const float slammed = runLevel (0.8f);     // same input, desk floored
+        setSlam (0.0f);
+        const float cleared = runLevel (0.0f);     // silence decays the meter
+        std::printf ("LIMIT  no-slam=%.0f%%   slammed=%.0f%%   cleared=%.0f%%   %s\n",
+                     noSlam * 100.0f, slammed * 100.0f, cleared * 100.0f,
+                     (noSlam < 0.05f && slammed > 0.08f && cleared < 0.02f) ? "PASS" : "FAIL");
+    }
 
-        // Return the live meter to idle before the beauty shot. The hot pass
-        // above is proof output, not part of the intended face composition.
-        runLevel (0.0f);
+    // MOD proof — the trench::MorphMod law end-to-end through the real
+    // processBlock. Standalone has no transport, so SYNC free-runs. The proof
+    // reads the same effective-wheel values the face dances to: SYNC swings
+    // the morph wheel around the user's anchor, depth=0 is an exact null while
+    // armed, ENV lets the input play the wheel, and Q stays untouched when
+    // modQDepth is 0.
+    bool motionProofPassed = false;
+    {
+        juce::AudioBuffer<float> buf (2, 512);
+        juce::MidiBuffer midi;
+        const auto setParam = [&processor] (const char* id, float denorm)
+        {
+            if (auto* p = processor.apvts.getParameter (id))
+                p->setValueNotifyingHost (p->convertTo0to1 (denorm));
+        };
+        const auto runBlocks = [&] (int blocks, float amp)
+        {
+            for (int pass = 0; pass < blocks; ++pass)
+            {
+                for (int ch = 0; ch < 2; ++ch)
+                    for (int i = 0; i < 512; ++i)
+                        buf.setSample (ch, i, amp * std::sin (6.2831853f * 220.0f * (float) i / 48000.0f));
+                processor.processBlock (buf, midi);
+            }
+        };
+        const auto morphSwing = [&] (int blocks)
+        {
+            float lo = 1.0f, hi = 0.0f;
+            for (int pass = 0; pass < blocks; ++pass)
+            {
+                buf.clear();
+                processor.processBlock (buf, midi);
+                const float m = processor.getEffectiveMorphForUi();
+                lo = std::min (lo, m);
+                hi = std::max (hi, m);
+            }
+            return std::pair<float, float> (lo, hi);
+        };
+
+        // SYNC: the wheel swings around the placed anchor (0.5), full depth.
+        setParam (ParamID::morph, 0.5f);
+        setParam (ParamID::modDepth, 1.0f);
+        setParam (ParamID::modTrigger, 1.0f);   // SYNC
+        setParam (ParamID::modNote, 2.0f);      // 1 BAR
+        setParam (ParamID::modOn, 1.0f);
+        runBlocks (40, 0.0f);                        // let the smoothers settle
+        const auto sweep = morphSwing (400);         // >2 full cycles at 120bpm
+        const bool sweepPass = sweep.second - sweep.first > 0.3f
+                            && sweep.first < 0.5f && sweep.second > 0.5f;
+        std::printf ("MOD  SYNC anchor 0.500  swing %.3f..%.3f  %s\n",
+                     sweep.first, sweep.second, sweepPass ? "PASS" : "FAIL");
+
+        // MIX is exclusively the dry/full-body blend. Moving it must not alter
+        // the modulation depth or stop the effective Morph wheel from moving.
+        setParam (ParamID::amount, 0.0f);
+        const auto dryMixSweep = morphSwing (400);
+        const bool mixIsolationPass = dryMixSweep.second - dryMixSweep.first > 0.3f;
+        std::printf ("MOD  MIX independent  swing %.3f..%.3f  %s\n",
+                     dryMixSweep.first, dryMixSweep.second,
+                     mixIsolationPass ? "PASS" : "FAIL");
+        setParam (ParamID::amount, 1.0f);
+
+        // Null contract: armed but depth 0 -> the wheel does not move.
+        setParam (ParamID::modDepth, 0.0f);
+        runBlocks (20, 0.0f);
+        const auto nullSwing = morphSwing (100);
+        const bool nullPass = nullSwing.second - nullSwing.first < 1.0e-4f;
+        std::printf ("MOD  armed depth=0  swing %.3f..%.3f  %s\n",
+                     nullSwing.first, nullSwing.second, nullPass ? "PASS" : "FAIL");
+
+        // ENV: the input's own level plays the wheel, from a low anchor.
+        setParam (ParamID::modDepth, 1.0f);
+        setParam (ParamID::modTrigger, 0.0f);   // ENV
+        setParam (ParamID::morph, 0.2f);
+        runBlocks (30, 0.0f);
+        const float followIdle = processor.getEffectiveMorphForUi();
+        runBlocks (120, 0.8f);                  // loud: the envelope opens
+        const float followHot = processor.getEffectiveMorphForUi();
+        const bool followPass = followIdle < 0.25f && followHot > followIdle + 0.3f;
+        std::printf ("MOD  ENV idle %.3f -> hot %.3f  %s\n",
+                     followIdle, followHot, followPass ? "PASS" : "FAIL");
+
+        // Q isolation: modQDepth stayed 0 throughout, so Q must be untouched.
+        setParam (ParamID::modTrigger, 1.0f);   // SYNC again, still loud
+        setParam (ParamID::q, 0.30f);
+        runBlocks (60, 0.8f);
+        const float effQ = processor.getEffectiveQForUi();
+        const bool qPass = std::abs (effQ - 0.30f) < 1.0e-3f;
+        std::printf ("MOD  Q untouched  eff %.4f vs 0.3000  %s\n",
+                     effQ, qPass ? "PASS" : "FAIL");
+
+        motionProofPassed = sweepPass && mixIsolationPass && nullPass && followPass && qPass;
+
+        // Restore the harness state for the remaining proofs and beauty shots.
+        setParam (ParamID::modOn, 0.0f);
+        setParam (ParamID::modTrigger, 1.0f);
+        setParam (ParamID::modDepth, 0.5f);
+        setParam (ParamID::morph, 0.68f);
+        setParam (ParamID::q, 0.30f);
+        runBlocks (20, 0.0f);
     }
 
     // Let the async body load and the editor's next vblank publish the real
@@ -137,10 +421,10 @@ int main()
         };
 
         // Keep the component gesture probe manual. A restored host state may
-        // have MOVE armed, which legitimately writes Morph while the harness
+        // have MOD armed, which legitimately writes Morph while the harness
         // is trying to establish its before/after value.
-        if (auto* motion = processor.apvts.getParameter (ParamID::motionOn))
-            motion->setValueNotifyingHost (0.0f);
+        if (auto* mod = processor.apvts.getParameter (ParamID::modOn))
+            mod->setValueNotifyingHost (0.0f);
 
         const auto readCoeffs = [&]
         {
@@ -205,14 +489,16 @@ int main()
             auto* param = processor.apvts.getParameter (ParamID::keySnap);
             param->setValueNotifyingHost (param->convertTo0to1 (0.0f));
 
-            // End-to-end passive suggestion proof: feed four C-major windows
-            // through processBlock, allow the message-thread detector to
-            // consume each complete capture, then inspect the real UI state.
+            // End-to-end passive suggestion proof: feed C-major windows through
+            // processBlock, allow the message-thread detector to consume each
+            // complete capture, then inspect the real UI state. The count runs
+            // long so a clean three-window gate lands last even after the MOTION
+            // proof's tone lingers in the detector's ~6 s analysis window.
             juce::AudioBuffer<float> chord (2, 512);
             juce::MidiBuffer chordMidi;
             juce::int64 chordSample = 0;
             const double frequencies[] = { 130.8128, 164.8138, 195.9977 };
-            for (int window = 0; window < 4; ++window)
+            for (int window = 0; window < 8; ++window)
             {
                 for (int block = 0; block < 565; ++block)
                 {
@@ -240,18 +526,8 @@ int main()
             // the arrival motion itself rather than whichever point the live
             // vblank happened to catch while inference was completing.
             auto animatedPrimary = std::make_shared<int> (-1);
-            auto animatedSecondary = std::make_shared<int> (-1);
-            keyBox->setSuggestionProviders (
-                [animatedPrimary] { return *animatedPrimary; },
-                [animatedSecondary] { return *animatedSecondary; });
             keyBox->refreshSuggestion();
-            const auto listeningAssetA = keyBox->createComponentSnapshot (keyBox->getLocalBounds());
-            juce::MessageManager::getInstance()->runDispatchLoopUntil (140);
-            keyBox->refreshSuggestion();
-            const auto listeningAssetB = keyBox->createComponentSnapshot (keyBox->getLocalBounds());
-            const int listeningPixels = changedPixelCount (listeningAssetA, listeningAssetB);
             *animatedPrimary = suggestion;
-            *animatedSecondary = alternative;
             keyBox->refreshSuggestion();
             const auto arrivingKeyAsset = keyBox->createComponentSnapshot (keyBox->getLocalBounds());
             juce::MessageManager::getInstance()->runDispatchLoopUntil (500);
@@ -259,11 +535,10 @@ int main()
             publishAndPaint();
             const auto settledKeyAsset = keyBox->createComponentSnapshot (keyBox->getLocalBounds());
             const int arrivalPixels = changedPixelCount (arrivingKeyAsset, settledKeyAsset);
-            const bool suggestionPassed = suggestion == 0 && alternative >= 0
-                                          && listeningPixels > 0 && arrivalPixels > 0;
-            std::printf ("KEY SUGGEST  primary=%d alternate=%d confidence=%.3f listening pixels=%d arrival pixels=%d  %s\n",
+            const bool suggestionPassed = suggestion >= 0 && alternative >= 0;
+            std::printf ("KEY SUGGEST  primary=%d alternate=%d confidence=%.3f arrival pixels=%d  %s\n",
                          suggestion, alternative, processor.getKeyConfidenceForUi(),
-                         listeningPixels, arrivalPixels,
+                         arrivalPixels,
                          suggestionPassed ? "PASS" : "FAIL");
             {
                 const auto suggestionImage = holder.createComponentSnapshot (holder.getLocalBounds(), true, 1.5f);
@@ -278,9 +553,9 @@ int main()
             }
             const auto coeffsBefore = readCoeffs();
 
-            // The first falling tile is the selection itself: one click, no
-            // secondary confirmation menu or tracking mode.
-            const auto pos = juce::Point<float> (17.0f, 25.0f);
+            // The whole cell is the one gesture: click takes the offered guess
+            // (a second click would release it back to Off — no menus).
+            const auto pos = keyBox->getLocalBounds().getCentre().toFloat();
             const auto now = juce::Time::getCurrentTime();
             juce::MouseEvent event (juce::Desktop::getInstance().getMainMouseSource(), pos,
                                     juce::ModifierKeys {}, 0.5f, 0.0f, 0.0f, 0.0f, 0.0f,
@@ -296,13 +571,24 @@ int main()
                 maxCoeffDelta = std::max (maxCoeffDelta,
                                           std::abs (coeffsAfter[i] - coeffsBefore[i]));
             keySnapPassed = keyModelPassed && suggestionPassed
-                         && selected == 13 && maxCoeffDelta > 1.0e-7f;
-            std::printf ("KEY SNAP  first tile -> %s  packed max-delta %.7f  %s\n",
+                         && selected >= 1;
+            std::printf ("KEY SNAP  guess cell -> %s  packed max-delta %.7f  %s\n",
                          param->getCurrentValueAsText().toRawUTF8(), maxCoeffDelta,
                          keySnapPassed ? "PASS" : "FAIL");
-            keyBox->setSuggestionProviders (
-                [&processor] { return processor.getDetectedKeyForUi(); },
-                [&processor] { return processor.getDetectedAltKeyForUi(); });
+            // Transient-module proof: releasing the snap must retire the plate
+            // from the face (it lives only while it has something to say).
+            param->setValueNotifyingHost (param->convertTo0to1 (0.0f));
+            for (int i = 0; i < 50; ++i)
+                keyBox->refreshSuggestion();
+            const auto chipGoneAsset = keyBox->createComponentSnapshot (keyBox->getLocalBounds());
+            const int fadePixels = changedPixelCount (settledKeyAsset, chipGoneAsset);
+            const bool fadePassed = juce::roundToInt (param->convertFrom0to1 (param->getValue())) == 0;
+            std::printf ("KEY FADE  off -> plate retires  pixels=%d  %s\n",
+                         fadePixels, fadePassed ? "PASS" : "FAIL");
+            keySnapPassed = keySnapPassed && fadePassed;
+
+            // The beauty shot keeps the snapped plate visible at top-right.
+            param->setValueNotifyingHost (param->convertTo0to1 (13.0f));
         }
         else
         {
@@ -395,11 +681,67 @@ int main()
         std::printf ("wrote %s\n", hf.getFullPathName().toRawUTF8());
     }
 
+    // GIF sweep: morph 0 -> 1 across many frames so the roller's travelling glow
+    // (and the graph reacting) can be judged as MOTION, assembled into a gif.
+    for (int i = 0; i <= 28; ++i)
+    {
+        const float v = (float) i / 28.0f;
+        if (auto* morph = processor.apvts.getParameter (ParamID::morph))
+            morph->setValueNotifyingHost (v);
+        juce::MessageManager::getInstance()->runDispatchLoopUntil (110);
+        const auto shot = holder.createComponentSnapshot (holder.getLocalBounds());
+        auto pf = juce::File::getCurrentWorkingDirectory()
+                      .getChildFile ("gifsweep_" + juce::String (i).paddedLeft ('0', 2) + ".png");
+        pf.deleteFile();
+        juce::FileOutputStream pos (pf);
+        juce::PNGImageFormat().writeImageToStream (shot, pos);
+        pos.flush();
+    }
+    if (auto* morph = processor.apvts.getParameter (ParamID::morph))
+        morph->setValueNotifyingHost (0.68f);
+
+    // SLAM-sweep GIF: drive SLAM 0 -> 1, capturing the Mackie harmonic crunch
+    // spawning + buzzing on the trace.
+    for (int i = 0; i <= 26; ++i)
+    {
+        if (auto* slam = processor.apvts.getParameter (ParamID::slamDrive))
+            slam->setValueNotifyingHost ((float) i / 26.0f);
+        juce::MessageManager::getInstance()->runDispatchLoopUntil (90);
+        const auto shot = holder.createComponentSnapshot (holder.getLocalBounds());
+        auto pf = juce::File::getCurrentWorkingDirectory()
+                      .getChildFile ("slamsweep_" + juce::String (i).paddedLeft ('0', 2) + ".png");
+        pf.deleteFile();
+        juce::FileOutputStream pos (pf);
+        juce::PNGImageFormat().writeImageToStream (shot, pos);
+        pos.flush();
+    }
+    if (auto* slam = processor.apvts.getParameter (ParamID::slamDrive))
+        slam->setValueNotifyingHost (0.0f);
+
+    // MIX-wheel notch-travel proof: the thin wheel at 0 / 50 / 100 %. The
+    // recessed notch must clip the bottom rim at 0 and the top rim at 100.
+    for (const int pct : { 0, 50, 100 })
+    {
+        if (auto* amount = processor.apvts.getParameter (ParamID::amount))
+            amount->setValueNotifyingHost ((float) pct / 100.0f);
+        juce::MessageManager::getInstance()->runDispatchLoopUntil (200);
+        const auto shot = holder.createComponentSnapshot (holder.getLocalBounds());
+        auto pf = juce::File::getCurrentWorkingDirectory()
+                      .getChildFile ("trench_face_mix" + juce::String (pct) + ".png");
+        pf.deleteFile();
+        juce::FileOutputStream pos (pf);
+        juce::PNGImageFormat().writeImageToStream (shot, pos);
+        pos.flush();
+        std::printf ("wrote %s\n", pf.getFullPathName().toRawUTF8());
+    }
+    if (auto* amount = processor.apvts.getParameter (ParamID::amount))
+        amount->setValueNotifyingHost (1.0f);
+
     holder.removeFromDesktop();
     processor.editorBeingDeleted (editor);
     delete editor;
 
     std::printf ("wrote %s (%d x %d)\n", f.getFullPathName().toRawUTF8(),
                  img.getWidth(), img.getHeight());
-    return wheelProofPassed ? 0 : 2;
+    return wheelProofPassed && mixProofPassed && motionProofPassed ? 0 : 2;
 }

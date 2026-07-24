@@ -1,10 +1,7 @@
 #pragma once
-
 #include <atomic>
-
 namespace trench::clean_audio
 {
-
 #ifdef TRENCH_PLAYER_EXTRAS
 namespace detail
 {
@@ -16,7 +13,5 @@ inline void setEnabled (bool value) noexcept { detail::enabled.store (value, std
 constexpr bool kEnabled() noexcept { return false; }
 inline void setEnabled (bool) noexcept {}
 #endif
-
 inline constexpr const char* kBodyName = "Synthetic identity";
-
-} // namespace trench::clean_audio
+}

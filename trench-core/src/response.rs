@@ -1,13 +1,7 @@
-//! Response-first authoring contract.
-//!
-//! The creative object is the full cascade magnitude surface over Morph x Q.
-//! Stage rows are the packed realization of that target, not the design schema.
-
 use crate::cartridge::CornerData;
 use crate::cascade::NUM_COEFFS;
 use crate::compiler;
 use crate::minifloat::{kernel_to_biquad, PackedCorners};
-
 const EPS: f64 = 1.0e-30;
 const CORNER_LABELS: [&str; 4] = ["M0_Q0", "M100_Q0", "M0_Q100", "M100_Q100"];
 const AUDIT_GRID: usize = 5;
@@ -15,14 +9,12 @@ const AUDIT_BINS: usize = 512;
 const CROWN_MIN_DB: f64 = -3.0;
 const CROWN_MAX_DB: f64 = 36.0;
 const CROWN_PARITY_MAX_DB: f64 = 30.0;
-
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub struct BandSpec {
     pub name: &'static str,
     pub lo_hz: f64,
     pub hi_hz: f64,
 }
-
 pub const RESPONSE_BANDS: [BandSpec; 4] = [
     BandSpec {
         name: "low",
@@ -45,25 +37,21 @@ pub const RESPONSE_BANDS: [BandSpec; 4] = [
         hi_hz: 16_000.0,
     },
 ];
-
 #[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
 pub struct ResponsePoint {
     pub freq_hz: f64,
     pub db: f64,
 }
-
 #[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
 pub struct ResponseCurve {
     pub sample_rate_hz: f64,
     pub points: Vec<ResponsePoint>,
 }
-
 #[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
 pub struct BandLevel {
     pub name: String,
     pub db: f64,
 }
-
 #[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
 pub struct ResponseSummary {
     pub label: String,
@@ -72,7 +60,6 @@ pub struct ResponseSummary {
     pub slope_db_per_octave: f64,
     pub bands: Vec<BandLevel>,
 }
-
 #[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
 pub struct AxisMotion {
     pub axis: String,
@@ -82,13 +69,11 @@ pub struct AxisMotion {
     pub centroid_delta_hz: f64,
     pub peak_delta_db: f64,
 }
-
 #[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
 pub struct PackingAudit {
     pub rms_db: f64,
     pub peak_db: f64,
 }
-
 #[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
 pub struct ResponseSurfaceAudit {
     pub contract: String,
@@ -99,14 +84,12 @@ pub struct ResponseSurfaceAudit {
     pub q: AxisMotion,
     pub packing: PackingAudit,
 }
-
 #[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
 pub struct CascadeBandLevels {
     pub low_db: f64,
     pub mid_db: f64,
     pub high_db: f64,
 }
-
 #[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
 pub struct BodyAuditSample {
     pub label: String,
@@ -124,14 +107,12 @@ pub struct BodyAuditSample {
     pub total_gain_product: f64,
     pub total_gain_db: f64,
 }
-
 #[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
 pub struct BodyAuditWarning {
     pub label: String,
     pub sample: String,
     pub detail: String,
 }
-
 #[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
 pub struct BodyAuditGate {
     pub pass: bool,
@@ -143,7 +124,6 @@ pub struct BodyAuditGate {
     pub allowed_crown_max_db: f64,
     pub allowed_crown_parity_db: f64,
 }
-
 #[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
 pub struct BodyAuditRanking {
     pub hard_gate_pass: bool,
@@ -154,7 +134,6 @@ pub struct BodyAuditRanking {
     pub peak_valley_clarity: f64,
     pub stability_margin: f64,
 }
-
 #[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
 pub struct BodyCascadeAudit {
     pub contract: String,
@@ -167,7 +146,6 @@ pub struct BodyCascadeAudit {
     pub warnings: Vec<BodyAuditWarning>,
     pub ranking: BodyAuditRanking,
 }
-
 pub fn log_frequency_grid(lo_hz: f64, hi_hz: f64, points: usize) -> Vec<f64> {
     let points = points.max(2);
     let lo = lo_hz.max(1.0);
@@ -179,7 +157,6 @@ pub fn log_frequency_grid(lo_hz: f64, hi_hz: f64, points: usize) -> Vec<f64> {
         })
         .collect()
 }
-
 pub fn compile_root_body_and_audit(
     params: &[f64],
 ) -> Result<([u8; compiler::BODY_LEN], BodyCascadeAudit), String> {
@@ -194,7 +171,6 @@ pub fn compile_root_body_and_audit(
     let audit = audit_body240(&body)?;
     Ok((body, audit))
 }
-
 pub fn audit_body240(bytes: &[u8]) -> Result<BodyCascadeAudit, String> {
     let packed = PackedCorners::from_body_bytes(bytes).map_err(|e| e.to_owned())?;
     let grid = log_frequency_grid(40.0, 16_000.0, AUDIT_BINS);
@@ -202,7 +178,6 @@ pub fn audit_body240(bytes: &[u8]) -> Result<BodyCascadeAudit, String> {
     let mut samples = Vec::with_capacity(points.len());
     let mut warnings = Vec::new();
     let mut wrap_hazard = false;
-
     for ci in 0..4 {
         for si in 0..crate::cascade::NUM_STAGES {
             for wi in 0..crate::cascade::NUM_COEFFS {
@@ -218,13 +193,11 @@ pub fn audit_body240(bytes: &[u8]) -> Result<BodyCascadeAudit, String> {
             }
         }
     }
-
     for (label, morph, q) in points {
         let rows = packed.interpolate_biquad(morph as f32, q as f32);
         let sample = audit_sample(label, morph, q, &rows, &grid, &mut warnings);
         samples.push(sample);
     }
-
     let finite = samples.iter().all(|s| s.finite);
     let stable = samples.iter().all(|s| s.stable);
     let crown_min = samples
@@ -236,7 +209,6 @@ pub fn audit_body240(bytes: &[u8]) -> Result<BodyCascadeAudit, String> {
         .map(|s| s.crown_db)
         .fold(f64::NEG_INFINITY, f64::max);
     let crown_parity = crown_max - crown_min;
-
     let mut failures = Vec::new();
     if bytes.len() != compiler::BODY_LEN {
         failures.push(format!(
@@ -264,7 +236,6 @@ pub fn audit_body240(bytes: &[u8]) -> Result<BodyCascadeAudit, String> {
             "corner/midpoint crown parity {crown_parity:.2} dB exceeds {CROWN_PARITY_MAX_DB:.2} dB"
         ));
     }
-
     let morph_contrast = sample_delta(&samples, "M0_Q0", "M100_Q0");
     let q_bloom = sample_delta(&samples, "M0_Q0", "M0_Q100");
     let max_radius = samples
@@ -276,7 +247,6 @@ pub fn audit_body240(bytes: &[u8]) -> Result<BodyCascadeAudit, String> {
         .map(|s| (s.peak_count + s.valley_count) as f64)
         .sum::<f64>()
         / samples.len().max(1) as f64;
-
     Ok(BodyCascadeAudit {
         contract: "body240-cascade-product-gate-v1: 4 corners × 6 serial SOS, packed interpolation is authority".to_owned(),
         body_bytes: bytes.len(),
@@ -306,7 +276,6 @@ pub fn audit_body240(bytes: &[u8]) -> Result<BodyCascadeAudit, String> {
         },
     })
 }
-
 fn audit_points() -> Vec<(String, f64, f64)> {
     let mut out: Vec<(String, f64, f64)> = vec![
         ("M0_Q0".to_owned(), 0.0, 0.0),
@@ -341,7 +310,6 @@ fn audit_points() -> Vec<(String, f64, f64)> {
     }
     out
 }
-
 fn audit_sample(
     label: String,
     morph: f64,
@@ -456,7 +424,6 @@ fn audit_sample(
         total_gain_db: 20.0 * total_gain_product.max(EPS).log10(),
     }
 }
-
 pub fn kernel_response_curve(
     corner: &CornerData,
     sample_rate_hz: f64,
@@ -473,7 +440,6 @@ pub fn kernel_response_curve(
             .collect(),
     }
 }
-
 fn warn(label: &str, sample: &str, detail: String) -> BodyAuditWarning {
     BodyAuditWarning {
         label: label.to_owned(),
@@ -481,7 +447,6 @@ fn warn(label: &str, sample: &str, detail: String) -> BodyAuditWarning {
         detail,
     }
 }
-
 fn pole_center_radius(row: &[f64; NUM_COEFFS]) -> Option<(f64, f64)> {
     let a1 = row[3];
     let a2 = row[4];
@@ -495,7 +460,6 @@ fn pole_center_radius(row: &[f64; NUM_COEFFS]) -> Option<(f64, f64)> {
     let c = (-a1 / (2.0 * r)).clamp(-1.0, 1.0);
     Some((c.acos() * compiler::AUTHORING_SR / std::f64::consts::TAU, r))
 }
-
 fn zero_center_radius(row: &[f64; NUM_COEFFS]) -> Option<(f64, f64)> {
     let b0 = row[0];
     let b1 = row[1];
@@ -514,7 +478,6 @@ fn zero_center_radius(row: &[f64; NUM_COEFFS]) -> Option<(f64, f64)> {
     let c = ((b1 / b0) / (-2.0 * r)).clamp(-1.0, 1.0);
     Some((c.acos() * compiler::AUTHORING_SR / std::f64::consts::TAU, r))
 }
-
 fn band_average(db: &[f64], grid: &[f64], lo: f64, hi: f64) -> f64 {
     let mut sum = 0.0;
     let mut n = 0usize;
@@ -530,7 +493,6 @@ fn band_average(db: &[f64], grid: &[f64], lo: f64, hi: f64) -> f64 {
         sum / n as f64
     }
 }
-
 fn peak_valley_count(db: &[f64]) -> (usize, usize) {
     if db.len() < 3 {
         return (0, 0);
@@ -553,7 +515,6 @@ fn peak_valley_count(db: &[f64]) -> (usize, usize) {
     }
     (peaks, valleys)
 }
-
 fn sample_delta(samples: &[BodyAuditSample], a: &str, b: &str) -> f64 {
     let Some(sa) = samples.iter().find(|s| s.label == a) else {
         return 0.0;
@@ -563,7 +524,6 @@ fn sample_delta(samples: &[BodyAuditSample], a: &str, b: &str) -> f64 {
     };
     (sb.crown_db - sa.crown_db).abs()
 }
-
 pub fn biquad_response_curve(
     corner: &CornerData,
     sample_rate_hz: f64,
@@ -580,7 +540,6 @@ pub fn biquad_response_curve(
             .collect(),
     }
 }
-
 pub fn summarize_curve(label: impl Into<String>, curve: &ResponseCurve) -> ResponseSummary {
     let peak_db = curve
         .points
@@ -604,7 +563,6 @@ pub fn summarize_curve(label: impl Into<String>, curve: &ResponseCurve) -> Respo
         bands,
     }
 }
-
 pub fn audit_kernel_surface(
     corners: &[CornerData; 4],
     sample_rate_hz: f64,
@@ -632,7 +590,6 @@ pub fn audit_kernel_surface(
         .iter()
         .map(|c| kernel_response_curve(c, sample_rate_hz, &grid))
         .collect();
-
     ResponseSurfaceAudit {
         contract: "response-surface-v1: author magnitude/motion/Q first; pack stages last"
             .to_owned(),
@@ -644,21 +601,18 @@ pub fn audit_kernel_surface(
         packing: packing_audit(&curves, &packed_curves),
     }
 }
-
 pub fn kernel_cascade_mag_db(corner: &CornerData, frequency_hz: f64, sample_rate_hz: f64) -> f64 {
     corner
         .iter()
         .map(|stage| kernel_stage_mag_db(stage, frequency_hz, sample_rate_hz))
         .sum()
 }
-
 pub fn biquad_cascade_mag_db(corner: &CornerData, frequency_hz: f64, sample_rate_hz: f64) -> f64 {
     corner
         .iter()
         .map(|stage| biquad_stage_mag_db(stage, frequency_hz, sample_rate_hz))
         .sum()
 }
-
 pub fn kernel_stage_mag_db(
     stage: &[f64; NUM_COEFFS],
     frequency_hz: f64,
@@ -666,7 +620,6 @@ pub fn kernel_stage_mag_db(
 ) -> f64 {
     biquad_stage_mag_db(&kernel_to_biquad(*stage), frequency_hz, sample_rate_hz)
 }
-
 pub fn biquad_stage_mag_db(
     stage: &[f64; NUM_COEFFS],
     frequency_hz: f64,
@@ -682,13 +635,6 @@ pub fn biquad_stage_mag_db(
     let di = -a1 * sin1 - a2 * sin2;
     10.0 * (((nr * nr + ni * ni) + EPS) / ((dr * dr + di * di) + EPS)).log10()
 }
-
-/// Complex frequency response `H(e^{jω})` of one direct DF2T biquad row
-/// `[b0,b1,b2,a1,a2]`, returned as `(re, im)`. This is the single owner of
-/// per-stage complex response; [`biquad_stage_mag_db`] is exactly its
-/// magnitude in dB. Used by the transfer-function oracle to compare a packed
-/// candidate against a measured complex target without a second response
-/// engine.
 pub fn biquad_stage_complex(
     stage: &[f64; NUM_COEFFS],
     frequency_hz: f64,
@@ -705,10 +651,6 @@ pub fn biquad_stage_complex(
     let den = dr * dr + di * di + EPS;
     ((nr * dr + ni * di) / den, (ni * dr - nr * di) / den)
 }
-
-/// Complex frequency response of the six-stage serial cascade at one
-/// frequency: the ordered product of the per-stage complex responses. `corner`
-/// is direct DF2T rows (as returned by `PackedCorners::interpolate_biquad`).
 pub fn biquad_cascade_complex(
     corner: &CornerData,
     frequency_hz: f64,
@@ -724,7 +666,6 @@ pub fn biquad_cascade_complex(
     }
     (re, im)
 }
-
 fn axis_motion(
     axis: &'static str,
     from_idx: usize,
@@ -742,7 +683,6 @@ fn axis_motion(
         peak_delta_db: to_summary.peak_db - from_summary.peak_db,
     }
 }
-
 fn packing_audit(target: &[ResponseCurve], packed: &[ResponseCurve]) -> PackingAudit {
     let mut acc = 0.0;
     let mut n = 0usize;
@@ -760,7 +700,6 @@ fn packing_audit(target: &[ResponseCurve], packed: &[ResponseCurve]) -> PackingA
         peak_db: peak,
     }
 }
-
 fn curve_rms_delta_db(a: &ResponseCurve, b: &ResponseCurve) -> f64 {
     let mut acc = 0.0;
     let mut n = 0usize;
@@ -771,7 +710,6 @@ fn curve_rms_delta_db(a: &ResponseCurve, b: &ResponseCurve) -> f64 {
     }
     (acc / n.max(1) as f64).sqrt()
 }
-
 fn average_band_db(curve: &ResponseCurve, lo_hz: f64, hi_hz: f64) -> f64 {
     let mut acc = 0.0;
     let mut n = 0usize;
@@ -787,7 +725,6 @@ fn average_band_db(curve: &ResponseCurve, lo_hz: f64, hi_hz: f64) -> f64 {
         acc / n as f64
     }
 }
-
 fn spectral_centroid_hz(curve: &ResponseCurve) -> f64 {
     let mut num = 0.0;
     let mut den = 0.0;
@@ -802,7 +739,6 @@ fn spectral_centroid_hz(curve: &ResponseCurve) -> f64 {
         num / den
     }
 }
-
 fn slope_db_per_octave(curve: &ResponseCurve) -> f64 {
     let n = curve.points.len();
     if n < 2 {
@@ -828,14 +764,11 @@ fn slope_db_per_octave(curve: &ResponseCurve) -> f64 {
         num / den
     }
 }
-
 #[cfg(test)]
 mod tests {
     use super::*;
     use crate::cascade::NUM_STAGES;
-
     const PASS_KERNEL: [f64; NUM_COEFFS] = [2.0, 1.0, 2.0, 1.0, 1.0];
-
     #[test]
     fn passthrough_kernel_is_flat_response() {
         let corner = [PASS_KERNEL; NUM_STAGES];
@@ -845,7 +778,6 @@ mod tests {
             assert!(p.db.abs() < 1.0e-9, "{} Hz -> {} dB", p.freq_hz, p.db);
         }
     }
-
     #[test]
     fn surface_audit_reports_pack_roundtrip() {
         let corners = [[PASS_KERNEL; NUM_STAGES]; 4];

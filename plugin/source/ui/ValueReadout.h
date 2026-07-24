@@ -1,15 +1,8 @@
 #pragma once
-
 #include "Theme.h"
 #include "ParamInteraction.h"
-
 namespace trench::ui
 {
-
-// Numeric readout: a clean recessed inset — the machine's display face. When
-// bound to a parameter it is also a real control: scroll to nudge, right-click
-// for Reset + the host's MIDI-learn/automation menu, and double-click to TYPE
-// an exact value. Display-only (unbound) when it shows literal text (e.g. TIME).
 class ValueReadout : public juce::Component,
                      public juce::SettableTooltipClient
 {
@@ -19,8 +12,6 @@ public:
     {
         setInterceptsMouseClicks (true, true);
     }
-
-    // Bind so the readout can also drive the parameter (scroll / type / menu).
     void bindParameter (juce::RangedAudioParameter* p)
     {
         param = p;
@@ -34,7 +25,6 @@ public:
             setTooltip (p->getName (24) + " - scroll to adjust, double-click to type, right-click for menu");
         }
     }
-
     void setNormalised (float v)
     {
         if (textOverride.isNotEmpty()) { textOverride.clear(); repaint(); }
@@ -44,31 +34,22 @@ public:
             repaint();
         }
     }
-
     void setActive (bool active)
     {
         if (isActive != active) { isActive = active; repaint(); }
     }
-
-    // Show the small up/down adjust cue (for readouts that are the parameter's
-    // ONLY control on the face — MORPH/Q have their wheels to say "adjustable").
     void showAdjustCue (bool show)
     {
         if (adjustCue != show) { adjustCue = show; repaint(); }
     }
-
-    // Whole-number display (AMOUNT: "91", not "91.4" — simpler macro readout).
     void setDecimals (int d)
     {
         if (decimals != d) { decimals = d; repaint(); }
     }
-
-    // Show literal text instead of the % numeric (e.g. the TIME value "1 BAR").
     void setText (const juce::String& s)
     {
         if (s != textOverride) { textOverride = s; repaint(); }
     }
-
     void mouseWheelMove (const juce::MouseEvent&, const juce::MouseWheelDetails& w) override
     {
         if (param == nullptr) return;
@@ -77,11 +58,8 @@ public:
         param->setValueNotifyingHost (next);
         param->endChangeGesture();
     }
-
     void mouseDown (const juce::MouseEvent& e) override
     {
-        // While the type-in editor is open we listen to the WHOLE window:
-        // any click outside the editor commits and closes it.
         if (editor != nullptr)
         {
             if (e.eventComponent != editor.get() && ! editor->isParentOf (e.eventComponent))
@@ -97,7 +75,6 @@ public:
         dragStartValue = param != nullptr ? param->getValue() : 0.0f;
         dragging = false;
     }
-
     void mouseDrag (const juce::MouseEvent& e) override
     {
         if (param == nullptr || editor != nullptr || e.mods.isPopupMenu())
@@ -105,24 +82,22 @@ public:
         if (! dragging)
         {
             if (std::abs (e.position.y - dragStartY) < 3.0f)
-                return;                       // a click is not yet a drag
+                return;
             dragging = true;
-            param->beginChangeGesture();      // ONE gesture for the whole drag
+            param->beginChangeGesture();
         }
-        const float scale = e.mods.isShiftDown() ? 0.25f : 1.0f;   // fine adjust
-        const float travel = 140.0f;          // px for full range — deliberate, not twitchy
+        const float scale = e.mods.isShiftDown() ? 0.25f : 1.0f;
+        const float travel = 140.0f;
         const float next = juce::jlimit (0.0f, 1.0f,
                                          dragStartValue - (e.position.y - dragStartY) / travel * scale);
-        param->setValueNotifyingHost (next);  // up = more
+        param->setValueNotifyingHost (next);
     }
-
     void mouseUp (const juce::MouseEvent&) override
     {
         if (dragging && param != nullptr)
             param->endChangeGesture();
         dragging = false;
     }
-
     void mouseDoubleClick (const juce::MouseEvent&) override
     {
         if (param == nullptr || textOverride.isNotEmpty() || editor != nullptr) return;
@@ -133,7 +108,7 @@ public:
         editor->setColour (juce::TextEditor::backgroundColourId, juce::Colour (0xffdcd6ca));
         editor->setColour (juce::TextEditor::textColourId, t.labelInk());
         editor->setColour (juce::TextEditor::highlightColourId, t.labelInk().withAlpha (0.25f));
-        editor->setWantsKeyboardFocus (true);   // this one DOES need keys, briefly
+        editor->setWantsKeyboardFocus (true);
         {
             const float pct = juce::jlimit (0.0f, 1.0f, value) * 100.0f;
             editor->setText (decimals <= 0 ? juce::String (juce::roundToInt (pct))
@@ -145,40 +120,25 @@ public:
         addAndMakeVisible (*editor);
         editor->selectAll();
         editor->grabKeyboardFocus();
-        // Nothing else on the plate takes keyboard focus, so focus-lost never
-        // fires on its own — ANY click outside the editor must commit, or the
-        // edit is a trap ("once you click the text you cant get out").
         if (auto* top = getTopLevelComponent())
             top->addMouseListener (this, true);
     }
-
     ~ValueReadout() override { detachOutsideClickListener(); }
-
     void paint (juce::Graphics& g) override
     {
         const auto b = getLocalBounds().toFloat();
-
-        // Warm desaturated clinical: the readout is a mechanical counter window
-        // in the plate's own bone family, ink digits — the hero screen stays the
-        // panel's only dark glass. Edge-to-edge: the component rect IS the opening.
         drawMutedBoneReadout (g, b, b.getHeight() * 0.17f, isActive, t);
         const auto pct = juce::jlimit (0.0f, 1.0f, value) * 100.0f;
         const auto numeric = textOverride.isNotEmpty()
                                ? textOverride
                                : (decimals <= 0 ? juce::String (juce::roundToInt (pct))
                                                 : juce::String (pct, decimals));
-
-        // Keep the counter digits on the same crisp vector path as the labels;
-        // the old low-resolution nearest-upscale produced visible glyph ghosts.
         const float fs = t.fontSize (id, 20.0f);
         auto textArea = b.reduced (4.0f, 1.0f);
         if (adjustCue)
             textArea = textArea.withTrimmedRight (7.0f);
         drawCrispText (g, textArea, numeric, fs,
                        t.textColour (id, juce::Colour (0xff2a2722)), true);
-
-        // Adjust cue: two tiny chevrons at the right edge — quiet ink that
-        // says "this number moves" without becoming a spinner widget.
         if (adjustCue && param != nullptr)
         {
             const float cxr = b.getRight() - 7.5f;
@@ -191,7 +151,6 @@ public:
             g.fillPath (dn);
         }
     }
-
 private:
     void commitEditor()
     {
@@ -205,12 +164,8 @@ private:
         }
         closeEditor();
     }
-
     void closeEditor()
     {
-        // The close is triggered from INSIDE the editor's own callbacks
-        // (escape/return/focus-lost) — deleting it there is a crash. Release
-        // and delete on the next message-loop tick instead.
         detachOutsideClickListener();
         if (auto* ed = editor.release())
         {
@@ -219,13 +174,11 @@ private:
         }
         repaint();
     }
-
     void detachOutsideClickListener()
     {
         if (auto* top = getTopLevelComponent())
             top->removeMouseListener (this);
     }
-
     juce::String id;
     Theme t;
     float value = 0.0f;
@@ -239,5 +192,4 @@ private:
     bool adjustCue = false;
     int decimals = 1;
 };
-
-} // namespace trench::ui
+}

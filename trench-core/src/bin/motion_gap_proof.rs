@@ -1,35 +1,23 @@
-//! Runtime evidence for the approved Motion Take.
-//!
-//! This binary renders the real `FilterEngine` output. It does not draw a
-//! coefficient response plot and it never normalizes a render. The output WAVs
-//! are raw 32-bit float mono files so they can be judged by ear in a DAW.
-
 use std::f64::consts::PI;
 use std::path::{Path, PathBuf};
-
 use trench_core::cartridge::Cartridge;
 use trench_core::engine::{DebugToggles, FilterEngine};
 use trench_core::minifloat::{pole_radius, PackedCorners};
 use trench_core::motion::path_value_timed;
-
 const SR: f64 = 39_062.5;
 const BLOCK: usize = 128;
 const BODY: &str = "filters/bodies/CAVL_mason_jar_to_stone_pipe.body240";
 const OUT: &str = "out/motion_gap_proof";
-
 const TIMING_PATH: [f32; 18] = [
     0.00, 0.00, 0.00, 0.11, 0.18, 0.24, 0.29, 0.76, 0.62, 0.34, 0.14, 0.86, 0.72, 0.58, 0.22, 1.00,
     0.00, 0.00,
 ];
-
 const JOINT_PATH: [f32; 15] = [
     0.00, 0.00, 0.00, 0.18, 0.30, 0.20, 0.45, 0.72, 0.68, 0.73, 0.18, 0.84, 1.00, 0.00, 0.00,
 ];
-
 const RAMP_PATH: [f32; 12] = [
     0.00, 0.00, 0.00, 0.08, 0.70, 0.55, 0.92, 0.70, 0.55, 1.00, 0.00, 0.00,
 ];
-
 #[derive(Clone, Copy, Debug)]
 struct Metrics {
     peak: f64,
@@ -37,18 +25,15 @@ struct Metrics {
     crest_db: f64,
     probes_db: [f64; 4],
 }
-
 #[derive(Clone, Debug)]
 struct BodyRank {
     path: PathBuf,
     radius: f64,
     tau_ms: f64,
 }
-
 fn main() {
     let command = std::env::args().nth(1).unwrap_or_else(|| "all".to_string());
     std::fs::create_dir_all(OUT).expect("create proof directory");
-
     match command.as_str() {
         "timing" => prove_timing(),
         "ramp" => prove_ramp(),
@@ -63,7 +48,6 @@ fn main() {
         other => panic!("unknown proof '{other}', use timing, ramp, joint, strike, or all"),
     }
 }
-
 fn make_engine(body_path: &str, body_only: bool) -> FilterEngine {
     let bytes = std::fs::read(body_path).expect("body exists");
     let mut engine = FilterEngine::new();
@@ -80,16 +64,12 @@ fn make_engine(body_path: &str, body_only: bool) -> FilterEngine {
     }
     engine
 }
-
 fn source_sample(index: usize, rng: &mut u64, lp: &mut [f64; 4]) -> f32 {
     *rng = rng
         .wrapping_mul(6_364_136_223_846_793_005)
         .wrapping_add(1_442_695_040_888_963_407);
     let noise = ((*rng >> 40) as f64 / (1u64 << 23) as f64) - 1.0;
     let t = index as f64 / SR;
-
-    // A quiet broadband bed plus a sparse strike-like pulse makes both the
-    // spectral and transient effects audible without per-render level matching.
     lp[0] = 0.996 * lp[0] + noise * 0.04;
     lp[1] = 0.965 * lp[1] + noise * 0.08;
     lp[2] = 0.82 * lp[2] + noise * 0.16;
@@ -100,7 +80,6 @@ fn source_sample(index: usize, rng: &mut u64, lp: &mut [f64; 4]) -> f32 {
     let pulse = if index % pulse_period == 0 { 0.08 } else { 0.0 };
     (bed + tone + pulse) as f32
 }
-
 fn render_path(
     path: &[f32],
     closed: bool,
@@ -117,7 +96,6 @@ fn render_path(
     let mut rng = 0x2545_F491_4F6C_DD1Du64;
     let mut lp = [0.0f64; 4];
     let mut offset = 0usize;
-
     while offset < count {
         let len = BLOCK.min(count - offset);
         let mut left = Vec::with_capacity(len);
@@ -133,7 +111,6 @@ fn render_path(
     }
     output
 }
-
 fn render_ramp_case(fast: bool, body_only: bool) -> Vec<f32> {
     let mut engine = make_engine(BODY, body_only);
     let seconds = 3.0;
@@ -144,7 +121,6 @@ fn render_ramp_case(fast: bool, body_only: bool) -> Vec<f32> {
     let mut rng = 0x2545_F491_4F6C_DD1Du64;
     let mut lp = [0.0f64; 4];
     let mut offset = 0usize;
-
     while offset < count {
         let len = BLOCK.min(count - offset);
         let mut left = Vec::with_capacity(len);
@@ -165,7 +141,6 @@ fn render_ramp_case(fast: bool, body_only: bool) -> Vec<f32> {
     }
     output
 }
-
 fn render_base(seconds: f64, body_only: bool) -> Vec<f32> {
     let mut engine = make_engine(BODY, body_only);
     let count = (seconds * SR) as usize;
@@ -186,7 +161,6 @@ fn render_base(seconds: f64, body_only: bool) -> Vec<f32> {
     }
     output
 }
-
 fn render_strike(body_path: &str, body_only: bool) -> Vec<f32> {
     let mut engine = make_engine(body_path, body_only);
     let seconds = 2.0;
@@ -206,7 +180,6 @@ fn render_strike(body_path: &str, body_only: bool) -> Vec<f32> {
     }
     output
 }
-
 fn metrics(samples: &[f32]) -> Metrics {
     let mut peak = 0.0f64;
     let mut sum_sq = 0.0f64;
@@ -223,11 +196,9 @@ fn metrics(samples: &[f32]) -> Metrics {
         probes_db: [125.0, 500.0, 2_000.0, 8_000.0].map(|hz| goertzel_db(samples, hz)),
     }
 }
-
 fn goertzel_db(samples: &[f32], hz: f64) -> f64 {
     goertzel_db_window(samples, hz, 0, samples.len())
 }
-
 fn goertzel_db_window(samples: &[f32], hz: f64, start: usize, end: usize) -> f64 {
     let start = start.min(samples.len());
     let end = end.min(samples.len()).max(start + 1).min(samples.len());
@@ -245,7 +216,6 @@ fn goertzel_db_window(samples: &[f32], hz: f64, start: usize, end: usize) -> f64
     let amplitude = (re * re + im * im).sqrt() * 2.0 / window as f64;
     20.0 * amplitude.max(1.0e-15).log10()
 }
-
 fn rms_window(samples: &[f32], start: usize, end: usize) -> f64 {
     let start = start.min(samples.len());
     let end = end.min(samples.len()).max(start + 1).min(samples.len());
@@ -255,14 +225,12 @@ fn rms_window(samples: &[f32], start: usize, end: usize) -> f64 {
         .sum::<f64>();
     (sum / (end - start).max(1) as f64).sqrt()
 }
-
 fn peak_after(samples: &[f32], start: usize, end: usize) -> f64 {
     samples[start.min(samples.len())..end.min(samples.len())]
         .iter()
         .map(|&x| x.abs() as f64)
         .fold(0.0, f64::max)
 }
-
 fn null_difference_db(reference: &[f32], other: &[f32], start: usize, end: usize) -> f64 {
     let start = start.min(reference.len()).min(other.len());
     let end = end
@@ -279,7 +247,6 @@ fn null_difference_db(reference: &[f32], other: &[f32], start: usize, end: usize
     }
     20.0 * (diff_sq / ref_sq.max(1.0e-30)).sqrt().log10()
 }
-
 fn write_float_wav(path: impl AsRef<Path>, samples: &[f32]) {
     let data_bytes = (samples.len() * std::mem::size_of::<f32>()) as u32;
     let mut wav = Vec::with_capacity(44 + data_bytes as usize);
@@ -300,7 +267,6 @@ fn write_float_wav(path: impl AsRef<Path>, samples: &[f32]) {
     }
     std::fs::write(path, wav).expect("write proof wav");
 }
-
 fn print_metrics(label: &str, value: Metrics) {
     println!(
         "{label}: peak={:.6} rms={:.6} crest={:.2} dBFS probes[125,500,2k,8k]=[{:.2},{:.2},{:.2},{:.2}] dBFS",
@@ -313,7 +279,6 @@ fn print_metrics(label: &str, value: Metrics) {
         value.probes_db[3],
     );
 }
-
 fn prove_timing() {
     let free = render_path(&TIMING_PATH, true, 0, 8.0, 2.0, 0.20, 0.35, false);
     let grid = render_path(&TIMING_PATH, true, 8, 8.0, 2.0, 0.20, 0.35, false);
@@ -330,7 +295,6 @@ fn prove_timing() {
         "recorded event times: [0.000, 0.110, 0.290, 0.340, 0.720, 1.000]; grid times: [0.000, 0.125, 0.250, 0.375, 0.750, 1.000]"
     );
 }
-
 fn prove_ramp() {
     let fast = render_ramp_case(true, false);
     let slow = render_ramp_case(false, false);
@@ -368,7 +332,6 @@ fn prove_ramp() {
         "files: {OUT}/ramp_fast_jab.wav, {OUT}/ramp_slow_sweep.wav, {OUT}/ramp_base_reference.wav"
     );
 }
-
 fn prove_joint() {
     let joint = render_path(&JOINT_PATH, true, 0, 8.0, 2.0, 0.15, 0.20, false);
     let morph_only: Vec<f32> = JOINT_PATH
@@ -395,7 +358,6 @@ fn prove_joint() {
         "by-ear files: {OUT}/joint_morph_q_take.wav, {OUT}/joint_morph_only_reference.wav, {OUT}/joint_q_only_reference.wav"
     );
 }
-
 fn rank_bodies() -> Vec<BodyRank> {
     let mut ranks = Vec::new();
     let entries = std::fs::read_dir("filters/bodies").expect("body directory exists");
@@ -429,7 +391,6 @@ fn rank_bodies() -> Vec<BodyRank> {
     ranks.sort_by(|a, b| b.radius.partial_cmp(&a.radius).unwrap());
     ranks
 }
-
 fn strike_decay_ms(samples: &[f32]) -> (f64, f64, f64) {
     let peak = peak_after(samples, (0.001 * SR) as usize, (0.020 * SR) as usize).max(1.0e-12);
     let mut last_40 = 0usize;
@@ -451,7 +412,6 @@ fn strike_decay_ms(samples: &[f32]) -> (f64, f64, f64) {
         rms_100 / rms_20.max(1.0e-15),
     )
 }
-
 fn prove_strike() {
     let ranks = rank_bodies();
     let best = ranks.first().expect("at least one body");

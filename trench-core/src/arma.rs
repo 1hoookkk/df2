@@ -1,21 +1,3 @@
-//! Deterministic ARMA (pole-zero) corner fit.
-//!
-//! Fits a 6-biquad cascade — numerator `B(z)` and denominator `A(z)`, each order
-//! 12 — to a dropped sound's spectral envelope by frequency-domain least squares
-//! (Sanathanan–Koerner / Steiglitz–McBride iteration against a *minimum-phase*
-//! target built from the magnitude). Unlike all-pole LPC, the moving-average part
-//! places real **zeros**: the anti-formant notches and bitey upper teeth of
-//! E-mu/X3 frames (DJ Alkaline et al.) that an all-pole fit physically cannot
-//! carve.
-//!
-//! The unconstrained ARMA path is a deterministic translator. The profiled path
-//! additionally runs a bounded coordinate refiner after feature extraction;
-//! every proposal is packed, runtime-decoded, law-checked, and measured.
-//!
-//! Pure Rust, no deps. The Forge calls [`fit_corner_arma`]; on any non-finite or
-//! degenerate result the caller falls back to the LPC path, so the ARMA fit can
-//! only improve on it, never regress below it.
-
 use crate::cartridge::CornerData;
 use crate::cascade::{NUM_COEFFS, NUM_STAGES};
 use crate::lpc::levinson_from_autocorr;
@@ -23,35 +5,19 @@ use crate::minifloat::{pole_radius, PackedCorners};
 use crate::response::biquad_cascade_mag_db;
 use crate::stage_law::{geometry_from_words, RootPair};
 use std::f64::consts::PI;
-
 #[cfg(test)]
 const ANALYSIS_SR: f64 = 22_050.0;
-const ORDER: usize = 2 * NUM_STAGES; // 12 → six biquads
+const ORDER: usize = 2 * NUM_STAGES;
 const N_FFT: usize = 4096;
-const N_FIT: usize = 256; // log-spaced fit frequencies
+const N_FIT: usize = 256;
 const SK_ITERS: usize = 6;
 const F_MIN: f64 = 55.0;
 const F_MAX: f64 = 10_500.0;
 const PASSTHROUGH: [f64; NUM_COEFFS] = [2.0, 1.0, 2.0, 1.0, 1.0];
-
-/// The profiler's target domain is shape-only. Physical preset/output gain is
-/// authored outside the pole-zero body, so every measured target is peak
-/// aligned to this reference before fitting or reporting RMS.
 pub const PROFILER_TARGET_REFERENCE_DB: f64 = 0.0;
-
-/// Absolute packed-response safety ceiling used by the profiler's
-/// analysis-by-synthesis refinement. This is intentionally independent of the
-/// target's measured gain.
 pub const PROFILER_HARD_CEILING_DB: f64 = 15.0;
 pub const PROFILER_HARD_CEILING_PENALTY_WEIGHT: f64 = 100.0;
 const PROFILER_CEILING_GRID_POINTS: usize = 512;
-
-/// Peak-align a measured magnitude curve for profiler fitting.
-///
-/// Returns `(aligned_curve, source_peak_db, applied_offset_db)`. The peak is
-/// measured only over the profiler's owned 55 Hz..10.5 kHz band; the same
-/// additive offset is then applied to every input row so the target's physical
-/// gain cannot enter a pole/zero RMS cost.
 pub fn peak_normalize_curve_db(
     curve: &[(f64, f64)],
 ) -> Option<(Vec<(f64, f64)>, f64, f64)> {
@@ -74,14 +40,8 @@ pub fn peak_normalize_curve_db(
         .collect();
     Some((aligned, source_peak_db, applied_offset_db))
 }
-
-// Keep authored proposals a fraction inside hard Stage Plan faces. A value on
-// the exact face can quantize to the other side even though the float proposal
-// was legal. This is not a tolerance on certification: packed geometry is
-// still checked against the exact authored bounds below.
 const PACKED_HZ_GUARD_OCT: f64 = 1.0 / 4096.0;
 const PACKED_RADIUS_GUARD: f64 = 1e-5;
-
 fn guarded_hz(value: f64, bounds: (f64, f64)) -> f64 {
     let lower = bounds.0 * 2f64.powf(PACKED_HZ_GUARD_OCT);
     let upper = bounds.1 * 2f64.powf(-PACKED_HZ_GUARD_OCT);
@@ -91,7 +51,6 @@ fn guarded_hz(value: f64, bounds: (f64, f64)) -> f64 {
         bounds.0.max(1e-9) * (bounds.1 / bounds.0.max(1e-9)).sqrt()
     }
 }
-
 fn guarded_radius(value: f64, bounds: (f64, f64)) -> f64 {
     let lower = bounds.0 + PACKED_RADIUS_GUARD;
     let upper = bounds.1 - PACKED_RADIUS_GUARD;
@@ -101,8 +60,6 @@ fn guarded_radius(value: f64, bounds: (f64, f64)) -> f64 {
         0.5 * (bounds.0 + bounds.1)
     }
 }
-
-// ── minimal complex ───────────────────────────────────────────────────────────
 #[derive(Clone, Copy)]
 struct Cx {
     re: f64,
@@ -113,7 +70,6 @@ impl Cx {
     fn new(re: f64, im: f64) -> Self {
         Cx { re, im }
     }
-    /// e^{jθ}
     fn expj(theta: f64) -> Self {
         Cx::new(theta.cos(), theta.sin())
     }
@@ -149,18 +105,14 @@ impl Cx {
         )
     }
     fn cexp(self) -> Cx {
-        // e^{re + j im}
         Cx::expj(self.im).scale(self.re.exp())
     }
 }
-
-// ── iterative radix-2 FFT (in place) ───────────────────────────────────────────
 fn fft(buf: &mut [Cx], inverse: bool) {
     let n = buf.len();
     if n < 2 {
         return;
     }
-    // bit reversal
     let mut j = 0usize;
     for i in 1..n {
         let mut bit = n >> 1;
@@ -203,8 +155,6 @@ fn fft(buf: &mut [Cx], inverse: bool) {
         }
     }
 }
-
-// ── linear resample ─────────────────────────────────────────────────────────
 fn resample(x: &[f64], sr_in: f64, sr_out: f64) -> Vec<f64> {
     if (sr_in - sr_out).abs() < 1.0 || x.len() < 2 {
         return x.to_vec();
@@ -222,8 +172,6 @@ fn resample(x: &[f64], sr_in: f64, sr_out: f64) -> Vec<f64> {
         })
         .collect()
 }
-
-// ── solve a small real linear system (Gaussian elimination, partial pivot) ─────
 fn solve(mut a: Vec<Vec<f64>>, mut b: Vec<f64>) -> Option<Vec<f64>> {
     let n = b.len();
     for col in 0..n {
@@ -261,10 +209,7 @@ fn solve(mut a: Vec<Vec<f64>>, mut b: Vec<f64>) -> Option<Vec<f64>> {
     }
     Some(x)
 }
-
-// ── roots of a real polynomial, coeffs high→low (Durand-Kerner) ────────────────
 fn roots(coeffs: &[f64]) -> Vec<Cx> {
-    // strip leading zeros
     let mut c = coeffs;
     while c.len() > 1 && c[0].abs() < 1e-15 {
         c = &c[1..];
@@ -312,42 +257,16 @@ fn roots(coeffs: &[f64]) -> Vec<Cx> {
     }
     zs
 }
-
-/// Whether a root list is poles (denominator) or zeros (numerator): the two are
-/// brought inside the unit circle differently — see [`to_quadratics`].
 #[derive(Clone, Copy, PartialEq)]
 enum RootKind {
     Pole,
     Zero,
 }
-
-/// Group ALL roots of a polynomial into monic second-order sections `[1, q1, q2]`
-/// — conjugate pairs become `[1, -2Re, |z|²]`, leftover real roots are paired two
-/// at a time. Using every root means the product of the sections equals the
-/// original polynomial (up to its leading gain), so the realized cascade response
-/// is `B/A` exactly — no dropped poles or zeros.
-///
-/// Roots are brought inside the unit circle so the kernel coefficients land in the
-/// packable minifloat box (`c1=1-|z|²∈[0,1]`, `c3=1-|pole|²∈[0,1]`):
-/// - **Poles** on/outside the circle are scaled just inside (`0.999/r`) — a
-///   stability fix (a pole outside diverges).
-/// - **Zeros** outside the circle are reflected to their min-phase image
-///   `1/conj(z) = z/|z|²`. This is *magnitude-preserving* up to a constant gain
-///   (absorbed by `normalize_peak`): the LS solve for `B(z)` can land spurious
-///   roots outside the circle even though the fit target is minimum-phase, and an
-///   order-12 numerator over-modelling a simpler source invents huge real zeros
-///   (|z|≫1) that otherwise blow `c0/c1` far past [0,1]. Reflecting restores the
-///   min-phase realisation the target intended — not character shaping.
 fn to_quadratics(rs: &[Cx], kind: RootKind) -> Vec<[f64; 3]> {
     let fix = |z: Cx| -> Cx {
         match kind {
             RootKind::Pole => {
                 let r = z.abs();
-                // Authoring resonance cap. 0.999 ≈ 12 Hz bandwidth — a runaway
-                // whistle that transient/noisy sources fit invents (the ~100 dB
-                // over-reach). 0.995 ≈ 60 Hz — a musical formant. The captured
-                // corner must not start as a scream at Morph0/Q0; the Q axis
-                // sharpens it from here when the player wants it.
                 const RMAX: f64 = 0.999;
                 if r >= RMAX {
                     z.scale(RMAX / r.max(1e-12))
@@ -358,7 +277,7 @@ fn to_quadratics(rs: &[Cx], kind: RootKind) -> Vec<[f64; 3]> {
             RootKind::Zero => {
                 let r2 = z.abs2();
                 if r2 > 1.0 {
-                    z.scale(1.0 / r2) // 1/conj(z): reflect inside, |z|→1/|z|
+                    z.scale(1.0 / r2)
                 } else {
                     z
                 }
@@ -374,7 +293,6 @@ fn to_quadratics(rs: &[Cx], kind: RootKind) -> Vec<[f64; 3]> {
         taken[i] = true;
         let zi = fix(rs[i]);
         if zi.im.abs() > 1e-7 {
-            // complex → consume its nearest unused conjugate as the pair
             let conj = zi.conj();
             let mut bestj = None;
             let mut bestd = f64::INFINITY;
@@ -393,7 +311,6 @@ fn to_quadratics(rs: &[Cx], kind: RootKind) -> Vec<[f64; 3]> {
             }
             out.push([1.0, -2.0 * zi.re, zi.abs2()]);
         } else {
-            // real → pair with the next unused real root
             let mut r2 = 0.0;
             for (j, &zj) in rs.iter().enumerate() {
                 if taken[j] || zj.im.abs() > 1e-7 {
@@ -409,8 +326,6 @@ fn to_quadratics(rs: &[Cx], kind: RootKind) -> Vec<[f64; 3]> {
     }
     out
 }
-
-/// A section's resonant angle (∝ frequency) — for ordering sections only.
 fn quad_freq(q: &[f64; 3]) -> f64 {
     let r = q[2].max(0.0).sqrt();
     if r <= 1e-9 {
@@ -418,23 +333,14 @@ fn quad_freq(q: &[f64; 3]) -> f64 {
     }
     (-q[1] / (2.0 * r)).clamp(-1.0, 1.0).acos()
 }
-
-/// Fit a recorded sound to one corner as a six-section pole-zero cascade, in
-/// kernel form. `samples` is the already-windowed slice the Forge wants fit.
-/// Returns `None` if the fit is degenerate (caller falls back to LPC).
 pub fn fit_corner_arma(samples: &[f64], sr_in: f64, runtime_sr: f64) -> Option<CornerData> {
     if samples.len() < 64 {
         return None;
     }
-    // Author in the runtime z-plane (the E-mu rate the cartridge plays at), NOT a
-    // separate analysis rate — otherwise every pole/zero warps by runtime/analysis
-    // when played. (LPC already places poles at runtime_sr; this matches it.)
     let x = resample(samples, sr_in, runtime_sr);
     if x.len() < 32 {
         return None;
     }
-
-    // ── magnitude spectrum (zero-padded FFT of the conditioned slice) ──
     let mut buf = vec![Cx::ZERO; N_FFT];
     for (i, &v) in x.iter().take(N_FFT).enumerate() {
         buf[i] = Cx::new(v, 0.0);
@@ -446,12 +352,6 @@ pub fn fit_corner_arma(samples: &[f64], sr_in: f64, runtime_sr: f64) -> Option<C
     }
     arma_fit_from_logmag(&logmag, runtime_sr)
 }
-
-/// Factorize a clean TARGET magnitude curve (sorted `(freq_hz, db)` points) into
-/// one corner — the response-first path. The SAME ARMA solver, fed an audited
-/// target instead of messy audio: the taste lives in the curve, the fit stays
-/// dumb (no anatomy heuristics, no per-stage roles). This is how a "Target
-/// Template" becomes a 6-stage cascade.
 pub fn fit_corner_from_magnitude(curve: &[(f64, f64)], runtime_sr: f64) -> Option<CornerData> {
     if curve.len() < 2 {
         return None;
@@ -460,20 +360,14 @@ pub fn fit_corner_from_magnitude(curve: &[(f64, f64)], runtime_sr: f64) -> Optio
     let bin_hz = runtime_sr / N_FFT as f64;
     let mut logmag = vec![0.0f64; N_FFT];
     for k in 0..N_FFT {
-        let kk = if k <= half { k } else { N_FFT - k }; // symmetric spectrum
+        let kk = if k <= half { k } else { N_FFT - k };
         logmag[k] = interp_db(curve, kk as f64 * bin_hz) * std::f64::consts::LN_10 / 20.0;
     }
     arma_fit_from_logmag(&logmag, runtime_sr)
 }
-
 pub const YW_DAMPING_SCALE: f64 = 0.75;
 pub const YW_SHARP_RADIUS_MAX: f64 = 0.9985;
 pub const MACRO_SMOOTHING_OCTAVES: f64 = 1.0;
-
-/// Reduce pole damping without moving its frequency. The global expansion is
-/// deliberately mild; a selected mountain may request a narrower measured
-/// bandwidth, but never a broader one. This prevents broad body modes from
-/// becoming artificial whistles while restoring genuinely high-Q formants.
 fn sharpen_yw_radius(radius: f64, measured_radius: f64) -> f64 {
     let radius = radius.clamp(0.0, 1.0);
     if measured_radius <= 0.0 {
@@ -485,11 +379,6 @@ fn sharpen_yw_radius(radius: f64, measured_radius: f64) -> f64 {
             .min(YW_SHARP_RADIUS_MAX)
     }
 }
-
-/// Fit one conjugate pole/zero stage to a heavily smoothed macro contour.
-/// Frequencies are represented in octaves during the deterministic bounded
-/// search. The returned response includes its best gain offset; the final
-/// six-stage gain solve redistributes that scalar without changing the shape.
 fn fit_macro_stage(
     macro_db: &[f64],
     fit_freq: &dyn Fn(usize) -> f64,
@@ -524,7 +413,6 @@ fn fit_macro_stage(
             / N_FIT as f64;
         (cost, offset)
     };
-
     let freq_seed = [
         70.0f64, 120.0, 220.0, 400.0, 800.0, 1_600.0, 3_500.0, 8_000.0,
     ];
@@ -586,7 +474,6 @@ fn fit_macro_stage(
         response,
     )
 }
-
 #[derive(Clone, Copy, Debug)]
 struct PackedRefinementMetrics {
     objective: f64,
@@ -596,7 +483,6 @@ struct PackedRefinementMetrics {
     ceiling_penalty: f64,
     max_ceiling_excess_db: f64,
 }
-
 fn hard_ceiling_metrics(rows: &CornerData, runtime_sr: f64) -> (f64, f64) {
     let low_hz: f64 = 20.0;
     let high_hz = (runtime_sr * 0.499).max(low_hz * 2.0);
@@ -623,8 +509,6 @@ fn hard_ceiling_metrics(rows: &CornerData, runtime_sr: f64) -> (f64, f64) {
         let frequency = low_hz * (high_hz / low_hz).powf(t);
         visit(frequency);
     }
-    // A log grid can still step over a razor resonance. Always inspect each
-    // decoded pole centre and nearby quarter-twelfth-octave samples as well.
     for stage in rows.iter() {
         let pole_r = stage[4].sqrt();
         if !(pole_r > 0.0 && pole_r < 1.0 && stage[3].is_finite()) {
@@ -647,7 +531,6 @@ fn hard_ceiling_metrics(rows: &CornerData, runtime_sr: f64) -> (f64, f64) {
         max_excess,
     )
 }
-
 fn packed_refinement_metrics(
     corner: &CornerData,
     target_db: &[f64],
@@ -664,7 +547,6 @@ fn packed_refinement_metrics(
     }) {
         return None;
     }
-
     let target_peak_db = target_db.iter().copied().fold(f64::NEG_INFINITY, f64::max);
     let got: Vec<f64> = frequencies
         .iter()
@@ -673,17 +555,12 @@ fn packed_refinement_metrics(
     if got.iter().any(|value| !value.is_finite()) || !target_peak_db.is_finite() {
         return None;
     }
-    // Remove candidate gain from the shape cost as well. The target is already
-    // peak-aligned; aligning the candidate peak makes SCALE a canonical body
-    // reference, never a carrier of the source's physical loudness.
     let got_peak_db = got.iter().copied().fold(f64::NEG_INFINITY, f64::max);
     let candidate_shape_offset_db = target_peak_db - got_peak_db;
-
     let mut weighted_sum = 0.0;
     let mut weight_sum = 0.0;
     let mut plain_sum = 0.0;
     let mut max_overshoot = 0.0f64;
-    // Six log-grid samples are approximately 1/6 octave at N_FIT=256.
     const SHOULDER: usize = 6;
     for i in 0..target_db.len() {
         let error = got[i] + candidate_shape_offset_db - target_db[i];
@@ -718,16 +595,6 @@ fn packed_refinement_metrics(
         max_ceiling_excess_db,
     })
 }
-
-/// Two-step poles-first fit (Yule-Walker/LPC + valley-constrained zeros).
-///
-/// Step 1 — MACRO BODY: one bounded pole/zero stage fits a heavily smoothed
-/// contour. Step 2 — RESIDUAL POLES: Levinson-Durbin solves the Yule-Walker
-/// equations for a 24th-order candidate bank. Five modes registered to the
-/// highest residual formant crests are LOCKED.
-/// Step 3 — ZEROS SECOND: zero centres are fixed in residual inter-formant and
-/// exterior valleys. A deterministic depth-only solve shapes those basins;
-/// near-pole zeros are reassigned instead of cancelling a locked crest.
 #[derive(Clone, Copy, Debug)]
 pub struct ResidualLaneBand {
     pub pole_hz: (f64, f64),
@@ -735,7 +602,6 @@ pub struct ResidualLaneBand {
     pub pole_r: (f64, f64),
     pub zero_r: (f64, f64),
 }
-
 #[derive(Clone, Copy, Debug)]
 pub struct PackedRefinementReport {
     pub evaluations: usize,
@@ -752,14 +618,9 @@ pub struct PackedRefinementReport {
     pub max_ceiling_excess_before_db: f64,
     pub max_ceiling_excess_after_db: f64,
 }
-
 pub fn fit_corner_poles_first(curve: &[(f64, f64)], runtime_sr: f64) -> Option<CornerData> {
     fit_corner_poles_first_impl(curve, runtime_sr, None).map(|result| result.0)
 }
-
-/// Stage-plan-aware profiler. Slot 0 owns the fitted macro-body stage; the five
-/// supplied bands own slots 1..5 in exactly the supplied order. No sorting or
-/// cross-band reassignment is permitted.
 pub fn fit_corner_profiled(
     curve: &[(f64, f64)],
     runtime_sr: f64,
@@ -767,7 +628,6 @@ pub fn fit_corner_profiled(
 ) -> Option<CornerData> {
     fit_corner_profiled_with_report(curve, runtime_sr, bands).map(|result| result.0)
 }
-
 pub fn fit_corner_profiled_with_report(
     curve: &[(f64, f64)],
     runtime_sr: f64,
@@ -776,7 +636,6 @@ pub fn fit_corner_profiled_with_report(
     let (corner, report) = fit_corner_poles_first_impl(curve, runtime_sr, Some(bands))?;
     Some((corner, report?))
 }
-
 fn fit_corner_poles_first_impl(
     curve: &[(f64, f64)],
     runtime_sr: f64,
@@ -804,11 +663,6 @@ fn fit_corner_poles_first_impl(
         .iter()
         .map(|db| db + measured_alignment_db)
         .collect();
-
-    // Peel a broad macro body from the untouched measured TF. The triangular
-    // one-octave smoother follows global tilt and body width but cannot retain
-    // narrow formants. Yule-Walker sees only the dB residual, so no arbitrary
-    // pre-emphasis changes a crest's amplitude relative to its local body.
     let log_step_oct = (F_MAX / F_MIN).log2() / (N_FIT - 1) as f64;
     let macro_half = ((0.5 * MACRO_SMOOTHING_OCTAVES / log_step_oct).round() as usize).max(1);
     let macro_db: Vec<f64> = (0..N_FIT)
@@ -840,8 +694,6 @@ fn fit_corner_poles_first_impl(
         let source_hz = kk as f64 * bin_hz;
         logmag[k] = interp_db(&residual_curve, source_hz) * std::f64::consts::LN_10 / 20.0;
     }
-
-    // min-phase formant envelope (identical cepstral liftering to the ARMA path)
     let mut cep = vec![Cx::ZERO; N_FFT];
     for k in 0..N_FFT {
         cep[k] = Cx::new(logmag[k], 0.0);
@@ -855,10 +707,6 @@ fn fit_corner_poles_first_impl(
     }
     fft(&mut mp, false);
     let hmin: Vec<Cx> = (0..N_FFT).map(|k| mp[k].cexp()).collect();
-
-    // Log-grid copy of the liftered acoustic envelope. Selection and the
-    // second-pass error are both evaluated here so bass formants get the same
-    // number of observations as upper formants.
     let env_db: Vec<f64> = (0..N_FIT)
         .map(|i| {
             let t = i as f64 / (N_FIT - 1) as f64;
@@ -870,11 +718,6 @@ fn fit_corner_poles_first_impl(
             20.0 * m.max(1e-9).log10()
         })
         .collect();
-    // Preserve the source's broad tilt and edge cuts in the zero/gain pass.
-    // Cepstral liftering is excellent for locating formants but deliberately
-    // rounds sharp low/high boundaries; fitting only that envelope caused the
-    // orange response to become a broad shelf. A short log-grid average removes
-    // harmonic teeth while retaining the measured acoustic contour.
     let fit_db: Vec<f64> = (0..N_FIT)
         .map(|i| {
             let lo = i.saturating_sub(3);
@@ -897,11 +740,6 @@ fn fit_corner_poles_first_impl(
         if prominence < 3.0 {
             return 0.0;
         }
-
-        // Estimate the acoustic half-prominence width on the original measured
-        // contour. Limiting the drop to 3 dB makes this the
-        // familiar resonator bandwidth for strong peaks, while narrower
-        // 3--6 dB mountains use half their measured prominence.
         let level = measured_db[centre] - (0.5 * prominence).min(3.0);
         let mut lo = centre;
         while lo > 0 && measured_db[lo] > level {
@@ -913,19 +751,9 @@ fn fit_corner_poles_first_impl(
         }
         let bandwidth_hz = (fit_freq(hi) - fit_freq(lo)).max(20.0);
         let bandwidth_radius = (-PI * bandwidth_hz / runtime_sr).exp();
-        // Width alone can turn a modest narrow crest into a whistle. Bound the
-        // expansion by its measured prominence: 3 dB permits r=.93 and each
-        // additional dB permits another .01, capped below the stability rim.
         let prominence_radius = (0.90 + 0.01 * prominence).clamp(0.90, 0.985);
         bandwidth_radius.min(prominence_radius)
     };
-    // ── Step 2: TRUE YULE-WALKER LPC, THEN LOCK FIVE RESIDUAL MOUNTAINS ──
-    // Wiener-Khinchin: the inverse FFT of |H|² is the autocorrelation sequence
-    // Yule-Walker needs. A 24th-order analysis supplies a candidate bank; the
-    // five pole pairs whose centres sit highest on the residual envelope win;
-    // the sixth authored lane is already owned by the macro-body stage.
-    // This avoids both failures of the old path: no linear-Hz bin-count bias,
-    // and no dependence on finding six explicit local maxima after liftering.
     const LPC_ANALYSIS_ORDER: usize = 24;
     const MIN_POLE_SEPARATION_OCT: f64 = 1.0 / 4.0;
     const RESIDUAL_STAGES: usize = NUM_STAGES - 1;
@@ -940,7 +768,6 @@ fn fit_corner_poles_first_impl(
         .map(|v| v.re)
         .collect();
     let a_lpc = levinson_from_autocorr(&autocorr, LPC_ANALYSIS_ORDER)?;
-
     let env_at = |hz: f64| -> f64 {
         let x = ((hz / F_MIN).ln() / (F_MAX / F_MIN).ln()) * (N_FIT - 1) as f64;
         let i0 = x.floor().clamp(0.0, (N_FIT - 2) as f64) as usize;
@@ -963,9 +790,6 @@ fn fit_corner_poles_first_impl(
         })
         .collect();
     let score_mode = |hz: f64| -> f64 {
-        // Rank by the liftered acoustic envelope, not raw harmonic teeth.
-        // The lightly smoothed measured contour is retained for valleys and
-        // broadband gain in Step 2.
         let shoulder =
             0.5 * (env_at(hz / 2f64.powf(1.0 / 6.0)) + env_at(hz * 2f64.powf(1.0 / 6.0)));
         let prominence = env_at(hz) - shoulder;
@@ -975,12 +799,6 @@ fn fit_corner_poles_first_impl(
         .iter()
         .map(|&(hz, radius)| (score_mode(hz), hz, radius))
         .collect();
-
-    // Root angles from a finite-order LPC model can sit on a shoulder of a
-    // broad measured formant. Add each explicit envelope crest as a refined
-    // centre, borrowing bandwidth from the nearest Yule-Walker mode. This is
-    // still LPC pole estimation—the measured maximum only registers the pole
-    // to the acoustic mountain instead of leaving it half a bin down-slope.
     for peaks_db in [&env_db] {
         for i in 1..N_FIT - 1 {
             if !(peaks_db[i] > peaks_db[i - 1] && peaks_db[i] >= peaks_db[i + 1]) {
@@ -1006,9 +824,6 @@ fn fit_corner_poles_first_impl(
             let radius = if radius > 0.0 {
                 radius
             } else {
-                // Honest measured-bandwidth fallback when LPC has no nearby
-                // complex mode (for example a broad body peak represented by a
-                // real low-frequency pole).
                 let top = peaks_db[i];
                 let mut lo = i;
                 while lo > 0 && peaks_db[lo] > top - 3.0 {
@@ -1068,8 +883,6 @@ fn fit_corner_poles_first_impl(
                 }
             }
         }
-        // If the candidate bank contains a close doublet, relax separation
-        // rather than inventing an identity/gain-only lane.
         if poles.len() < RESIDUAL_STAGES {
             for &(_, hz, radius) in &pole_candidates {
                 if poles.iter().any(|&(other, _)| (hz - other).abs() < 1e-6) {
@@ -1092,13 +905,6 @@ fn fit_corner_poles_first_impl(
     if bands.is_none() {
         poles.sort_by(|a, b| a.0.partial_cmp(&b.0).unwrap());
     }
-
-    // ── Step 2: ZERO CENTRES IN MEASURED VALLEYS, POLES IMMUTABLE ──
-    // Candidate inter-formant valleys come from the minima between the six
-    // locked mountains; the final six also retain both exterior basins so the
-    // source's broad low/high contour survives. Unlike the old unconstrained
-    // B-polynomial solve, a zero can no longer wander onto a pole and erase the
-    // formant we just selected.
     let nearest_index = |hz: f64| -> usize {
         (((hz / F_MIN).ln() / (F_MAX / F_MIN).ln()) * (N_FIT - 1) as f64)
             .round()
@@ -1116,8 +922,6 @@ fn fit_corner_poles_first_impl(
             {
                 return None;
             }
-            // Keep one analysis-grid sample inside each authored edge so the
-            // packed frequency word has room to quantize without escaping.
             let edge_lo = nearest_index(band.zero_hz.0);
             let edge_hi = nearest_index(band.zero_hz.1);
             let lo = (edge_lo + 1).min(edge_hi);
@@ -1130,7 +934,6 @@ fn fit_corner_poles_first_impl(
     } else {
         let mut interior_valleys = Vec::with_capacity(RESIDUAL_STAGES - 1);
         for pair in poles.windows(2) {
-            // Keep a 1/8-octave exclusion around both locked pole centres.
             let lo = nearest_index(pair[0].0 * 2f64.powf(1.0 / 8.0)).min(N_FIT - 1);
             let hi = nearest_index(pair[1].0 / 2f64.powf(1.0 / 8.0)).min(N_FIT - 1);
             let (lo, hi) = if lo < hi {
@@ -1167,10 +970,6 @@ fn fit_corner_poles_first_impl(
         if legal_zero(*hz) {
             continue;
         }
-        // Quantization and close pole doublets can erase the narrow nominal
-        // exclusion interval. Re-register to the nearest legal measured basin;
-        // duplication is preferable to either pole cancellation or an all-pole
-        // gain-only lane.
         let original = *hz;
         let replacement = (0..N_FIT)
             .filter(|&i| {
@@ -1191,7 +990,6 @@ fn fit_corner_poles_first_impl(
     if bands.is_none() {
         zero_hz.sort_by(|a, b| a.partial_cmp(b).unwrap());
     }
-
     let make_corner = |trial_poles: &[(f64, f64)],
                        trial_zero_hz: &[f64],
                        trial_zero_r: &[f64],
@@ -1259,9 +1057,6 @@ fn fit_corner_poles_first_impl(
             / N_FIT as f64;
         (cost, offset)
     };
-
-    // Deterministic coordinate descent changes zero DEPTH only. Pole centre,
-    // pole radius, and every zero centre are frozen before this loop begins.
     let mut zero_r: Vec<f64> = (0..RESIDUAL_STAGES)
         .map(|i| {
             bands.map_or(0.85, |lane_bands| {
@@ -1304,10 +1099,6 @@ fn fit_corner_poles_first_impl(
     let Some(lane_bands) = bands else {
         return Some((corner, None));
     };
-
-    // Analysis-by-synthesis: every candidate is encoded to packed words,
-    // decoded through PackedCorners, and measured on the runtime rows. The
-    // design-space values are only proposal coordinates.
     let frequencies: Vec<f64> = (0..N_FIT).map(fit_freq).collect();
     let mut refined_poles = poles;
     let mut refined_zero_hz = zero_hz;
@@ -1318,9 +1109,6 @@ fn fit_corner_poles_first_impl(
         refined_zero_hz[lane] = guarded_hz(refined_zero_hz[lane], lane_bands[lane].zero_hz);
         refined_zero_r[lane] = guarded_radius(refined_zero_r[lane], lane_bands[lane].zero_r);
     }
-    // Gain is fixed to the canonical shape-aligned reference established by
-    // shape_cost. The AbS loop is not allowed to reintroduce source loudness
-    // through SCALE.
     let total_gain_db = 20.0 * NUM_STAGES as f64 * per_stage_gain.log10();
     let evaluate = |trial_poles: &[(f64, f64)],
                     trial_zero_hz: &[f64],
@@ -1364,7 +1152,6 @@ fn fit_corner_poles_first_impl(
     )?;
     let mut current = before;
     let mut evaluations = 1usize;
-
     for (frequency_step_oct, radius_step) in [
         (1.0 / 24.0, 0.020),
         (1.0 / 48.0, 0.010),
@@ -1375,7 +1162,6 @@ fn fit_corner_poles_first_impl(
         let mut improved = true;
         while improved {
             improved = false;
-            // High lanes first: overlap overshoots are most expensive there.
             for lane in (0..RESIDUAL_STAGES).rev() {
                 for coordinate in 0..4 {
                     for direction in [-1.0, 1.0] {
@@ -1454,7 +1240,6 @@ fn fit_corner_poles_first_impl(
         }),
     ))
 }
-
 fn interp_db(curve: &[(f64, f64)], f: f64) -> f64 {
     if f <= curve[0].0 {
         return curve[0].1;
@@ -1475,34 +1260,22 @@ fn interp_db(curve: &[(f64, f64)], f: f64) -> f64 {
     }
     curve[last].1
 }
-
-/// The ARMA solve from a log-magnitude spectrum onward — shared by the audio fit
-/// (`fit_corner_arma`) and the target-curve factorizer (`fit_corner_from_magnitude`).
 fn arma_fit_from_logmag(logmag: &[f64], runtime_sr: f64) -> Option<CornerData> {
     let half = N_FFT / 2;
     let bin_hz = runtime_sr / N_FFT as f64;
-
-    // ── minimum-phase FORMANT-ENVELOPE target via cepstral liftering ──
-    // Real cepstrum of the raw log-magnitude, keep only the LOW quefrencies (the
-    // formant envelope), drop the high quefrencies (the pitch comb). A low-pitched
-    // voice has dense harmonics the old 1/24-oct smoothing couldn't bridge, so ARMA
-    // fit the loud harmonics + HF junk instead of the formants. The lifter hands it
-    // the envelope to fit — the same liftering that surfaces formants cleanly.
     let mut cep = vec![Cx::ZERO; N_FFT];
     for k in 0..N_FFT {
-        cep[k] = Cx::new(logmag[k], 0.0); // |buf[k]| is already symmetric (real input)
+        cep[k] = Cx::new(logmag[k], 0.0);
     }
-    fft(&mut cep, true); // real cepstrum
-    let lifter = 64usize.min(half - 1); // keep formant envelope, cut the pitch comb
+    fft(&mut cep, true);
+    let lifter = 64usize.min(half - 1);
     let mut mp = vec![Cx::ZERO; N_FFT];
     mp[0] = Cx::new(cep[0].re, 0.0);
     for n in 1..lifter {
-        mp[n] = Cx::new(2.0 * cep[n].re, 0.0); // min-phase fold, low-quefrency only
+        mp[n] = Cx::new(2.0 * cep[n].re, 0.0);
     }
-    fft(&mut mp, false); // = log of the min-phase envelope
+    fft(&mut mp, false);
     let hmin: Vec<Cx> = (0..N_FFT).map(|k| mp[k].cexp()).collect();
-
-    // ── log-spaced fit frequencies + sampled target ──
     let mut omega = vec![0.0f64; N_FIT];
     let mut htarget = vec![Cx::ZERO; N_FIT];
     let mut weight = vec![0.0f64; N_FIT];
@@ -1511,7 +1284,6 @@ fn arma_fit_from_logmag(logmag: &[f64], runtime_sr: f64) -> Option<CornerData> {
         let f = F_MIN * (F_MAX / F_MIN).powf(t);
         let w = 2.0 * PI * f / runtime_sr;
         omega[i] = w;
-        // sample hmin at bin position (linear interp)
         let pos = f / bin_hz;
         let k0 = pos.floor() as usize;
         let frac = pos - k0 as f64;
@@ -1521,53 +1293,37 @@ fn arma_fit_from_logmag(logmag: &[f64], runtime_sr: f64) -> Option<CornerData> {
             hmin[half]
         };
         htarget[i] = h;
-        // TRANSPARENCY weighting (audit 2026-05-24): weight the LS by the SOURCE's
-        // own magnitude, so the loud body/formants are matched and the quiet high
-        // band stops dominating the equation-error solve. Uniform log weighting
-        // (formerly here) was measured tilting bodied sources +20..+60 dB BRIGHT and
-        // discarding the low body — the opposite of transparent. The bright tilt the
-        // old comment feared comes from over-weighting the QUIET highs, not from
-        // honouring energy; weighting toward the source envelope is what matches it.
-        // A small floor keeps notches/valleys represented.
         weight[i] = h.abs().max(1e-4);
     }
-
-    // ── Sanathanan–Koerner iteration: solve for a[1..=ORDER], b[0..=ORDER] ──
-    // Model H(w) ≈ B(w)/A(w); each iter minimises Σ_k W_k |B - H·A|² with
-    // W_k = weight_k / |A_prev(w_k)|² (A_prev = 1 on the first pass = Levi).
-    let p = (ORDER + 1) + ORDER; // unknowns: b_0..b_ORDER, a_1..a_ORDER
-                                 // precompute e^{-jwl} for each freq and lag
+    let p = (ORDER + 1) + ORDER;
     let mut ejw = vec![vec![Cx::ZERO; ORDER + 1]; N_FIT];
     for i in 0..N_FIT {
         for l in 0..=ORDER {
             ejw[i][l] = Cx::expj(-omega[i] * l as f64);
         }
     }
-    let mut a_prev = vec![0.0f64; ORDER + 1]; // a_prev[0]=1
+    let mut a_prev = vec![0.0f64; ORDER + 1];
     a_prev[0] = 1.0;
     let mut best: Option<(Vec<f64>, Vec<f64>)> = None;
     for _iter in 0..SK_ITERS {
         let mut ata = vec![vec![0.0f64; p]; p];
         let mut atb = vec![0.0f64; p];
         for i in 0..N_FIT {
-            // A_prev(w_i)
             let mut ap = Cx::ZERO;
             for m in 0..=ORDER {
                 ap = ap.add(ejw[i][m].scale(a_prev[m]));
             }
             let wk = weight[i] / ap.abs2().max(1e-12);
             let sw = wk.sqrt();
-            // complex design row R (len p) and rhs
             let mut row = vec![Cx::ZERO; p];
             for l in 0..=ORDER {
-                row[l] = ejw[i][l].scale(sw); // b_l
+                row[l] = ejw[i][l].scale(sw);
             }
             let h = htarget[i];
             for m in 1..=ORDER {
-                row[ORDER + m] = h.mul(ejw[i][m]).scale(-sw); // a_m
+                row[ORDER + m] = h.mul(ejw[i][m]).scale(-sw);
             }
             let rhs = h.scale(sw);
-            // accumulate Re(R^H R) and Re(R^H rhs)
             for r in 0..p {
                 let rr = row[r].conj();
                 atb[r] += rr.mul(rhs).re;
@@ -1581,7 +1337,7 @@ fn arma_fit_from_logmag(logmag: &[f64], runtime_sr: f64) -> Option<CornerData> {
             }
         }
         for d in 0..p {
-            ata[d][d] += 1e-7; // tiny ridge for conditioning
+            ata[d][d] += 1e-7;
         }
         let Some(sol) = solve(ata, atb) else { break };
         let mut bco = vec![0.0f64; ORDER + 1];
@@ -1600,14 +1356,6 @@ fn arma_fit_from_logmag(logmag: &[f64], runtime_sr: f64) -> Option<CornerData> {
         best = Some((bco, aco));
     }
     let (bco, aco) = best?;
-
-    // ── faithful 6-biquad realization of B(z)/A(z) ──
-    // Group EVERY denominator root and EVERY numerator root into second-order
-    // sections, so the cascade response equals B/A exactly (no dropped poles or
-    // zeros). Order both lists by resonant frequency (conditioning only — the
-    // overall response is invariant to section ordering), then section i = the
-    // i-th numerator over the i-th denominator. The overall gain (B's leading
-    // coeff) is absorbed by the peak normalisation below.
     let mut den = to_quadratics(&roots(&aco), RootKind::Pole);
     let mut num = to_quadratics(&roots(&bco), RootKind::Zero);
     if den.is_empty() {
@@ -1623,12 +1371,10 @@ fn arma_fit_from_logmag(logmag: &[f64], runtime_sr: f64) -> Option<CornerData> {
     }
     den.truncate(NUM_STAGES);
     num.truncate(NUM_STAGES);
-
     let mut corner: CornerData = [PASSTHROUGH; NUM_STAGES];
     for i in 0..NUM_STAGES {
         let [_, a1, a2] = den[i];
-        let [_, b1, b2] = num[i]; // monic numerator (b0 = 1); level set below
-                                  // kernel form: c0 = 2 + b1/b0, c1 = 1 - b2/b0, c2 = a1 + 2, c3 = 1 - a2, c4 = b0
+        let [_, b1, b2] = num[i];
         corner[i] = [2.0 + b1, 1.0 - b2, a1 + 2.0, 1.0 - a2, 1.0];
     }
     normalize_peak(&mut corner, runtime_sr, 0.5);
@@ -1638,12 +1384,6 @@ fn arma_fit_from_logmag(logmag: &[f64], runtime_sr: f64) -> Option<CornerData> {
         None
     }
 }
-
-/// Scale the cascade so its peak magnitude ≈ `target`. The scalar gain is spread
-/// evenly across the active sections (`g^(1/n)` per stage) rather than dumped on
-/// one — the cascade is a product, so this is the *same* transfer function with
-/// the gain merely relocated, but it keeps every `c4` inside the packable [0,4]
-/// box instead of letting one stage's gain underflow/overflow the minifloat.
 fn normalize_peak(corner: &mut CornerData, sr: f64, target: f64) {
     let mag_at = |k: &[f64; NUM_COEFFS], w: f64| -> f64 {
         let (c0, c1, c2, c3, c4) = (k[0], k[1], k[2], k[3], k[4]);
@@ -1684,12 +1424,9 @@ fn normalize_peak(corner: &mut CornerData, sr: f64, target: f64) {
         }
     }
 }
-
 #[cfg(test)]
 mod tests {
     use super::*;
-
-    // magnitude (dB) of a kernel-form cascade at one frequency
     fn cascade_db(corner: &CornerData, f: f64, sr: f64) -> f64 {
         let w = 2.0 * PI * f / sr;
         let mut mag = 1.0;
@@ -1705,8 +1442,6 @@ mod tests {
         }
         20.0 * (mag + 1e-12).log10()
     }
-
-    // impulse response of a known pole/zero cascade (DF2T biquads)
     fn ir(biquads: &[[f64; 5]], n: usize) -> Vec<f64> {
         let mut state = vec![[0.0f64; 2]; biquads.len()];
         (0..n)
@@ -1722,7 +1457,6 @@ mod tests {
             })
             .collect()
     }
-
     fn biquad(fp: f64, rp: f64, fz: f64, rz: f64, sr: f64) -> [f64; 5] {
         let tp = 2.0 * PI * fp / sr;
         let tz = 2.0 * PI * fz / sr;
@@ -1734,7 +1468,6 @@ mod tests {
             rp * rp,
         ]
     }
-
     #[test]
     fn fft_roundtrip() {
         let mut buf: Vec<Cx> = (0..64)
@@ -1747,20 +1480,16 @@ mod tests {
             assert!((a.re - b.re).abs() < 1e-9, "fft roundtrip drift");
         }
     }
-
     #[test]
     fn recovers_notch_and_peaks() {
-        // a body resonance, a high resonance, and a DEEP notch between them.
         let sr = ANALYSIS_SR;
         let truth = [
-            biquad(500.0, 0.95, 0.0, 0.0, sr),      // body pole
-            biquad(3200.0, 0.92, 0.0, 0.0, sr),     // upper pole
-            biquad(1500.0, 0.5, 1500.0, 0.985, sr), // sharp notch at 1500
+            biquad(500.0, 0.95, 0.0, 0.0, sr),
+            biquad(3200.0, 0.92, 0.0, 0.0, sr),
+            biquad(1500.0, 0.5, 1500.0, 0.985, sr),
         ];
         let src = ir(&truth, 4096);
         let corner = fit_corner_arma(&src, sr, sr).expect("arma fit");
-
-        // truth response (normalised peak) vs fit, sampled across the band
         let truth_corner: CornerData = {
             let mut c = [PASSTHROUGH; NUM_STAGES];
             for (i, bq) in truth.iter().enumerate() {
@@ -1770,7 +1499,6 @@ mod tests {
             normalize_peak(&mut c, sr, 0.5);
             c
         };
-
         for f in [
             200.0, 500.0, 800.0, 1100.0, 1500.0, 2000.0, 2600.0, 3200.0, 4500.0, 7000.0,
         ] {
@@ -1780,8 +1508,6 @@ mod tests {
                 cascade_db(&truth_corner, f, sr)
             );
         }
-        // 1) the fit must carve a notch near 1500 Hz: a local min clearly below the
-        //    two resonances that flank it (the 500 body and the 3200 upper peak).
         let n = cascade_db(&corner, 1500.0, sr);
         let body = cascade_db(&corner, 500.0, sr);
         let upper = cascade_db(&corner, 3200.0, sr);
@@ -1789,9 +1515,6 @@ mod tests {
             n < body - 8.0 && n < upper - 8.0,
             "no notch at 1500: notch={n:.1} body={body:.1} upper={upper:.1}"
         );
-
-        // 2) broad SHAPE agreement with truth (gain-independent — the product
-        //    normalises level separately, so align the means and measure contour).
         let diffs: Vec<f64> = (0..60)
             .map(|i| {
                 let f = 100.0 * (9000.0f64 / 100.0).powf(i as f64 / 59.0);
@@ -1806,7 +1529,6 @@ mod tests {
             "envelope shape RMS too high (gain-independent): {rms:.2} dB"
         );
     }
-
     #[test]
     fn macro_peel_keeps_five_residual_mountains_after_packing() {
         let sr = 39_062.5;
@@ -1825,16 +1547,12 @@ mod tests {
                 (f, db)
             })
             .collect();
-
         let fitted = fit_corner_poles_first(&curve, sr).expect("two-step fit");
         assert_eq!(
             fitted,
             fit_corner_poles_first(&curve, sr).expect("repeat two-step fit"),
             "the fitter must be deterministic"
         );
-
-        // Inspect the exact quantized/runtime-decoded result, not only the
-        // design coefficients used by the solver.
         let packed = crate::minifloat::PackedCorners::from_corner_data(&[fitted; 4]);
         let runtime = packed.interpolate_biquad(0.0, 0.0);
         let mut pole_hz = Vec::new();
@@ -1845,7 +1563,6 @@ mod tests {
             assert!(pole_disc < 0.0, "every lane must retain a conjugate pole");
             assert!(pole_r < 1.0, "packed pole must be stable: r={pole_r}");
             pole_hz.push((-stage[3] / (2.0 * pole_r)).clamp(-1.0, 1.0).acos() * sr / (2.0 * PI));
-
             let b0 = stage[0];
             let z1 = stage[1] / b0;
             let z2 = stage[2] / b0;
@@ -1875,7 +1592,6 @@ mod tests {
                 "valley zero {zero} Hz cancels a locked pole"
             );
         }
-
         let packed_db: Vec<f64> = (0..256)
             .map(|i| {
                 let f = F_MIN * (F_MAX / F_MIN).powf(i as f64 / 255.0);
@@ -1888,7 +1604,6 @@ mod tests {
             span > 12.0,
             "packed response collapsed toward a flat line: {span:.2} dB span"
         );
-
         for &want in &planted[2..] {
             let shoulder = 2f64.powf(1.0 / 6.0);
             let centre = crate::response::biquad_cascade_mag_db(&runtime, want, sr);
@@ -1902,7 +1617,6 @@ mod tests {
             );
         }
     }
-
     #[test]
     fn profiler_peak_alignment_removes_target_gain() {
         let curve = vec![(40.0, -20.0), (100.0, -4.0), (1_000.0, 12.0), (20_000.0, -8.0)];
@@ -1910,7 +1624,6 @@ mod tests {
         assert_eq!(peak, 12.0);
         assert_eq!(offset, -12.0);
         assert_eq!(aligned[2].1, PROFILER_TARGET_REFERENCE_DB);
-
         let shifted: Vec<(f64, f64)> = curve.iter().map(|(f, db)| (*f, db - 17.0)).collect();
         let (shifted_aligned, shifted_peak, shifted_offset) =
             peak_normalize_curve_db(&shifted).expect("shifted peak alignment");
@@ -1921,7 +1634,6 @@ mod tests {
             assert!((db_a - db_b).abs() < 1e-12);
         }
     }
-
     #[test]
     fn profiler_hard_ceiling_penalizes_absolute_resonance() {
         let sr = 39_062.5;
@@ -1929,7 +1641,6 @@ mod tests {
         let (identity_penalty, identity_excess) = hard_ceiling_metrics(&identity, sr);
         assert_eq!(identity_penalty, 0.0);
         assert_eq!(identity_excess, 0.0);
-
         let pole_hz = 1_000.0;
         let pole_r = 0.997;
         let pole_w = 2.0 * PI * pole_hz / sr;
@@ -1944,7 +1655,6 @@ mod tests {
         assert!(excess > 15.0, "expected resonance above +15 dB, got {excess:.2} dB");
         assert!(penalty > 0.0);
     }
-
     #[test]
     fn sharpening_is_explicit_and_bounded() {
         let broad = 0.90;
@@ -1952,7 +1662,6 @@ mod tests {
         assert!(sharpen_yw_radius(broad, 0.95) >= 0.95);
         assert_eq!(sharpen_yw_radius(0.9999, 0.9999), YW_SHARP_RADIUS_MAX);
     }
-
     #[test]
     fn profiled_bands_own_lane_order_after_packing() {
         let sr = 39_062.5;

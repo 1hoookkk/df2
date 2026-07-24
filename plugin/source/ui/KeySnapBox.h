@@ -1,20 +1,12 @@
 #pragma once
-
-#include "SelectorLookAndFeel.h"
 #include "Theme.h"
 #include "../parameters/TrenchParameters.h"
-
 #include <juce_audio_processors/juce_audio_processors.h>
 #include <cmath>
 #include <functional>
 #include <memory>
-
 namespace trench::ui
 {
-
-// Four-state key listener hung from the display bezel: quiet, listening,
-// suggesting, and locked. Nothing is applied until a candidate tab is chosen;
-// the APVTS parameter remains the only source of truth.
 class KeySnapBox final : public juce::Component,
                          public juce::SettableTooltipClient
 {
@@ -31,18 +23,15 @@ public:
             attachment = std::make_unique<juce::ParameterAttachment> (
                 *param, [this] (float) { repaint(); });
     }
-
     void setSuggestionProviders (std::function<int()> primary, std::function<int()> secondary)
     {
         primarySuggestion = std::move (primary);
         secondarySuggestion = std::move (secondary);
     }
-
     void setListeningProvider (std::function<bool()> provider)
     {
         listeningProvider = std::move (provider);
     }
-
     void refreshSuggestion()
     {
         const int first = suggestion (primarySuggestion);
@@ -71,7 +60,13 @@ public:
         }
         lastListening = listeningNow;
     }
-
+    // The idle engraving is not a control: clicks pass through unless there
+    // is a guess to take or a locked key to release.
+    bool hitTest (int x, int y) override
+    {
+        juce::ignoreUnused (x, y);
+        return currentChoice() != 0 || suggestion (primarySuggestion) >= 0;
+    }
     void mouseEnter (const juce::MouseEvent&) override { hover = true; repaint(); }
     void mouseExit  (const juce::MouseEvent&) override
     {
@@ -79,7 +74,6 @@ public:
         hoveredCandidate = -1;
         repaint();
     }
-
     void mouseMove (const juce::MouseEvent& e) override
     {
         const int candidate = candidateAt (e.position);
@@ -89,20 +83,17 @@ public:
             repaint();
         }
     }
-
     void mouseDown (const juce::MouseEvent&) override
     {
         down = true;
         repaint();
     }
-
     void mouseUp (const juce::MouseEvent& e) override
     {
         down = false;
         repaint();
         if (param == nullptr || ! getLocalBounds().contains (e.position.toInt()))
             return;
-
         const int current = currentChoice();
         if (current == 0)
         {
@@ -113,30 +104,11 @@ public:
                 applySuggestedChoice (suggestion (secondarySuggestion));
             return;
         }
-
-        juce::PopupMenu menu;
-        juce::PopupMenu minor;
-        juce::PopupMenu major;
-        menu.addItem (kOffItem, "OFF", true, current == 0);
-        for (int i = 1; i <= 12; ++i)
-            minor.addItem (kMinorBase + i, choiceText (i), true, current == i);
-        for (int i = 13; i <= 24; ++i)
-            major.addItem (kMajorBase + i, choiceText (i), true, current == i);
-
-        menu.addSeparator();
-        menu.addSubMenu ("MINOR", minor, true, nullptr, current >= 1 && current <= 12);
-        menu.addSubMenu ("MAJOR", major, true, nullptr, current >= 13 && current <= 24);
-        menu.setLookAndFeel (&lookAndFeel);
-
-        juce::Component::SafePointer<KeySnapBox> self (this);
-        menu.showMenuAsync (juce::PopupMenu::Options().withTargetComponent (this),
-                            [self] (int id)
-                            {
-                                if (self != nullptr)
-                                    self->applyChoice (id);
-                            });
+        // Click the locked key: release it back to Off — no menu, one gesture.
+        param->beginChangeGesture();
+        param->setValueNotifyingHost (param->convertTo0to1 (0.0f));
+        param->endChangeGesture();
     }
-
     void mouseWheelMove (const juce::MouseEvent&, const juce::MouseWheelDetails& wheel) override
     {
         if (param == nullptr || wheel.deltaY == 0.0f)
@@ -150,27 +122,96 @@ public:
         param->setValueNotifyingHost (param->convertTo0to1 ((float) next));
         param->endChangeGesture();
     }
-
     void paint (juce::Graphics& g) override
     {
         const int first = suggestion (primarySuggestion);
         const int second = suggestion (secondarySuggestion);
         const bool showingSuggestion = currentChoice() == 0 && first >= 0;
-        const auto plateInk = juce::Colour (0xff28332f);
-
-        // The only permanent element: a tiny engraved noun on the bezel. It
-        // identifies every later state without adding a panel or instruction.
+        // Compact cell (docked in the BODY bar): one quiet inset segment.
+        if (getHeight() < 26)
+        {
+            // Plate engraving, like MORPH/MIX: the "KEY" label is always
+            // there (quiet), and the value slot beside it carries the state —
+            // nothing, an offered guess "C?", or the locked key.
+            const auto ink = juce::Colour (0xff2a2722);
+            const bool locked = currentChoice() != 0;
+            const auto b = getLocalBounds().toFloat();
+            const auto bigFont   = displayFont (10.4f, true).withExtraKerningFactor (0.02f);
+            const auto smallFont = displayFont (10.5f, true).withExtraKerningFactor (0.02f);
+            compactAlt = {};
+            float x = b.getRight();
+            if (locked)
+            {
+                // Click the locked key again to release it — no menu.
+                const auto text = shortChoiceText (currentChoice());
+                const float w = juce::GlyphArrangement::getStringWidth (bigFont, text) + 2.0f;
+                x -= w;
+                g.setFont (bigFont);
+                g.setColour (ink.withAlpha (hover ? 0.95f : 0.85f));
+                g.drawText (text, juce::Rectangle<float> (x, b.getY(), w, b.getHeight()).toNearestInt(),
+                            juce::Justification::centredRight, false);
+            }
+            else if (showingSuggestion)
+            {
+                // Both guesses, best guess BIGGER; click one or the other.
+                if (second >= 0)
+                {
+                    const auto altText = shortSuggestionText (second);
+                    const float aw = juce::GlyphArrangement::getStringWidth (smallFont, altText) + 4.0f;
+                    x -= aw;
+                    compactAlt = juce::Rectangle<float> (x, b.getY(), aw, b.getHeight());
+                    g.setFont (smallFont);
+                    g.setColour (ink.withAlpha (hoveredCandidate == 1 ? 0.90f : 0.48f));
+                    g.drawText (altText, compactAlt.toNearestInt(),
+                                juce::Justification::centredRight, false);
+                }
+                const auto text = shortSuggestionText (first);
+                const float w = juce::GlyphArrangement::getStringWidth (bigFont, text) + 6.0f;
+                x -= w;
+                g.setFont (bigFont);
+                g.setColour (ink.withAlpha (hoveredCandidate == 0 ? 1.0f : 0.80f));
+                g.drawText (text, juce::Rectangle<float> (x, b.getY(), w, b.getHeight()).toNearestInt(),
+                            juce::Justification::centredRight, false);
+            }
+            g.setFont (displayFont (11.5f, true).withExtraKerningFactor (0.04f));
+            g.setColour (juce::Colour (0xff0d0b09).withAlpha (
+                (locked || showingSuggestion) ? 0.92f : 0.80f));
+            g.drawText ("KEY", juce::Rectangle<float> (b.getX(), b.getY(),
+                                                       x - b.getX() - 4.0f, b.getHeight()).toNearestInt(),
+                        juce::Justification::centredRight, false);
+            if (! locked && ! showingSuggestion && isListening())
+                drawListeningHairline (g);
+            return;
+        }
+        // On-glass chip (the reference "C m" plate): always seated so the
+        // user knows KEY exists, quiet until it has something to say.
+        const auto chip = getLocalBounds().toFloat().reduced (1.5f);
+        const bool alive = showingSuggestion || currentChoice() != 0 || isListening();
+        if (! alive)
+        {
+            // Nothing to say: just a quiet KEY ghost so the spot is known.
+            g.setFont (displayFont (6.4f, true));
+            g.setColour (juce::Colour (0xffc7d3cd).withAlpha (0.30f));
+            g.drawText ("KEY", getLocalBounds().removeFromTop (13),
+                        juce::Justification::centred, false);
+            return;
+        }
+        g.setColour (juce::Colour (0xff101614).withAlpha (0.88f));
+        g.fillRoundedRectangle (chip, 8.0f);
+        g.setColour (juce::Colours::black.withAlpha (0.55f));
+        g.drawRoundedRectangle (chip, 8.0f, 1.0f);
+        g.setColour (juce::Colour (0xffc7d3cd).withAlpha (0.22f));
+        g.drawRoundedRectangle (chip.reduced (1.0f), 7.0f, 0.7f);
         g.setFont (displayFont (6.4f, true));
-        g.setColour (plateInk.withAlpha (currentChoice() == 0 ? 0.62f : 0.76f));
-        g.drawText ("KEY", 23, 0, 29, 10, juce::Justification::centred, false);
-
+        g.setColour (juce::Colour (0xffc7d3cd).withAlpha (0.62f));
+        g.drawText ("KEY", 8, 4, 24, 9, juce::Justification::centredLeft, false);
         if (showingSuggestion)
         {
             const float elapsed = (float) (juce::Time::getMillisecondCounterHiRes()
                                             - arrivalStartedMs);
-            drawCandidate (g, first, 7.0f, 13.0f, arrivalProgress (elapsed, 0.0f),
+            drawCandidate (g, first, 8.0f, 14.0f, arrivalProgress (elapsed, 0.0f),
                            0.94f, hoveredCandidate == 0);
-            drawCandidate (g, second, 41.0f, 11.0f, arrivalProgress (elapsed, 85.0f),
+            drawCandidate (g, second, 47.0f, 15.0f, arrivalProgress (elapsed, 85.0f),
                            0.72f, hoveredCandidate == 1);
         }
         else if (currentChoice() == 0)
@@ -183,25 +224,19 @@ public:
             drawSelected (g, shortChoiceText (currentChoice()));
         }
     }
-
 private:
-    static constexpr int kOffItem = 1;
-    static constexpr int kMinorBase = 100;
-    static constexpr int kMajorBase = 200;
     static constexpr double kArrivalDurationMs = 420.0;
-
     static float arrivalProgress (float elapsedMs, float delayMs)
     {
         const float linear = juce::jlimit (0.0f, 1.0f, (elapsedMs - delayMs) / 250.0f);
         const float remaining = 1.0f - linear;
         return 1.0f - remaining * remaining * remaining;
     }
-
     void drawCandidate (juce::Graphics& g, int label, float x, float targetY,
                         float progress, float strength, bool highlighted) const
     {
         const float y = targetY - (1.0f - progress) * 9.0f + (down ? 0.5f : 0.0f);
-        const auto tile = juce::Rectangle<float> (x, y, 27.0f, 19.0f);
+        const auto tile = juce::Rectangle<float> (x, y, 33.0f, 21.0f);
         const float alpha = 0.30f + progress * 0.70f;
         g.setColour (juce::Colours::black.withAlpha (alpha * 0.13f * strength));
         g.fillRoundedRectangle (tile.translated (0.0f, 1.0f), 2.0f);
@@ -215,58 +250,55 @@ private:
         g.setColour (juce::Colour (0xffc7d3cd).withAlpha (
             alpha * strength * (highlighted ? 0.94f : 0.68f)));
         g.drawRoundedRectangle (tile.reduced (0.5f), 1.8f, highlighted ? 0.9f : 0.65f);
-        g.setFont (displayFont (9.1f, true));
+        g.setFont (displayFont (10.4f, true));
         g.setColour (juce::Colour (0xffe3ebe6).withAlpha (alpha * strength));
         g.drawText (shortSuggestionText (label), tile.toNearestInt(),
                     juce::Justification::centred, false);
     }
-
     void drawListeningHairline (juce::Graphics& g) const
     {
         const double seconds = juce::Time::getMillisecondCounterHiRes() * 0.001;
         const float phase = (float) std::fmod (seconds, 1.25) / 1.25f;
-        const float x = 25.0f + phase * 20.0f;
-        juce::ColourGradient scan (juce::Colours::transparentBlack, x - 6.0f, 10.0f,
-                                   juce::Colour (0xff46564f).withAlpha (0.58f), x, 10.0f, false);
-        scan.addColour (0.78, juce::Colour (0xff46564f).withAlpha (0.25f));
+        const float x = 20.0f + phase * ((float) getWidth() - 40.0f);
+        const float y = (float) getHeight() * 0.62f;
+        juce::ColourGradient scan (juce::Colours::transparentBlack, x - 6.0f, y,
+                                   juce::Colour (0xff7f948c).withAlpha (0.70f), x, y, false);
+        scan.addColour (0.78, juce::Colour (0xff7f948c).withAlpha (0.30f));
         scan.addColour (1.0, juce::Colours::transparentBlack);
         g.setGradientFill (scan);
-        g.fillRect (juce::Rectangle<float> (x - 6.0f, 9.2f, 12.0f, 0.8f));
+        g.fillRect (juce::Rectangle<float> (x - 6.0f, y - 0.5f, 12.0f, 1.0f));
     }
-
     int candidateAt (juce::Point<float> point) const
     {
         if (currentChoice() != 0 || suggestion (primarySuggestion) < 0)
             return -1;
-        if (juce::Rectangle<float> (7.0f, 10.0f, 27.0f, 24.0f).contains (point))
+        if (getHeight() < 26)   // compact: the small alt zone, else the guess
+            return ! compactAlt.isEmpty() && compactAlt.contains (point) ? 1 : 0;
+        if (juce::Rectangle<float> (8.0f, 11.0f, 33.0f, 26.0f).contains (point))
             return 0;
-        if (juce::Rectangle<float> (41.0f, 9.0f, 27.0f, 23.0f).contains (point))
+        if (juce::Rectangle<float> (47.0f, 12.0f, 33.0f, 25.0f).contains (point))
             return 1;
         return -1;
     }
-
     void drawSelected (juce::Graphics& g, const juce::String& text) const
     {
-        const auto tile = juce::Rectangle<float> (24.0f, 11.0f, 28.0f, 18.0f);
+        const auto tile = juce::Rectangle<float> ((float) getWidth() * 0.5f - 17.0f, 13.0f, 34.0f, 21.0f);
         g.setColour (juce::Colour (0xffaebbb4).withAlpha (hover ? 0.24f : 0.15f));
         g.fillRoundedRectangle (tile, 2.0f);
         g.setColour (juce::Colour (0xffc7d3cd).withAlpha (hover ? 0.82f : 0.60f));
         g.drawRoundedRectangle (tile.reduced (0.5f), 1.8f, 0.7f);
-        g.setFont (displayFont (8.9f, true));
+        g.setFont (displayFont (10.4f, true));
         g.setColour (juce::Colour (0xffe3ebe6).withAlpha (0.88f));
         g.drawText (text, tile.toNearestInt(), juce::Justification::centred, false);
     }
-
     bool isListening() const
     {
         return listeningProvider && listeningProvider();
     }
-
     static int suggestion (const std::function<int()>& provider)
     {
         return provider ? juce::jlimit (-1, 23, provider()) : -1;
     }
-
     static juce::String shortSuggestionText (int label)
     {
         if (label < 0 || label >= 24)
@@ -276,7 +308,6 @@ private:
         };
         return juce::String (notes[label % 12]) + (label >= 12 ? "m" : "");
     }
-
     static juce::String shortChoiceText (int choice)
     {
         if (choice >= 1 && choice <= 12)
@@ -285,14 +316,12 @@ private:
             return shortSuggestionText (choice - 13);
         return "--";
     }
-
     static int snapChoiceForSuggestion (int label)
     {
         if (label < 0 || label >= 24)
             return -1;
         return label < 12 ? 13 + label : 1 + (label - 12);
     }
-
     int currentChoice() const
     {
         if (param == nullptr)
@@ -301,30 +330,6 @@ private:
         return juce::jlimit (0, last,
                              juce::roundToInt (param->convertFrom0to1 (param->getValue())));
     }
-
-    juce::String choiceText (int choice) const
-    {
-        return param != nullptr ? param->getText (param->convertTo0to1 ((float) choice), 8)
-                                : juce::String();
-    }
-
-    void applyChoice (int id)
-    {
-        int choice = -1;
-        if (id == kOffItem)
-            choice = 0;
-        else if (id >= kMinorBase + 1 && id <= kMinorBase + 12)
-            choice = id - kMinorBase;
-        else if (id >= kMajorBase + 13 && id <= kMajorBase + 24)
-            choice = id - kMajorBase;
-
-        if (choice < 0 || param == nullptr)
-            return;
-        param->beginChangeGesture();
-        param->setValueNotifyingHost (param->convertTo0to1 ((float) choice));
-        param->endChangeGesture();
-    }
-
     void applySuggestedChoice (int label)
     {
         const int choice = snapChoiceForSuggestion (label);
@@ -334,9 +339,7 @@ private:
         param->setValueNotifyingHost (param->convertTo0to1 ((float) choice));
         param->endChangeGesture();
     }
-
     Theme t;
-    SelectorLookAndFeel lookAndFeel;
     juce::RangedAudioParameter* param = nullptr;
     std::unique_ptr<juce::ParameterAttachment> attachment;
     std::function<int()> primarySuggestion;
@@ -350,8 +353,7 @@ private:
     bool down = false;
     int hoveredCandidate = -1;
     bool lastListening = false;
-
+    mutable juce::Rectangle<float> compactAlt;
     JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR (KeySnapBox)
 };
-
-} // namespace trench::ui
+}

@@ -1,22 +1,6 @@
-//! body_from_geometry — THE preset compiler.
-//!
-//! Reads a geometry JSON (4 corners x 6 stages of the stage-law authoring
-//! variables), compiles through `stage_law::words_from_roots` (the single
-//! forward direction of the law), certifies stability on a 25x25 packed
-//! interpolation grid, and writes the 240-byte body.
-//!
-//!   cargo run -p trench-core --bin body-from-geometry -- <in.json> <out.body240>
-//!
-//! JSON: {"name": "...", "corners": [[{"pole_hz":..,"pole_r":..,"zero_hz":..,
-//!        "zero_r":..,"scale":..} x6] x4]}   corner order: M0_Q0, M100_Q0,
-//!        M0_Q100, M100_Q100. Stage slot i pairs across corners (this IS the
-//!        morph choreography — order lanes by physical identity, not habit).
-
 use trench_core::cascade::NUM_STAGES;
 use trench_core::minifloat::PackedCorners;
 use trench_core::stage_law::{words_from_roots, StageRoots};
-
-// ponytail: field-order-tolerant hand parser, serde is not a trench-core dep
 fn num(obj: &str, key: &str) -> f64 {
     let pat = format!("\"{key}\"");
     let rest = &obj[obj.find(&pat).unwrap_or_else(|| panic!("missing {key}")) + pat.len()..];
@@ -26,7 +10,6 @@ fn num(obj: &str, key: &str) -> f64 {
         .unwrap_or(rest.len());
     rest[..end].parse().unwrap_or_else(|_| panic!("bad number for {key}"))
 }
-
 fn main() {
     let args: Vec<String> = std::env::args().collect();
     let (inp, outp) = match &args[..] {
@@ -37,8 +20,6 @@ fn main() {
         }
     };
     let text = std::fs::read_to_string(&inp).expect("read geometry json");
-
-    // split into the 24 stage objects, in file order
     let mut stages: Vec<StageRoots> = Vec::new();
     let mut rest = text.as_str();
     while let Some(key_at) = rest.find("\"pole_hz\"") {
@@ -55,15 +36,12 @@ fn main() {
         rest = &rest[obj_end + 1..];
     }
     assert_eq!(stages.len(), 4 * NUM_STAGES, "need exactly 4 corners x 6 stages");
-
     let mut words = [[[0u16; 5]; NUM_STAGES]; 4];
     for (i, s) in stages.iter().enumerate() {
         assert!(s.pole_r < 1.0 && s.pole_r >= 0.0, "pole_r out of range: {s:?}");
         words[i / NUM_STAGES][i % NUM_STAGES] = words_from_roots(s);
     }
     let packed = PackedCorners { words };
-
-    // certification: sampled 25x25 grid over the packed interpolation
     let mut max_r = 0.0f64;
     for mi in 0..25 {
         for qi in 0..25 {
@@ -73,7 +51,6 @@ fn main() {
                 for v in row.iter() {
                     assert!(v.is_finite(), "non-finite coeff at grid ({mi},{qi})");
                 }
-                // |poles| via the a0-normalized denominator
                 let disc = a1 * a1 - 4.0 * a2;
                 let r = if disc >= 0.0 {
                     let s = disc.sqrt();
@@ -86,7 +63,6 @@ fn main() {
         }
     }
     assert!(max_r < 1.0, "UNSTABLE: max pole radius {max_r} on sampled grid");
-
     let mut bytes = Vec::with_capacity(240);
     for c in 0..4 {
         for s in 0..NUM_STAGES {

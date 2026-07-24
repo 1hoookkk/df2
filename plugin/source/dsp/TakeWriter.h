@@ -1,21 +1,14 @@
 #pragma once
-
 #include <juce_audio_formats/juce_audio_formats.h>
-
 namespace trench
 {
-// Musical tags written into a captured take's WAV header. BWAV originator marks
-// provenance; ACID tags let a DAW auto-flag one-shot vs loop and auto-warp loops.
 struct TakeTags
 {
     juce::String description { "TRENCH take" };
-    double bpm = 0.0;   // 0 -> unknown, written as a one-shot
-    int beats = 0;      // loop length in beats (bar-range captures)
-    bool oneShot = true; // true -> acid one-shot; false -> acid loop + tempo/beats
+    double bpm = 0.0;
+    int beats = 0;
+    bool oneShot = true;
 };
-
-// Write a captured stereo take to a 24-bit WAV with BWAV/ACID metadata. Returns
-// true on success. Message thread.
 inline bool writeTakeWav (const juce::File& file,
                           const juce::AudioBuffer<float>& take,
                           double sampleRate,
@@ -23,7 +16,6 @@ inline bool writeTakeWav (const juce::File& file,
 {
     if (take.getNumChannels() <= 0 || take.getNumSamples() <= 0 || sampleRate <= 0.0)
         return false;
-
     juce::StringPairArray meta;
     meta.set (juce::WavAudioFormat::bwavOriginator, "TRENCH");
     meta.set (juce::WavAudioFormat::bwavDescription, tags.description);
@@ -38,25 +30,21 @@ inline bool writeTakeWav (const juce::File& file,
         if (tags.beats > 0)
             meta.set (juce::WavAudioFormat::acidBeats, juce::String (tags.beats));
     }
-
     auto created = file.getParentDirectory().createDirectory();
     juce::ignoreUnused (created);
     file.deleteFile();
-
     std::unique_ptr<juce::FileOutputStream> os (file.createOutputStream());
     if (os == nullptr)
         return false;
-
     juce::WavAudioFormat wav;
     std::unique_ptr<juce::AudioFormatWriter> writer (
         wav.createWriterFor (os.get(), sampleRate,
                              (unsigned int) take.getNumChannels(), 24, meta, 0));
     if (writer == nullptr)
         return false;
-
-    os.release(); // the writer owns the stream now
+    os.release();
     const bool ok = writer->writeFromAudioSampleBuffer (take, 0, take.getNumSamples());
-    writer.reset(); // flush + close
+    writer.reset();
     return ok;
 }
-} // namespace trench
+}

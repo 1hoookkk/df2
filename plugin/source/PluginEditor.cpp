@@ -1,33 +1,19 @@
 #include "PluginEditor.h"
+#include "TrenchRates.h"
 #include "BinaryData.h"
 #include "TrenchBodyRoster.h"
-
 using namespace trench::ui;
-
 PluginEditor::PluginEditor (PluginProcessor& p)
     : AudioProcessorEditor (&p),
       processor (p)
 {
-    // Lay-it-out-by-hand: overlay any hand-edited ui_layout.json (and drop a starter
-    // file with the current layout if none exists) before building the views.
     reloadLayoutFromDisk();
-
-    // Back-to-beige rewrite (2026-07-10): the plate is Tyson's beige art (its
-    // baked recesses ARE the wells); ivory windows + glass are painted in code;
-    // the wheels are the real rendered sculpt strip ("these look good").
-    // The CLASSIC BEIGE plate — home. Components paint their bone faces into
-    // its baked wells.
-    // The CLASSIC BEIGE plate — home. Components paint their bone faces into
-    // its baked wells.
     auto panel = juce::ImageCache::getFromMemory (BinaryData::df2_panel_beige_png,
                                                   BinaryData::df2_panel_beige_pngSize);
-    // The wheels retain the approved Blender-authored 257-frame geometry. The
-    // warm travelling position light is baked by the post assembler; runtime
-    // paint only selects the current frame.
     auto strip = juce::ImageCache::getFromMemory (BinaryData::trench_roller_strip_png,
                                                   BinaryData::trench_roller_strip_pngSize);
     faceplate    = std::make_unique<FaceplateView> (panel, theme);
-    faceplate->setBufferedToImage (true);   // the static plate is cached, not re-rasterized per frame
+    faceplate->setBufferedToImage (true);
     graph        = std::make_unique<GraphDisplay> (theme, processor.apvts, ParamID::slamDrive);
     slotPad      = std::make_unique<SlotPad> (theme);
     moveChip = std::make_unique<MoveChip> (processor.apvts, theme);
@@ -43,17 +29,10 @@ PluginEditor::PluginEditor (PluginProcessor& p)
     });
     takeView     = std::make_unique<TakeView> (theme);
     moveView     = std::make_unique<MoveView> (processor, theme);
-    // ROUTE matrix editor is shelved for V1 (RouteView.h kept on disk) — PLAY only until
-    // the default gestures sound good. The 4x4 matrix uses factory defaults in state.
-
-    // Pages: SlotPad 1 = Player curve, 2 = Versions tray. Pressing 2 rerolls a fresh
-    // tray of versions of the sound that just played.
     slotPad->onSelect = [this] (int p)
     {
         setPage (p == 1 ? 1 : 0);
     };
-    // Press a version -> audition it live: install its body AND adopt its Morph/Q point
-    // so what you hear (and the wheels) match the take. Persists.
     takeView->onAudition = [this] (int idx)
     {
         if (idx < 0 || idx >= (int) tray.size())
@@ -70,12 +49,7 @@ PluginEditor::PluginEditor (PluginProcessor& p)
         setNorm (ParamID::slamDrive, v.slam);
         setNorm (ParamID::fiveD, v.qsound ? 1.0f : 0.0f);
     };
-    // Page 2 is a real page: selecting a slot auditions it, but stays on Page 2
-    // until the user presses 1.
     takeView->onConfirm = [] (int) {};
-    // Drag a version -> keep it: capture the rolling WET buffer (what you actually
-    // heard auditioning) and hand it to the OS so it drops straight into FL. No offline
-    // render — the take is the real heard output.
     takeView->onKeep = [this] (int, juce::Component* source)
     {
         const auto f = processor.captureSmartTake();
@@ -95,36 +69,20 @@ PluginEditor::PluginEditor (PluginProcessor& p)
     typeSelector->onSeed       = runSeed;
     typeSelector->onExportBody = [this] { processor.exportCurrentBody(); };
     typeSelector->onAnnounce   = [this] (const juce::String& s) { graph->announce (s); };
-    // SOUND rails: upper aperture = MORPH, lower aperture = Q. SLAM is no longer a
-    // rail — it is driven by dragging the screen canvas (see GraphDisplay), so the
-    // old Q/SLAM label toggle is retired.
     morphWheel   = std::make_unique<WheelControl> (processor.apvts, ParamID::morph, strip, theme);
-    // Alt-drag Morph teaches a USER motion (MOVE chip's "USER · 1 BAR"). The
-    // wheel still moves/plays normally under Alt -- this just also records it.
-    morphWheel->onAltDragStart  = [this] { processor.beginUserMotionRecording(); };
-    morphWheel->onAltDragSample = [this] (float v) { processor.addUserMotionSample (v); };
-    morphWheel->onAltDragEnd    = [this] { processor.endUserMotionRecording(); };
+    // Re-placing the wheel restarts the modulation cycle from the new anchor.
+    morphWheel->onGestureEnd = [this] { processor.restartModCycleFromUi(); };
     secondaryWheel = std::make_unique<WheelControl> (processor.apvts, ParamID::q, strip, theme);
     morphReadout = std::make_unique<ValueReadout> ("morphReadout", theme);
     secondaryReadout = std::make_unique<ValueReadout> ("qReadout", theme);
-    // Bind so the readouts are real controls too: scroll / type / right-click menu.
     morphReadout->bindParameter (processor.apvts.getParameter (ParamID::morph));
     secondaryReadout->bindParameter (processor.apvts.getParameter (ParamID::q));
-    // AMOUNT: honest dose of the authored body (identity -> full) — the X3's
-    // thin ribbed thumbwheel ("make one of those thin wheels just like emu
-    // did. it should be amount", 2026-07-17; re-affirmed "the thin wheel
-    // stays", 2026-07-18). Spinner, no readout.
     amountWheel = std::make_unique<ThinWheel> (processor.apvts, ParamID::amount);
     amountWheel->onValueGesture = [this] (float v) { graph->showAmountCue (v); };
-    // The screen's one voice: menu picks, verbs, and preset loads announce in
-    // the AMOUNT-cue corner (2026-07-18).
     moveChip->onAnnounce = [this] (const juce::String& s) { graph->announce (s); };
-    moveChip->getMotionStep = [this] { return processor.getMotionStepForUi(); };
     seedButton   = std::make_unique<SeedButton> (theme);
     seedButton->onSeed = runSeed;
     takeButton   = std::make_unique<TakeButton> (theme);
-    // Same real-heard-audio drag pattern as takeView->onKeep above -- no
-    // offline render, the take is what you actually just heard.
     takeButton->onDragTake = [this] (juce::Component* source)
     {
         const auto f = processor.captureSmartTake();
@@ -134,20 +92,16 @@ PluginEditor::PluginEditor (PluginProcessor& p)
     };
     fiveDButton  = std::make_unique<FiveDButton> (processor.apvts, theme);
     labels       = std::make_unique<LabelsLayer> (theme);
-    // Keep typography live. A cached bitmap of the labels amplified the
-    // fractional-DPI glyph artifacts while the rest of the plate was resized.
     decalsLayer  = std::make_unique<DecalsLayer> (theme);
     decalsLayer->setBufferedToImage (true);
-
-    // z-order: faceplate (back) -> screen -> controls -> labels -> decals
     addAndMakeVisible (*faceplate);
     addAndMakeVisible (*graph);
-    addAndMakeVisible (*takeView);     // page 2 overlay; visibility toggled by setPage
-    addChildComponent (*moveView);     // page 2 (MOVE/PLAY) screen; shown by setPage
-    addChildComponent (*slotPad);      // pager RETIRED everywhere (Tyson: no pages)
-    addAndMakeVisible (*moveChip); // curated MOVE status chip -- added after graph, paints on top
-    addAndMakeVisible (*keySnapBox);
+    addAndMakeVisible (*takeView);
+    addChildComponent (*moveView);
+    addChildComponent (*slotPad);
+    addAndMakeVisible (*moveChip);
     addAndMakeVisible (*typeSelector);
+    addAndMakeVisible (*keySnapBox);   // after typeSelector: it sits on the bar
     addAndMakeVisible (*morphWheel);
     addAndMakeVisible (*secondaryWheel);
     addAndMakeVisible (*morphReadout);
@@ -157,8 +111,7 @@ PluginEditor::PluginEditor (PluginProcessor& p)
     addChildComponent (*takeButton);
     addChildComponent (*fiveDButton);
     addAndMakeVisible (*labels);
-    addAndMakeVisible (*decalsLayer);   // front-most: free text/boxes/lines
-
+    addAndMakeVisible (*decalsLayer);
 #if TRENCH_TABLE_STITCH_PANEL
     tableStitchButton = std::make_unique<juce::TextButton> ("TABLES");
     tableStitchButton->setTooltip ("Open the external raw-table stitcher");
@@ -167,28 +120,16 @@ PluginEditor::PluginEditor (PluginProcessor& p)
     tableStitchButton->onClick = [this] { openTableStitcher(); };
     addAndMakeVisible (*tableStitchButton);
 #endif
-
     setResizable (false, false);
     setSize (kEditorWidth, kEditorHeight);
-
-    // Don't hold keyboard focus — so keystrokes fall through to the host and the
-    // user can play notes on their keyboard without clicking out of the plugin.
     setWantsKeyboardFocus (false);
-
-    // Live data (curve + readouts) on the display refresh. No timer and no
-    // whole-editor repaint — each view repaints itself only when its input
-    // changes, so an idle editor does no work.
     vblank = std::make_unique<juce::VBlankAttachment> (this, [this] { onFrame(); });
-
-    setPage (0);   // start on the Player curve; hides the variant bank
-
+    setPage (0);
    #ifdef TRENCH_PLAYER_DIAGNOSTICS
-    startTimer (350);   // hand-edit hot-reload poll (dev builds only — release never ticks)
+    startTimer (350);
     rigPanel = std::make_unique<trench::ui::RigPanel> (processor, theme);
-    addAndMakeVisible (*rigPanel);   // voicing rig — pick SPACE/PAN by ear, write the numbers down
+    addAndMakeVisible (*rigPanel);
     authorView = std::make_unique<trench::ui::AuthorView> (processor, theme);
-    // The lab lives in its OWN floating window (separate panel), toggled by the
-    // rig's LAB button. authorView is the window's content; not a child here.
     rigPanel->onToggleLab = [this]
     {
         if (labWindow == nullptr)
@@ -196,20 +137,16 @@ PluginEditor::PluginEditor (PluginProcessor& p)
         labWindow->setVisible (! labWindow->isVisible());
         if (labWindow->isVisible()) labWindow->toFront (true);
     };
-    resized();   // rigPanel is built after setSize — lay it out now
+    resized();
    #endif
 }
-
 PluginEditor::~PluginEditor()
 {
 #if TRENCH_TABLE_STITCH_PANEL
-    // Only terminate a server launched by this editor. A separately started
-    // workstation server is not owned here and is left alone.
     if (tableStitchProcess != nullptr && tableStitchProcess->isRunning())
         tableStitchProcess->kill();
 #endif
 }
-
 #if TRENCH_TABLE_STITCH_PANEL
 void PluginEditor::openTableStitcher()
 {
@@ -220,7 +157,6 @@ void PluginEditor::openTableStitcher()
         graph->announce ("TABLES: tools/table_stitch_gui.py not found");
         return;
     }
-
     if (tableStitchProcess == nullptr || ! tableStitchProcess->isRunning())
     {
         tableStitchProcess = std::make_unique<juce::ChildProcess>();
@@ -230,7 +166,6 @@ void PluginEditor::openTableStitcher()
         command.add (script.getFullPathName());
         command.add ("--port");
         command.add ("8758");
-
         if (! tableStitchProcess->start (command, juce::ChildProcess::wantStdErr))
         {
             graph->announce ("TABLES: could not start table stitcher");
@@ -238,8 +173,6 @@ void PluginEditor::openTableStitcher()
             return;
         }
     }
-
-    // Give Python a moment to bind localhost before opening the external panel.
     juce::Component::SafePointer<PluginEditor> safeThis (this);
     juce::Timer::callAfterDelay (450, [safeThis]
     {
@@ -249,7 +182,6 @@ void PluginEditor::openTableStitcher()
     graph->announce ("TABLES: external raw-table panel opened");
 }
 #endif
-
 void PluginEditor::reloadLayoutFromDisk()
 {
    #ifdef TRENCH_PLAYER_DIAGNOSTICS
@@ -261,12 +193,11 @@ void PluginEditor::reloadLayoutFromDisk()
     else
     {
         f.getParentDirectory().createDirectory();
-        f.replaceWithText (currentLayout.toJson());   // starter = the current layout
+        f.replaceWithText (currentLayout.toJson());
     }
     layoutMtime = f.getLastModificationTime();
    #endif
 }
-
 void PluginEditor::timerCallback()
 {
    #ifdef TRENCH_PLAYER_DIAGNOSTICS
@@ -277,14 +208,11 @@ void PluginEditor::timerCallback()
     if (t == layoutMtime)
         return;
     layoutMtime = t;
-
-    // Re-overlay the hand-edited file and re-lay-out live — no rebuild.
     currentLayout = trench::UiLayout::fromJson (f.loadFileAsString());
     layoutComponents();
     repaint();
    #endif
 }
-
 void PluginEditor::resized()
 {
     layoutComponents();
@@ -296,41 +224,31 @@ void PluginEditor::resized()
     }
 #endif
 }
-
 void PluginEditor::layoutComponents()
 {
-    // Whole-UI typeface + weight, hand-editable live from ui_layout.json.
     trench::ui::uiFontFamily() = currentLayout.string ("fontFamily", trench::ui::kUiFontName);
     trench::ui::uiEmphasisFontFamily() = currentLayout.string ("fontFamilyEmphasis",
                                                                 trench::ui::kUiEmphasisFontName);
     trench::ui::uiBoldEnabled() = currentLayout.param ("fontBold", 0.0) > 0.5;
-
-    // The product faceplate stays at its authored size; the workstation is a separate app.
     const juce::Rectangle<int> base { 0, 0, kEditorWidth, kEditorHeight };
     faceplate->setBounds (base);
     labels->setBounds (base);
     labels->toFront (false);
     decalsLayer->toFront (false);
-
-    // Cover the mouth, never undershoot it: nearest-rounding let a half-pixel of
-    // the well's black floor peek out under a face (the marked "68.0" box).
     const auto rectOf = [this] (const char* id) { return theme.rect (id).getSmallestIntegerContainer(); };
     graph->setBounds (rectOf ("spectrumGrid"));
     takeView->setBounds (rectOf ("spectrumGrid"));
     moveView->setBounds (rectOf ("spectrumGrid"));
     slotPad->setBounds (rectOf ("slotPad"));
-    // One small status chip, top-left INSIDE the screen, over the curve.
-    // The screen itself (GraphDisplay) draws only the curve; this chip is a
-    // separate component layered on top (added after graph -> paints front).
     {
         const auto scr = rectOf ("spectrumGrid");
-        // One deliberate screen control: the dim Modulation-style tag parked
-        // bottom-left on the glass, exactly where the reference builds put it.
-        moveChip->setBounds (scr.getX() + 14, scr.getBottom() - 28, 178, 18);
+        moveChip->setBounds (scr.getX() + 14, scr.getBottom() - 28, scr.getWidth() - 28, 18);
     }
-    // The display bezel is the mechanism: KEY is engraved on its upper-right
-    // edge and candidate tabs descend just inside the glass.
-    keySnapBox->setBounds (214, 65, 74, 36);
+    {
+        // KEY perches ABOVE the BODY bar, right-aligned — its own quiet spot.
+        const auto sel = rectOf ("typeSelector");
+        keySnapBox->setBounds (sel.getRight() - 128, sel.getY() - 24, 128, 22);
+    }
     typeSelector->setBounds (rectOf ("typeSelector"));
     morphWheel->setBounds (rectOf ("morphWheel"));
     secondaryWheel->setBounds (rectOf ("qWheel"));
@@ -340,15 +258,11 @@ void PluginEditor::layoutComponents()
     seedButton->setBounds ({});
     takeButton->setBounds ({});
     fiveDButton->setBounds ({});
-
     decalsLayer->setBounds (base);
    #ifdef TRENCH_PLAYER_DIAGNOSTICS
     if (rigPanel != nullptr)
-        rigPanel->setBounds (40, 652, 440, 78);   // bare lower third, dev builds only
-    // authorView is content of the floating LabWindow — not laid out here.
+        rigPanel->setBounds (40, 652, 440, 78);
    #endif
-
-    // Per-element opacity (layout "opacity" field) — fade any control.
     const auto fade = [this] (juce::Component* c, const char* id) { if (c) c->setAlpha (theme.opacity (id)); };
     fade (graph.get(),        "spectrumGrid");
     fade (typeSelector.get(), "typeSelector");
@@ -357,102 +271,63 @@ void PluginEditor::layoutComponents()
     fade (morphReadout.get(), "morphReadout");
     fade (secondaryReadout.get(), "qReadout");
 }
-
 void PluginEditor::onFrame()
 {
     keySnapBox->refreshSuggestion();
-    // Per display refresh: push live engine state into the views. Each view
-    // no-ops when its input is unchanged, so an idle UI does no repainting.
-    //
-    // Read the lock-free snapshot the audio thread publishes — never the live
-    // engine. On a rare torn read we keep the previous frame's curve.
-    float coeffs[30] = {};
-    float boost = 1.0f;
-    if (processor.dspBridge.readUiSnapshot (coeffs, boost))
-    {
-        const double sr = processor.getSampleRate() > 0.0 ? processor.getSampleRate() : 48000.0;
-        graph->updateFromCoeffs (coeffs, boost, sr);
-        moveView->updateFromCoeffs (coeffs, boost, sr);
-    }
-    graph->setSlamMeter (processor.getOutClipForUi());
-
     const auto read = [this] (const char* paramID)
     {
         if (auto* v = processor.apvts.getRawParameterValue (paramID))
             return juce::jlimit (0.0f, 1.0f, v->load());
         return 0.0f;
     };
-    // amountWheel repaints itself through its ParameterAttachment.
-    // GraphDisplay reads motionOn/motionTile/motionDiv live for its own MOTION/TIME
-    // readout — no push needed from here.
-
+    // The response curve draws from the EFFECTIVE (modulated) morph/Q, so an
+    // armed modulation visibly plays the curve along with the wheel.
+    float coeffs[30] = {};
+    float boost = 1.0f;
+    const bool morphMoving = processor.isMorphModulatedForUi();
+    const bool qMovingNow  = processor.isQModulatedForUi();
+    const float baseMorph = processor.mapMorphForLoadedBody (
+        morphMoving ? processor.getEffectiveMorphForUi() : read (ParamID::morph));
+    const float baseQ     = processor.mapSecondaryForLoadedBody (
+        qMovingNow ? processor.getEffectiveQForUi() : read (ParamID::q));
+    if (processor.probeCurrentBodyForUi (baseMorph, baseQ, coeffs, boost))
+    {
+        // the probed coefficients live in the packed 39062.5 domain; plotting
+        // them at the host rate shifted every feature up to ~23% high in Hz
+        graph->updateFromCoeffs (coeffs, boost, TrenchRates::emuInternalRate);
+    }
+    graph->setSlamMeter (processor.getOutClipForUi());
     if (currentPage == 1)
-    {
-        // MOVE: upper rail = MOVE, lower rail = TIME (FREE or synced value text).
-        const float moveAmount = read (ParamID::moveTension);
-        morphWheel->setDisplayOverride (false, moveAmount);
-        morphReadout->setNormalised (moveAmount);
-
-        if (auto* tp = processor.apvts.getParameter (ParamID::moveTime))
-            secondaryWheel->setDisplayOverride (false, tp->getValue());
-        const int timeIdx = (int) processor.apvts.getRawParameterValue (ParamID::moveTime)->load();
-        secondaryReadout->setText (trench::gestureTimeName (
-            (trench::GestureTime) juce::jlimit (0, trench::kNumGestureTimes - 1, timeIdx)));
         moveView->refresh();
-    }
-    else
-    {
-        // SOUND: upper rail = MORPH, lower rail = Q. SLAM is driven by the canvas.
-        // The wheels follow the EFFECTIVE values whenever any engine modulates
-        // them — the processor's divergence flag is the single source of truth,
-        // so MOTION/MOVE visibly drive the wheels with no gate to go stale.
-        const bool moving = processor.isMorphModulatedForUi();
-        const float morphValue = moving ? processor.getEffectiveMorphForUi() : read (ParamID::morph);
-        morphWheel->setDisplayOverride (moving, morphValue);
-        morphReadout->setNormalised (morphValue);
-
-        const bool qMoving = processor.isQModulatedForUi();
-        const float qValue = qMoving ? processor.getEffectiveQForUi() : read (ParamID::q);
-        secondaryWheel->setDisplayOverride (qMoving, qValue);
-        secondaryReadout->setNormalised (qValue);
-    }
-
+    const bool moving = processor.isMorphModulatedForUi();
+    const float morphValue = moving ? processor.getEffectiveMorphForUi() : read (ParamID::morph);
+    morphWheel->setDisplayOverride (moving, morphValue);
+    morphReadout->setNormalised (morphValue);
+    const bool qMoving = processor.isQModulatedForUi();
+    const float qValue = qMoving ? processor.getEffectiveQForUi() : read (ParamID::q);
+    secondaryWheel->setDisplayOverride (qMoving, qValue);
+    secondaryReadout->setNormalised (qValue);
     const bool morphActive = morphWheel->isMouseOverOrDragging (true) || morphReadout->isMouseOverOrDragging (true);
     const bool secondaryActive = secondaryWheel->isMouseOverOrDragging (true) || secondaryReadout->isMouseOverOrDragging (true);
     morphReadout->setActive (morphActive);
     secondaryReadout->setActive (secondaryActive);
 }
-
 void PluginEditor::setPage (int page)
 {
     currentPage = juce::jlimit (0, 1, page);
-    const bool move = (currentPage == 1);   // pages retired; path kept for compat
-
+    const bool move = (currentPage == 1);
     graph->setVisible (! move);
-    moveView->setVisible (move);            // V1: MOVE = PLAY only (ROUTE shelved)
-    takeView->setVisible (false);           // Take/variant tray is not a V1 page
+    moveView->setVisible (move);
+    takeView->setVisible (false);
     moveChip->setVisible (true);
     slotPad->setActive (currentPage);
-
-    // Page-specific rails + labels: SOUND = MORPH + Q/SLAM, MOVE = MOVE/TIME.
-    morphWheel->setParameter (processor.apvts,
-                              move ? juce::String (ParamID::moveTension) : juce::String (ParamID::morph));
+    labels->setRailLabels ("MORPH (%)", "Q (%)");
     if (move)
-    {
-        secondaryWheel->setParameter (processor.apvts, ParamID::moveTime);
-        labels->setRailLabels ("MOVE", "TIME");
         moveView->refresh();
-    }
-    else
-    {
-        labels->setRailLabels ("MORPH (%)", "Q (%)");
-        secondaryWheel->setParameter (processor.apvts, ParamID::q);
-    }
 }
-
 void PluginEditor::refreshTake()
 {
     tray = processor.buildTakeTray (12);
     takeView->setSlots (tray);
-    takeView->setSelected (0);   // slot 01 = AS HEARD, selected by default
+    takeView->setSelected (0);
 }

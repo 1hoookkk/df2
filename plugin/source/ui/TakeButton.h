@@ -1,20 +1,9 @@
 #pragma once
-
 #include "Theme.h"
-
 #include <juce_gui_basics/juce_gui_basics.h>
 #include <functional>
-
 namespace trench::ui
 {
-
-// TAKE — drag it into the DAW. Always contains the last few seconds of the
-// real heard wet output (PluginProcessor::captureSmartTake), no offline
-// render, no tray. Same drag-distance-threshold pattern as TakeView's
-// existing per-cell drag, just for a single always-current take.
-//
-// A small dark recessed well (drawWell), matching SeedButton — a small
-// pressable/draggable hardware button, not a floating label.
 class TakeButton : public juce::Component
 {
 public:
@@ -25,17 +14,14 @@ public:
         setTitle ("Take");
         setHelpText ("Drag to capture what you just heard into your DAW");
     }
-
     void mouseEnter (const juce::MouseEvent&) override { hover = true; repaint(); }
     void mouseExit  (const juce::MouseEvent&) override { hover = false; repaint(); }
-
     void mouseDown (const juce::MouseEvent&) override
     {
         down = true;
         armedForDrag = false;
         repaint();
     }
-
     void mouseDrag (const juce::MouseEvent& e) override
     {
         if (armedForDrag) return;
@@ -46,30 +32,22 @@ public:
         if (onDragTake)
             onDragTake (this);
     }
-
     void mouseUp (const juce::MouseEvent&) override
     {
         down = false;
         armedForDrag = false;
         repaint();
     }
-
     void paint (juce::Graphics& g) override
     {
         drawHardwareKey (g, getLocalBounds().toFloat(), "TAKE", hover, down, t);
     }
-
-    // Fired once per drag gesture, past the distance threshold. `this` is
-    // passed as the drag source for performExternalDragDropOfFiles.
     std::function<void (juce::Component*)> onDragTake;
-
 private:
     Theme t;
     bool hover = false;
     bool down = false;
     bool armedForDrag = false;
-
     JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR (TakeButton)
 };
-
-} // namespace trench::ui
+}

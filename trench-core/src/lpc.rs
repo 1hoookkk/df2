@@ -1,51 +1,21 @@
-//! LPC capture: reduce a recorded sound (vowel, metal tube, resonant body) to
-//! its six dominant resonances — the actors of one corner.
-//!
-//! Pure-Rust LPC extraction: resample to
-//! 16 kHz, find the steady-state region, conditional pre-emphasis, Hamming
-//! window, 12th-order autocorrelation LPC (Levinson-Durbin), root the LPC
-//! polynomial (Durand-Kerner), keep the top-6 resonant poles in the formant
-//! band, then re-home each pole as a biquad at the runtime coefficient rate.
-//!
-//! All-pole model: vowels and struck/blown resonators are dominated by
-//! resonances (poles); zeros are left at the origin. No external deps.
-
 use crate::cartridge::CornerData;
 use crate::cascade::NUM_STAGES;
-
-// Analysis spans the full TRENCH actor range (sub→air), not just the voice
-// formant band — so bright material (hats, metal, breath) can populate the
-// air/RIP actor instead of being capped off at 7 kHz.
 const ANALYSIS_SR: f64 = 22050.0;
 const LPC_ORDER: usize = 14;
-// TRANSPARENCY (audit 2026-05-24): 0.0 = fit the RAW envelope. Pre-emphasis (0.97)
-// brightens the analysed spectrum to help estimate high formants, but the realised
-// filter is built straight from those poles with NO de-emphasis — and a 6-biquad
-// cascade has no room for a 7th de-emphasis pole — so any pre-emphasis tilts the
-// captured corner ~6 dB/oct bright and discards the low body (the "no body" the
-// user heard). 0.0 captures the true low body faithfully. NOTE: this changes the
-// old 2026-05-22 Talking-Hedz match, which was tuned to the brightened spectrum.
 const PRE_EMPH: f64 = 0.0;
 const FRAME_MS: f64 = 25.0;
 const HOP_MS: f64 = 10.0;
 const PEAK_RMS_TOL_DB: f64 = 3.0;
 const F_MIN_HZ: f64 = 90.0;
-// The packed runtime response and authoring grid both retain measured actors
-// through 16 kHz. Keeping the LPC candidate ceiling at 10 kHz silently drops
-// a real high actor from bright measured sources and makes the six-lane
-// contract impossible to satisfy.
 const F_MAX_HZ: f64 = 16000.0;
 const N_KEEP: usize = 6;
 const PASSTHROUGH: [f64; 5] = [2.0, 1.0, 2.0, 1.0, 1.0];
-
 #[derive(Clone, Copy, Debug)]
 pub struct Pole {
     pub freq_hz: f64,
     pub radius: f64,
     pub bw_hz: f64,
 }
-
-// ── minimal complex ──────────────────────────────────────────────────────────
 #[derive(Clone, Copy)]
 struct C {
     re: f64,
@@ -81,8 +51,6 @@ impl C {
         self.im.atan2(self.re)
     }
 }
-
-// ── resample (linear) to 16 kHz ──────────────────────────────────────────────
 fn resample_linear(x: &[f64], sr_in: f64, sr_out: f64) -> Vec<f64> {
     if (sr_in - sr_out).abs() < 1.0 || x.len() < 2 {
         return x.to_vec();
@@ -100,8 +68,6 @@ fn resample_linear(x: &[f64], sr_in: f64, sr_out: f64) -> Vec<f64> {
     }
     out
 }
-
-// ── longest steady-state run (RMS within tol of peak) ────────────────────────
 fn steady_state(x: &[f64], sr: f64) -> (usize, usize) {
     let frame_n = (FRAME_MS * 1e-3 * sr).round() as usize;
     let hop_n = (HOP_MS * 1e-3 * sr).round().max(1.0) as usize;
@@ -151,8 +117,6 @@ fn steady_state(x: &[f64], sr: f64) -> (usize, usize) {
     let e = ((best_start + best_len - 1) * hop_n + frame_n).min(x.len());
     (s, e)
 }
-
-// ── autocorrelation LPC via Levinson-Durbin ──────────────────────────────────
 pub(crate) fn lpc_levinson(x: &[f64], order: usize) -> Option<Vec<f64>> {
     let n = x.len();
     if n <= order {
@@ -168,8 +132,6 @@ pub(crate) fn lpc_levinson(x: &[f64], order: usize) -> Option<Vec<f64>> {
     }
     levinson_from_autocorr(&r, order)
 }
-
-/// Levinson-Durbin from a precomputed autocorrelation sequence r[0..=order].
 pub(crate) fn levinson_from_autocorr(r: &[f64], order: usize) -> Option<Vec<f64>> {
     if r.len() <= order || r[0] <= 0.0 {
         return None;
@@ -178,13 +140,11 @@ pub(crate) fn levinson_from_autocorr(r: &[f64], order: usize) -> Option<Vec<f64>
     a[0] = 1.0;
     let mut e = r[0];
     for i in 1..=order {
-        // reflection coefficient (uses current a[1..i])
         let mut acc = r[i];
         for j in 1..i {
             acc += a[j] * r[i - j];
         }
         let k = -acc / e;
-        // update with a fresh copy so the recursion reads OLD coefficients
         let prev = a.clone();
         for j in 1..i {
             a[j] = prev[j] + k * prev[i - j];
@@ -197,15 +157,11 @@ pub(crate) fn levinson_from_autocorr(r: &[f64], order: usize) -> Option<Vec<f64>
     }
     Some(a)
 }
-
-// ── roots of monic polynomial (Durand-Kerner) ────────────────────────────────
-// coeffs `a` are A(z) = 1 + a1 z^-1 + ... + ap z^-p; roots of z^p + a1 z^(p-1) + ... + ap.
 fn roots(a: &[f64]) -> Vec<C> {
-    let p = a.len() - 1; // degree
+    let p = a.len() - 1;
     if p == 0 {
         return vec![];
     }
-    // monic coeffs high→low: [1, a1, a2, ..., ap]
     let coeffs: Vec<C> = a.iter().map(|&c| C::new(c, 0.0)).collect();
     let eval = |z: C| -> C {
         let mut acc = C::new(0.0, 0.0);
@@ -214,7 +170,6 @@ fn roots(a: &[f64]) -> Vec<C> {
         }
         acc
     };
-    // init: (0.4 + 0.9i)^k
     let seed = C::new(0.4, 0.9);
     let mut zs = Vec::with_capacity(p);
     let mut cur = C::new(1.0, 0.0);
@@ -245,20 +200,9 @@ fn roots(a: &[f64]) -> Vec<C> {
     }
     zs
 }
-
-// Shared analysis: condition the sound and run order-`LPC_ORDER` LPC.
-// Returns (LPC polynomial A(z), kept resonant poles).
 fn analyze_lpc(samples: &[f64], sr_in: f64) -> Option<(Vec<f64>, Vec<Pole>)> {
     analyze_lpc_pe(samples, sr_in, PRE_EMPH, LPC_ORDER, false)
 }
-
-// As `analyze_lpc`, but with explicit pre-emphasis, LPC order, and a
-// `conditioned` flag for the authoring path. When `conditioned` is true the
-// caller has already cut and windowed the exact slice it wants fit (the Forge):
-// we then skip the internal steady-state hunt and the second window. That
-// matters — re-windowing an already-windowed slice (and steady-state-trimming a
-// tapered one to its centre) collapses the effective length and fattens every
-// pole. One window, one slice, faithful bandwidths.
 fn analyze_lpc_pe(
     samples: &[f64],
     sr_in: f64,
@@ -268,7 +212,7 @@ fn analyze_lpc_pe(
 ) -> Option<(Vec<f64>, Vec<Pole>)> {
     let x = resample_linear(samples, sr_in, ANALYSIS_SR);
     let seg: Vec<f64> = if conditioned {
-        x // exactly the caller's slice — no steady-state hunt
+        x
     } else {
         let (s, e) = steady_state(&x, ANALYSIS_SR);
         let seg = x[s..e].to_vec();
@@ -278,14 +222,11 @@ fn analyze_lpc_pe(
             seg
         }
     };
-    // pre-emphasis (off by default; flattens source tilt when used)
     let mut pre = vec![0.0f64; seg.len()];
     pre[0] = seg[0];
     for i in 1..seg.len() {
         pre[i] = seg[i] - pre_emph * seg[i - 1];
     }
-    // Window once. A conditioned slice is already windowed by the caller, so
-    // windowing again here would just narrow the effective length.
     if !conditioned {
         let n = pre.len();
         for (i, v) in pre.iter_mut().enumerate() {
@@ -297,7 +238,7 @@ fn analyze_lpc_pe(
     let mut cand: Vec<Pole> = Vec::new();
     for z in roots(&a) {
         if z.im <= 0.0 {
-            continue; // one per conjugate pair
+            continue;
         }
         let r = z.abs();
         if !(r > 0.0 && r < 1.0) {
@@ -314,43 +255,28 @@ fn analyze_lpc_pe(
             bw_hz: bw,
         });
     }
-    cand.sort_by(|p, q| q.radius.partial_cmp(&p.radius).unwrap()); // strongest first
+    cand.sort_by(|p, q| q.radius.partial_cmp(&p.radius).unwrap());
     cand.truncate(N_KEEP);
-    cand.sort_by(|p, q| p.freq_hz.partial_cmp(&q.freq_hz).unwrap()); // ascending freq
+    cand.sort_by(|p, q| p.freq_hz.partial_cmp(&q.freq_hz).unwrap());
     Some((a, cand))
 }
-
-/// Extract the top-N resonant poles from a recorded sound.
 pub fn extract_poles(samples: &[f64], sr_in: f64) -> Vec<Pole> {
     analyze_lpc(samples, sr_in)
         .map(|(_, p)| p)
         .unwrap_or_default()
 }
-
-/// Poles plus the spectral-valley (anti-resonance) frequencies, strongest first.
-/// For callers that build their own pole-zero sections — e.g. the Forge, which
-/// gives the zeros their bite (the character) rather than peak-taming each pole.
 pub fn extract_poles_and_valleys(samples: &[f64], sr_in: f64) -> (Vec<Pole>, Vec<f64>) {
     match analyze_lpc(samples, sr_in) {
         Some((a, poles)) => (poles, valley_freqs(&a)),
         None => (Vec::new(), Vec::new()),
     }
 }
-
-/// Authoring extraction: the caller (the Forge) has already cut and windowed the
-/// exact slice to fit, so skip the internal steady-state hunt and second window
-/// — one window, one slice → faithful (sharp) bandwidths instead of fat poles.
 pub fn extract_poles_and_valleys_conditioned(samples: &[f64], sr_in: f64) -> (Vec<Pole>, Vec<f64>) {
     match analyze_lpc_pe(samples, sr_in, PRE_EMPH, LPC_ORDER, true) {
         Some((a, poles)) => (poles, valley_freqs(&a)),
         None => (Vec::new(), Vec::new()),
     }
 }
-
-/// Diagnostic entry: same as `extract_poles_and_valleys` but with explicit
-/// pre-emphasis and LPC order, for sweeping the conditioning that best preserves
-/// both low and high formants at faithful bandwidth. Not part of the shipped fit
-/// path. `order = 0` uses the shipped default.
 #[doc(hidden)]
 pub fn extract_poles_and_valleys_pe(
     samples: &[f64],
@@ -364,10 +290,6 @@ pub fn extract_poles_and_valleys_pe(
         None => (Vec::new(), Vec::new()),
     }
 }
-
-// Spectral valleys = the anti-resonances (zeros). The envelope is 1/|A(e^jw)|,
-// so its valleys are the PEAKS of |A(e^jw)|. Returns valley frequencies (Hz),
-// strongest first.
 fn valley_freqs(a: &[f64]) -> Vec<f64> {
     let n = 600usize;
     let freqs: Vec<f64> = (0..n)
@@ -382,7 +304,7 @@ fn valley_freqs(a: &[f64]) -> Vec<f64> {
                 re += ak * (w * k as f64).cos();
                 im -= ak * (w * k as f64).sin();
             }
-            (re * re + im * im).sqrt() // |A| — peaks here = envelope valleys
+            (re * re + im * im).sqrt()
         })
         .collect();
     let mut v: Vec<(f64, f64)> = Vec::new();
@@ -391,21 +313,12 @@ fn valley_freqs(a: &[f64]) -> Vec<f64> {
             v.push((freqs[i], mag[i]));
         }
     }
-    v.sort_by(|x, y| y.1.partial_cmp(&x.1).unwrap()); // most prominent valleys first
+    v.sort_by(|x, y| y.1.partial_cmp(&x.1).unwrap());
     v.into_iter().map(|(f, _)| f).collect()
 }
-
-/// Fit a recorded sound to one corner: six pole-zero biquads (resonance +
-/// adjacent anti-resonance) re-homed at the runtime rate, in kernel form.
 pub fn fit_corner(samples: &[f64], sr_in: f64, runtime_sr: f64) -> CornerData {
     fit_corner_pe(samples, sr_in, runtime_sr, PRE_EMPH)
 }
-
-/// As `fit_corner`, with an explicit brightness tilt (pre-emphasis applied before
-/// the LPC). Lower tilt keeps a dark source's low-formant body — the F1 a high
-/// tilt trades away for a spurious air-band pole — while higher tilt spreads
-/// bright material across the band. The Forge sets this per corner from the
-/// source's measured brightness, with a manual override in INSPECT.
 pub fn fit_corner_pe(samples: &[f64], sr_in: f64, runtime_sr: f64, pre_emph: f64) -> CornerData {
     let Some((a, poles)) = analyze_lpc_pe(samples, sr_in, pre_emph, LPC_ORDER, false) else {
         return [PASSTHROUGH; NUM_STAGES];
@@ -413,21 +326,6 @@ pub fn fit_corner_pe(samples: &[f64], sr_in: f64, runtime_sr: f64, pre_emph: f64
     let zeros = valley_freqs(&a);
     realize_poles_zeros(&poles, &zeros, runtime_sr)
 }
-
-/// VOICE fit from an ALREADY-conditioned (cut + windowed) slice, with explicit
-/// pre-emphasis. This is the honest voice-capture path: pre-emphasis flattens the
-/// glottal + radiation source tilt (~−6 dB/oct) so the order-`LPC_ORDER` LPC poles
-/// land on the **vocal-tract formants** (F1/F2/F3…) instead of being dragged into
-/// the loud low-end energy — the failure that made a dropped "aaa" capture as body
-/// + hiss with no vowel. The `conditioned` flag means the caller (the Forge) has
-/// already sliced and Hann-windowed exactly what it wants fit, so the internal
-/// steady-state hunt and second window are skipped (one window → sharp, faithful
-/// formant bandwidths instead of fattened poles).
-///
-/// NOTE the deliberate trade (audit 2026-05-24): a 6-biquad cascade has no room for
-/// a 7th de-emphasis pole, so a non-zero `pre_emph` here leaves the realised corner
-/// tilted brighter than the raw source. For VOICE that is the point — formants over
-/// body. The neutral `fit_corner`/`fit_corner_conditioned` paths keep `PRE_EMPH=0`.
 pub fn fit_corner_conditioned_pe(
     samples: &[f64],
     sr_in: f64,
@@ -440,26 +338,17 @@ pub fn fit_corner_conditioned_pe(
     let zeros = valley_freqs(&a);
     realize_poles_zeros(&poles, &zeros, runtime_sr)
 }
-
-/// Build the six pole-zero biquads (in kernel form) from a set of resonant poles
-/// and spectral-valley zeros, then spread-normalize the cascade peak. Shared by
-/// every LPC fit entry so the realization is owned in exactly one place.
 fn realize_poles_zeros(poles: &[Pole], zeros: &[f64], runtime_sr: f64) -> CornerData {
-    const Z_RADIUS: f64 = 0.93; // notch depth/character
+    const Z_RADIUS: f64 = 0.93;
     let mut corner: CornerData = [PASSTHROUGH; NUM_STAGES];
     for (i, p) in poles.iter().take(NUM_STAGES).enumerate() {
-        // Natural radius from the captured bandwidth (varied Q = complexity).
-        // The Forge's DEPTH control pushes these toward the unit circle later.
         let rp = (-std::f64::consts::PI * p.bw_hz / runtime_sr)
             .exp()
             .clamp(0.5, 0.997);
         let tp = 2.0 * std::f64::consts::PI * p.freq_hz / runtime_sr;
         let a1 = -2.0 * rp * tp.cos();
         let a2 = rp * rp;
-        let g = 1.0 - rp * rp; // peak-tamed gain
-
-        // nearest spectral valley → a zero, but only if it's clearly OFF the
-        // pole (>~1/4 octave) so it carves a notch instead of cancelling it.
+        let g = 1.0 - rp * rp;
         let zero = zeros
             .iter()
             .copied()
@@ -476,20 +365,11 @@ fn realize_poles_zeros(poles: &[Pole], zeros: &[f64], runtime_sr: f64) -> Corner
         } else {
             (g, 0.0, 0.0)
         };
-        // kernel form (sos → kernel): c4=b0, c2=a1+2, c3=1-a2,
-        //   c0 = 2 + b1/b0, c1 = 1 - b2/b0
         corner[i] = [2.0 + b1 / b0, 1.0 - b2 / b0, a1 + 2.0, 1.0 - a2, b0];
     }
     normalize_corner_peak(&mut corner, runtime_sr, 0.5);
     corner
 }
-
-// Scale the cascade so its peak magnitude ≈ `target` — keeps audio at a sane,
-// consistent level across corners (and through the morph). The scalar gain is
-// spread evenly across the active stages (`g^(1/n)` per stage), not dumped on
-// one: the cascade is a product, so this is the same response with the gain
-// merely relocated, but it keeps every c4 inside the packable [0,4] minifloat
-// box instead of letting one stage's gain overflow and pack to silence.
 pub fn normalize_corner_peak(corner: &mut CornerData, sr: f64, target: f64) {
     let mag_at = |k: &[f64; 5], w: f64| -> f64 {
         let (c0, c1, c2, c3, c4) = (k[0], k[1], k[2], k[3], k[4]);
@@ -530,13 +410,9 @@ pub fn normalize_corner_peak(corner: &mut CornerData, sr: f64, target: f64) {
         }
     }
 }
-
 #[cfg(test)]
 mod tests {
     use super::*;
-
-    // Drive white noise through two known resonators (r<1) — the faithful
-    // "vowel / resonant body" case — and confirm LPC recovers the peaks.
     fn resonator(x: &[f64], f: f64, r: f64, sr: f64) -> Vec<f64> {
         let theta = 2.0 * std::f64::consts::PI * f / sr;
         let a1 = -2.0 * r * theta.cos();
@@ -557,7 +433,6 @@ mod tests {
         let sr = 16000.0;
         let n = 24000;
         let (f1, f2) = (700.0, 1800.0);
-        // deterministic white noise
         let mut seed = 0x1234_5678u64;
         let mut noise = vec![0.0f64; n];
         for v in noise.iter_mut() {
@@ -575,7 +450,6 @@ mod tests {
         assert!(near(f1), "missed F1≈700: {got:?}");
         assert!(near(f2), "missed F2≈1800: {got:?}");
     }
-
     #[test]
     fn fit_corner_is_finite_and_stable() {
         let sr = 16000.0;
@@ -591,7 +465,6 @@ mod tests {
             for c in stage {
                 assert!(c.is_finite());
             }
-            // a2 = 1 - c3 must be < 1 (stable pole)
             assert!(1.0 - stage[3] < 1.0);
         }
     }

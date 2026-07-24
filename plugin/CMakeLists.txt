@@ -75,6 +75,7 @@ juce_add_binary_data(TRENCHAssets
         assets/display_log_grid_rules.png
         assets/display_bitmap4613.png
         assets/thin_wheel_strip.png
+        assets/thin_wheel_panel_shadow.png
         assets/key_model_rtneural.json
         assets/bodies/identity.body240
         ${TRENCH_PRESET_BODY_FILES})
@@ -86,25 +87,20 @@ set(TRENCH_PLUGIN_SOURCES
     source/PluginEditor.cpp
     source/TrenchRates.h
     source/TrenchBodyRoster.h
-    source/SmartMotion.h
     source/UiLayout.h
     source/parameters/TrenchParameters.h
     source/parameters/TrenchParameters.cpp
-    source/parameters/MovePresets.h
     presets/PresetRoster.inc
     source/dsp/BiteStage.h
     source/dsp/CapturePlan.h
     source/dsp/CaptureRing.h
     source/dsp/FixedRateTrenchIsland.h
     source/dsp/FixedRateTrenchIsland.cpp
-    source/dsp/GestureEngine.h
     source/dsp/KeyDetector.h
     source/dsp/KeyDetector.cpp
-    source/dsp/MotionEngine.h
-    source/dsp/MoveMatrix.h
+    source/dsp/MorphMod.h
     source/dsp/SlamStage.h
     source/dsp/TakeWriter.h
-    source/dsp/TeleportEngine.h
     source/dsp/TrenchCleanBody.h
     source/dsp/TrenchDspBridge.h
     source/ui/DecalsLayer.h

@@ -1,20 +1,13 @@
 #pragma once
-
 #include "Theme.h"
-#include "../PluginProcessor.h"   // ParamID
-#include "../TrenchBodyRoster.h"  // bodyRoster / bodyDisplayName
-
+#include "SelectorLookAndFeel.h"
+#include "../PluginProcessor.h"
+#include "../TrenchBodyRoster.h"
 #include <juce_audio_processors/juce_audio_processors.h>
 #include <memory>
 #include <vector>
-
 namespace trench::ui
 {
-
-// The TYPE dropdown: warm plastic bar + body name + dashed-box arrow, with a
-// transparent ComboBox child bound to the body parameter by the standard
-// APVTS ComboBoxAttachment. We listen only to repaint our custom face when
-// the selection changes (from the user or from host automation).
 class TypeSelectorView : public juce::Component,
                          public juce::SettableTooltipClient,
                          private juce::ComboBox::Listener
@@ -30,53 +23,34 @@ public:
         setTooltip ("TYPE: choose the filter body");
         selector.setLookAndFeel (&menuLookAndFeel);
         selector.setInterceptsMouseClicks (false, false);
-        selector.setWantsKeyboardFocus (false);   // let keystrokes pass to the host (play notes without clicking out)
+        selector.setWantsKeyboardFocus (false);
         for (auto colourId : { juce::ComboBox::backgroundColourId, juce::ComboBox::outlineColourId,
                                juce::ComboBox::buttonColourId, juce::ComboBox::arrowColourId,
                                juce::ComboBox::textColourId })
             selector.setColour (colourId, juce::Colours::transparentBlack);
         selector.setTextWhenNothingSelected ({});
         populate();
-
-        // Standard APVTS binding (items must exist first). Handles user picks
-        // and host automation in both directions — no manual sync poll.
         attachment = std::make_unique<juce::AudioProcessorValueTreeState::ComboBoxAttachment> (
             apvts, ParamID::body, selector);
-
         selector.addListener (this);
         addAndMakeVisible (selector);
-
-        // The TYPE dropdown is the PRESET/body picker only — no action items.
-        // Seed is its own mode and Capture/Take is its own control (see the
-        // Player/Seed/Capture spec); neither belongs in the preset list.
     }
-
     ~TypeSelectorView() override
     {
         selector.setLookAndFeel (nullptr);
         selector.removeListener (this);
     }
-
-    // Action callbacks for the dropdown's non-body items (wired by the editor).
-    // Currently unused — the dropdown is body-picker only. Kept for future expansion.
     std::function<void()> onSeed;
     std::function<void()> onExportBody;
-
     void resized() override { selector.setBounds (getLocalBounds().reduced (3, 2)); }
-
     void mouseEnter (const juce::MouseEvent&) override { repaint(); }
     void mouseExit  (const juce::MouseEvent&) override { repaint(); }
     void mouseDown  (const juce::MouseEvent&) override
     {
-        refreshFromDisk();   // pick up any bodies dropped into Documents/TRENCH/bodies since last open
+        refreshFromDisk();
         showGroupedMenu();
         repaint();
     }
-
-    // Re-scan the on-disk bodies folder and rebuild the item list in place so a
-    // batch dropped while the plug-in is open appears without an FL restart.
-    // Message thread (mouse handler); selection is preserved and not renotified,
-    // so the APVTS attachment is untouched.
     void refreshFromDisk()
     {
         const int keep = selector.getSelectedId();
@@ -85,29 +59,21 @@ public:
         if (keep > 0)
             selector.setSelectedId (keep, juce::dontSendNotification);
     }
-
-    // Hover-audition row (2026-07-19, "I need to audition directly in the
-    // plugin"): highlighting a body LOADS it live — browse with your ears.
-    // Click commits; dismissing the menu restores the pre-menu body.
     class AuditionItem : public juce::PopupMenu::CustomComponent
     {
     public:
         AuditionItem (TypeSelectorView& owner, int bodyIdx, juce::String name, bool ticked)
             : juce::PopupMenu::CustomComponent (true),
               o (owner), idx (bodyIdx), label (std::move (name)), isTicked (ticked) {}
-
         void getIdealSize (int& w, int& h) override
         {
             w = juce::jmax (150, label.length() * 8 + 40); h = 22;
         }
-
         void paint (juce::Graphics& g) override
         {
             const bool hot = isItemHighlighted();
             if (hot && ! wasHot)
             {
-                // side-effect on highlight change: preview asynchronously
-                // (never mutate params inside paint)
                 auto safeOwner = juce::Component::SafePointer<TypeSelectorView> (&o);
                 const int i = idx;
                 juce::MessageManager::callAsync ([safeOwner, i]
@@ -117,55 +83,46 @@ public:
                 });
             }
             wasHot = hot;
-
             auto r = getLocalBounds().toFloat();
             if (hot)
             {
-                g.setColour (juce::Colour (0xffe9dfc6).withAlpha (0.10f));
+                g.setColour (juce::Colour (0xffcfe8de).withAlpha (0.10f));
                 g.fillRect (r.reduced (2.0f, 1.0f));
                 auto rail = r.reduced (2.0f, 1.0f); rail.setWidth (2.0f);
-                g.setColour (juce::Colour (0xffd98a36).withAlpha (0.85f));
+                g.setColour (juce::Colour (0xff2bd8c3).withAlpha (0.85f));
                 g.fillRect (rail);
             }
             if (isTicked)
             {
-                g.setColour (juce::Colour (0xffe9dfc6).withAlpha (0.85f));
+                g.setColour (juce::Colour (0xffcfe8de).withAlpha (0.85f));
                 g.fillRoundedRectangle (juce::Rectangle<float> (hot ? 6.0f : 2.0f, 4.0f, 3.0f, r.getHeight() - 8.0f), 1.0f);
             }
             g.setFont (displayFont (14.5f, false));
-            g.setColour (isTicked ? juce::Colour (0xfff4ecd8) : juce::Colour (0xffe9dfc6));
+            g.setColour (isTicked ? juce::Colour (0xffe4f2ec) : juce::Colour (0xffcfe8de));
             g.drawFittedText (label, getLocalBounds().reduced (12, 0),
                               juce::Justification::centredLeft, 1);
         }
-
     private:
         TypeSelectorView& o;
         int idx;
         juce::String label;
         bool isTicked, wasHot = false;
     };
-
     void previewBody (int idx)
     {
         selector.setSelectedItemIndex (idx, juce::sendNotificationSync);
     }
-
-    // The monolith fix (2026-07-19): 141 flat rows -> signature bodies up
-    // front, the mass families folded into submenus. Same cartridge panel
-    // styling, same attachment (selection goes through the ComboBox).
     void showGroupedMenu()
     {
         int count = 0;
         const auto* entries = trench::bodyRoster (count);
         const int current = selector.getSelectedId() - 1;
-
         struct Fam { const char* prefix; const char* label; };
         static constexpr Fam kFams[] = {
             { "VOWL_", "VOWELS" }, { "RISERL_", "RISERS" }, { "CAVL_", "CAVES" },
             { "X_", "CROSSES" }, { "three_layer", "LAYERS" }, { "FUZZ_", "FUZZ" },
             { "METALL_", "METAL" }, { "M0_", "HYBRIDS" },
         };
-
         juce::PopupMenu m;
         m.setLookAndFeel (&menuLookAndFeel);
         juce::PopupMenu fams[std::size (kFams)];
@@ -177,10 +134,6 @@ public:
             int itemCount = 0;
         };
         std::vector<FolderMenu> folders;
-
-        // Scanned Documents/TRENCH/bodies entries carry a full path as base.
-        // Their relative disk folder becomes the product menu folder instead
-        // of flattening the recent audition set into one USER bucket.
         auto isUser = [] (const char* base) { return juce::String (base).containsChar (':'); };
         auto famIndex = [&] (const char* base) -> int
         {
@@ -192,7 +145,6 @@ public:
                     return f;
             return -1;
         };
-
         auto folderFor = [&folders] (const juce::String& label) -> FolderMenu&
         {
             for (auto& folder : folders)
@@ -201,19 +153,16 @@ public:
             folders.push_back ({ label });
             return folders.back();
         };
-
         auto addToFolder = [&] (int index)
         {
             juce::String category (entries[index].category);
             if (category.isEmpty())
                 category = "USER";
             category = category.replaceCharacter ('\\', '/');
-
             const int slash = category.indexOfChar ('/');
             const auto top = slash >= 0 ? category.substring (0, slash) : category;
             const auto leaf = slash >= 0 ? category.substring (slash + 1) : juce::String();
             auto& folder = folderFor (top.isEmpty() ? juce::String ("USER") : top);
-
             juce::PopupMenu* destination = folder.menu.get();
             if (leaf.isNotEmpty())
             {
@@ -229,16 +178,12 @@ public:
                     destination = folder.children.back().second.get();
                 }
             }
-
             destination->addCustomItem (index + 1,
                                         std::make_unique<AuditionItem> (*this, index,
                                                                          entries[index].displayName,
                                                                          index == current));
             ++folder.itemCount;
         };
-
-        // top level: NO FILTER + every named/signature body (not in a family).
-        // Every row is an AuditionItem: highlight = hear it now.
         for (int i = 0; i < count; ++i)
             if (famIndex (entries[i].base) == -1)
                 m.addCustomItem (i + 1, std::make_unique<AuditionItem> (*this, i, entries[i].displayName, i == current));
@@ -251,10 +196,6 @@ public:
             else if (f == -2)
                 addToFolder (i);
         }
-
-        // Recent/user folders sit before the large legacy family menus. The
-        // current item state is still represented by the tick inside the row;
-        // the folder tick only tells the user where the active body lives.
         for (auto& folder : folders)
         {
             for (auto& child : folder.children)
@@ -266,12 +207,10 @@ public:
                               current >= 0 && isUser (entries[current].base)
                                   && juce::String (entries[current].category).startsWithIgnoreCase (folder.label));
         }
-
         for (int f = 0; f < (int) std::size (kFams); ++f)
             if (fams[f].getNumItems() > 0)
                 m.addSubMenu (kFams[(size_t) f].label, fams[f], true, nullptr,
                               current >= 0 && famIndex (entries[current].base) == f);
-
         juce::Component::SafePointer<TypeSelectorView> self (this);
         m.showMenuAsync (juce::PopupMenu::Options().withTargetComponent (this),
                          [self, current] (int id)
@@ -281,27 +220,16 @@ public:
                              if (id > 0)
                                  self->selector.setSelectedItemIndex (id - 1, juce::sendNotificationSync);
                              else if (current >= 0)
-                                 // dismissed without picking: undo the hover previews
                                  self->selector.setSelectedItemIndex (current, juce::sendNotificationSync);
                          });
     }
-
     void paint (juce::Graphics& g) override
     {
         const auto recess = getLocalBounds().toFloat();
-        // Edge-to-edge: the component rect IS the black opening; insets here
-        // read as a dark ring around the bar (Tyson 2026-07-11).
         const auto bar = recess;
         const bool hot = isMouseOverOrDragging (true) || selector.isPopupActive();
-
-        // Smoked bone selector bar painted into the machined plate's slot —
-        // the clean baseline (reverted 2026-07-17 after the light-pill and
-        // dark-pill experiments both lost to it).
         drawIvoryWell (g, bar, bar.getHeight() * 0.18f, hot, t);
         auto inner = bar.reduced (13.0f, 2.0f);
-
-        // The dropdown arrow box is its OWN layout rect, converted to this
-        // component's local coords. Falls back to a computed box if absent.
         juce::Rectangle<float> box;
         const auto arrowSrc = t.layout.sourceRectFor ("typeArrow");
         if (arrowSrc.getWidth() > 1.0f)
@@ -311,29 +239,18 @@ public:
             const float w = bar.getHeight() + t.typeArrowExtra();
             box = inner.removeFromRight (w).withSizeKeepingCentre (w - 8.0f, bar.getHeight() - 8.0f);
         }
-
-        // body name fills from the left up to the arrow box, with clear right breathing
-        // room before the divider so it never crowds the chevron.
         const auto textArea = juce::Rectangle<float> (inner.getX(), inner.getY(),
                                                       juce::jmax (10.0f, box.getX() - inner.getX() - 16.0f),
                                                       inner.getHeight());
         const auto selectedIndex = selector.getSelectedId() - 1;
         const auto typeText = selectedIndex >= 0 ? trench::bodyDisplayName (selectedIndex) : juce::String();
-        
-        // Large plain preset name, matching the reference UI's software-first
-        // hierarchy. The plate supplies the material; the text stays crisp.
-        g.setFont (displayFont (t.fontSize ("typeName", 17.0f), true));  // bold preset name like the golden face (2026-07-20)
+        g.setFont (displayFont (t.fontSize ("typeName", 17.0f), true));
         g.setColour (hot ? juce::Colours::black : t.textColour ("typeName", juce::Colour (0xff0b0b0b)));
         g.drawText (typeText, textArea.toNearestInt(),
                     juce::Justification::centredLeft, false);
-
-        // One clean divider before the arrow segment.
         g.setColour (juce::Colour (0xff6a6256).withAlpha (0.52f));
         g.drawLine (box.getX() - 3.5f, bar.getY() + 5.0f,
                     box.getX() - 3.5f, bar.getBottom() - 5.0f, 1.0f);
-
-        // Engraved chevron: light catch below the cut, ink on top — the same
-        // physical depth as the readout digits.
         const auto arrow = box.withSizeKeepingCentre (11.0f, 7.0f).translated (0.0f, 0.5f);
         juce::Path arrowPath;
         arrowPath.startNewSubPath (arrow.getX(), arrow.getY());
@@ -345,146 +262,22 @@ public:
         g.setColour (t.arrow());
         g.strokePath (arrowPath, juce::PathStrokeType (1.5f, juce::PathStrokeType::mitered, juce::PathStrokeType::butt));
     }
-
 private:
-    class MenuLookAndFeel final : public juce::LookAndFeel_V4
+    // one dropdown theme across the face: the shared teal-glass selector
+    class MenuLookAndFeel final : public SelectorLookAndFeel
     {
     public:
-        explicit MenuLookAndFeel (const Theme& theme) : t (theme) {}
-
-        void drawComboBox (juce::Graphics&, int, int, bool, int, int, int, int,
-                           juce::ComboBox&) override
-        {
-        }
-
-        juce::Font getComboBoxFont (juce::ComboBox&) override
-        {
-            return displayFont (14.5f, false);
-        }
-
-        juce::Font getPopupMenuFont() override
-        {
-            return displayFont (14.5f, false);
-        }
-
-        void drawPopupMenuBackground (juce::Graphics& g, int width, int height) override
-        {
-            const auto area = juce::Rectangle<float> (0.0f, 0.0f, (float) width, (float) height);
-
-            // A small hardware cartridge panel opening from the TYPE chip: warm
-            // graphite body (the machine's own dark family, not the retired navy)
-            // with a subtle vertical falloff and an inset machined bevel.
-            juce::ColourGradient body (juce::Colour (0xff37332c), 0.0f, 0.0f,
-                                       juce::Colour (0xff26231e), 0.0f, (float) height, false);
-            g.setGradientFill (body);
-            g.fillRect (area);
-
-            // inset bevel: light catches the top/left lip, shadow settles bottom/right
-            g.setColour (juce::Colour (0xff5a5348).withAlpha (0.85f));
-            g.drawLine (1.5f, 1.5f, (float) width - 1.5f, 1.5f, 1.0f);
-            g.drawLine (1.5f, 1.5f, 1.5f, (float) height - 1.5f, 1.0f);
-            g.setColour (juce::Colours::black.withAlpha (0.55f));
-            g.drawLine (1.5f, (float) height - 1.5f, (float) width - 1.5f, (float) height - 1.5f, 1.0f);
-            g.drawLine ((float) width - 1.5f, 1.5f, (float) width - 1.5f, (float) height - 1.5f, 1.0f);
-
-            // outer keyline seats the panel against whatever it opens over
-            g.setColour (juce::Colour (0xff14120e));
-            g.drawRect (area.reduced (0.5f), 1.0f);
-        }
-
-        void drawPopupMenuItem (juce::Graphics& g, const juce::Rectangle<int>& area,
-                                bool isSeparator, bool isActive, bool isHighlighted,
-                                bool isTicked, bool hasSubMenu, const juce::String& text,
-                                const juce::String&, const juce::Drawable*,
-                                const juce::Colour*) override
-        {
-            auto r = area.toFloat();
-            if (isSeparator)
-            {
-                // engraved groove: dark cut with a light lip below
-                r = r.reduced (9.0f, 0.0f).withHeight (1.0f).withCentre ({ r.getCentreX(), r.getCentreY() });
-                g.setColour (juce::Colours::black.withAlpha (0.50f));
-                g.fillRect (r);
-                g.setColour (juce::Colour (0xff5a5348).withAlpha (0.40f));
-                g.fillRect (r.translated (0.0f, 1.0f));
-                return;
-            }
-
-            const bool action = text.startsWithIgnoreCase ("seed") || text.startsWithIgnoreCase ("export");
-            if (isHighlighted && isActive)
-            {
-                // warm cream wash + amber rail — the panel's one signal colour
-                g.setColour (juce::Colour (0xffe9dfc6).withAlpha (0.10f));
-                g.fillRect (r.reduced (2.0f, 1.0f));
-
-                auto rail = r.reduced (2.0f, 1.0f);
-                rail.setWidth (2.0f);
-                g.setColour (juce::Colour (0xffd98a36).withAlpha (0.85f));   // amber signal
-                g.fillRect (rail);
-            }
-
-            if (isTicked)
-            {
-                // current body: small aged-cream chip, like a lit legend
-                g.setColour (juce::Colour (0xffe9dfc6).withAlpha (0.85f));
-                float leftOffset = isHighlighted ? 6.0f : 2.0f;
-                g.fillRoundedRectangle (r.removeFromLeft (4.0f).translated (leftOffset, 0.0f).reduced (1.0f, 4.0f), 1.0f);
-            }
-
-            const auto textArea = area.reduced (action ? 10 : 12, 0);
-            g.setFont (displayFont (action ? 13.0f : 14.5f, action));
-
-            // aged cream ink on the dark panel; disabled rows sink into the navy
-            juce::Colour textCol = isActive ? juce::Colour (0xffe9dfc6)
-                                            : juce::Colour (0xff5d6478);
-            if (isTicked)
-                textCol = juce::Colour (0xfff4ecd8);
-            g.setColour (textCol);
-
-            // Mixed case display
-            g.drawFittedText (text, textArea, juce::Justification::centredLeft, 1);
-
-            if (hasSubMenu)
-            {
-                const auto arrow = area.toFloat().removeFromRight (14.0f).withSizeKeepingCentre (5.0f, 8.0f);
-                juce::Path p;
-                p.startNewSubPath (arrow.getX(), arrow.getY());
-                p.lineTo (arrow.getRight(), arrow.getCentreY());
-                p.lineTo (arrow.getX(), arrow.getBottom());
-                g.setColour (juce::Colour (0xffe9dfc6).withAlpha (0.8f));
-                g.strokePath (p, juce::PathStrokeType (1.2f));
-            }
-        }
-
-        void getIdealPopupMenuItemSize (const juce::String& text, bool isSeparator,
-                                        int standardMenuItemHeight,
-                                        int& idealWidth, int& idealHeight) override
-        {
-            if (isSeparator)
-            {
-                idealWidth = 150;
-                idealHeight = 9;
-                return;
-            }
-
-            idealHeight = juce::jmax (standardMenuItemHeight, text.startsWithIgnoreCase ("seed") ? 24 : 27);
-            idealWidth = juce::jmax (165, text.length() * 8 + 34);
-        }
-
-    private:
-        Theme t;
+        explicit MenuLookAndFeel (const Theme&) {}
+        juce::Font getComboBoxFont (juce::ComboBox&) override { return displayFont (14.5f, false); }
     };
-
     static void drawTrackedText (juce::Graphics& g, const juce::String& text,
                                  juce::Rectangle<float> area, juce::Font font,
                                  juce::Colour colour, float tracking)
     {
         if (text.isEmpty())
             return;
-
         g.setFont (font);
         g.setColour (colour);
-
         const int n = text.length();
         const float rawWidth = juce::GlyphArrangement::getStringWidth (font, text);
         if (n > 1)
@@ -492,7 +285,6 @@ private:
                                      (area.getWidth() - rawWidth) / (float) (n - 1));
         else
             tracking = 0.0f;
-
         float x = area.getX();
         const float y = area.getCentreY() - font.getHeight() * 0.48f;
         for (int i = 0; i < n; ++i)
@@ -506,16 +298,12 @@ private:
                 break;
         }
     }
-
     void comboBoxChanged (juce::ComboBox*) override
     {
         if (onAnnounce)
             onAnnounce (selector.getText());
         repaint();
     }
-
-    // Scroll over TYPE = next/prev preset (2026-07-18): flip through the
-    // roster without opening the list — the FL audition workflow.
     void mouseWheelMove (const juce::MouseEvent&, const juce::MouseWheelDetails& w) override
     {
         const int n = selector.getNumItems();
@@ -525,12 +313,9 @@ private:
         const int idx = juce::jlimit (0, n - 1, selector.getSelectedItemIndex() + step);
         selector.setSelectedItemIndex (idx, juce::sendNotificationSync);
     }
-
 public:
     std::function<void (const juce::String&)> onAnnounce;
-
 private:
-
     void populate()
     {
         selector.clear (juce::dontSendNotification);
@@ -539,11 +324,9 @@ private:
         for (int i = 0; i < count; ++i)
             selector.addItem (entries[i].displayName, i + 1);
     }
-
     Theme t;
     MenuLookAndFeel menuLookAndFeel;
     juce::ComboBox selector;
     std::unique_ptr<juce::AudioProcessorValueTreeState::ComboBoxAttachment> attachment;
 };
-
-} // namespace trench::ui
+}

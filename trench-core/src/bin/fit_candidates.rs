@@ -1,21 +1,4 @@
-//! fit-candidates — one magnitude TF JSON -> exact per-stage candidate geometry.
-//!
-//! The candidate-extraction numerical owner: reads `{"freqs_hz": [...],
-//! "mag_db": [...]}` (the tf_ingest output shape), fits through the OWNED
-//! `arma::fit_corner_from_magnitude`, quantizes through the OWNED
-//! `minifloat::encode` word derivation (the same one packing uses), and
-//! classifies each stage exactly via `stage_law::geometry_from_words` —
-//! conjugate, real pair, or degenerate, never a silent projection. The
-//! residual is computed with the OWNED `response::biquad_cascade_complex`
-//! over the quantized words, so the metric describes what the runtime would
-//! actually play.
-//!
-//!   cargo run -p trench-core --bin fit-candidates -- <in.tf.json> <out.json>
-//!
-//! Exit codes: 0 ok · 1 invalid input / fit refused / stability gate failed.
-
 #![recursion_limit = "512"]
-
 use trench_core::arma::{
     fit_corner_from_magnitude, fit_corner_profiled_with_report, peak_normalize_curve_db,
     PackedRefinementReport, ResidualLaneBand, MACRO_SMOOTHING_OCTAVES,
@@ -28,38 +11,19 @@ use trench_core::response::biquad_cascade_complex;
 use trench_core::stage_law::{
     geometry_from_words, words_from_roots, RootPair, StageRoots, STAGE_SR,
 };
-
-const POLE_R_MAX: f64 = 0.9999; // runtime contract (filters/geometry.schema.json)
-
+const POLE_R_MAX: f64 = 0.9999;
 fn fail(msg: &str) -> ! {
     eprintln!("REFUSED: {msg}");
     std::process::exit(1);
 }
-
-// ── anatomy-constrained fit ─────────────────────────────────────────────────
-//
-// `--anatomy` forces the typed-grammar section anatomy on the six lanes:
-//   lane 0 = T3 low_zero_sub_cut  (bass boundary: zero pinned to the low rail)
-//   lanes 1..4 = T1 formant ridges (zero LOCKED to the pole frequency with a
-//                strictly lower radius, so the pole always rings — the zero
-//                cannot chase the pole to flatten it)
-//   lane 5 = T2 high_zero_cliff    (dark cap: zero pinned to the high rail)
-// The optimizer is generic glue (deterministic coordinate pattern search, the
-// tf_oracle precedent); ALL filter math flows through the owned stage_law
-// biquad and response::biquad_cascade_complex. Constraints are hard boxes —
-// a pole cannot leave its lane's law, so the fitter cannot cheat the residual
-// by collapsing anatomy into broadband mush.
-
-const RIDGE_SEP_OCT: f64 = 0.5; // rail separation the laws enforce
-const RIDGE_ZERO_R_GAP: f64 = 0.05; // ridge zero radius must sit below pole_r
-
+const RIDGE_SEP_OCT: f64 = 0.5;
+const RIDGE_ZERO_R_GAP: f64 = 0.05;
 #[derive(Clone, Copy)]
 struct LaneBox {
     law: &'static str,
     hz: (f64, f64),
     r: (f64, f64),
 }
-
 const ANATOMY: [LaneBox; 6] = [
     LaneBox {
         law: "low_zero_sub_cut",
@@ -92,9 +56,6 @@ const ANATOMY: [LaneBox; 6] = [
         r: (0.88, 0.98),
     },
 ];
-
-/// Params per lane: [pole_hz, pole_r, aux, scale] where aux = zero_r for
-/// ridges, zero_hz for sub-cut/cliff (their zero_r is fixed musically).
 fn lane_roots(li: usize, p: &[f64; 4]) -> StageRoots {
     let b = ANATOMY[li];
     let pole_hz = p[0].clamp(b.hz.0, b.hz.1);
@@ -103,14 +64,13 @@ fn lane_roots(li: usize, p: &[f64; 4]) -> StageRoots {
         "local_peak_notch" => StageRoots {
             pole_hz,
             pole_r,
-            zero_hz: pole_hz, // LOCKED co-located: T1 by construction
-            zero_r: p[2].clamp(0.0, pole_r - RIDGE_ZERO_R_GAP), // always rings
+            zero_hz: pole_hz,
+            zero_r: p[2].clamp(0.0, pole_r - RIDGE_ZERO_R_GAP),
             scale: p[3].clamp(0.02, 4.0),
         },
         "low_zero_sub_cut" => StageRoots {
             pole_hz,
             pole_r,
-            // zero on the LOW rail: at least RIDGE_SEP_OCT below the pole
             zero_hz: p[2].clamp(20.0, pole_hz / 2f64.powf(RIDGE_SEP_OCT)),
             zero_r: 0.99,
             scale: p[3].clamp(0.02, 4.0),
@@ -118,14 +78,12 @@ fn lane_roots(li: usize, p: &[f64; 4]) -> StageRoots {
         _ => StageRoots {
             pole_hz,
             pole_r,
-            // zero on the HIGH rail: at least RIDGE_SEP_OCT above the pole
             zero_hz: p[2].clamp(pole_hz * 2f64.powf(RIDGE_SEP_OCT), 18_000.0),
             zero_r: 0.93,
             scale: p[3].clamp(0.02, 4.0),
         },
     }
 }
-
 fn cascade_db(lanes: &[[f64; 4]; 6], freqs: &[f64], out: &mut [f64]) {
     let mut rows = [[0.0f64; NUM_COEFFS]; NUM_STAGES];
     for (li, p) in lanes.iter().enumerate() {
@@ -136,7 +94,6 @@ fn cascade_db(lanes: &[[f64; 4]; 6], freqs: &[f64], out: &mut [f64]) {
         out[i] = 10.0 * (re * re + im * im + 1e-30).log10();
     }
 }
-
 fn objective(lanes: &[[f64; 4]; 6], freqs: &[f64], dbs: &[f64], buf: &mut [f64]) -> f64 {
     cascade_db(lanes, freqs, buf);
     let mut acc = 0.0;
@@ -146,18 +103,7 @@ fn objective(lanes: &[[f64; 4]; 6], freqs: &[f64], dbs: &[f64], buf: &mut [f64])
     }
     acc / freqs.len() as f64
 }
-
-// ── T4 "formant" anatomy: untethered zeros + peak-weighted cost ─────────────
-//
-// The six POLES chase the tallest measured peaks; the six ZEROS are free to
-// drop into valleys or collapse to the origin (radius -> 0 = parked, no
-// interference). The cost is PEAK-WEIGHTED: points above the median magnitude
-// count up to (1 + PEAK_W)x, so matching a formant crest is rewarded even when
-// it costs plain RMS. Declared weighting applied to every candidate equally —
-// never a normalization of the audio.
-
 const PEAK_W: f64 = 4.0;
-
 fn peak_weights(dbs: &[f64]) -> Vec<f64> {
     let mut sorted: Vec<f64> = dbs.to_vec();
     sorted.sort_by(|a, b| a.partial_cmp(b).unwrap());
@@ -168,8 +114,6 @@ fn peak_weights(dbs: &[f64]) -> Vec<f64> {
         .map(|&d| 1.0 + PEAK_W * ((d - med) / span).clamp(0.0, 1.0))
         .collect()
 }
-
-/// Formant lane params: [pole_hz, pole_r, zero_hz, zero_r, scale].
 fn formant_roots(p: &[f64; 5]) -> StageRoots {
     let zero_r = p[3].clamp(0.0, 0.98);
     let parked = zero_r < 0.05;
@@ -185,7 +129,6 @@ fn formant_roots(p: &[f64; 5]) -> StageRoots {
         scale: p[4].clamp(0.02, 4.0),
     }
 }
-
 fn formant_objective(
     lanes: &[[f64; 5]; 6],
     freqs: &[f64],
@@ -210,8 +153,6 @@ fn formant_objective(
     }
     acc / wsum
 }
-
-/// Local extrema, best-first, min separation in octaves.
 fn extrema(freqs: &[f64], dbs: &[f64], maxima: bool, count: usize, sep_oct: f64) -> Vec<f64> {
     let mut cands: Vec<(f64, f64)> = Vec::new();
     for i in 1..freqs.len() - 1 {
@@ -240,7 +181,6 @@ fn extrema(freqs: &[f64], dbs: &[f64], maxima: bool, count: usize, sep_oct: f64)
     }
     picked
 }
-
 fn formant_fit(freqs: &[f64], dbs: &[f64]) -> [StageRoots; 6] {
     let peaks = extrema(freqs, dbs, true, 6, 0.3);
     let valleys = extrema(freqs, dbs, false, 6, 0.3);
@@ -251,7 +191,6 @@ fn formant_fit(freqs: &[f64], dbs: &[f64]) -> [StageRoots; 6] {
             .get(li)
             .copied()
             .unwrap_or(200.0 * 2f64.powi(li as i32));
-        // zeros seed in the valleys where available, otherwise parked at the origin
         let (zh, zr) = match valleys.get(li) {
             Some(&v) => (v, 0.85),
             None => (1000.0, 0.0),
@@ -317,12 +256,8 @@ fn formant_fit(freqs: &[f64], dbs: &[f64]) -> [StageRoots; 6] {
     }
     out
 }
-
-/// Deterministic peak seeding: the RIDGES start ON the measured formants
-/// (local maxima, tallest first, >= RIDGE_SEP_OCT apart) — musical peaks are
-/// the starting anatomy, not an accident of the solver.
 fn seed_peaks(freqs: &[f64], dbs: &[f64]) -> Vec<f64> {
-    let mut cands: Vec<(f64, f64)> = Vec::new(); // (db, hz)
+    let mut cands: Vec<(f64, f64)> = Vec::new();
     for i in 1..freqs.len() - 1 {
         if dbs[i] > dbs[i - 1] && dbs[i] >= dbs[i + 1] && freqs[i] >= 150.0 && freqs[i] <= 9000.0 {
             cands.push((dbs[i], freqs[i]));
@@ -354,19 +289,16 @@ fn seed_peaks(freqs: &[f64], dbs: &[f64]) -> Vec<f64> {
     picked.sort_by(|a, b| a.partial_cmp(b).unwrap());
     picked
 }
-
 fn anatomy_fit(freqs: &[f64], dbs: &[f64]) -> [StageRoots; 6] {
     let peaks = seed_peaks(freqs, dbs);
     let mut lanes: [[f64; 4]; 6] = [[0.0; 4]; 6];
-    lanes[0] = [120.0, 0.95, 50.0, 1.0]; // sub-cut
+    lanes[0] = [120.0, 0.95, 50.0, 1.0];
     for (k, &hz) in peaks.iter().enumerate() {
         let b = ANATOMY[1 + k];
-        lanes[1 + k] = [hz.clamp(b.hz.0, b.hz.1), 0.97, 0.6, 1.0]; // ridges ring from the start
+        lanes[1 + k] = [hz.clamp(b.hz.0, b.hz.1), 0.97, 0.6, 1.0];
     }
-    lanes[5] = [4000.0, 0.93, 12_000.0, 1.0]; // cap
+    lanes[5] = [4000.0, 0.93, 12_000.0, 1.0];
     let mut buf = vec![0.0f64; freqs.len()];
-
-    // analytic gain alignment: spread the mean dB offset across the six scales
     let align = |lanes: &mut [[f64; 4]; 6], buf: &mut [f64]| {
         cascade_db(lanes, freqs, buf);
         let off: f64 = buf.iter().zip(dbs).map(|(g, w)| w - g).sum::<f64>() / freqs.len() as f64;
@@ -376,9 +308,6 @@ fn anatomy_fit(freqs: &[f64], dbs: &[f64]) -> [StageRoots; 6] {
         }
     };
     align(&mut lanes, &mut buf);
-
-    // coordinate pattern search with shrinking steps; fully deterministic.
-    // steps per param kind: hz multiplicative (octaves), r additive, scale in dB.
     let mut best = objective(&lanes, freqs, dbs, &mut buf);
     let mut oct_step = 0.4f64;
     let mut r_step = 0.02f64;
@@ -396,9 +325,9 @@ fn anatomy_fit(freqs: &[f64], dbs: &[f64]) -> [StageRoots; 6] {
                             1 => trial[li][1] += r_step * dir,
                             2 => {
                                 if ANATOMY[li].law == "local_peak_notch" {
-                                    trial[li][2] += r_step * dir; // zero radius
+                                    trial[li][2] += r_step * dir;
                                 } else {
-                                    trial[li][2] *= 2f64.powf(oct_step * dir); // rail hz
+                                    trial[li][2] *= 2f64.powf(oct_step * dir);
                                 }
                             }
                             _ => trial[li][3] *= 10f64.powf(db_step * dir / 20.0),
@@ -419,14 +348,12 @@ fn anatomy_fit(freqs: &[f64], dbs: &[f64]) -> [StageRoots; 6] {
         r_step *= 0.5;
         db_step *= 0.5;
     }
-
     let mut out = [StageRoots::IDENTITY; 6];
     for li in 0..6 {
         out[li] = lane_roots(li, &lanes[li]);
     }
     out
 }
-
 fn main() {
     let mut args: Vec<String> = std::env::args().collect();
     let anatomy = args.iter().any(|a| a == "--anatomy");
@@ -453,7 +380,6 @@ fn main() {
         &std::fs::read_to_string(&inp).unwrap_or_else(|e| fail(&format!("read {inp}: {e}"))),
     )
     .unwrap_or_else(|e| fail(&format!("{inp} is not JSON: {e}")));
-
     let arr = |key: &str| -> Vec<f64> {
         v.get(key)
             .and_then(|a| a.as_array())
@@ -491,7 +417,6 @@ fn main() {
             fail("target peak normalization failed: no finite sample in the profiler fit band")
         });
     let aligned_dbs: Vec<f64> = input_curve.iter().map(|(_, db)| *db).collect();
-
     let profile_bands = profile_plan.as_ref().map(|path| {
         let plan_doc: serde_json::Value = serde_json::from_str(
             &std::fs::read_to_string(path)
@@ -578,11 +503,6 @@ fn main() {
             zero_r: read_radius(index + 1, "zero_radius", 0.995),
         })
     });
-
-    // words per stage — either the free ARMA factorization (kernel c0..c4 ->
-    // the ONE quantization the runtime sees, same derivation as
-    // PackedCorners::from_corner_data) or the anatomy-constrained fit
-    // (StageRoots -> words_from_roots, the law's forward direction).
     let kernel_to_words = |kernel: &[f64; 5]| -> [u16; 5] {
         let [c0, c1, c2, c3, c4] = *kernel;
         [
@@ -661,7 +581,6 @@ fn main() {
     for (si, &words) in words_list.iter().enumerate() {
         rows[si] = stage_words_to_biquad(words);
         let g = geometry_from_words(words);
-        // stability/finite gate on the EXACT decoded geometry
         let gate = |p: &RootPair, side: &str, rmax: f64| match p {
             RootPair::Conjugate { hz, r } => {
                 if !hz.is_finite() || !r.is_finite() || *r > rmax {
@@ -707,8 +626,6 @@ fn main() {
             "packed_words": words,
         }));
     }
-
-    // residual of the QUANTIZED cascade vs the input curve (owned response code)
     let mut sum2 = 0.0f64;
     let mut mx = 0.0f64;
     for (&f, &d) in freqs.iter().zip(&aligned_dbs) {
@@ -719,7 +636,6 @@ fn main() {
         mx = mx.max(e);
     }
     let rms = (sum2 / freqs.len() as f64).sqrt();
-
     let out = serde_json::json!({
         "tool": "fit-candidates",
         "tool_version": 6,

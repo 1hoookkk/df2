@@ -1,152 +1,90 @@
 #pragma once
-
 #include <juce_core/juce_core.h>
 #include <juce_graphics/juce_graphics.h>
-
 #include <map>
 #include <optional>
 #include <vector>
-
 namespace trench
 {
-
 struct UiElementLayout
 {
-    juce::Rectangle<float> sourceRect; // 1024x1591 source space
+    juce::Rectangle<float> sourceRect;
     std::optional<float> fontSize;
     std::optional<juce::Colour> textColour;
-    std::optional<juce::String> text;   // overrides a label's text string
-    std::optional<float> opacity;       // 0..1 alpha multiplier on the element
+    std::optional<juce::String> text;
+    std::optional<float> opacity;
 };
-
-// A free-form drawn element the layout can ADD (not just restyle existing ones):
-// a text run, a filled/outlined rect, or a line — anywhere, any colour.
 struct Decal
 {
-    juce::String type;                  // "text" | "rect" | "line"
-    juce::Rectangle<float> sourceRect;  // x,y,w,h in source space (line: start->start+wh)
+    juce::String type;
+    juce::Rectangle<float> sourceRect;
     juce::String text;
     juce::Colour colour { juce::Colours::white };
     float fontSize = 12.0f;
     float thickness = 1.5f;
     bool fill = false;
 };
-
-// Baked-in editor geometry / colour / scalar tokens. This was previously
-// hot-reloaded from a ui_layout.json file to feed an external browser editor;
-// that dev-tooling coupling has been removed. The values now live here as the
-// single source of truth, read once when the editor is built.
 class UiLayout
 {
 public:
-    // Rects are in 1024x1591 panel-source space (mapped to 360x560 editor space
-    // by Theme); scalars in `params` are editor-space; `colours` are AARRGGBB.
     static UiLayout defaults()
     {
         UiLayout layout;
-        // ONE well law (2026-07-11, measured — the earlier floor/lip debates are
-        // dead): every rect below is the recess MOUTH of the recut beige plate
-        // (1010x1557), read as the contiguous lum<90 run through each well's
-        // centre row/column. The art bakes floor + walls + bevel; components
-        // mount their face AT the mouth (edge-to-edge, proportional corner
-        // radius), wheels draw their 1:1 frame centred in it. Re-measure with
-        // the same probe if the art ever changes; never hand-nudge.
         layout.elements["morphWheel"]   = { { 115.0f, 680.0f, 428.0f, 92.0f }, {}, {} };
         layout.elements["qWheel"]       = { { 114.0f, 848.0f, 429.0f, 93.0f }, {}, {} };
-        // Window edges use the OUTERMOST wall extent (the recesses bow by a few
-        // px along their length — a median rect leaves wall showing at the
-        // bowed rows; "look at the preset on the right side").
-        // The photographed plate uses the compact, shallow selector from the
-        // approved thin-bar pass; the later enlarged cover was the mismatch.
-        // Golden compact face: keep a visible breath after BODY and reduce the
-        // selector to the shallow 20px editor bar, rather than letting its
-        // cover swell back into the label.
-        layout.elements["typeSelector"] = { { 230.0f, 139.0f, 674.0f, 68.0f },  {}, {} }; // clear gap off BODY (2026-07-20)
-        // The compact face keeps the readouts close to their wheels while
-        // giving the numerals enough horizontal room to stay readable.
+        layout.elements["typeSelector"] = { { 230.0f, 139.0f, 674.0f, 68.0f },  {}, {} };
         layout.elements["morphReadout"] = { { 582.0f, 697.0f, 190.0f, 77.0f },  20.0f, juce::Colour (0xff2a2722) };
         layout.elements["qReadout"]     = { { 582.0f, 858.0f, 190.0f, 77.0f },  20.0f, juce::Colour (0xff2a2722) };
-        layout.elements["spectrumGrid"] = { { 110.0f, 233.0f, 795.0f, 383.0f }, {}, {} }; // the screen opening
-        layout.elements["slotPad"]      = { { 699.0f, 240.0f, 112.0f, 26.0f }, {}, {} }; // retired pager (hidden)
-        layout.elements["modulateTag"]  = { { 149.0f, 456.0f, 430.0f, 56.0f }, {}, {} }; // clickable word on the glass
-        layout.elements["fiveDTag"]     = { { 149.0f, 511.0f, 430.0f, 52.0f }, {}, {} }; // 5D switch (hidden in V1 face)
+        layout.elements["spectrumGrid"] = { { 110.0f, 233.0f, 795.0f, 383.0f }, {}, {} };
+        layout.elements["slotPad"]      = { { 699.0f, 240.0f, 112.0f, 26.0f }, {}, {} };
+        layout.elements["modulateTag"]  = { { 149.0f, 456.0f, 430.0f, 56.0f }, {}, {} };
+        layout.elements["fiveDTag"]     = { { 149.0f, 511.0f, 430.0f, 52.0f }, {}, {} };
         layout.elements["filterLabel"]  = { { 0.0f, 0.0f, 0.0f, 0.0f },  11.5f, juce::Colour (0xff3a2f22) };
-        layout.elements["filterLabel"].text = "TRENCH";   // hidden — the nameplate carries the identity
-        // TYPE label rides close to the preset bar — near, not hugging.
+        layout.elements["filterLabel"].text = "TRENCH";
         layout.elements["typeLabel"]    = { { 102.0f, 139.0f, 100.0f, 74.0f },  15.0f, juce::Colour (0xff2a2722) };
         layout.elements["typeLabel"].text = "BODY";
         layout.elements["typeName"]     = { { 244.0f, 143.0f, 530.0f, 64.0f },  18.0f, juce::Colour (0xff2a2722) };
-        layout.elements["typeArrow"]    = { { 850.0f, 143.0f, 52.0f,  64.0f },  {}, {} }; // dropdown arrow box (the bar's divided end segment)
-        // Rail labels: the SAME measured vertical gap above each wheel well;
-        // darker engraved ink, MORPH clear of the display bezel.
+        layout.elements["typeArrow"]    = { { 850.0f, 143.0f, 52.0f,  64.0f },  {}, {} };
         layout.elements["morphLabel"]   = { { 114.0f, 640.0f, 434.0f, 38.0f },  17.0f, juce::Colour (0xff2a2722) };
         layout.elements["morphLabel"].text = "MORPH";
-        // Keep Q clear of the lower wheel mouth; the reference has a real
-        // breathing gap here, not a label tucked behind the roller.
         layout.elements["qLabel"]       = { { 114.0f, 798.0f, 434.0f, 38.0f },  17.0f, juce::Colour (0xff2a2722) };
         layout.elements["qLabel"].text = "Q";
-        // TRENCH top-left, seated just above the TYPE row like the X3's FILTER
-        // badge — part of the content, not floating at the plate rim. No
-        // sub-line anywhere ("MUSICAL FILTER" read as a second product name).
         layout.elements["brandLabel"]   = { { 100.0f, 73.0f, 230.0f, 44.0f }, 18.5f, juce::Colour (0xff0f0c09) };
         layout.elements["brandLabel"].text = "TRENCH";
-
-        // MIX (was AMOUNT) — hand-placed compact-face addition, not a measured
-        // well, so it's exempt from the never-hand-nudge rule. Nudged 8px left off
-        // the right edge so the wheel + label breathe (2026-07-21).
-        layout.elements["amountLabel"] = { { 826.0f, 640.0f, 110.0f, 30.0f },
-                                             11.5f, juce::Colour (0xff0d0b09) };
+        layout.elements["amountLabel"] = { { 830.0f, 656.0f, 110.0f, 30.0f },
+                                             13.5f, juce::Colour (0xff0d0b09) };
         layout.elements["amountLabel"].text = "MIX";
-        layout.elements["amountWheel"] = { { 856.0f, 678.0f, 48.0f, 257.0f }, {}, {} };
-
-        // Warm putty / blackened graphite / restrained ember. The live colour
-        // is deliberately dusty rather than neon, matching the earlier red
-        // clean-baseline display without turning the whole panel orange.
+        layout.elements["amountWheel"] = { { 872.0f, 700.0f, 26.0f, 214.0f }, {}, {} };
         layout.colours["accent"]             = juce::Colour (0xff9b4f4a);
         layout.colours["curveColour"]        = juce::Colour (0xffc96a54);
         layout.colours["curveHighlight"]     = juce::Colour (0xffeca688);
         layout.colours["telemetry"]          = juce::Colour (0xffa78680);
         layout.colours["rollerIllumination"] = juce::Colour (0xff2bd8c3);
-        layout.colours["modulationLamp"]     = juce::Colour (0xffb86a2b);
+        layout.colours["modulationLamp"]     = juce::Colour (0xff2bd8c3);
         layout.colours["phosphor"]           = juce::Colour (0xff1b1715);
         layout.colours["amber"]              = juce::Colour (0xffa9554e);
         layout.colours["dashed"]             = juce::Colour (0xff514743);
         layout.colours["screenEdge"]         = juce::Colour (0xff100d0c);
-        layout.colours["labelInk"]    = juce::Colour (0xff24231f); // warm charcoal type
-
+        layout.colours["labelInk"]    = juce::Colour (0xff24231f);
         layout.params["wellRadius"]        = 9.0;
-        layout.params["readoutAliasScale"] = 0.95; // crisp numerals without a fuzzy LCD halo
+        layout.params["readoutAliasScale"] = 0.95;
         layout.params["typeArrowExtra"]    = 6.0;
-        layout.params["curveDbTop"]        = 40.0;   // keep high-Q bodies inside the hardware display
+        layout.params["curveDbTop"]        = 40.0;
         layout.params["curveDbBottom"]     = -40.0;
-        layout.params["fontBold"]          = 1.0;    // bold only where displayFont asks for emphasis
-
-        // Return to the highly legible sweet-spot hierarchy: neutral regular
-        // copy, commercially firm labels and values, no blanket poster weight.
+        layout.params["fontBold"]          = 1.0;
         layout.strings["fontFamily"] = "Arial";
         layout.strings["fontFamilyEmphasis"] = "Arial";
         return layout;
     }
-
-    // Overlay a ui_layout.json document onto the baked defaults. Schema:
-    //   {"elements":{"<id>":{"rect":[x,y,w,h],"fontSize":N?,"textColor":"AARRGGBB"?}},
-    //    "colours":{"<name>":"AARRGGBB"}, "params":{"<name>":number}}
-    // Missing keys keep their default. The "See Your Plugin" hot-reload bridge;
-    // only read when TRENCH_PLAYER_DIAGNOSTICS is compiled in.
     static UiLayout fromJson (const juce::String& jsonText)
     {
         UiLayout layout = defaults();
-        // Keep the parsed var alive for the whole function — getDynamicObject()
-        // returns a pointer INTO it, so a temporary here would dangle and every
-        // lookup below would read freed memory (silently falling back to defaults).
         const juce::var root = juce::JSON::parse (jsonText);
         auto* obj = root.getDynamicObject();
         if (obj == nullptr)
             return layout;
-
         auto hex = [] (const juce::var& v)
         { return juce::Colour ((juce::uint32) v.toString().getHexValue32()); };
-
         if (auto* els = obj->getProperty ("elements").getDynamicObject())
             for (auto& p : els->getProperties())
             {
@@ -166,20 +104,15 @@ public:
                         el.opacity = (float) (double) eo->getProperty ("opacity");
                 }
             }
-
         if (auto* cols = obj->getProperty ("colours").getDynamicObject())
             for (auto& p : cols->getProperties())
                 layout.colours[p.name.toString()] = hex (p.value);
-
         if (auto* pars = obj->getProperty ("params").getDynamicObject())
             for (auto& p : pars->getProperties())
                 layout.params[p.name.toString()] = (double) p.value;
-
         if (auto* strs = obj->getProperty ("strings").getDynamicObject())
             for (auto& p : strs->getProperties())
                 layout.strings[p.name.toString()] = p.value.toString();
-
-        // Free decals — the layout can add its own drawn elements.
         if (auto* arr = obj->getProperty ("decals").getArray())
         {
             layout.decals.clear();
@@ -200,16 +133,11 @@ public:
                     layout.decals.push_back (dec);
                 }
         }
-
         return layout;
     }
-
-    // Serialize the current layout to the ui_layout.json schema fromJson() reads, so
-    // the editor can drop a hand-editable starting file (the See Your Plugin bridge).
     juce::String toJson() const
     {
         auto* root = new juce::DynamicObject();
-
         auto* els = new juce::DynamicObject();
         for (const auto& e : elements)
         {
@@ -225,80 +153,66 @@ public:
             els->setProperty (e.first, juce::var (eo));
         }
         root->setProperty ("elements", juce::var (els));
-
         auto* cols = new juce::DynamicObject();
         for (const auto& c : colours)
             cols->setProperty (c.first, juce::String::toHexString ((int) c.second.getARGB()));
         root->setProperty ("colours", juce::var (cols));
-
         auto* pars = new juce::DynamicObject();
         for (const auto& p : params)
             pars->setProperty (p.first, p.second);
         root->setProperty ("params", juce::var (pars));
-
         auto* strs = new juce::DynamicObject();
         for (const auto& s : strings)
             strs->setProperty (s.first, s.second);
         root->setProperty ("strings", juce::var (strs));
-
         return juce::JSON::toString (juce::var (root), false);
     }
-
     juce::Rectangle<float> sourceRectFor (const juce::String& id,
                                           juce::Rectangle<float> fallback = {}) const
     {
         const auto it = elements.find (id);
         return it != elements.end() ? it->second.sourceRect : fallback;
     }
-
     std::optional<float> fontSizeFor (const juce::String& id) const
     {
         const auto it = elements.find (id);
         return it != elements.end() ? it->second.fontSize : std::nullopt;
     }
-
     std::optional<juce::Colour> textColourFor (const juce::String& id) const
     {
         const auto it = elements.find (id);
         return it != elements.end() ? it->second.textColour : std::nullopt;
     }
-
     juce::String textFor (const juce::String& id, const juce::String& fallback) const
     {
         const auto it = elements.find (id);
         return it != elements.end() && it->second.text ? *it->second.text : fallback;
     }
-
     float opacityFor (const juce::String& id) const
     {
         const auto it = elements.find (id);
         return it != elements.end() && it->second.opacity
                    ? juce::jlimit (0.0f, 1.0f, *it->second.opacity) : 1.0f;
     }
-
     juce::Colour colour (const juce::String& id, juce::Colour fallback) const
     {
         const auto it = colours.find (id);
         return it != colours.end() ? it->second : fallback;
     }
-
     double param (const juce::String& id, double fallback) const
     {
         const auto it = params.find (id);
         return it != params.end() ? it->second : fallback;
     }
-
     juce::String string (const juce::String& id, const juce::String& fallback) const
     {
         const auto it = strings.find (id);
         return it != strings.end() && it->second.isNotEmpty() ? it->second : fallback;
     }
-
     std::map<juce::String, UiElementLayout> elements;
     std::map<juce::String, juce::Colour> colours;
     std::map<juce::String, double> params;
     std::map<juce::String, juce::String> strings;
     std::vector<Decal> decals;
 };
-
-} // namespace trench
+}

@@ -1,51 +1,23 @@
-//! TRENCH transfer-function oracle — clean-room-capable system-ID / authoring
-//! pipeline built entirely on the owned `trench-core` packed runtime.
-//!
-//! Turns controlled black-box (or authored-physical) dry/wet captures at a
-//! sampled Morph×Q grid into: a complex transfer-function dataset, a jointly
-//! fitted four-corner six-lane packed `.body240`, packed-runtime train/held-out
-//! metrics, and an audio/null proof bundle.
-//!
-//! ONE kernel: `trench-core` owns packing, packed-u16 interpolation, decode,
-//! serial response, certification. This bin adds only *generic* glue — FFT,
-//! Welch cross-spectrum estimation, a Schroeder multisine, a pattern-search
-//! fitter, WAV/SVG/JSON — none of which re-implements filter math. Candidate
-//! response ALWAYS flows `params -> stage_law::words_from_geometry -> 240 bytes
-//! -> PackedCorners::interpolate_biquad -> response::biquad_cascade_complex`.
-//!
-//! Subcommands: prepare | synth | estimate | fit | verify | bundle | run.
-//!   cargo run -p trench-core --bin tf-oracle -- run --session <id> [--oracle path]
-//!
-//! Artifacts land under dev/tmp/tf_oracle/<session_id>/.
-
 use std::f64::consts::TAU;
 use std::path::{Path, PathBuf};
-
 use trench_core::cartridge::CornerData;
 use trench_core::cascade::{Cascade, NUM_COEFFS, NUM_STAGES};
 use trench_core::compiler::{biquad_to_words, section_biquad, TYPE_NOTCH, TYPE_PEAK};
 use trench_core::minifloat::{pole_radius, PackedCorners};
 use trench_core::response::{biquad_cascade_complex, log_frequency_grid};
 use trench_core::stage_law::{words_from_geometry, RootPair, StageGeometry, STAGE_SR};
-
-// ── capture / grid constants ────────────────────────────────────────────────
-
-const SR: f64 = STAGE_SR; // 39062.5 Hz island rate (OBSERVED TrenchRates::emuInternalRate)
-const PERIOD: usize = 8192; // multisine period (bin spacing = SR/PERIOD ≈ 4.77 Hz)
-const WARM_PERIODS: usize = 2; // discarded warm-up periods
-const MEAS_PERIODS: usize = 8; // averaged measurement periods
+const SR: f64 = STAGE_SR;
+const PERIOD: usize = 8192;
+const WARM_PERIODS: usize = 2;
+const MEAS_PERIODS: usize = 8;
 const F_LO: f64 = 30.0;
 const F_HI: f64 = 16_000.0;
 const GRID: [f64; 9] = [0.0, 0.125, 0.25, 0.375, 0.5, 0.625, 0.75, 0.875, 1.0];
-const LEVEL_A: f64 = 0.20; // primary peak (~-14 dBFS)
-const LEVEL_B: f64 = 0.10; // secondary peak (~-20 dBFS), LTI probe
+const LEVEL_A: f64 = 0.20;
+const LEVEL_B: f64 = 0.10;
 const COHERENCE_MIN: f64 = 0.98;
-const OBJ_BINS: usize = 256; // log-spaced subsample used by the optimizer
-
+const OBJ_BINS: usize = 256;
 const CORNER_LABELS: [&str; 4] = ["M0_Q0", "M100_Q0", "M0_Q100", "M100_Q100"];
-
-// ── complex helpers (tuple form, no external crate) ─────────────────────────
-
 type Cf = (f64, f64);
 #[inline]
 fn cmul(a: Cf, b: Cf) -> Cf {
@@ -55,10 +27,6 @@ fn cmul(a: Cf, b: Cf) -> Cf {
 fn cabs(a: Cf) -> f64 {
     (a.0 * a.0 + a.1 * a.1).sqrt()
 }
-
-// ── SHA-256 (repo-standard implementation, lifted verbatim from
-//    workstation/src/hash.rs — dependency-free, KAT-checked below) ───────────
-
 fn sha256_hex(bytes: &[u8]) -> String {
     const K: [u32; 64] = [
         0x428a2f98, 0x71374491, 0xb5c0fbcf, 0xe9b5dba5, 0x3956c25b, 0x59f111f1, 0x923f82a4,
@@ -133,15 +101,6 @@ fn sha256_hex(bytes: &[u8]) -> String {
     }
     out
 }
-
-// ── WAV: mono 32-bit IEEE float, absolute amplitude preserved exactly ────────
-//
-// 32-bit float (WAVE_FORMAT_IEEE_FLOAT) — the format real DAW bounces use — so
-// the capture carries the true sample values with no quantization floor and no
-// normalization. PCM16 spreads a 9000-bin multisine so thin that notch bins sink
-// into the 16-bit floor; float removes that entirely. The reader also accepts
-// PCM16 for real external captures that ship 16-bit.
-
 fn wav_write_mono(path: &Path, samples: &[f32], sr: u32) {
     let mut b = Vec::with_capacity(44 + samples.len() * 4);
     let dl = (samples.len() * 4) as u32;
@@ -149,8 +108,8 @@ fn wav_write_mono(path: &Path, samples: &[f32], sr: u32) {
     b.extend_from_slice(&(36 + dl).to_le_bytes());
     b.extend_from_slice(b"WAVEfmt ");
     b.extend_from_slice(&16u32.to_le_bytes());
-    b.extend_from_slice(&3u16.to_le_bytes()); // IEEE float
-    b.extend_from_slice(&1u16.to_le_bytes()); // mono
+    b.extend_from_slice(&3u16.to_le_bytes());
+    b.extend_from_slice(&1u16.to_le_bytes());
     b.extend_from_slice(&sr.to_le_bytes());
     b.extend_from_slice(&(sr * 4).to_le_bytes());
     b.extend_from_slice(&4u16.to_le_bytes());
@@ -162,7 +121,6 @@ fn wav_write_mono(path: &Path, samples: &[f32], sr: u32) {
     }
     std::fs::write(path, b).expect("write wav");
 }
-
 fn wav_read_mono(path: &Path) -> Vec<f32> {
     let bytes = std::fs::read(path).expect("read wav");
     let mut fmt = 3u16;
@@ -196,13 +154,9 @@ fn wav_read_mono(path: &Path) -> Vec<f32> {
     }
     panic!("no data chunk in {}", path.display());
 }
-
-// ── radix-2 iterative FFT (generic spectral tool, not filter math) ──────────
-
 fn fft(re: &mut [f64], im: &mut [f64], inverse: bool) {
     let n = re.len();
     assert!(n.is_power_of_two());
-    // bit-reversal permutation
     let mut j = 0usize;
     for i in 1..n {
         let mut bit = n >> 1;
@@ -247,31 +201,17 @@ fn fft(re: &mut [f64], im: &mut [f64], inverse: bool) {
         }
     }
 }
-
-// ── Schroeder-phase multisine excitation ────────────────────────────────────
-//
-// Deterministic broadband periodic excitation: every FFT bin in [F_LO, F_HI]
-// is excited at unit magnitude with Schroeder phases (low crest factor), so
-// energy sits EXACTLY on bins — no leakage — and Welch averaging over the
-// repeated periods yields an unbiased complex H(f) plus coherence. This is the
-// right method for LTI complex-TF ID on a fixed-rate path: flat on-bin drive,
-// high SNR at a safe level, periodic (rectangular window is exact).
-
 fn excited_bins() -> Vec<usize> {
     let k_lo = (F_LO * PERIOD as f64 / SR).ceil() as usize;
     let k_hi = (F_HI * PERIOD as f64 / SR).floor() as usize;
     (k_lo..=k_hi.min(PERIOD / 2 - 1)).collect()
 }
-
 fn bin_hz(k: usize) -> f64 {
     k as f64 * SR / PERIOD as f64
 }
-
-/// One period of the Schroeder multisine, peak-scaled to `peak`.
 fn multisine_period(peak: f64) -> Vec<f64> {
     let bins = excited_bins();
     let m = bins.len();
-    // Schroeder phases φ_k = -π (i)(i-1)/M over the excited set index i.
     let mut phases = vec![0.0f64; m];
     for (idx, ph) in phases.iter_mut().enumerate() {
         let i = (idx + 1) as f64;
@@ -293,8 +233,6 @@ fn multisine_period(peak: f64) -> Vec<f64> {
     }
     x
 }
-
-/// Full excitation: warm-up + measurement periods concatenated (periodic).
 fn excitation_signal(peak: f64) -> Vec<f32> {
     let period = multisine_period(peak);
     let total = (WARM_PERIODS + MEAS_PERIODS) * PERIOD;
@@ -304,20 +242,8 @@ fn excitation_signal(peak: f64) -> Vec<f32> {
     }
     out
 }
-
-// ── body <-> params <-> geometry ────────────────────────────────────────────
-//
-// Fitter variables: per (corner 0..4, stage 0..6) a 5-tuple
-//   [zero_p, zero_q, pole_p, pole_q, scale]
-// i.e. the monic quadratic coefficients of the numerator and denominator pairs
-// (1 + p z⁻¹ + q z⁻²) plus SCALE=b0. This continuously spans BOTH conjugate and
-// real root pairs; the pair TYPE is an exact classification of (p,q), never a
-// silent clamp. `classify_pair` mirrors stage_law::pair_geometry so a real pair
-// is packed AS a RealPair through the owned `words_from_geometry`.
-
-const PPS: usize = 5; // params per stage
-const NPARAM: usize = 4 * NUM_STAGES * PPS; // 120
-
+const PPS: usize = 5;
+const NPARAM: usize = 4 * NUM_STAGES * PPS;
 fn classify_pair(p: f64, q: f64) -> RootPair {
     if p == 0.0 && q == 0.0 {
         return RootPair::Degenerate;
@@ -338,22 +264,14 @@ fn classify_pair(p: f64, q: f64) -> RootPair {
         }
     }
 }
-
-/// Clamp a stage's params into the packable + stable box, in place.
 fn clamp_stage(s: &mut [f64]) {
-    // zero pair: q∈[0,1], p∈[-2,2] (covers DC/Nyquist real double-zeros & notches)
     s[1] = s[1].clamp(0.0, 1.0);
     s[0] = s[0].clamp(-2.0, 2.0);
-    // pole pair: q∈[0, 0.990] (radius ≤ ~0.995, bandwidth ≥ ~62 Hz). Capped to
-    // what the capture+objective grid can resolve, so no razor resonance hides
-    // between objective samples. stability |p| < 1+q.
     s[3] = s[3].clamp(0.0, 0.990);
     let lim = (1.0 + s[3]) - 1e-4;
     s[2] = s[2].clamp(-lim, lim);
-    // scale = b0 ∈ [0,4]
     s[4] = s[4].clamp(0.0, 4.0);
 }
-
 fn stage_words(s: &[f64]) -> [u16; NUM_COEFFS] {
     let g = StageGeometry {
         zero: classify_pair(s[0], s[1]),
@@ -362,7 +280,6 @@ fn stage_words(s: &[f64]) -> [u16; NUM_COEFFS] {
     };
     words_from_geometry(&g)
 }
-
 fn params_to_packed(params: &[f64]) -> PackedCorners {
     let mut words = [[[0u16; NUM_COEFFS]; NUM_STAGES]; 4];
     for ci in 0..4 {
@@ -373,14 +290,9 @@ fn params_to_packed(params: &[f64]) -> PackedCorners {
     }
     PackedCorners { words }
 }
-
 fn params_to_body(params: &[f64]) -> [u8; 240] {
     params_to_packed(params).to_rom_bytes()
 }
-
-/// Decode one stored corner's stage into monic-quadratic + scale params, from a
-/// direct DF2T biquad row `[b0,b1,b2,a1,a2]`. Pure algebra (numerator/denominator
-/// monic coefficients) — not a response engine.
 fn biquad_to_stage_params(r: &[f64; NUM_COEFFS]) -> [f64; PPS] {
     let b0 = r[0];
     let (zp, zq) = if b0.abs() > 1e-12 {
@@ -390,18 +302,12 @@ fn biquad_to_stage_params(r: &[f64; NUM_COEFFS]) -> [f64; PPS] {
     };
     [zp, zq, r[3], r[4], b0]
 }
-
-// ── JSON helpers (minimal, no schema framework) ─────────────────────────────
-
 fn write_json(path: &Path, v: &serde_json::Value) {
     std::fs::write(path, serde_json::to_string_pretty(v).unwrap()).expect("write json");
 }
 fn read_json(path: &Path) -> serde_json::Value {
     serde_json::from_str(&std::fs::read_to_string(path).expect("read json")).expect("parse json")
 }
-
-// ── binary spectra persistence (raw, not just plots) ────────────────────────
-
 fn write_f32_blob(path: &Path, data: &[f32]) {
     let mut b = Vec::with_capacity(data.len() * 4);
     for &x in data {
@@ -416,9 +322,6 @@ fn read_f32_blob(path: &Path) -> Vec<f32> {
         .map(|c| f32::from_le_bytes([c[0], c[1], c[2], c[3]]))
         .collect()
 }
-
-// ── grid / split ────────────────────────────────────────────────────────────
-
 #[derive(Clone, Copy)]
 struct State {
     mi: usize,
@@ -451,13 +354,6 @@ fn all_states() -> Vec<State> {
     }
     v
 }
-
-// ── BODY SOLO render: cascade-only at unity I/O (owned Cascade kernel) ───────
-//
-// Static Morph/Q per capture: snap the interpolated coefficients once (no ramp),
-// then run the whole excitation. This is exactly the plugin's BODY SOLO path
-// (InputMode::None, SpatialMode::Off, agc/saturation off, amount 1.0) reduced to
-// the packed six-stage cascade — no AGC, no desk drive, no modulation, no gain.
 fn render_body_solo(pc: &PackedCorners, m: f64, q: f64, dry: &[f32]) -> Vec<f32> {
     let mut casc = Cascade::new();
     let rows = pc.interpolate_biquad(m as f32, q as f32);
@@ -466,39 +362,25 @@ fn render_body_solo(pc: &PackedCorners, m: f64, q: f64, dry: &[f32]) -> Vec<f32>
     casc.process_block_mono(&mut buf);
     buf
 }
-
-// ── Welch complex-TF estimator ──────────────────────────────────────────────
-
 struct Estimate {
-    bins: Vec<usize>, // excited bin indices
-    h: Vec<Cf>,       // complex H at each excited bin (transport delay removed)
-    coh: Vec<f64>,    // coherence γ² per bin
-    mask: Vec<bool>,  // confidence mask
-    delay: f64,       // measured integer transport delay (samples)
+    bins: Vec<usize>,
+    h: Vec<Cf>,
+    coh: Vec<f64>,
+    mask: Vec<bool>,
+    delay: f64,
 }
-
-/// Estimate complex H via averaged periods: Sxy/Sxx, coherence |Sxy|²/(Sxx·Syy).
-///
-/// `bulk_delay` is the pure transport latency (samples) — measured once from the
-/// loopback fixture and applied uniformly. The morph/Q-dependent GROUP delay is
-/// NOT removed; it stays in H's phase. (A per-state cross-correlation would
-/// mistake group delay for transport delay and shift the wet FFT off its period.)
 fn estimate_tf(dry_full: &[f32], wet_full: &[f32], bulk_delay: f64) -> Estimate {
     let bins = excited_bins();
     let delay = bulk_delay;
     let d = delay.round() as i64;
-
-    let mut sxx = vec![(0.0f64, 0.0f64); bins.len()]; // accumulate |X|² (real) as Cf.0
+    let mut sxx = vec![(0.0f64, 0.0f64); bins.len()];
     let mut syy = vec![0.0f64; bins.len()];
     let mut sxy = vec![(0.0f64, 0.0f64); bins.len()];
     let mut sxx_re = vec![0.0f64; bins.len()];
-
     for p in 0..MEAS_PERIODS {
         let base = (WARM_PERIODS + p) * PERIOD;
-        // dry segment
         let (mut xr, mut xi) = period_fft(dry_full, base as i64);
         let (mut yr, mut yi) = period_fft(wet_full, base as i64 + d);
-        // (fft mutates in place; xr/xi/yr/yi now hold spectra)
         for (bi, &k) in bins.iter().enumerate() {
             let x = (xr[k], xi[k]);
             let y = (yr[k], yi[k]);
@@ -509,15 +391,12 @@ fn estimate_tf(dry_full: &[f32], wet_full: &[f32], bulk_delay: f64) -> Estimate 
             sxx_re[bi] += x.0 * x.0 + x.1 * x.1;
             syy[bi] += y.0 * y.0 + y.1 * y.1;
         }
-        // keep clippy calm about unused mut on the last iteration
         let _ = (&mut xr, &mut xi, &mut yr, &mut yi, &mut sxx);
     }
-
     let kf = MEAS_PERIODS as f64;
     let mut h = Vec::with_capacity(bins.len());
     let mut coh = Vec::with_capacity(bins.len());
     let mut mask = Vec::with_capacity(bins.len());
-    // remove the pure transport delay's linear phase for a fair phase comparison
     for (bi, &k) in bins.iter().enumerate() {
         let sxx_m = sxx_re[bi] / kf;
         let syy_m = syy[bi] / kf;
@@ -533,13 +412,10 @@ fn estimate_tf(dry_full: &[f32], wet_full: &[f32], bulk_delay: f64) -> Estimate 
             0.0
         }
         .clamp(0.0, 1.0);
-        // the delay was applied in the time domain (segment offset), so H already
-        // has the bulk delay removed; keep hh as the transport-free response.
         h.push(hh);
         coh.push(g2);
         mask.push(g2 >= COHERENCE_MIN && sxx_m > 1e-18 && bin_hz(k) >= F_LO && bin_hz(k) <= F_HI);
     }
-
     Estimate {
         bins,
         h,
@@ -548,8 +424,6 @@ fn estimate_tf(dry_full: &[f32], wet_full: &[f32], bulk_delay: f64) -> Estimate 
         delay,
     }
 }
-
-/// FFT of one PERIOD-length segment starting at sample `base` (clamped/zero-pad).
 fn period_fft(sig: &[f32], base: i64) -> (Vec<f64>, Vec<f64>) {
     let mut re = vec![0.0f64; PERIOD];
     let mut im = vec![0.0f64; PERIOD];
@@ -562,10 +436,6 @@ fn period_fft(sig: &[f32], base: i64) -> (Vec<f64>, Vec<f64>) {
     fft(&mut re, &mut im, false);
     (re, im)
 }
-
-/// Integer transport delay (samples) by cross-correlating one measurement
-/// period of dry vs wet. Returns the lag maximizing correlation (searched in a
-/// small window; the packed cascade has ~0 bulk delay).
 fn estimate_delay(dry: &[f32], wet: &[f32]) -> f64 {
     let base = WARM_PERIODS * PERIOD;
     let win = 512usize.min(PERIOD);
@@ -588,20 +458,10 @@ fn estimate_delay(dry: &[f32], wet: &[f32]) -> f64 {
     }
     best as f64
 }
-
-// ── perceptual / objective weighting ────────────────────────────────────────
-//
-// Bins are linear in frequency; a log-frequency perceptual weight ∝ 1/f makes
-// each octave count equally. Declared, applied to BOTH target and candidate —
-// never a peak-normalization.
 fn perceptual_weight(hz: f64) -> f64 {
     1.0 / hz.max(F_LO)
 }
-
-// ── paths ────────────────────────────────────────────────────────────────────
-
 fn session_root(id: &str) -> PathBuf {
-    // bin runs from crate dir (trench-core); artifacts under repo dev/tmp.
     let repo = Path::new(env!("CARGO_MANIFEST_DIR"))
         .parent()
         .unwrap()
@@ -611,21 +471,16 @@ fn session_root(id: &str) -> PathBuf {
 fn ensure_dir(p: &Path) {
     std::fs::create_dir_all(p).expect("mkdir");
 }
-
-// ── subcommand: prepare ─────────────────────────────────────────────────────
-
 fn cmd_prepare(id: &str) {
     let root = session_root(id);
     ensure_dir(&root);
     ensure_dir(&root.join("capture"));
-
     let exc = excitation_signal(LEVEL_A);
     let exc_b = excitation_signal(LEVEL_B);
     wav_write_mono(&root.join("excitation_A.wav"), &exc, SR as u32);
     wav_write_mono(&root.join("excitation_B.wav"), &exc_b, SR as u32);
     let exc_hash = sha256_hex(&std::fs::read(root.join("excitation_A.wav")).unwrap());
     let exc_b_hash = sha256_hex(&std::fs::read(root.join("excitation_B.wav")).unwrap());
-
     let states = all_states();
     let jobs: Vec<serde_json::Value> = states
         .iter()
@@ -637,7 +492,6 @@ fn cmd_prepare(id: &str) {
             })
         })
         .collect();
-
     let session = serde_json::json!({
         "schema": "tf-oracle-session-v1",
         "session_id": id,
@@ -663,7 +517,6 @@ fn cmd_prepare(id: &str) {
         "provenance": provenance_block(),
     });
     write_json(&root.join("session.json"), &session);
-
     println!("prepared session {id}");
     println!("  excitation_A.wav sha256 {exc_hash}");
     println!("  {} states ({} train / {} held-out)", states.len(),
@@ -671,7 +524,6 @@ fn cmd_prepare(id: &str) {
         states.iter().filter(|s| !s.train()).count());
     println!("  root: {}", root.display());
 }
-
 fn provenance_block() -> serde_json::Value {
     serde_json::json!({
         "clean_room": "pipeline-clean-room-CAPABLE",
@@ -680,14 +532,6 @@ fn provenance_block() -> serde_json::Value {
         "no_protected_bytes": "No ROM/preset/P2K bytes, coefficient rows, or protected names are read or copied by this pipeline."
     })
 }
-
-// ── subcommand: synth (synthetic black-box render of a HIDDEN oracle) ────────
-//
-// The capture side may render the oracle; the FIT side receives ONLY dry/wet
-// audio + the anonymous manifest, never the oracle bytes. The oracle body is
-// written under _hidden/ and its hash recorded as the anonymous target's
-// provenance; nothing downstream reads it except the synthetic-only estimator
-// calibration in `verify`.
 fn cmd_synth(id: &str, oracle_path: Option<&str>) {
     let root = session_root(id);
     if !root.join("session.json").exists() {
@@ -695,7 +539,6 @@ fn cmd_synth(id: &str, oracle_path: Option<&str>) {
     }
     ensure_dir(&root.join("_hidden"));
     ensure_dir(&root.join("capture"));
-
     let oracle_bytes: Vec<u8> = match oracle_path {
         Some(p) => {
             let b = std::fs::read(p).unwrap_or_else(|_| panic!("read oracle {p}"));
@@ -707,10 +550,8 @@ fn cmd_synth(id: &str, oracle_path: Option<&str>) {
     std::fs::write(root.join("_hidden").join("oracle.body240"), &oracle_bytes).unwrap();
     let oracle_hash = sha256_hex(&oracle_bytes);
     let pc = PackedCorners::from_body_bytes(&oracle_bytes).expect("oracle 240");
-
     let dry_a = wav_read_mono(&root.join("excitation_A.wav"));
     let dry_b = wav_read_mono(&root.join("excitation_B.wav"));
-
     let states = all_states();
     let mut caps: Vec<serde_json::Value> = Vec::new();
     for s in &states {
@@ -725,7 +566,6 @@ fn cmd_synth(id: &str, oracle_path: Option<&str>) {
             "peak": peak, "rms": rms, "clip_count": clip,
         }));
     }
-    // LTI + repeatability probes at the 4 corners + center, level B + a repeat.
     let anchors = [
         State { mi: 0, qi: 0 },
         State { mi: 8, qi: 0 },
@@ -751,12 +591,10 @@ fn cmd_synth(id: &str, oracle_path: Option<&str>) {
             "wet_sha256": sha256_hex(&std::fs::read(&wpr).unwrap()),
         }));
     }
-    // loopback fixture: dry through identity body -> must recover unity + zero delay
     let ident = build_identity_body();
     let ipc = PackedCorners::from_body_bytes(&ident).unwrap();
     let loop_wet = render_body_solo(&ipc, 0.0, 0.0, &dry_a);
     wav_write_mono(&root.join("capture").join("loopback.wav"), &loop_wet, SR as u32);
-
     let manifest = serde_json::json!({
         "schema": "tf-oracle-capture-v1",
         "target_id": "target_001",
@@ -772,43 +610,24 @@ fn cmd_synth(id: &str, oracle_path: Option<&str>) {
     write_json(&root.join("capture_manifest.json"), &manifest);
     println!("synth captured {} states + anchors; target_001 sha256 {oracle_hash}", states.len());
 }
-
 fn level_stats(x: &[f32]) -> (f64, f64, usize) {
     let peak = x.iter().fold(0.0f64, |m, &v| m.max(v.abs() as f64));
     let rms = (x.iter().map(|&v| (v as f64) * (v as f64)).sum::<f64>() / x.len().max(1) as f64).sqrt();
     let clip = x.iter().filter(|&&v| v.abs() >= 0.999).count();
     (peak, rms, clip)
 }
-
-// ── synthetic oracle + identity + baseline bodies (test-only, legal) ─────────
-//
-// A deterministic test oracle built through the OWNED stage_law geometry. It
-// exercises every fixture requirement: four authored corners, morph+Q motion, a
-// deliberate resonance CROSSING between the morph endpoints (so the true stage
-// correspondence is NOT frequency-sorted), a real-root numerator pair, and a
-// near-unit-circle notch zero.
 fn build_synth_oracle() -> [u8; 240] {
     let identity = StageGeometry {
         pole: RootPair::Degenerate,
         zero: RootPair::Degenerate,
         scale: 1.0,
     };
-    // helper closures
     let conj_pole = |hz: f64, r: f64| RootPair::Conjugate { hz, r };
     let notch = |hz: f64, r: f64| RootPair::Conjugate { hz, r };
     let mk = |pole: RootPair, zero: RootPair, scale: f64| StageGeometry { pole, zero, scale };
-
-    // Build 4 corners × 6 stages of StageGeometry.
-    // Stage indices are the SACRED lanes; the crossing lives in stages 0 and 1.
     let mut corners: [[StageGeometry; NUM_STAGES]; 4] = [[identity; NUM_STAGES]; 4];
-
-    // Lane 0 & lane 1: two resonances that SWAP frequency order M0->M100.
-    //   M0:  lane0 @ 600 Hz, lane1 @ 2400 Hz
-    //   M100:lane0 @ 2600 Hz, lane1 @ 560 Hz   (crossed)
-    // radii tighten with Q.
     let r_lo = 0.90;
     let r_hi = 0.965;
-    // corner 0 = M0_Q0, 1 = M100_Q0, 2 = M0_Q100, 3 = M100_Q100
     corners[0][0] = mk(conj_pole(600.0, r_lo), RootPair::Degenerate, 0.30);
     corners[0][1] = mk(conj_pole(2400.0, r_lo), RootPair::Degenerate, 0.30);
     corners[1][0] = mk(conj_pole(2600.0, r_lo), RootPair::Degenerate, 0.30);
@@ -817,8 +636,6 @@ fn build_synth_oracle() -> [u8; 240] {
     corners[2][1] = mk(conj_pole(2400.0, r_hi), RootPair::Degenerate, 0.22);
     corners[3][0] = mk(conj_pole(2600.0, r_hi), RootPair::Degenerate, 0.22);
     corners[3][1] = mk(conj_pole(560.0, r_hi), RootPair::Degenerate, 0.22);
-
-    // Lane 2: a notch (near-unit zero) that travels 1500 -> 4200 Hz on morph.
     for (ci, (m, q)) in [(0.0f64, 0.0f64), (1.0, 0.0), (0.0, 1.0), (1.0, 1.0)]
         .into_iter()
         .enumerate()
@@ -827,15 +644,9 @@ fn build_synth_oracle() -> [u8; 240] {
         let pr = if q > 0.5 { 0.75 } else { 0.60 };
         corners[ci][2] = mk(conj_pole(nz * 0.98, pr), notch(nz, 0.995), 1.0);
     }
-
-    // Lane 3: a broad body pole ~1000 Hz, gentle.
     for ci in 0..4 {
         corners[ci][3] = mk(conj_pole(1000.0, 0.80), RootPair::Degenerate, 0.6);
     }
-
-    // Lane 4: a REAL-ROOT numerator pair (explicit real zeros), stable pole.
-    // real zeros at 0.6 and -0.4 -> monic (p,q)=(-(0.6-0.4), 0.6*-0.4)=(-0.2,-0.24)
-    // but q<0 isn't packable; use two positive real zeros 0.7 & 0.2 -> (−0.9, 0.14).
     let real_zero = RootPair::RealPair {
         root_a: 0.7,
         root_b: 0.2,
@@ -843,10 +654,6 @@ fn build_synth_oracle() -> [u8; 240] {
     for ci in 0..4 {
         corners[ci][4] = mk(conj_pole(5000.0, 0.70), real_zero, 1.0);
     }
-
-    // Lane 5: identity everywhere (an off lane that stays off).
-
-    // pack through the owned geometry -> words -> 240 bytes
     let mut words = [[[0u16; NUM_COEFFS]; NUM_STAGES]; 4];
     for ci in 0..4 {
         for si in 0..NUM_STAGES {
@@ -855,7 +662,6 @@ fn build_synth_oracle() -> [u8; 240] {
     }
     PackedCorners { words }.to_rom_bytes()
 }
-
 fn build_identity_body() -> [u8; 240] {
     let ident = StageGeometry {
         pole: RootPair::Degenerate,
@@ -866,12 +672,6 @@ fn build_identity_body() -> [u8; 240] {
     let words = [[w; NUM_STAGES]; 4];
     PackedCorners { words }.to_rom_bytes()
 }
-
-// ── subcommand: estimate ────────────────────────────────────────────────────
-
-/// Bulk transport delay of the capture chain, from the loopback fixture (dry
-/// through an identity body). 0 for the synthetic cascade; the fixed PDC latency
-/// for a real plugin capture. Applied uniformly to every state's estimate.
 fn measure_bulk_delay(root: &Path, dry: &[f32]) -> f64 {
     let lp = root.join("capture").join("loopback.wav");
     if lp.exists() {
@@ -881,27 +681,23 @@ fn measure_bulk_delay(root: &Path, dry: &[f32]) -> f64 {
         0.0
     }
 }
-
 fn cmd_estimate(id: &str) {
     let root = session_root(id);
     ensure_dir(&root.join("estimate"));
     let dry = wav_read_mono(&root.join("excitation_A.wav"));
     let bulk_delay = measure_bulk_delay(&root, &dry);
-
     let bins = excited_bins();
     let freqs: Vec<f64> = bins.iter().map(|&k| bin_hz(k)).collect();
     write_f32_blob(
         &root.join("estimate").join("freqs.f32"),
         &freqs.iter().map(|&f| f as f32).collect::<Vec<_>>(),
     );
-
     let states = all_states();
     let mut index: Vec<serde_json::Value> = Vec::new();
     let mut coverage_sum = 0.0f64;
     for s in &states {
         let wet = wav_read_mono(&root.join("capture").join(format!("wet_{}_A.wav", s.label())));
         let est = estimate_tf(&dry, &wet, bulk_delay);
-        // persist raw complex spectra + coherence as interleaved f32 blobs
         let mut he = Vec::with_capacity(est.h.len() * 3);
         for i in 0..est.h.len() {
             he.push(est.h[i].0 as f32);
@@ -941,8 +737,6 @@ fn cmd_estimate(id: &str) {
         coverage_sum / states.len() as f64
     );
 }
-
-/// Load an estimate blob back into (bins, H, coherence, mask).
 fn load_estimate(root: &Path, label: &str) -> (Vec<usize>, Vec<Cf>, Vec<f64>, Vec<bool>) {
     let bins = excited_bins();
     let raw = read_f32_blob(&root.join("estimate").join(format!("H_{label}.f32")));
@@ -957,9 +751,6 @@ fn load_estimate(root: &Path, label: &str) -> (Vec<usize>, Vec<Cf>, Vec<f64>, Ve
     }
     (bins, h, coh, mask)
 }
-
-// ── main dispatch ────────────────────────────────────────────────────────────
-
 fn main() {
     let args: Vec<String> = std::env::args().collect();
     let cmd = args.get(1).map(|s| s.as_str()).unwrap_or("help");
@@ -968,7 +759,6 @@ fn main() {
     };
     let id = flag("--session").unwrap_or_else(|| "s001".to_string());
     let oracle = flag("--oracle");
-
     match cmd {
         "prepare" => cmd_prepare(&id),
         "synth" => cmd_synth(&id, oracle.as_deref()),
@@ -990,9 +780,6 @@ fn main() {
         }
     }
 }
-
-// ── fitter ───────────────────────────────────────────────────────────────────
-
 struct TargetState {
     label: String,
     m: f64,
@@ -1002,15 +789,10 @@ struct TargetState {
     coh: Vec<f64>,
     mask: Vec<bool>,
 }
-
-/// Glasberg & Moore (1990) ERB; equal fitting effort per ERB band so the
-/// optimizer does not overspend on perceptually narrow high-frequency error.
-/// ERB(f) = 24.7 (4.37 f/1000 + 1) Hz; weight = 1/ERB(f).
 fn erb_weight(hz: f64) -> f64 {
     let f = hz.clamp(F_LO, F_HI);
     1.0 / (24.7 * (4.37 * f / 1000.0 + 1.0))
 }
-
 fn load_targets(root: &Path) -> (Vec<TargetState>, Vec<f64>) {
     let bins = excited_bins();
     let freqs: Vec<f64> = bins.iter().map(|&k| bin_hz(k)).collect();
@@ -1032,16 +814,8 @@ fn load_targets(root: &Path) -> (Vec<TargetState>, Vec<f64>) {
         .collect();
     (targets, freqs)
 }
-
-const LAMBDA_PH: f64 = 4.0; // phase weight (rad²) vs magnitude (dB²)
-const PEN_W: f64 = 6.0; // ceiling-barrier weight
-
-/// One-sided FULL-band barrier: penalizes cascade response above `ceil_db`
-/// anywhere up to Nyquist, INCLUDING out of the excited band. `ceil_db` is keyed
-/// to the target's own observed maximum + headroom, so legitimate in-band peaks
-/// (a morph crossing can hit +44 dB) are allowed while the optimizer still
-/// cannot park a stacked high-Q pole below 30 Hz / above 16 kHz that blows up the
-/// time render.
+const LAMBDA_PH: f64 = 4.0;
+const PEN_W: f64 = 6.0;
 fn ceiling_penalty(rows: &CornerData, ceil_db: f64) -> f64 {
     let grid = log_frequency_grid(20.0, SR * 0.499, 220);
     let mut acc = 0.0;
@@ -1055,13 +829,7 @@ fn ceiling_penalty(rows: &CornerData, ceil_db: f64) -> f64 {
     }
     acc / grid.len() as f64
 }
-
-const PEN_STAB: f64 = 3.0e4; // interior-stability barrier weight
-
-/// Interior-stability barrier over a 17×17 Morph×Q grid: penalizes any decoded
-/// pole radius above 0.997 at ANY interpolated point. Corners can be stable while
-/// their packed-word lerp overshoots the unit circle in the interior; this keeps
-/// the whole sampled surface stable (the 33×33 certification gate).
+const PEN_STAB: f64 = 3.0e4;
 fn stability_penalty(packed: &PackedCorners) -> f64 {
     let mut acc = 0.0;
     for mi in 0..17 {
@@ -1077,9 +845,6 @@ fn stability_penalty(packed: &PackedCorners) -> f64 {
     }
     acc
 }
-
-/// Full-band ceiling from the target's own observed maximum (train states,
-/// confident bins) plus 12 dB headroom.
 fn target_ceiling(targets: &[TargetState]) -> f64 {
     let mut mx = f64::NEG_INFINITY;
     for ts in targets.iter().filter(|t| t.train) {
@@ -1092,7 +857,6 @@ fn target_ceiling(targets: &[TargetState]) -> f64 {
     }
     mx + 12.0
 }
-
 fn wrap_pi(x: f64) -> f64 {
     let mut y = x % TAU;
     if y > std::f64::consts::PI {
@@ -1103,13 +867,6 @@ fn wrap_pi(x: f64) -> f64 {
     }
     y
 }
-
-/// Training objective through the REAL packed loop, comparing the COMPLEX
-/// response in robust polar form: magnitude-in-dB (absolute gain preserved — no
-/// peak normalization) plus wrapped phase. dB/phase is log-bounded so a
-/// too-sharp pole cannot produce a runaway squared error the way raw complex
-/// does. Coherence × ERB weighted; TRAIN states only. `obj_idx` subsamples the
-/// excited bins for optimizer speed.
 fn train_objective(
     packed: &PackedCorners,
     targets: &[TargetState],
@@ -1143,13 +900,10 @@ fn train_objective(
     }
     err / wsum.max(1e-30) + PEN_W * pen / nstate.max(1) as f64 + PEN_STAB * stability_penalty(packed)
 }
-
-/// Log-spaced subsample of excited-bin indices for the optimizer.
 fn objective_indices(freqs: &[f64]) -> Vec<usize> {
     let grid = log_frequency_grid(F_LO, F_HI, OBJ_BINS);
     let mut idx = Vec::with_capacity(grid.len());
     for &g in &grid {
-        // nearest excited bin
         let mut best = 0usize;
         let mut bd = f64::INFINITY;
         for (i, &f) in freqs.iter().enumerate() {
@@ -1165,21 +919,12 @@ fn objective_indices(freqs: &[f64]) -> Vec<usize> {
     }
     idx
 }
-
-/// Peak-pick init of one corner's six stages from its measured complex response,
-/// using the OWNED flat-off-resonance section vocabulary (`compiler::section_biquad`
-/// RBJ peak/notch). Flat-off-resonance is mandatory — pure resonators have a DC
-/// shelf and six of them cannibalise into a lowpass. Strongest peaks → PEAK
-/// sections; deepest valleys → NOTCH sections on spare stages; a broadband gain
-/// sets the baseline level. Diagnostic init only — the packed-loop refine decides.
 fn init_corner(h: &[Cf], mask: &[bool], freqs: &[f64]) -> [[f64; PPS]; NUM_STAGES] {
     let mag: Vec<f64> = h.iter().map(|&c| 20.0 * cabs(c).max(1e-9).log10()).collect();
     let n = mag.len();
     let mut sorted: Vec<f64> = (0..n).filter(|&i| mask[i]).map(|i| mag[i]).collect();
     sorted.sort_by(|a, b| a.partial_cmp(b).unwrap());
     let baseline = sorted.get(sorted.len() / 2).copied().unwrap_or(0.0);
-
-    // local maxima above baseline, prominence-sorted
     let mut peaks: Vec<(usize, f64)> = Vec::new();
     for i in 1..n - 1 {
         if mask[i] && mag[i] > mag[i - 1] && mag[i] >= mag[i + 1] && mag[i] - baseline > 2.0 {
@@ -1187,8 +932,6 @@ fn init_corner(h: &[Cf], mask: &[bool], freqs: &[f64]) -> [[f64; PPS]; NUM_STAGE
         }
     }
     peaks.sort_by(|a, b| b.1.partial_cmp(&a.1).unwrap());
-
-    // deepest valleys below baseline
     let mut valleys: Vec<(usize, f64)> = Vec::new();
     for i in 1..n - 1 {
         if mask[i] && mag[i] < mag[i - 1] && mag[i] <= mag[i + 1] && baseline - mag[i] > 3.0 {
@@ -1196,7 +939,6 @@ fn init_corner(h: &[Cf], mask: &[bool], freqs: &[f64]) -> [[f64; PPS]; NUM_STAGE
         }
     }
     valleys.sort_by(|a, b| b.1.partial_cmp(&a.1).unwrap());
-
     let width_q = |pi: usize| -> f64 {
         let target = mag[pi] - 3.0;
         let mut lo = pi;
@@ -1210,8 +952,7 @@ fn init_corner(h: &[Cf], mask: &[bool], freqs: &[f64]) -> [[f64; PPS]; NUM_STAGE
         let bw = (freqs[hi] - freqs[lo]).max(SR / PERIOD as f64);
         (freqs[pi] / bw).clamp(0.7, 24.0)
     };
-
-    let mut stages = [[0.0f64, 0.0, 0.0, 0.0, 1.0]; NUM_STAGES]; // flat unity
+    let mut stages = [[0.0f64, 0.0, 0.0, 0.0, 1.0]; NUM_STAGES];
     let mut si = 0usize;
     for &(pi, prom) in peaks.iter().take(NUM_STAGES) {
         let bq = section_biquad(TYPE_PEAK, freqs[pi], width_q(pi), prom.clamp(1.5, 30.0));
@@ -1237,8 +978,6 @@ fn init_corner(h: &[Cf], mask: &[bool], freqs: &[f64]) -> [[f64; PPS]; NUM_STAGE
         stages[si] = biquad_to_stage_params(&bq);
         si += 1;
     }
-    // broadband gain to set the flat baseline (distributed across all stages, so
-    // each stays inside the packable [0,4] scale box)
     let g_per = 10.0f64.powf(baseline / 20.0 / NUM_STAGES as f64);
     for s in stages.iter_mut() {
         s[4] = (s[4] * g_per).clamp(0.0, 4.0);
@@ -1246,8 +985,6 @@ fn init_corner(h: &[Cf], mask: &[bool], freqs: &[f64]) -> [[f64; PPS]; NUM_STAGE
     }
     stages
 }
-
-/// All 720 permutations of [0,1,2,3,4,5] (Heap's algorithm).
 fn perms6() -> Vec<[usize; 6]> {
     let mut out = Vec::with_capacity(720);
     let mut a = [0usize, 1, 2, 3, 4, 5];
@@ -1271,7 +1008,6 @@ fn perms6() -> Vec<[usize; 6]> {
     }
     out
 }
-
 fn permute_corner(params: &mut [f64], ci: usize, perm: &[usize; 6]) {
     let mut orig = [[0.0f64; PPS]; NUM_STAGES];
     for si in 0..NUM_STAGES {
@@ -1283,11 +1019,6 @@ fn permute_corner(params: &mut [f64], ci: usize, perm: &[usize; 6]) {
         params[base..base + PPS].copy_from_slice(&orig[old]);
     }
 }
-
-/// Solve stage correspondence from TRAINING transfer-function error. Corner 0
-/// order is fixed; corners 1..3 each get the permutation of their six stages
-/// that minimizes the packed-loop training objective (coordinate descent). This
-/// is NOT frequency-sorting: it searches the interior-behavior error.
 fn search_correspondence(
     params: &mut Vec<f64>,
     targets: &[TargetState],
@@ -1312,7 +1043,6 @@ fn search_correspondence(
                 }
             }
             permute_corner(params, ci, &best_perm);
-            // record the composed permutation
             let mut composed = [0usize; 6];
             for slot in 0..6 {
                 composed[slot] = chosen[ci][best_perm[slot]];
@@ -1323,9 +1053,6 @@ fn search_correspondence(
     let final_err = train_objective(&params_to_packed(params), targets, obj_idx, freqs, ceil_db);
     (chosen, identity_err, final_err)
 }
-
-/// Generic deterministic Hooke-Jeeves pattern search over a param vector (length
-/// a multiple of PPS; each PPS block is clamped to the stable/packable box).
 fn hooke_jeeves(
     mut base: Vec<f64>,
     obj: &dyn Fn(&[f64]) -> f64,
@@ -1390,9 +1117,6 @@ fn hooke_jeeves(
     }
     (base, fb)
 }
-
-/// Single-state dB+phase objective for one corner's six stages against its own
-/// measured complex H. Well-conditioned (30 params, one exact spectrum).
 fn corner_objective(
     stages30: &[f64],
     ts: &TargetState,
@@ -1422,7 +1146,6 @@ fn corner_objective(
     }
     err / wsum.max(1e-30) + PEN_W * ceiling_penalty(&rows, ceil_db)
 }
-
 fn single_corner_packed(stages: &[[f64; PPS]; NUM_STAGES]) -> PackedCorners {
     let mut p = vec![0.0f64; NPARAM];
     for ci in 0..4 {
@@ -1433,8 +1156,6 @@ fn single_corner_packed(stages: &[[f64; PPS]; NUM_STAGES]) -> PackedCorners {
     }
     params_to_packed(&p)
 }
-
-/// Joint interior polish over all 120 params through the packed loop.
 fn refine(
     base: Vec<f64>,
     targets: &[TargetState],
@@ -1447,19 +1168,13 @@ fn refine(
     let obj = |p: &[f64]| train_objective(&params_to_packed(p), targets, obj_idx, freqs, ceil_db);
     hooke_jeeves(base, &obj, max_iters, Some(ckpt_dir))
 }
-
 fn cmd_fit(id: &str) {
     let root = session_root(id);
     ensure_dir(&root.join("fit"));
     let (targets, freqs) = load_targets(&root);
-    // Objective on a uniform-in-Hz grid (~19 Hz spacing) that fully resolves the
-    // capped poles (≥62 Hz bandwidth), so no feature hides between samples while
-    // keeping the optimizer fast.
     let stride = (freqs.len() / 840).max(1);
     let obj_idx: Vec<usize> = (0..freqs.len()).step_by(stride).collect();
     let ceil_db = target_ceiling(&targets);
-
-    // init from the four grid corners (all training): M0_Q0, M100_Q0, M0_Q100, M100_Q100
     let corner_states = [(0.0, 0.0), (1.0, 0.0), (0.0, 1.0), (1.0, 1.0)];
     let mut params = vec![0.0f64; NPARAM];
     for (ci, &(m, q)) in corner_states.iter().enumerate() {
@@ -1468,7 +1183,6 @@ fn cmd_fit(id: &str) {
             .find(|t| (t.m - m).abs() < 1e-9 && (t.q - q).abs() < 1e-9)
             .expect("corner state present");
         let stages = init_corner(&ts.h, &ts.mask, &freqs);
-        // strong per-corner fit against this corner's own exact measured H
         let flat: Vec<f64> = stages.iter().flatten().copied().collect();
         let obj = |p: &[f64]| corner_objective(p, ts, &obj_idx, &freqs, ceil_db);
         let (fitted, _) = hooke_jeeves(flat, &obj, 120, None);
@@ -1478,12 +1192,8 @@ fn cmd_fit(id: &str) {
         }
     }
     let init_err = train_objective(&params_to_packed(&params), &targets, &obj_idx, &freqs, ceil_db);
-
-    // correspondence search from training behavior (not frequency sort)
     let (perms, corr_id_err, corr_err) =
         search_correspondence(&mut params, &targets, &obj_idx, &freqs, ceil_db);
-
-    // joint packed-loop refine
     let (params, fit_err) = refine(
         params,
         &targets,
@@ -1493,19 +1203,14 @@ fn cmd_fit(id: &str) {
         &root.join("fit").join("checkpoints"),
         60,
     );
-
-    // baseline: identity body
     let base_ident = build_identity_body();
     let base_pc = PackedCorners::from_body_bytes(&base_ident).unwrap();
     let baseline_err = train_objective(&base_pc, &targets, &obj_idx, &freqs, ceil_db);
-
-    // emit candidate body + cartridge JSON
     let body = params_to_body(&params);
     std::fs::write(root.join("fit").join("candidate.body240"), body).unwrap();
     let pc = PackedCorners::from_body_bytes(&body).unwrap();
     let cart = cartridge_json(&pc);
     write_json(&root.join("fit").join("candidate.cart.json"), &cart);
-
     let config = serde_json::json!({
         "schema": "tf-oracle-fit-v1",
         "objective": "coherence-weighted, ERB-weighted complex error over TRAIN states via packed interpolation; absolute gain preserved (no normalization).",
@@ -1526,15 +1231,12 @@ fn cmd_fit(id: &str) {
         "improvement_vs_baseline_db": 10.0 * (baseline_err / fit_err.max(1e-30)).log10(),
     });
     write_json(&root.join("fit").join("fit_config.json"), &config);
-
     println!("fit done:");
     println!("  train err  init {init_err:.3e} -> corr {corr_err:.3e} -> final {fit_err:.3e}");
     println!("  baseline (identity) {baseline_err:.3e}  | improvement {:.2} dB", 10.0*(baseline_err/fit_err.max(1e-30)).log10());
     println!("  correspondence perms (c1,c2,c3): {:?} {:?} {:?}", perms[1], perms[2], perms[3]);
     println!("  candidate: fit/candidate.body240");
 }
-
-/// Build a compiled-v1 cartridge JSON (packedWords) from a PackedCorners.
 fn cartridge_json(pc: &PackedCorners) -> serde_json::Value {
     let labels = ["M0_Q0", "M100_Q0", "M0_Q100", "M100_Q100"];
     let keyframes: Vec<serde_json::Value> = (0..4)
@@ -1552,9 +1254,6 @@ fn cartridge_json(pc: &PackedCorners) -> serde_json::Value {
         "keyframes": keyframes,
     })
 }
-
-// ── verify ───────────────────────────────────────────────────────────────────
-
 struct StateMetric {
     label: String,
     split: String,
@@ -1564,10 +1263,6 @@ struct StateMetric {
     phase_rms_deg: f64,
     gd_rms_samp: f64,
 }
-
-/// Full-band (confident-bin) metrics for one state: magnitude RMS/max dB error,
-/// complex relative error median, phase RMS, group-delay RMS. Absolute gain —
-/// no normalization.
 fn state_metrics(
     label: &str,
     split: &str,
@@ -1579,8 +1274,7 @@ fn state_metrics(
     let mut dmags = Vec::new();
     let mut rels = Vec::new();
     let mut phases = Vec::new();
-    // group delay via adjacent confident bins
-    let mut prev: Option<(usize, f64, f64)> = None; // (i, cand_phase, targ_phase)
+    let mut prev: Option<(usize, f64, f64)> = None;
     let mut gd = Vec::new();
     for i in 0..freqs.len() {
         if !ts.mask[i] {
@@ -1599,7 +1293,7 @@ fn state_metrics(
         let pt_ = ti.atan2(tr);
         phases.push(wrap_pi(pc_ - pt_).to_degrees().abs());
         if let Some((pi, ppc, ppt)) = prev {
-            let dw = TAU * (i as f64 - pi as f64) * (SR / PERIOD as f64) / SR; // rad/sample × bins
+            let dw = TAU * (i as f64 - pi as f64) * (SR / PERIOD as f64) / SR;
             if dw > 0.0 {
                 let gc = -wrap_pi(pc_ - ppc) / dw;
                 let gt = -wrap_pi(pt_ - ppt) / dw;
@@ -1624,15 +1318,12 @@ fn state_metrics(
         gd_rms_samp: rms(&gd),
     }
 }
-
-/// Latency-aligned time-domain null of candidate render vs recorded wet. No gain
-/// normalization. Returns (null_depth_db, delay).
 fn null_depth(cand: &PackedCorners, m: f64, q: f64, dry: &[f32], target_wet: &[f32]) -> (f64, f64) {
     let cand_wet = render_body_solo(cand, m, q, dry);
     let delay = estimate_delay_generic(target_wet, &cand_wet);
     let d = delay.round() as i64;
     let n = target_wet.len().min(cand_wet.len());
-    let start = WARM_PERIODS * PERIOD; // skip warm-up
+    let start = WARM_PERIODS * PERIOD;
     let mut num = 0.0f64;
     let mut den = 0.0f64;
     for i in start..n {
@@ -1649,7 +1340,6 @@ fn null_depth(cand: &PackedCorners, m: f64, q: f64, dry: &[f32], target_wet: &[f
     let db = 10.0 * (num.max(1e-30) / den.max(1e-30)).log10();
     (db, delay)
 }
-
 fn estimate_delay_generic(a: &[f32], b: &[f32]) -> f64 {
     let base = WARM_PERIODS * PERIOD;
     let win = 1024usize.min(a.len().saturating_sub(base));
@@ -1671,7 +1361,6 @@ fn estimate_delay_generic(a: &[f32], b: &[f32]) -> f64 {
     }
     best as f64
 }
-
 fn agg(metrics: &[StateMetric], split: &str) -> serde_json::Value {
     let sel: Vec<&StateMetric> = metrics.iter().filter(|m| m.split == split).collect();
     let mean = |f: &dyn Fn(&StateMetric) -> f64| -> f64 {
@@ -1686,7 +1375,6 @@ fn agg(metrics: &[StateMetric], split: &str) -> serde_json::Value {
         "gd_rms_samp_mean": mean(&|m| m.gd_rms_samp),
     })
 }
-
 fn cmd_verify(id: &str) {
     let root = session_root(id);
     ensure_dir(&root.join("verify"));
@@ -1697,8 +1385,6 @@ fn cmd_verify(id: &str) {
     let cand = PackedCorners::from_body_bytes(&body).unwrap();
     let ident = build_identity_body();
     let base_pc = PackedCorners::from_body_bytes(&ident).unwrap();
-
-    // ── per-state metrics, candidate vs baseline, train vs held-out ──
     let mut cand_metrics = Vec::new();
     let mut base_metrics = Vec::new();
     for ts in &targets {
@@ -1706,15 +1392,12 @@ fn cmd_verify(id: &str) {
         cand_metrics.push(state_metrics(&ts.label, split, &cand, ts, &freqs));
         base_metrics.push(state_metrics(&ts.label, split, &base_pc, ts, &freqs));
     }
-
-    // ── runtime/body gates ──
     let load_save_ok = cand.to_rom_bytes().to_vec() == body;
     let cart = read_json(&root.join("fit").join("candidate.cart.json"));
     let cart_pc = trench_core::cartridge::Cartridge::from_json(&cart.to_string())
         .expect("cart parse")
         .packed;
     let cart_parity = cart_pc == cand;
-    // declared-edit isolation: flip one word, only that word differs
     let mut edited = body.clone();
     edited[10] ^= 0x01;
     let edited_pc = PackedCorners::from_body_bytes(&edited).unwrap();
@@ -1722,12 +1405,7 @@ fn cmd_verify(id: &str) {
         .flat_map(|c| (0..NUM_STAGES).flat_map(move |s| (0..NUM_COEFFS).map(move |w| (c, s, w))))
         .filter(|&(c, s, w)| cand.words[c][s][w] != edited_pc.words[c][s][w])
         .count();
-
-    // real-root-explicit: scan candidate + oracle rows; a real pair must REFUSE
-    // the conjugate reader (never silently clamped).
     let real_root_report = real_root_scan(&cand, &root);
-
-    // ── dense 33×33 sampled certification (zero unstable / nonfinite) ──
     let mut unstable = 0usize;
     let mut nonfinite = 0usize;
     for mi in 0..33 {
@@ -1745,13 +1423,8 @@ fn cmd_verify(id: &str) {
             }
         }
     }
-    // owned crown/stability gate
     let audit = trench_core::response::audit_body240(&body).expect("audit");
-
-    // ── endpoint-preserving permutation regression ──
     let perm_reg = permutation_regression(&cand, &freqs);
-
-    // ── loopback / LTI / repeatability (estimator sanity) ──
     let dry = wav_read_mono(&root.join("excitation_A.wav"));
     let dry_b = wav_read_mono(&root.join("excitation_B.wav"));
     let loop_wet = wav_read_mono(&root.join("capture").join("loopback.wav"));
@@ -1765,8 +1438,6 @@ fn cmd_verify(id: &str) {
         .map(|(h, _)| 20.0 * cabs(*h).max(1e-9).log10())
         .collect();
     let loop_max_dev = loop_mag_db.iter().cloned().fold(0.0f64, |a, b| a.max(b.abs()));
-
-    // LTI: level A vs B at center
     let center = State { mi: 4, qi: 4 };
     let wa = wav_read_mono(&root.join("capture").join(format!("wet_{}_A.wav", center.label())));
     let wb = wav_read_mono(&root.join("capture").join(format!("wet_{}_B.wav", center.label())));
@@ -1780,14 +1451,11 @@ fn cmd_verify(id: &str) {
         .filter(|((_, _), &m)| m)
         .map(|((a, b), _)| (20.0 * cabs(*a).max(1e-9).log10() - 20.0 * cabs(*b).max(1e-9).log10()).abs())
         .fold(0.0, f64::max);
-    // repeatability: A vs A_rep at center (deterministic renders → identical)
     let war = wav_read_mono(&root.join("capture").join(format!("wet_{}_A_rep.wav", center.label())));
     let rep_rms = {
         let n = wa.len().min(war.len());
         (0..n).map(|i| (wa[i] - war[i]).powi(2) as f64).sum::<f64>().sqrt() / (n as f64).sqrt()
     };
-
-    // ── null: candidate vs recorded wet, at representative train + held-out ──
     let null_states = [
         (State { mi: 0, qi: 0 }, "train"),
         (State { mi: 4, qi: 4 }, "train"),
@@ -1799,7 +1467,6 @@ fn cmd_verify(id: &str) {
         let wet = wav_read_mono(&root.join("capture").join(format!("wet_{}_A.wav", s.label())));
         let (cand_db, delay) = null_depth(&cand, s.m(), s.q(), &dry, &wet);
         let (base_db, _) = null_depth(&base_pc, s.m(), s.q(), &dry, &wet);
-        // residual wav for the center
         if s.mi == 4 && s.qi == 4 {
             let cand_wet = render_body_solo(&cand, s.m(), s.q(), &dry);
             let resid: Vec<f32> = (WARM_PERIODS * PERIOD..wet.len().min(cand_wet.len()))
@@ -1813,15 +1480,10 @@ fn cmd_verify(id: &str) {
             "candidate_null_db": cand_db, "baseline_null_db": base_db, "delay_samples": delay,
         }));
     }
-
-    // ── estimator calibration vs KNOWN oracle (synthetic-only) ──
     let est_cal = estimator_calibration(&root, &freqs);
-
-    // ── plots (shared dB axis): a train and a held-out state ──
     plot_state(&root, &cand, &base_pc, &targets, &freqs, "M000_Q000");
     plot_state(&root, &cand, &base_pc, &targets, &freqs, "M050_Q050");
-    plot_state(&root, &cand, &base_pc, &targets, &freqs, "M038_Q050"); // held-out (mi=3,qi=4)
-
+    plot_state(&root, &cand, &base_pc, &targets, &freqs, "M038_Q050");
     let report = serde_json::json!({
         "schema": "tf-oracle-verify-v1",
         "candidate_bytes": body.len(),
@@ -1858,8 +1520,6 @@ fn cmd_verify(id: &str) {
         "plots": ["verify/plots/M000_Q000.svg","verify/plots/M050_Q050.svg","verify/plots/M038_Q050.svg"],
     });
     write_json(&root.join("verify").join("verify_report.json"), &report);
-
-    // console summary
     let ct = agg(&cand_metrics, "train");
     let ch = agg(&cand_metrics, "held_out");
     let bt = agg(&base_metrics, "train");
@@ -1879,11 +1539,6 @@ fn cmd_verify(id: &str) {
     println!("  loopback unity dev {:.3} dB, delay {} | LTI A/B {:.3} dB | repeat rms {:.2e}",
         loop_max_dev, loop_est.delay, lti_max_db, rep_rms);
 }
-
-/// Endpoint-preserving stage permutation: reorder corner 1's six stages. Corner
-/// transfer functions (the four grid corners) are invariant (cascade product),
-/// but an interior morph position must change — proving endpoint-only scoring is
-/// impossible and stage correspondence is a real hidden variable.
 fn permutation_regression(pc: &PackedCorners, freqs: &[f64]) -> serde_json::Value {
     let perm = [3usize, 1, 0, 5, 2, 4];
     let mut permuted = pc.clone();
@@ -1898,9 +1553,7 @@ fn permutation_regression(pc: &PackedCorners, freqs: &[f64]) -> serde_json::Valu
     let mut corner_max = 0.0f64;
     let mut interior_max = 0.0f64;
     for &f in freqs {
-        // corner M100_Q0 (the permuted corner) must be unchanged
         corner_max = corner_max.max((mag_at(pc, 1.0, 0.0, f) - mag_at(&permuted, 1.0, 0.0, f)).abs());
-        // an interior morph point must change
         interior_max =
             interior_max.max((mag_at(pc, 0.5, 0.0, f) - mag_at(&permuted, 0.5, 0.0, f)).abs());
     }
@@ -1913,10 +1566,6 @@ fn permutation_regression(pc: &PackedCorners, freqs: &[f64]) -> serde_json::Valu
         "note": "corner TF invariant under stage permutation; interior TF changes -> correspondence is a real hidden variable.",
     })
 }
-
-/// Confirm any real-root row is classified RealPair and REFUSED by the conjugate
-/// reader (never silently clamped). Reports counts for candidate; also checks the
-/// oracle's known real-root numerator when present (synthetic).
 fn real_root_scan(cand: &PackedCorners, root: &Path) -> serde_json::Value {
     use trench_core::stage_law::{geometry_from_words, roots_from_words, RootPair};
     let mut cand_real = 0usize;
@@ -1929,7 +1578,6 @@ fn real_root_scan(cand: &PackedCorners, root: &Path) -> serde_json::Value {
                 let is_real = matches!(g.pole, RootPair::RealPair { .. })
                     || matches!(g.zero, RootPair::RealPair { .. });
                 if is_real {
-                    // conjugate reader MUST refuse (return None), never clamp
                     if roots_from_words(w).is_some() {
                         violations += 1;
                     }
@@ -1969,10 +1617,6 @@ fn real_root_scan(cand: &PackedCorners, root: &Path) -> serde_json::Value {
         "note": "a real-root row is returned as RealPair by geometry_from_words and REFUSED (None) by the conjugate reader.",
     })
 }
-
-/// Synthetic-only: compare the estimated H against the KNOWN oracle response at a
-/// few states to derive the estimator's magnitude/phase accuracy. Reads the
-/// hidden oracle — used ONLY here for calibration, never in the fit.
 fn estimator_calibration(root: &Path, freqs: &[f64]) -> serde_json::Value {
     let op = root.join("_hidden").join("oracle.body240");
     let Ok(b) = std::fs::read(&op) else {
@@ -2005,9 +1649,6 @@ fn estimator_calibration(root: &Path, freqs: &[f64]) -> serde_json::Value {
         "note": "estimator vs known oracle response; derives the recovery tolerance.",
     })
 }
-
-// ── SVG plot (shared dB axis, log frequency) ────────────────────────────────
-
 fn plot_state(
     root: &Path,
     cand: &PackedCorners,
@@ -2053,7 +1694,6 @@ fn plot_state(
     );
     std::fs::write(root.join("verify").join("plots").join(format!("{label}.svg")), svg).unwrap();
 }
-
 fn svg_response(
     title: &str,
     freqs: &[f64],
@@ -2063,7 +1703,6 @@ fn svg_response(
     let (w, h) = (1000.0f64, 560.0f64);
     let (ml, mr, mt, mb) = (70.0, 20.0, 40.0, 50.0);
     let (pw, ph) = (w - ml - mr, h - mt - mb);
-    // shared dB axis from the data
     let mut ymin = f64::INFINITY;
     let mut ymax = f64::NEG_INFINITY;
     for (_, _, d) in curves {
@@ -2085,7 +1724,6 @@ fn svg_response(
          <text x='{tx}' y='22' fill='#ccc'>{title}</text>",
         tx = ml
     );
-    // grid: dB lines
     let mut db = (ymin / 6.0).ceil() * 6.0;
     while db <= ymax {
         let y = yof(db);
@@ -2095,7 +1733,6 @@ fn svg_response(
         ));
         db += 6.0;
     }
-    // grid: decade freq lines
     for &f in &[20.0, 50.0, 100.0, 200.0, 500.0, 1000.0, 2000.0, 5000.0, 10000.0] {
         if f < flo || f > fhi {
             continue;
@@ -2121,7 +1758,6 @@ fn svg_response(
         ));
         let _ = name;
     }
-    // legend (stacked, top-right)
     let lx = ml + pw - 150.0;
     for (row, (name, color, _)) in curves.iter().enumerate() {
         let ly = mt + 6.0 + row as f64 * 18.0;
@@ -2133,20 +1769,15 @@ fn svg_response(
     s.push_str("</svg>");
     s
 }
-
-// ── bundle ───────────────────────────────────────────────────────────────────
-
 fn cmd_bundle(id: &str) {
     let root = session_root(id);
     let read = |p: &str| root.join(p);
     let hash_file = |p: &Path| -> String {
         std::fs::read(p).map(|b| sha256_hex(&b)).unwrap_or_default()
     };
-
     let fit = read_json(&read("fit/fit_config.json"));
     let verify = read_json(&read("verify/verify_report.json"));
     let cap = read_json(&read("capture_manifest.json"));
-
     let hashes = serde_json::json!({
         "excitation_A.wav": hash_file(&read("excitation_A.wav")),
         "candidate.body240": hash_file(&read("fit/candidate.body240")),
@@ -2155,8 +1786,6 @@ fn cmd_bundle(id: &str) {
     });
     write_json(&read("hashes.json"), &hashes);
     write_json(&read("provenance.json"), &provenance_block());
-
-    // SUMMARY.md
     let ct = &verify["fit_train_vs_heldout"]["candidate"];
     let bt = &verify["fit_train_vs_heldout"]["baseline_identity"];
     let cert = &verify["certification"];
@@ -2220,27 +1849,13 @@ fit/candidate.body240 + .cart.json + checkpoints, verify/verify_report.json + pl
     std::fs::write(read("SUMMARY.md"), summary).expect("write summary");
     println!("bundle written: {}", read("SUMMARY.md").display());
 }
-
-// ── forward authoring: BRANCHING MOUTH (cited physical target) ──────────────
-//
-// A second-gen bank body authored DIRECTLY from cited acoustics — no fitter,
-// no invented poles. Morph = the /ɑ/→/i/ vowel journey (formant poles glide the
-// Peterson&Barney rails); Q = oral→branched (a nasal pole-zero pinned near 270 Hz
-// with a zero that slides per Klatt's rule, plus a lateral zero ~2 kHz).
-// Corners: M0_Q0 oral /ɑ/, M100_Q0 oral /i/, M0_Q100 branched /ɑ/, M100_Q100 branched /i/.
-// Every pole/zero carries a citation; packed through the owned compiler.
-
 fn radius_from_bw(bw_hz: f64) -> f64 {
     (-std::f64::consts::PI * bw_hz / SR).exp().clamp(0.5, 0.9985)
 }
-
-/// One flat-off-resonance formant PEAK (RBJ), owned `section_biquad` path.
 fn formant_words(fc: f64, bw_hz: f64, gain_db: f64) -> [u16; NUM_COEFFS] {
     let q = (fc / bw_hz).clamp(0.6, 30.0);
     biquad_to_words(section_biquad(TYPE_PEAK, fc, q, gain_db))
 }
-
-/// One side-branch pole-zero pair (anti-resonance), DC-normalized ~flat off band.
 fn pole_zero_words(pole_hz: f64, pole_bw: f64, zero_hz: f64, zero_bw: f64) -> [u16; NUM_COEFFS] {
     let rp = radius_from_bw(pole_bw);
     let rz = radius_from_bw(zero_bw);
@@ -2252,12 +1867,9 @@ fn pole_zero_words(pole_hz: f64, pole_bw: f64, zero_hz: f64, zero_bw: f64) -> [u
     let b0 = (1.0 + a1 + a2) / (1.0 + nb1 + nb2).abs().max(1e-6);
     biquad_to_words([b0, b0 * nb1, b0 * nb2, a1, a2])
 }
-
 fn identity_words() -> [u16; NUM_COEFFS] {
     biquad_to_words([1.0, 0.0, 0.0, 0.0, 0.0])
 }
-
-/// Build one corner: 6 lanes. F1..F4 formant peaks, lane5 nasal, lane6 lateral.
 fn mouth_corner(
     f1: (f64, f64),
     f2: (f64, f64),
@@ -2275,26 +1887,22 @@ fn mouth_corner(
         lateral.map(|(a, b, c, d)| pole_zero_words(a, b, c, d)).unwrap_or_else(identity_words),
     ]
 }
-
 fn build_branching_mouth() -> [u8; 240] {
-    // freqs: Peterson&Barney (men). BW: Klatt typ. Branched F1 +100 & broadened,
-    // nasal FNZ from Klatt's (F1'+270)/2 rule, lateral zero ~2 kHz (UW/ZEW).
-    let m0_q0 = mouth_corner((730.0, 50.0), (1090.0, 70.0), (2440.0, 110.0), (3300.0, 250.0), None, None); // oral /ɑ/
-    let m100_q0 = mouth_corner((270.0, 50.0), (2290.0, 70.0), (3010.0, 110.0), (3300.0, 250.0), None, None); // oral /i/
+    let m0_q0 = mouth_corner((730.0, 50.0), (1090.0, 70.0), (2440.0, 110.0), (3300.0, 250.0), None, None);
+    let m100_q0 = mouth_corner((270.0, 50.0), (2290.0, 70.0), (3010.0, 110.0), (3300.0, 250.0), None, None);
     let m0_q100 = mouth_corner(
         (830.0, 130.0), (1090.0, 70.0), (2440.0, 110.0), (3300.0, 250.0),
-        Some((270.0, 100.0, 550.0, 100.0)),  // nasal: pole 270, zero 550 (/ɑ/)
-        Some((2400.0, 300.0, 2000.0, 150.0)), // lateral: zero ~2k, pole above
-    ); // branched /ɑ/
+        Some((270.0, 100.0, 550.0, 100.0)),
+        Some((2400.0, 300.0, 2000.0, 150.0)),
+    );
     let m100_q100 = mouth_corner(
         (370.0, 130.0), (2290.0, 70.0), (3010.0, 110.0), (3300.0, 250.0),
-        Some((270.0, 100.0, 320.0, 100.0)),  // nasal: pole 270, zero 320 (/i/)
+        Some((270.0, 100.0, 320.0, 100.0)),
         Some((2400.0, 300.0, 2000.0, 150.0)),
-    ); // branched /i/
+    );
     let words = [m0_q0, m100_q0, m0_q100, m100_q100];
     PackedCorners { words }.to_rom_bytes()
 }
-
 fn cmd_author_mouth(id: &str) {
     let root = session_root(id);
     ensure_dir(&root.join("bank"));
@@ -2302,8 +1910,6 @@ fn cmd_author_mouth(id: &str) {
     let pc = PackedCorners::from_body_bytes(&body).unwrap();
     std::fs::write(root.join("bank").join("branching_mouth.body240"), body).unwrap();
     write_json(&root.join("bank").join("branching_mouth.cart.json"), &cartridge_json(&pc));
-
-    // certification: owned crown/stability gate + dense 33×33
     let audit = trench_core::response::audit_body240(&body).expect("audit");
     let mut unstable = 0usize;
     let mut nonfinite = 0usize;
@@ -2320,8 +1926,6 @@ fn cmd_author_mouth(id: &str) {
             }
         }
     }
-
-    // plot the four vowel corners + the morph center, shared dB axis
     let grid = log_frequency_grid(30.0, 16_000.0, 500);
     let curve = |m: f64, q: f64| -> Vec<f64> {
         let rows = pc.interpolate_biquad(m as f32, q as f32);
@@ -2345,20 +1949,15 @@ fn cmd_author_mouth(id: &str) {
     ];
     let svg = svg_response("BRANCHING MOUTH — four authored corners (cited formants + branch zeros)", &grid, &curves, &mask);
     std::fs::write(root.join("bank").join("branching_mouth_corners.svg"), svg).unwrap();
-
     println!("authored Branching Mouth -> bank/branching_mouth.body240");
     println!("  crown gate {} | crown {:.1}..{:.1} dB parity {:.1}",
         audit.gate.pass, audit.gate.measured_crown_min_db, audit.gate.measured_crown_max_db, audit.gate.measured_crown_parity_db);
     println!("  cert 33x33: {unstable} unstable, {nonfinite} nonfinite");
     println!("  plot: bank/branching_mouth_corners.svg");
 }
-
-// ── self-checks ──────────────────────────────────────────────────────────────
-
 #[cfg(test)]
 mod tests {
     use super::*;
-
     #[test]
     fn sha256_known_vector() {
         assert_eq!(
@@ -2366,7 +1965,6 @@ mod tests {
             "ba7816bf8f01cfea414140de5dae2223b00361a396177a9cb410ff61f20015ad"
         );
     }
-
     #[test]
     fn fft_roundtrip() {
         let mut re: Vec<f64> = (0..64).map(|i| (i as f64 * 0.3).sin()).collect();
@@ -2378,7 +1976,6 @@ mod tests {
             assert!((a - b).abs() < 1e-9);
         }
     }
-
     #[test]
     fn multisine_is_flat_on_excited_bins() {
         let x = multisine_period(0.2);
@@ -2394,30 +1991,25 @@ mod tests {
         for m in &mags {
             assert!((m - mean).abs() / mean < 1e-6, "excited bin not flat");
         }
-        // energy off the excited set must be ~0
         let off: f64 = (1..PERIOD / 2)
             .filter(|k| !bins.contains(k))
             .map(|k| (re[k] * re[k] + im[k] * im[k]).sqrt())
             .sum();
         assert!(off < 1e-6, "leakage into non-excited bins: {off}");
     }
-
     #[test]
     fn param_body_roundtrip_is_240_bytes() {
         let p = vec![0.5f64; NPARAM];
         let body = params_to_body(&p);
         assert_eq!(body.len(), 240);
-        // load/save identity
         let pc = PackedCorners::from_body_bytes(&body).unwrap();
         assert_eq!(pc.to_rom_bytes(), body);
     }
-
     #[test]
     fn synth_oracle_is_valid_and_stable() {
         let b = build_synth_oracle();
         assert_eq!(b.len(), 240);
         let pc = PackedCorners::from_body_bytes(&b).unwrap();
-        // dense stability spot check
         for &m in &[0.0, 0.5, 1.0] {
             for &q in &[0.0, 0.5, 1.0] {
                 let rows = pc.interpolate_biquad(m, q);

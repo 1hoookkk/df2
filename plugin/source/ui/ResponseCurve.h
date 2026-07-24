@@ -1,18 +1,10 @@
 #pragma once
-
 #include <juce_graphics/juce_graphics.h>
-
 #include <cmath>
 #include <complex>
 #include <vector>
-
 namespace trench::ui
 {
-
-// Shared response-curve geometry: turn a 6-stage biquad coefficient set (30 floats)
-// + boost into screen points inside `rect`. This is the SAME magnitude math the hero
-// GraphDisplay uses, factored out so the variant mini-plots match the main curve
-// exactly instead of drifting to a second implementation.
 inline std::vector<juce::Point<float>> responseCurvePoints (
     const float coeffs[30], float boost, double sr,
     juce::Rectangle<float> rect, double dbTop, double dbBot, int N = 96)
@@ -20,11 +12,9 @@ inline std::vector<juce::Point<float>> responseCurvePoints (
     std::vector<juce::Point<float>> pts;
     if (rect.isEmpty() || sr <= 0.0 || N < 2 || dbTop <= dbBot)
         return pts;
-
     const double fLo = 20.0, fHi = juce::jmin (20000.0, sr * 0.5 - 1.0);
     if (fHi <= fLo)
         return pts;
-
     pts.reserve ((size_t) N);
     for (int i = 0; i < N; ++i)
     {
@@ -32,7 +22,6 @@ inline std::vector<juce::Point<float>> responseCurvePoints (
         const double f = fLo * std::pow (fHi / fLo, frac);
         const double w = 2.0 * juce::MathConstants<double>::pi * f / sr;
         const std::complex<double> zinv = std::exp (std::complex<double> (0.0, -w));
-
         double mag = (double) boost;
         bool ok = true;
         for (int s = 0; s < 6; ++s)
@@ -47,7 +36,6 @@ inline std::vector<juce::Point<float>> responseCurvePoints (
         }
         if (! ok || ! std::isfinite (mag))
             continue;
-
         const double db = 20.0 * std::log10 (juce::jmax (mag, 1.0e-6));
         const double yt = juce::jlimit (-0.06, 1.06, (dbTop - db) / (dbTop - dbBot));
         pts.push_back ({ (float) (rect.getX() + frac * rect.getWidth()),
@@ -55,5 +43,4 @@ inline std::vector<juce::Point<float>> responseCurvePoints (
     }
     return pts;
 }
-
-} // namespace trench::ui
+}

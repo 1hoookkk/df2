@@ -1,0 +1,60 @@
+# TRENCH approved bodies — SINGLE SOURCE OF TRUTH for curation (2026-07-21).
+#
+# Verdict source: Tyson at the live plugin (HANDOFF_20260721_NIGHT_shipping.md §0).
+# Only bodies listed here may appear top-level in the preset selector. Every body
+# not listed here is dropdown/demoted material — never deleted, never promoted by
+# a tool. Graduation to [top_level] happens ONLY by Tyson's ear, one body at a time.
+#
+# Roster freeze (2026-07-21): PresetRoster.inc / PresetRosterSignature.inc are
+# hand-maintained from this file. preset_gain_fix.rs no longer targets the roster
+# (scratch output: gain-fix-roster.inc); build_measured_cross.py prints roster
+# lines for manual curation instead of writing; .prompts/002 is DO-NOT-RUN.
+#
+# Format: [family] section headers, one body stem per line, comments with '#'.
+
+[top_level]
+# Individually ear-approved bodies (Tyson, 2026-07-21). Selector top level.
+shipv2_violent_acid_to_drill   # Violent Acid to Drill — ceiling-fixed +27, shipped+installed 2026-07-21
+# NOTE: "Hedz to Gong" was named top-level in the handoff but NO such stem exists.
+# hedz_vowel_ah_ee explicitly FAILED. Confirm with Tyson before listing anything here.
+
+# Complete-row ROM-frame/rich-data hybrids promoted by Tyson, 2026-07-22.
+speaker_knockerz
+block_talk
+ear_hustler
+heavy_hitter
+talk_of_the_town
+sweep_dreams
+string_slinger
+cave_radio
+sidewalk_stereo
+big_body
+loose_lips
+mine_field
+
+[ship_v2]
+# Approved as a family (shelf 2026-07-20_ship_v2). Bodies: plugin/presets/bodies/shipv2_*.body240
+shipv2_303_cavity_acid
+shipv2_comb_low_to_sparse
+shipv2_gizmo_bell
+shipv2_hedz_bottle_mouth
+shipv2_kling_bar_plate
+shipv2_razor_cut_field
+shipv2_ringer_glass_gong
+shipv2_sweep_scream
+shipv2_violent_acid_to_drill
+shipv2_vowel_a_to_e
+shipv2_vowel_u_to_i
+
+[master_body_trial]
+# Approved as a family (Dvtd vocal-tract S2-quad, measured authoring).
+# Source: dev/tmp/master_body_trial_20260720/ (bodies NOT currently in plugin/presets/bodies/).
+dvtd_bass_s_to_tiere_i_bloom_trial     # +2 variants exist in artifacts/ and crossover_artifacts_v2/
+dvtd_s2_quad_a_to_i_register
+dvtd_s2_quad_a_to_i_register_r01       # radius-boost R01 variant
+dvtd_s2_quad_deep_bouche_ends
+dvtd_s2_quad_eeh_to_aah_ends
+dvtd_s2_quad_multi_q_vox_ends
+dvtd_s2_quad_ooh_to_eee_ends
+dvtd_s2_quad_talker_ends
+dvtd_s2_quad_ubu_orator_ends

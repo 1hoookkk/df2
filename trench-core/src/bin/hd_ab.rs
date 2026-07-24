@@ -1,25 +1,13 @@
-//! hd_ab — level-matched island-rate A/B: the SAME body + groove + morph ride,
-//! rendered through the engine at 39062.5 (legacy island) and 78125 (HD).
-//!
-//!   cargo run -p trench-core --release --bin hd-ab -- <body.body240> <outstem>
-//!
-//! Writes <outstem>_39k.wav and <outstem>_hd.wav at the ENGINE rate (f32 WAV,
-//! rate in the header). Resample/level-match downstream before judging.
-
 use trench_core::cartridge::Cartridge;
 use trench_core::desk_drive::{DeskDrive, SUPPORTED_MODEL};
 use trench_core::engine::{FilterEngine, InputMode, SpatialMode};
-
 const BPM: f64 = 120.0;
 const BARS: usize = 4;
 const BLOCK: usize = 128;
-
 fn rng(state: &mut u32) -> f64 {
     *state = state.wrapping_mul(1_664_525).wrapping_add(1_013_904_223);
     (*state >> 8) as f64 / (1u32 << 24) as f64 * 2.0 - 1.0
 }
-
-/// The rate_ab drum groove (kick quarters, snare 2/4, 1/8 hats), at `sr`.
 fn groove(sr: f64) -> Vec<f32> {
     let spb = 60.0 / BPM;
     let n = (sr * spb * 4.0 * BARS as f64) as usize;
@@ -56,14 +44,8 @@ fn groove(sr: f64) -> Vec<f32> {
     }
     out.iter().map(|v| (*v * 0.5) as f32).collect()
 }
-
-/// The reese riff: A1 A1 C2 D2 F1 G1 A1 E2, one note per second, three
-/// band-limited saws detuned ±0.4% — the beating low-mid wall, playing a line.
 const RIFF_HZ: [f64; 8] = [55.0, 55.0, 65.41, 73.42, 43.65, 49.0, 55.0, 82.41];
-/// Pitch class of each riff note relative to C, folded to ±6 (what the
-/// KeyTrackDetector would emit): A=-3, C=0, D=+2, F=+5, G=-5, E=+4.
 const RIFF_PC: [i32; 8] = [-3, -3, 0, 2, 5, -5, -3, 4];
-
 fn reese(sr: f64) -> Vec<f32> {
     let n = (sr * 8.0) as usize;
     let mut out = vec![0.0f64; n];
@@ -86,7 +68,6 @@ fn reese(sr: f64) -> Vec<f32> {
     let peak = out.iter().fold(0.0f64, |m, v| m.max(v.abs()));
     out.iter().map(|v| (v / peak * 0.5) as f32).collect()
 }
-
 fn render(body: &[u8], rate: f64, bite: f32) -> Vec<f32> {
     let mut eng = FilterEngine::new();
     eng.prepare(rate);
@@ -96,16 +77,13 @@ fn render(body: &[u8], rate: f64, bite: f32) -> Vec<f32> {
     let is_reese = std::env::var("HD_AB_SOURCE").as_deref() == Ok("reese");
     let keytrack = std::env::var("HD_AB_KEYTRACK").as_deref() == Ok("1");
     let fx = std::env::var("HD_AB_FX").unwrap_or_default();
-    // inslam: the engine's own pre-cascade Mackie desk (the Into-Filter route)
     if fx == "inslam" {
         eng.set_input_mode(InputMode::MackieDeskSlam);
-        eng.set_slam_drive(0.10); // the shipped kIntoFilterDriveScale at full
+        eng.set_slam_drive(0.10);
     }
-    // orbit: QSound engaged, SPACE ridden by a slow orbit below
     if fx == "orbit" {
         eng.set_spatial_mode(SpatialMode::QSound);
     }
-    // outslam: the same measured desk AFTER the engine (where SLAM ships)
     let mut out_desk_l = DeskDrive::new();
     let mut out_desk_r = DeskDrive::new();
     if fx == "outslam" {
@@ -117,8 +95,6 @@ fn render(body: &[u8], rate: f64, bite: f32) -> Vec<f32> {
     let src = if is_reese { reese(rate) } else { groove(rate) };
     let total = src.len();
     let mut out = Vec::with_capacity(total * 2);
-    // Warm start: run the full loop once and discard — coefficient ramps land,
-    // AGC and desk state settle — then capture. Renders must never cold-start.
     for pass in 0..2 {
         let capture = pass == 1;
         if capture {
@@ -130,9 +106,7 @@ fn render(body: &[u8], rate: f64, bite: f32) -> Vec<f32> {
         let mut l: Vec<f32> = src[off..off + n].to_vec();
         let mut r = l.clone();
         let t = off as f64 / rate;
-        // reese: beat-ish morph orbit (the modulation); groove: slow ride
         let morph = if is_reese && std::env::var("HD_AB_MORPHSTEP").as_deref() == Ok("1") {
-            // chords CHANGE, they don't smear: hold each pose for 2 beats
             if (t * 2.0).floor() as i64 % 2 == 0 { 0.0 } else { 1.0 }
         } else if is_reese {
             0.5 + 0.45 * (std::f64::consts::TAU * 2.0 * t).sin()
@@ -140,13 +114,10 @@ fn render(body: &[u8], rate: f64, bite: f32) -> Vec<f32> {
             off as f64 / total as f64
         };
         if keytrack {
-            // the engine half of KEY TRACK, fed the riff's known pitch classes
-            // (exactly what the plugin's detector emits for these notes)
             let pc = RIFF_PC[(t.floor() as usize).min(7)];
             eng.set_pitch_ratio((2.0f64.powf(pc as f64 / 12.0)) as f32);
         }
         if fx == "orbit" {
-            // ORBIT: SPACE swept 0..1 at 0.25 Hz — a slow head-wrap
             eng.set_space((0.5 + 0.5 * (std::f64::consts::TAU * 0.25 * t).sin()) as f32);
         }
         eng.process_block(&mut l, &mut r, morph, 0.7);
@@ -162,7 +133,6 @@ fn render(body: &[u8], rate: f64, bite: f32) -> Vec<f32> {
                 *v = out_desk_r.process(*v, slam);
             }
         }
-        // interleave stereo (identical channels unless QSound is live)
         if capture {
             for i in 0..n {
                 out.push(l[i]);
@@ -174,7 +144,6 @@ fn render(body: &[u8], rate: f64, bite: f32) -> Vec<f32> {
     }
     out
 }
-
 fn write_wav_f32(path: &str, rate: u32, data: &[f32]) {
     let bytes_len = (data.len() * 4) as u32;
     let mut w: Vec<u8> = Vec::with_capacity(44 + data.len() * 4);
@@ -182,8 +151,8 @@ fn write_wav_f32(path: &str, rate: u32, data: &[f32]) {
     w.extend_from_slice(&(36 + bytes_len).to_le_bytes());
     w.extend_from_slice(b"WAVEfmt ");
     w.extend_from_slice(&16u32.to_le_bytes());
-    w.extend_from_slice(&3u16.to_le_bytes()); // IEEE float
-    w.extend_from_slice(&2u16.to_le_bytes()); // stereo interleaved
+    w.extend_from_slice(&3u16.to_le_bytes());
+    w.extend_from_slice(&2u16.to_le_bytes());
     w.extend_from_slice(&rate.to_le_bytes());
     w.extend_from_slice(&(rate * 8).to_le_bytes());
     w.extend_from_slice(&8u16.to_le_bytes());
@@ -195,12 +164,6 @@ fn write_wav_f32(path: &str, rate: u32, data: &[f32]) {
     }
     std::fs::write(path, w).expect("write wav");
 }
-
-/// Mission-F probe: the SAME packed lerp, called PER SAMPLE instead of per
-/// 32-sample control block. BODY SOLO cascade + the output desk (the default
-/// sound). mode: "lerp32" = 32-sample snap grid (the current engine's
-/// granularity, no ramp), "lerp1" = per-sample, "fm" = per-sample with the
-/// morph itself at audio rate (55 Hz anatomy FM around centre).
 fn render_per_sample(body: &[u8], rate: f64, mode: &str) -> Vec<f32> {
     use trench_core::cascade::Cascade;
     let cart = Cartridge::from_body_bytes_at("ps", body, 1.0, rate).expect("cartridge");
@@ -228,7 +191,6 @@ fn render_per_sample(body: &[u8], rate: f64, mode: &str) -> Vec<f32> {
     }
     out
 }
-
 fn main() {
     let args: Vec<String> = std::env::args().collect();
     let (body_path, stem, bite) = match &args[..] {

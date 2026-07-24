@@ -1,85 +1,47 @@
 #pragma once
-
 #include "SelectorLookAndFeel.h"
 #include "Theme.h"
 #include "../parameters/TrenchParameters.h"
-
 #include <juce_audio_processors/juce_audio_processors.h>
 #include <memory>
-
 namespace trench::ui
 {
-
-// The Modulation chip: one small clickable tag on the glass (bottom-left,
-// over the curve). The locked UX (2026-07-17): the menu picks a TIME only —
-// the MORPH wheel steers the sound, modulation is additive around it — plus
-// one ORBIT toggle (the signature 2D move: morph on sin, press on cos).
-// There is no character/verb list: the old RISE/BREATHE/CHOP names claimed
-// personalities the engine ran under a different vocabulary.
-//
-// Honesty rule: everything this chip displays is DERIVED from the live
-// parameters at paint time. No widget state, no invented fallbacks.
+// The "Modulation" chip: arms trench::MorphMod. One familiar control — click
+// opens a rate dropdown. AUTO (the input plays the wheel) sits first, then
+// synced note rates (no 1/32: too jarring to hand a user), RISE, and OFF.
 class MoveChip : public juce::Component,
                  private juce::Timer
 {
 public:
-    // motionDiv choice order (TrenchParameters.cpp):
-    // 0=1/4 1=1/8 2=1/8T 3=1/16 4=1/16T 5=1/32 6=1/2 7=1 BAR 8=2 BAR 9=4 BAR.
-    // The menu lists every division, fast to slow, so the shown time is always
-    // the REAL live one.
-    struct TimeItem { const char* label; int divIdx; };
-    // SIMPLIFIED (Tyson 2026-07-18, "simplify it make it fun"): the seven
-    // musical core times only. The exotic divisions (1/32, triplets, 1/6,
-    // 3/16, 5/16 — divIdx 2,4,5,10,11,12) stay reachable as host params and
-    // still DISPLAY correctly if set there; the menu just stops listing them.
+    struct TimeItem { const char* label; int noteIdx; };
+    // Menu order fast -> slow. modNote index order is
+    // {4bar,2bar,1bar,1/2,1/4,1/8,1/16,1/32}.
+    // fast -> slow, odd rhythmic values included (1/32 stays banned)
     static constexpr TimeItem kTimes[] = {
-        { "1/16", 3 }, { "1/8", 1 }, { "1/4", 0 }, { "1/2", 6 },
-        { "1 BAR", 7 }, { "2 BAR", 8 }, { "4 BAR", 9 },
+        { "1/16", 6 }, { "1/12", 12 }, { "1/8", 5 }, { "1/6", 11 },
+        { "3/16", 9 }, { "1/4", 4 }, { "5/16", 10 }, { "3/8", 8 },
+        { "7/16", 14 }, { "1/2", 3 }, { "5/8", 13 },
+        { "1 BAR", 2 }, { "2 BAR", 1 }, { "4 BAR", 0 },
     };
-
     MoveChip (juce::AudioProcessorValueTreeState& apvts, const Theme& theme)
         : t (theme)
     {
-        motionOnParam   = apvts.getParameter (ParamID::motionOn);
-        motionTileParam = apvts.getParameter (ParamID::motionTile);
-        motionDivParam  = apvts.getParameter (ParamID::motionDiv);
-        motionTgtMParam = apvts.getParameter (ParamID::motionTargetM);
-        motionTgtQParam = apvts.getParameter (ParamID::motionTargetQ);
-        moveOnParam     = apvts.getParameter (ParamID::moveOn);
-        moveShapeParam  = apvts.getParameter (ParamID::moveShape);
-        moveTimeParam   = apvts.getParameter (ParamID::moveTime);
-        moveTensionParam = apvts.getParameter (ParamID::moveTension);
-        moveRateParam   = apvts.getParameter (ParamID::moveRate);
-        moveRiseParam   = apvts.getParameter (ParamID::moveRise);
-        motionReactParam = apvts.getParameter (ParamID::motionReact);
-
-        auto repaintOnChange = [this] (float)
-        {
-            if (paramBool (motionOnParam))
-                startTimer (60);   // pulse clock while modulating
-            repaint();
-        };
-        for (auto* p : { motionOnParam, motionTileParam, motionDivParam,
-                         moveOnParam, moveShapeParam, moveTimeParam })
+        modOnParam      = apvts.getParameter (ParamID::modOn);
+        modTriggerParam = apvts.getParameter (ParamID::modTrigger);
+        modNoteParam    = apvts.getParameter (ParamID::modNote);
+        modSyncParam    = apvts.getParameter (ParamID::modSync);
+        modFeelParam    = apvts.getParameter (ParamID::modFeel);
+        auto repaintOnChange = [this] (float) { repaint(); };
+        for (auto* p : { modOnParam, modTriggerParam, modNoteParam, modFeelParam })
             if (p != nullptr)
                 atts.push_back (std::make_unique<juce::ParameterAttachment> (*p, repaintOnChange));
-
         setInterceptsMouseClicks (true, false);
         setMouseCursor (juce::MouseCursor::PointingHandCursor);
         setTitle ("Modulation");
-        setHelpText ("Pick a modulation time (the Morph wheel steers the sound), toggle ORBIT, or OFF");
+        setHelpText ("Pick a modulation rate - AUTO follows the input, note values sync, RISE climbs once");
     }
-
     ~MoveChip() override = default;
-
-    // The screen voice: fired with a short label on every menu action.
     std::function<void (const juce::String&)> onAnnounce;
-    // Live pattern step (0..15) from the processor — drives the lamp pulse.
-    std::function<int()> getMotionStep;
-
-    // SEED's screen feedback: replace this chip's own text with "SIBLING"
-    // for ~500ms, then revert to the real derived state (unchanged the whole
-    // time -- this only overrides the DISPLAYED text).
     void flashSiblingLabel()
     {
         showingSibling = true;
@@ -87,64 +49,28 @@ public:
         startTimer (30);
         repaint();
     }
-
+    // Only the readout is the control; the rest of the row stays glass (SLAM).
+    bool hitTest (int x, int y) override
+    {
+        juce::ignoreUnused (y);
+        return x < kCollapsedWidth;
+    }
     void mouseEnter (const juce::MouseEvent&) override { hover = true; repaint(); }
     void mouseExit  (const juce::MouseEvent&) override { hover = false; repaint(); }
-
-    // Tactile time-nudge (2026-07-19): drag the chip left/right to ride the
-    // division; a plain click (no drag) opens the menu on release.
-    void mouseDown (const juce::MouseEvent& e) override
-    {
-        chipDragStartX = e.x;
-        chipDragged = false;
-        const int liveDiv = paramChoice (motionDivParam, 12);
-        chipDragStartIdx = 2; // default 1/4 if live div isn't a core time
-        for (int i = 0; i < (int) std::size (kTimes); ++i)
-            if (kTimes[(size_t) i].divIdx == liveDiv)
-                chipDragStartIdx = i;
-    }
-
-    void mouseDrag (const juce::MouseEvent& e) override
-    {
-        const int step = (e.x - chipDragStartX) / 16;
-        if (step == 0 && ! chipDragged)
-            return;
-        chipDragged = true;
-        const int idx = juce::jlimit (0, (int) std::size (kTimes) - 1, chipDragStartIdx + step);
-        if (kTimes[(size_t) idx].divIdx != paramChoice (motionDivParam, 12) || ! paramBool (motionOnParam))
-        {
-            apply (kIdTimeBase + idx);
-            if (onAnnounce)
-                onAnnounce (announceLabel (kIdTimeBase + idx));
-        }
-    }
-
     void mouseUp (const juce::MouseEvent&) override
     {
-        if (chipDragged)
-            return;
         juce::PopupMenu m;
+        lookAndFeel.itemFontSize = 11.5f;
+        lookAndFeel.itemHeight = 19;
         m.setLookAndFeel (&lookAndFeel);
-        const bool on = paramBool (motionOnParam);
-        const int liveDiv = paramChoice (motionDivParam, 12);
-        m.addItem (kIdOff, "OFF", true, ! on && ! orbitActive());
+        m.addItem (kIdAuto, "AUTO", true, followActive());
         m.addSeparator();
         for (int i = 0; i < (int) std::size (kTimes); ++i)
             m.addItem (kIdTimeBase + i, kTimes[(size_t) i].label, true,
-                       on && kTimes[(size_t) i].divIdx == liveDiv);
+                       syncActive() && kTimes[(size_t) i].noteIdx == paramChoice (modNoteParam, 7));
         m.addSeparator();
-        m.addItem (kIdOrbit, "ORBIT", moveShapeParam != nullptr, orbitActive());
-        // RISE: arming a synced MOVE ramps depth 0->full over one TIME cycle,
-        // then holds — the performed riser. Ignored in FREE (no clock to ride).
-        m.addItem (kIdRise, "RISE", moveRiseParam != nullptr, paramBool (moveRiseParam));
-        // FOLLOW (2026-07-18): env follow — the input's own level opens the
-        // filter (react push, no clock). The third verb: times dance, RISE
-        // builds, FOLLOW breathes.
-        m.addItem (kIdFollow, "FOLLOW", motionReactParam != nullptr, followActive());
-        // RATE rows retired from the menu (2026-07-18): AUTO derives the morph
-        // approach time from the chosen division. The host param remains the
-        // expert override.
-
+        m.addItem (kIdRise, "RISE", true, riserActive());
+        m.addItem (kIdOff, "OFF", true, ! paramBool (modOnParam));
         juce::Component::SafePointer<MoveChip> self (this);
         m.showMenuAsync (juce::PopupMenu::Options().withTargetComponent (this),
                          [self] (int id)
@@ -156,49 +82,51 @@ public:
                                  self->onAnnounce (self->announceLabel (id));
                          });
     }
-
     void paint (juce::Graphics& g) override
     {
-        const auto chip = getLocalBounds().toFloat();
-        const bool on = paramBool (motionOnParam) || orbitActive();
-
-        const float lampD = 4.5f;
-        const auto lamp = juce::Rectangle<float> (chip.getX(),
-                                                   chip.getCentreY() - lampD * 0.5f,
-                                                   lampD, lampD);
-        // The lamp is lit exactly when something is actually modulating —
-        // and PULSES with the pattern step (2026-07-18): motion you can see.
-        // No pulse while the transport is stopped = the honest diagnostic.
-        // The small modulation indicator is copper in the reference. Keep it
-        // separate from the teal wheel illumination so the two signals do not
-        // visually bleed into one another.
+        const bool on = paramBool (modOnParam);
+        const auto b = getLocalBounds().toFloat();
         const auto lampBase = t.modulationLamp();
-        auto lampCol = on ? lampBase
-                          : lampBase.darker (0.72f).withAlpha (0.82f);
-        if (on && lampFlash > 0.0f)
-            lampCol = lampCol.brighter (lampFlash * 0.8f);
-        g.setColour (lampCol);
-        g.fillEllipse (lamp);
-        if (on && lampFlash > 0.3f)
+        const auto ink = juce::Colour (0xffe4f2ec);
+        const float lampD = 4.5f;
+        const auto lamp = juce::Rectangle<float> (b.getX(), b.getCentreY() - lampD * 0.5f,
+                                                  lampD, lampD);
+        if (on)
         {
-            g.setColour (lampBase.withAlpha (0.30f * lampFlash));
-            g.fillEllipse (lamp.expanded (2.0f));
+            // Lit lamp gets a tight halo — on/off reads at a glance, quietly.
+            g.setColour (lampBase.withAlpha (0.20f));
+            g.fillEllipse (lamp.expanded (1.8f));
         }
+        g.setColour (on ? lampBase : lampBase.darker (0.72f).withAlpha (0.82f));
+        g.fillEllipse (lamp);
         g.setColour (juce::Colours::black.withAlpha (0.45f));
         g.drawEllipse (lamp, 0.7f);
-
-        g.setFont (displayFont (9.6f, false).withExtraKerningFactor (0.018f));
-        const auto area = chip.withTrimmedLeft (lampD + 6.0f);
-        // Quiet ink: the tag is a status caption, not a headline — it must sit
-        // UNDER the curve, so it stays dim unless hovered or actively modulating.
-        g.setColour (juce::Colour (0xffe4f2ec).withAlpha (hover ? 0.85f : (on ? 0.6f : 0.42f)));
-        g.drawText (displayText(), area, juce::Justification::centredLeft, false);
+        const auto font = displayFont (9.8f, false).withExtraKerningFactor (0.018f);
+        g.setFont (font);
+        const auto area = b.withTrimmedLeft (lampD + 6.0f);
+        if (showingSibling)
+        {
+            g.setColour (ink.withAlpha (0.85f));
+            g.drawText ("Modulation  SIBLING", area.toNearestInt(),
+                        juce::Justification::centredLeft, false);
+            return;
+        }
+        // "Modulation" in ink; the STATE word carries the on/off truth —
+        // lamp-teal when armed, an explicit dim OFF when not.
+        const juce::String label ("Modulation");
+        g.setColour (ink.withAlpha (hover ? 0.80f : (on ? 0.58f : 0.42f)));
+        g.drawText (label, area.toNearestInt(), juce::Justification::centredLeft, false);
+        const float lw = juce::GlyphArrangement::getStringWidth (font, label) + 8.0f;
+        const juce::String state = on ? (syncActive() ? liveTimeLabel()
+                                       : riserActive() ? "RISE " + liveTimeLabel()
+                                       : "AUTO")
+                                      : juce::String ("OFF");
+        g.setColour (on ? lampBase.withAlpha (0.80f) : ink.withAlpha (0.32f));
+        g.drawText (state, area.withTrimmedLeft (lw).toNearestInt(),
+                    juce::Justification::centredLeft, false);
     }
-
 private:
-    static constexpr int kIdOff = 1, kIdTimeBase = 100, kIdOrbit = 999, kIdRateBase = 1200, kIdRise = 1300, kIdFollow = 1400;
-    static constexpr const char* kRateLabels[4] = { "RATE  AUTO", "RATE  SNAP", "RATE  TIGHT", "RATE  GLIDE" };
-
+    static constexpr int kIdOff = 1, kIdAuto = 2, kIdRise = 3, kIdTimeBase = 100;
     static bool paramBool (const juce::RangedAudioParameter* p) noexcept
     {
         return p != nullptr && p->getValue() > 0.5f;
@@ -209,148 +137,70 @@ private:
         return juce::jlimit (0, maxIdx,
                              juce::roundToInt (p->convertFrom0to1 (p->getValue())));
     }
-
-    bool orbitActive() const noexcept
+    // Face param index order is ENV,SYNC,RISER (0,1,2) — not trench::ModTrigger's.
+    int triggerIdx() const noexcept { return paramChoice (modTriggerParam, 2); }
+    bool syncActive()   const noexcept { return paramBool (modOnParam) && triggerIdx() == 1; }
+    bool riserActive()  const noexcept { return paramBool (modOnParam) && triggerIdx() == 2; }
+    bool followActive() const noexcept { return paramBool (modOnParam) && triggerIdx() == 0; }
+    void write (juce::RangedAudioParameter* p, float denorm)
     {
-        return paramBool (moveOnParam) && paramChoice (moveShapeParam, 6) == kOrbitShape;
+        if (p == nullptr) return;
+        p->beginChangeGesture();
+        p->setValueNotifyingHost (p->convertTo0to1 (denorm));
+        p->endChangeGesture();
     }
-
-    bool followActive() const noexcept
-    {
-        return motionReactParam != nullptr && motionReactParam->getValue() > 0.0005f;
-    }
-
-    juce::String liveTimeLabel() const
-    {
-        // Full division vocabulary — host-set exotics still display truthfully
-        // even though the menu only lists the core seven.
-        static constexpr const char* kDivLabels[13] = {
-            "1/4", "1/8", "1/8T", "1/16", "1/16T", "1/32", "1/2",
-            "1 BAR", "2 BAR", "4 BAR", "3/16", "5/16", "1/6" };
-        return kDivLabels[paramChoice (motionDivParam, 12)];
-    }
-
     void apply (int id)
     {
-        auto write = [] (juce::RangedAudioParameter* p, float denorm)
-        {
-            if (p == nullptr) return;
-            p->beginChangeGesture();
-            p->setValueNotifyingHost (p->convertTo0to1 (denorm));
-            p->endChangeGesture();
-        };
-
         if (id == kIdOff)
         {
-            write (motionOnParam, 0.0f);
-            write (moveOnParam, 0.0f);
-            write (motionReactParam, 0.0f);   // OFF means everything, FOLLOW included
-            followArmedMotion = false;
+            write (modOnParam, 0.0f);
         }
-        else if (id == kIdOrbit)
+        else if (id == kIdAuto)
         {
-            const bool enable = ! orbitActive();
-            if (enable)
-            {
-                write (moveShapeParam, (float) kOrbitShape);
-                write (moveTimeParam, (float) moveTimeForDiv (paramChoice (motionDivParam, 12)));
-                // ORBIT is a toggle, not a fader: the gesture engine scales by
-                // moveTension, and nothing else sets it now that Page 2 is
-                // retired — without this the toggle ran at depth 0 (silent).
-                write (moveTensionParam, 1.0f);
-            }
-            write (moveOnParam, enable ? 1.0f : 0.0f);
-        }
-        else if (id >= kIdRateBase && id < kIdRateBase + 4)
-        {
-            write (moveRateParam, (float) (id - kIdRateBase));
+            write (modOnParam, 1.0f);
+            write (modTriggerParam, 0.0f);   // ENV
         }
         else if (id == kIdRise)
         {
-            write (moveRiseParam, paramBool (moveRiseParam) ? 0.0f : 1.0f);
-        }
-        else if (id == kIdFollow)
-        {
-            const bool enable = ! followActive();
-            write (motionReactParam, enable ? 1.0f : 0.0f);
-            if (enable && ! paramBool (motionOnParam))
-            {
-                // arm the motion path with a NEUTRAL pattern so only the
-                // react push moves — pure env follow, no clocked dance.
-                write (motionTileParam, (float) kBreatheTile);
-                write (motionTgtMParam, 0.0f);
-                write (motionTgtQParam, 0.0f);
-                write (motionOnParam, 1.0f);
-                followArmedMotion = true;
-            }
-            else if (! enable && followArmedMotion)
-            {
-                write (motionOnParam, 0.0f);   // we armed it only for FOLLOW
-                followArmedMotion = false;
-            }
+            write (modOnParam, 1.0f);
+            write (modTriggerParam, 2.0f);   // RISER
         }
         else if (id >= kIdTimeBase && id < kIdTimeBase + (int) std::size (kTimes))
         {
-            const int div = kTimes[(size_t) (id - kIdTimeBase)].divIdx;
-            // Time is the menu's whole job: a neutral additive cycle around
-            // the wheels' base values (Breathe carrier, morph target). The
-            // character comes from where the MORPH wheel sits, not a verb.
-            write (motionTileParam, (float) kBreatheTile);
-            write (motionDivParam, (float) div);
-            write (motionTgtMParam, 1.0f);
-            write (motionTgtQParam, 0.0f);
-            write (motionOnParam, 1.0f);
-            write (moveRateParam, 0.0f);   // RATE AUTO — the menu no longer offers overrides
-            if (orbitActive())
-                write (moveTimeParam, (float) moveTimeForDiv (div)); // orbit follows the clock
+            write (modOnParam, 1.0f);
+            write (modTriggerParam, 1.0f);   // SYNC
+            write (modSyncParam, 0.0f);      // host-locked
+            write (modNoteParam, (float) kTimes[(size_t) (id - kIdTimeBase)].noteIdx);
         }
         repaint();
     }
-
-    // moveTime choices: 0=FREE 1=1/4 2=1/2 3=1 BAR 4=2 BAR 5=4 BAR 6=8 BAR.
-    // Divisions faster than 1/4 clamp to 1/4 — the gesture engine's floor.
-    static int moveTimeForDiv (int div) noexcept
+    juce::String feelSuffix() const
     {
-        switch (div)
-        {
-            case 6:  return 2;   // 1/2
-            case 7:  return 3;   // 1 BAR
-            case 8:  return 4;   // 2 BAR
-            case 9:  return 5;   // 4 BAR
-            default: return 1;   // 1/4 and everything faster
-        }
-    }
-
-    juce::String announceLabel (int id) const
-    {
-        if (id == kIdOff)    return "MODULATION OFF";
-        if (id == kIdOrbit)  return orbitActive() ? "ORBIT" : "ORBIT OFF";
-        if (id == kIdRise)   return paramBool (moveRiseParam) ? "RISE" : "RISE OFF";
-        if (id == kIdFollow) return followActive() ? "FOLLOW" : "FOLLOW OFF";
-        if (id >= kIdTimeBase && id < kIdTimeBase + (int) std::size (kTimes))
-            return juce::String ("MODULATION ") + kTimes[(size_t) (id - kIdTimeBase)].label;
+        const int feel = paramChoice (modFeelParam, 2);
+        if (paramChoice (modNoteParam, 7) < 3)   // bars ignore feel
+            return {};
+        if (feel == 1) return "T";
+        if (feel == 2) return juce::String::fromUTF8 ("\xc2\xb7");
         return {};
     }
-
-    juce::String displayText() const
+    juce::String liveTimeLabel() const
     {
-        if (showingSibling)
-            return "Modulation  SIBLING";
-        juce::String s ("Modulation");
-        // FOLLOW alone is clockless — showing a time would be a lie. The time
-        // only prints when the clocked pattern actually moves (targets > 0).
-        const bool patternLive = paramBool (motionOnParam)
-            && ((motionTgtMParam != nullptr && motionTgtMParam->getValue() > 0.001f)
-                || (motionTgtQParam != nullptr && motionTgtQParam->getValue() > 0.001f));
-        if (patternLive)
-            s << "  " << liveTimeLabel();
-        if (orbitActive())
-            s << "  \xC2\xB7 ORBIT";
-        if (followActive())
-            s << "  \xC2\xB7 FOLLOW";
-        return juce::String (juce::CharPointer_UTF8 (s.toRawUTF8()));
+        const int note = paramChoice (modNoteParam, 7);
+        if (note == 7) return "1/32" + feelSuffix();   // host-automated only
+        for (const auto& item : kTimes)
+            if (item.noteIdx == note)
+                return item.label + feelSuffix();
+        return {};
     }
-
+    juce::String announceLabel (int id) const
+    {
+        if (id == kIdOff)  return "MODULATION OFF";
+        if (id == kIdAuto) return "AUTO";
+        if (id == kIdRise) return "RISE " + liveTimeLabel();
+        if (id >= kIdTimeBase && id < kIdTimeBase + (int) std::size (kTimes))
+            return "MODULATION " + liveTimeLabel();
+        return {};
+    }
     void timerCallback() override
     {
         if (showingSibling)
@@ -358,60 +208,26 @@ private:
             siblingElapsedMs += 30.0;
             if (siblingElapsedMs >= kSiblingFlashMs)
                 showingSibling = false;
+            repaint();
         }
-        // Lamp pulse: flash on every pattern step change, quick decay.
-        bool needRepaint = showingSibling;
-        if (paramBool (motionOnParam) && getMotionStep)
-        {
-            const int step = getMotionStep();
-            if (step != lastStep)
-            {
-                lastStep = step;
-                lampFlash = 1.0f;
-            }
-            if (lampFlash > 0.0f)
-            {
-                lampFlash = juce::jmax (0.0f, lampFlash - 0.22f);
-                needRepaint = true;
-            }
-        }
-        else if (! showingSibling)
+        else
         {
             stopTimer();
         }
-        if (needRepaint)
-            repaint();
     }
-
-    static constexpr int kBreatheTile = 1;   // motionTile choice: Riser,Breathe,Chop,Wobble,User
-    static constexpr int kOrbitShape  = 3;   // moveShape choice: Rise,Fall,Pulse,Orbit,...
-    static constexpr double kSiblingFlashMs = 500.0; // the direction's exact number
-
+    static constexpr int kCollapsedWidth = 178;
+    static constexpr double kSiblingFlashMs = 500.0;
     Theme t;
     SelectorLookAndFeel lookAndFeel;
-    juce::RangedAudioParameter* motionOnParam = nullptr;
-    juce::RangedAudioParameter* motionTileParam = nullptr;
-    juce::RangedAudioParameter* motionDivParam = nullptr;
-    juce::RangedAudioParameter* motionTgtMParam = nullptr;
-    juce::RangedAudioParameter* motionTgtQParam = nullptr;
-    juce::RangedAudioParameter* moveOnParam = nullptr;
-    juce::RangedAudioParameter* moveShapeParam = nullptr;
-    juce::RangedAudioParameter* moveTimeParam = nullptr;
-    juce::RangedAudioParameter* moveTensionParam = nullptr;
-    juce::RangedAudioParameter* moveRateParam = nullptr;
-    juce::RangedAudioParameter* moveRiseParam = nullptr;
+    juce::RangedAudioParameter* modOnParam = nullptr;
+    juce::RangedAudioParameter* modTriggerParam = nullptr;
+    juce::RangedAudioParameter* modNoteParam = nullptr;
+    juce::RangedAudioParameter* modSyncParam = nullptr;
+    juce::RangedAudioParameter* modFeelParam = nullptr;
     std::vector<std::unique_ptr<juce::ParameterAttachment>> atts;
-    juce::RangedAudioParameter* motionReactParam = nullptr;
-    bool followArmedMotion = false;
-    float lampFlash = 0.0f;
-    int lastStep = -1;
-    int chipDragStartX = 0, chipDragStartIdx = 2;
-    bool chipDragged = false;
     bool hover = false;
     bool showingSibling = false;
     double siblingElapsedMs = 0.0;
-
     JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR (MoveChip)
 };
-
-} // namespace trench::ui
+}

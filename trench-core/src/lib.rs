@@ -1,5 +1,4 @@
 pub mod minifloat;
-
 pub mod agc;
 pub mod arma;
 pub mod cartridge;
@@ -20,7 +19,7 @@ pub mod response;
 pub mod stage_law;
 pub mod transition;
 pub mod trench_matrix;
-
+pub mod oversample;
 pub use agc::agc_step;
 pub use cartridge::{Cartridge, CornerData};
 pub use cascade::{Cascade, BLOCK_SIZE, NUM_COEFFS, NUM_STAGES};

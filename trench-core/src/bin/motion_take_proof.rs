@@ -1,28 +1,17 @@
-//! Render a raw before/after proof for the Motion Take prototype.
-//!
-//! This is intentionally a small deterministic harness. It uses the same
-//! `FilterEngine` and `motion::path_value` that the processor path uses, keeps
-//! the input level fixed, and never normalizes either render after the fact.
-
 use std::f64::consts::PI;
-
 use trench_core::cartridge::Cartridge;
 use trench_core::engine::FilterEngine;
 use trench_core::keyframe::{keyframe_loop_value_mode, LoopMode};
 use trench_core::motion::path_value;
-
 const SR: f64 = 39_062.5;
 const BPM: f64 = 120.0;
 const BEATS_PER_BAR: f64 = 4.0;
 const SECONDS: f64 = 8.0;
 const BLOCK: usize = 128;
-
 const TAKE_PATH: [f32; 12] = [
     0.00, 0.00, 0.30, 0.15, 0.60, 0.45, 0.80, 0.20, 0.40, -0.25, 0.00, 0.00,
 ];
-
 const RISER_PATH: [f32; 6] = [0.00, 0.00, 0.40, 0.20, 0.80, 0.45];
-
 #[derive(Clone, Copy)]
 struct Metrics {
     peak: f64,
@@ -30,7 +19,6 @@ struct Metrics {
     crest_db: f64,
     probes_db: [f64; 4],
 }
-
 fn source_sample(index: usize, rng: &mut u64, lp: &mut [f64; 6]) -> f32 {
     *rng = rng
         .wrapping_mul(6_364_136_223_846_793_005)
@@ -43,7 +31,6 @@ fn source_sample(index: usize, rng: &mut u64, lp: &mut [f64; 6]) -> f32 {
     } else {
         0.0
     };
-
     lp[0] = 0.99886 * lp[0] + noise * 0.0555179;
     lp[1] = 0.99332 * lp[1] + noise * 0.0750759;
     lp[2] = 0.96900 * lp[2] + noise * 0.1538520;
@@ -54,14 +41,12 @@ fn source_sample(index: usize, rng: &mut u64, lp: &mut [f64; 6]) -> f32 {
     let tone = (2.0 * PI * 220.0 * t).sin() * 0.003;
     (bed + tone + pulse * 0.02) as f32
 }
-
 fn render(kind: RenderKind) -> Vec<f32> {
     let body = std::fs::read("filters/bodies/CAVL_mason_jar_to_stone_pipe.body240")
         .expect("canonical body is present");
     let mut engine = FilterEngine::new();
     engine.prepare(SR);
     engine.load_cartridge(Cartridge::from_body_bytes("motion-proof", &body, 1.0).unwrap());
-
     let count = (SECONDS * SR) as usize;
     let mut output = Vec::with_capacity(count);
     let mut rng = 0x2545_F491_4F6C_DD1Du64;
@@ -98,14 +83,12 @@ fn render(kind: RenderKind) -> Vec<f32> {
     }
     output
 }
-
 #[derive(Clone, Copy)]
 enum RenderKind {
     LegacyPendulum,
     MotionTake,
     MotionRiser,
 }
-
 fn metrics(samples: &[f32]) -> Metrics {
     let mut peak = 0.0f64;
     let mut sum_sq = 0.0f64;
@@ -124,7 +107,6 @@ fn metrics(samples: &[f32]) -> Metrics {
         probes_db: probes,
     }
 }
-
 fn goertzel_db(samples: &[f32], hz: f64) -> f64 {
     let window = 8_192.min(samples.len());
     let start = samples.len() - window;
@@ -141,7 +123,6 @@ fn goertzel_db(samples: &[f32], hz: f64) -> f64 {
     let amplitude = (re * re + im * im).sqrt() * 2.0 / window as f64;
     20.0 * amplitude.max(1.0e-15).log10()
 }
-
 fn null_difference_db(before: &[f32], after: &[f32]) -> f64 {
     let mut diff_sq = 0.0;
     let mut ref_sq = 0.0;
@@ -152,7 +133,6 @@ fn null_difference_db(before: &[f32], after: &[f32]) -> f64 {
     }
     20.0 * (diff_sq / ref_sq.max(1.0e-30)).sqrt().log10()
 }
-
 fn write_float_wav(path: &str, samples: &[f32]) {
     let data_bytes = (samples.len() * std::mem::size_of::<f32>()) as u32;
     let mut wav = Vec::with_capacity(44 + data_bytes as usize);
@@ -160,8 +140,8 @@ fn write_float_wav(path: &str, samples: &[f32]) {
     wav.extend_from_slice(&(36 + data_bytes).to_le_bytes());
     wav.extend_from_slice(b"WAVEfmt ");
     wav.extend_from_slice(&16u32.to_le_bytes());
-    wav.extend_from_slice(&3u16.to_le_bytes()); // IEEE float
-    wav.extend_from_slice(&1u16.to_le_bytes()); // mono
+    wav.extend_from_slice(&3u16.to_le_bytes());
+    wav.extend_from_slice(&1u16.to_le_bytes());
     wav.extend_from_slice(&(SR as u32).to_le_bytes());
     wav.extend_from_slice(&((SR as u32) * 4).to_le_bytes());
     wav.extend_from_slice(&4u16.to_le_bytes());
@@ -173,7 +153,6 @@ fn write_float_wav(path: &str, samples: &[f32]) {
     }
     std::fs::write(path, wav).expect("write proof wav");
 }
-
 fn print_metrics(label: &str, value: Metrics) {
     println!(
         "{label}: peak={:.6} rms={:.6} crest={:.2} dBFS probes[125,500,2k,8k]=[{:.2},{:.2},{:.2},{:.2}] dBFS",
@@ -186,22 +165,18 @@ fn print_metrics(label: &str, value: Metrics) {
         value.probes_db[3],
     );
 }
-
 fn main() {
     let out = "out/motion_take_proof";
     std::fs::create_dir_all(out).expect("create proof directory");
-
     let before = render(RenderKind::LegacyPendulum);
     let after = render(RenderKind::MotionTake);
     let riser = render(RenderKind::MotionRiser);
     let before_metrics = metrics(&before);
     let after_metrics = metrics(&after);
     let riser_metrics = metrics(&riser);
-
     write_float_wav(&format!("{out}/before_legacy_pendulum.wav"), &before);
     write_float_wav(&format!("{out}/after_motion_take_closed.wav"), &after);
     write_float_wav(&format!("{out}/after_motion_take_open_riser.wav"), &riser);
-
     println!("Motion Take proof — fixed input, raw float output, no normalization");
     print_metrics("before legacy pendulum", before_metrics);
     print_metrics("after closed Motion Take", after_metrics);

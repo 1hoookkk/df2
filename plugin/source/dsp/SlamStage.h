@@ -1,58 +1,23 @@
 #pragma once
-
-// TRENCH SLAM helpers. The old pre-cascade gain-change path is kept for A/B
-// renders, but the plug-in's live SLAM path is output-only: the body sees clean
-// input, then SLAM pushes the rendered output into a rounded pressure limiter.
-//
-//   live: input -> body filter (+AGC) -> [SLAM output pressure] -> out
-//   A/B:  input -> [SLAM gain change dB] -> [internal clip] -> body filter (+AGC) -> out
-//
-// Output pressure is the live SLAM sound. The legacy pre-cascade helper reports
-// INT CLIP only for explicit input-slam A/B renders. Pure header, no JUCE, so it
-// is unit-testable and shared by the processor and any render tool.
-//
-// Live output-pressure mapping:
-//   SLAM 0    -> +0 dB
-//   SLAM 25   -> +3 dB
-//   SLAM 50   -> +6 dB
-//   SLAM 75   -> +9 dB
-//   SLAM 100  -> +12 dB
-
 #include <cmath>
-
 namespace trench
 {
-
 inline float slamGainDb (float slamNorm) noexcept
 {
     const float s = slamNorm < 0.0f ? 0.0f : (slamNorm > 1.0f ? 1.0f : slamNorm);
     if (s <= 0.75f)
-        return 24.0f * s;                       // 0,6,12,18 at 0,.25,.5,.75
-    return 18.0f + 48.0f * (s - 0.75f);         // 18 -> 30 over the danger quarter
+        return 24.0f * s;
+    return 18.0f + 48.0f * (s - 0.75f);
 }
-
 inline float slamGainLinear (float slamNorm) noexcept
 {
     return std::pow (10.0f, slamGainDb (slamNorm) / 20.0f);
 }
-
-// Input headroom (the real-time "normalize/level the sample" step). The SLAM gain
-// change is applied on top of a -kSlamHeadroomDb trim so the bottom of the knob is
-// genuinely clean and the clip only starts partway up — that's what gives SLAM a
-// usable gentle->sweet->blown range instead of jumping straight to blown-out.
-// Makeup is restored downstream (output trim / AGC). Kept for legacy input-slam
-// A/B renders only; the live plug-in path calls slamOutputPressureBlockStereo instead.
 constexpr float kSlamHeadroomDb = 9.0f;
-
-// Hard digital clip — predictable harmonic density. (Soft knee deliberately
-// omitted in V1: this is gain-change crunch, not warm tape.)
 inline float internalClip (float x) noexcept
 {
     return x > 1.0f ? 1.0f : (x < -1.0f ? -1.0f : x);
 }
-
-// Pre-cascade: apply the SLAM gain change, then hard-clip. Returns the fraction
-// of samples that clipped (INT CLIP meter).
 inline float slamPreProcess (float* buf, int n, float slamNorm) noexcept
 {
     if (buf == nullptr || n <= 0)
@@ -67,10 +32,6 @@ inline float slamPreProcess (float* buf, int n, float slamNorm) noexcept
     }
     return (float) clipped / (float) n;
 }
-
-// Post-cascade: output headroom trim (dB, usually <= 0), then a final safety
-// clip. Returns the fraction of samples the safety clip caught (OUT CLIP meter)
-// — ideally ~0; non-zero means the master is being protected, i.e. OUT HOT.
 inline float slamPostProcess (float* buf, int n, float outTrimDb) noexcept
 {
     if (buf == nullptr || n <= 0)
@@ -85,21 +46,13 @@ inline float slamPostProcess (float* buf, int n, float outTrimDb) noexcept
     }
     return (float) clipped / (float) n;
 }
-
-// Live output law: much smaller than the legacy input-slam gain. The old +30 dB
-// hard clip sounded exciting but harsh; this keeps the last-in-chain pressure
-// while leaving useful knob travel.
 inline float slamOutputGainDb (float slamNorm) noexcept
 {
     const float s = slamNorm < 0.0f ? 0.0f : (slamNorm > 1.0f ? 1.0f : slamNorm);
-    return 12.0f * s; // 0..+12 dB
+    return 12.0f * s;
 }
-
 constexpr float kSlamPressureKnee = 0.72f;
-
-// The desk curve itself lives in trench-core (see `desk_drive::mackity_saturate`).
 extern "C" void trench_desk_saturate_stereo (float* left, float* right, int numSamples, float drive);
-
 inline float slamRoundedLimit (float x) noexcept
 {
     const float a = std::fabs (x);
@@ -110,78 +63,43 @@ inline float slamRoundedLimit (float x) noexcept
                                   * std::tanh ((a - kSlamPressureKnee)
                                                / (1.0f - kSlamPressureKnee)));
 }
-
-// Mono form for one-channel hosts. Kept separate so a mono buffer is never
-// passed as both sides of the stereo helper and processed twice.
 inline float slamOutputPressureBlock (float* data, int n, float slamNorm) noexcept
 {
     if (data == nullptr || n <= 0)
         return 0.0f;
-
     const float s = slamNorm < 0.0f ? 0.0f : (slamNorm > 1.0f ? 1.0f : slamNorm);
     if (s <= 1.0e-4f)
         return 0.0f;
-
     const float drive = std::pow (10.0f, slamOutputGainDb (s) / 20.0f);
-
     int limited = 0;
     for (int i = 0; i < n; ++i)
         if (std::fabs (data[i] * drive) > kSlamPressureKnee)
             ++limited;
-
-    trench_desk_saturate_stereo (data, nullptr, n, drive);   // null right = mono
-
+    trench_desk_saturate_stereo (data, nullptr, n, drive);
     return (float) limited / (float) n;
 }
-
-// Final plug-in stage: SLAM affects only the completely rendered stereo output.
-//
-// SLAM IS THE MACKIE DESK. It runs at host rate, last in the chain — the desk is
-// the finish line, outside the box, exactly as the E-mu signal path has it. The
-// curve is `desk_drive::mackity_saturate` (x - x^5 * 0.1768), the measured model
-// that was already sitting in trench-core wired to an input mode that is
-// hard-wired off. It is owned there and nowhere else.
-//
-// This used to be `slamRoundedLimit` — a generic tanh knee at 0.72. It sounded
-// fine, but it meant TRENCH's "Mackie desk" was not the Mackie model. The desk
-// curve stays near-linear far longer and then compresses hard, which is what a
-// real preamp does; a tanh starts leaning on the signal from 0.72 upward.
 inline float slamOutputPressureBlockStereo (float* left, float* right, int n, float slamNorm) noexcept
 {
     if (left == nullptr || right == nullptr || n <= 0)
         return 0.0f;
     if (left == right)
         return slamOutputPressureBlock (left, n, slamNorm);
-
     const float s = slamNorm < 0.0f ? 0.0f : (slamNorm > 1.0f ? 1.0f : slamNorm);
     if (s <= 1.0e-4f)
         return 0.0f;
-
     const float drive = std::pow (10.0f, slamOutputGainDb (s) / 20.0f);
-
-    // Metering only — count how hard the desk is being pushed, before it acts.
     int limited = 0;
     for (int i = 0; i < n; ++i)
         if (std::fabs (left[i] * drive) > kSlamPressureKnee
             || std::fabs (right[i] * drive) > kSlamPressureKnee)
             ++limited;
-
     trench_desk_saturate_stereo (left, right, n, drive);
-
     return (float) limited / (float) n;
 }
-
-// Legacy one-channel output clip helper, kept for old audition code.
 inline float slamOutputDriveBlock (float* buf, int n, float slamNorm) noexcept
 {
     return slamPostProcess (buf, n, slamGainDb (slamNorm));
 }
-
-// Full pre-cascade SLAM chain in one pass: input headroom -> gain change ->
-// hard clip -> tapered makeup. Clean unity at slamNorm=0 (engaging SLAM does not
-// drop level); progressively denser crunch as it rises; the makeup tapers to 0 as
-// the signal saturates so the level into the cascade stays controlled. Returns the
-// INT-CLIP fraction. This is what the processor calls per channel.
 inline float slamDriveBlock (float* buf, int n, float slamNorm,
                              float headroomDb = kSlamHeadroomDb) noexcept
 {
@@ -199,8 +117,6 @@ inline float slamDriveBlock (float* buf, int n, float slamNorm,
     }
     return (float) clipped / (float) n;
 }
-
-// Short status label for the upper numeric readout: "+0".."+12" or "HOT" near max.
 inline const char* slamStatusLabel (float slamNorm) noexcept
 {
     if (slamNorm >= 0.97f) return "HOT";
@@ -214,12 +130,10 @@ inline const char* slamStatusLabel (float slamNorm) noexcept
         case 12: return "+12";
         default: break;
     }
-    // coarse buckets between the anchors
     if (db < 3)  return "+0";
     if (db < 6)  return "+3";
     if (db < 9)  return "+6";
     if (db < 12) return "+9";
     return "+12";
 }
-
-} // namespace trench
+}

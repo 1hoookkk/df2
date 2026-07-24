@@ -1,34 +1,11 @@
-//! fit-complex-candidates — one measured complex TF -> one packed six-stage corner.
-//!
-//! The input is a small JSON adapter record:
-//!
-//! ```text
-//! {"freqs_hz": [...], "h_re": [...], "h_im": [...], "source": ...}
-//! ```
-//!
-//! This bin is deliberately a corner fitter, not a body author. It fits one
-//! measured response directly against six StageRoots, quantizes every trial
-//! through `stage_law::words_from_roots`, evaluates the resulting words through
-//! `PackedCorners::interpolate_biquad`, and measures the complex response with
-//! `response::biquad_cascade_complex`. It emits exact packed words plus the
-//! decoded root classification. Cross-corner lane registration remains a
-//! separate authored step.
-//!
-//! A real-root row is retained in the output and marks the result refused for
-//! the conjugate authoring editor. It is never reflected, clamped, or silently
-//! converted to an Hz/radius pair.
-
 use std::f64::consts::TAU;
 use std::path::Path;
-
 use serde_json::{json, Value};
-
 use trench_core::arma::fit_corner_from_magnitude;
 use trench_core::cascade::{NUM_COEFFS, NUM_STAGES};
 use trench_core::minifloat::{encode, pole_radius, PackedCorners};
 use trench_core::response::biquad_cascade_complex;
 use trench_core::stage_law::{geometry_from_words, words_from_roots, RootPair, StageRoots, STAGE_SR};
-
 const POLE_HZ_MIN: f64 = 60.0;
 const POLE_HZ_MAX: f64 = 12_000.0;
 const ZERO_HZ_MIN: f64 = 60.0;
@@ -41,7 +18,6 @@ const SCALE_MIN: f64 = 0.01;
 const SCALE_MAX: f64 = 4.0;
 const PHASE_WEIGHT: f64 = 1.0;
 const INVALID_COST: f64 = 1.0e12;
-
 #[derive(Clone, Copy, Debug)]
 struct Params {
     pole_hz: f64,
@@ -50,7 +26,6 @@ struct Params {
     zero_r: f64,
     scale: f64,
 }
-
 #[derive(Clone, Debug)]
 struct Metrics {
     cost: f64,
@@ -62,12 +37,10 @@ struct Metrics {
     packed: PackedCorners,
     valid_conjugate: bool,
 }
-
 fn fail(message: impl AsRef<str>) -> ! {
     eprintln!("REFUSED: {}", message.as_ref());
     std::process::exit(1);
 }
-
 fn finite_array(value: &Value, key: &str) -> Vec<f64> {
     value
         .get(key)
@@ -86,7 +59,6 @@ fn finite_array(value: &Value, key: &str) -> Vec<f64> {
         })
         .collect()
 }
-
 fn wrap_pi(value: f64) -> f64 {
     let mut result = value % TAU;
     if result > std::f64::consts::PI {
@@ -97,7 +69,6 @@ fn wrap_pi(value: f64) -> f64 {
     }
     result
 }
-
 fn kernel_to_words(kernel: [f64; NUM_COEFFS]) -> [u16; NUM_COEFFS] {
     let [c0, c1, c2, c3, c4] = kernel;
     [
@@ -108,7 +79,6 @@ fn kernel_to_words(kernel: [f64; NUM_COEFFS]) -> [u16; NUM_COEFFS] {
         encode(c4 / 4.0),
     ]
 }
-
 fn pair_json(pair: RootPair) -> Value {
     match pair {
         RootPair::Conjugate { hz, r } => json!({"hz": hz, "r": r}),
@@ -116,7 +86,6 @@ fn pair_json(pair: RootPair) -> Value {
         RootPair::Degenerate => json!({"hz": 0.0, "r": 0.0}),
     }
 }
-
 fn topology(pair: RootPair) -> &'static str {
     match pair {
         RootPair::Conjugate { .. } => "conjugate",
@@ -124,7 +93,6 @@ fn topology(pair: RootPair) -> &'static str {
         RootPair::Degenerate => "degenerate",
     }
 }
-
 fn roots_from_geometry(words: [u16; NUM_COEFFS]) -> Option<Params> {
     let geometry = geometry_from_words(words);
     let pole = match geometry.pole {
@@ -145,7 +113,6 @@ fn roots_from_geometry(words: [u16; NUM_COEFFS]) -> Option<Params> {
         scale: geometry.scale.clamp(SCALE_MIN, SCALE_MAX),
     })
 }
-
 fn default_seed() -> [Params; NUM_STAGES] {
     let frequencies = [90.0, 250.0, 650.0, 1_500.0, 3_500.0, 7_500.0];
     std::array::from_fn(|index| Params {
@@ -156,7 +123,6 @@ fn default_seed() -> [Params; NUM_STAGES] {
         scale: 1.0,
     })
 }
-
 fn magnitude_seed(freqs: &[f64], target_db: &[f64]) -> Option<[Params; NUM_STAGES]> {
     let curve: Vec<(f64, f64)> = freqs.iter().copied().zip(target_db.iter().copied()).collect();
     let corner = fit_corner_from_magnitude(&curve, STAGE_SR)?;
@@ -169,7 +135,6 @@ fn magnitude_seed(freqs: &[f64], target_db: &[f64]) -> Option<[Params; NUM_STAGE
     }
     Some(result)
 }
-
 fn stage_roots(params: Params) -> StageRoots {
     StageRoots {
         pole_hz: params.pole_hz.clamp(POLE_HZ_MIN, POLE_HZ_MAX),
@@ -179,7 +144,6 @@ fn stage_roots(params: Params) -> StageRoots {
         scale: params.scale.clamp(SCALE_MIN, SCALE_MAX),
     }
 }
-
 fn make_packed(params: &[Params; NUM_STAGES]) -> (PackedCorners, [[u16; NUM_COEFFS]; NUM_STAGES], bool) {
     let words = std::array::from_fn(|index| words_from_roots(&stage_roots(params[index])));
     let packed = PackedCorners { words: [words; 4] };
@@ -194,7 +158,6 @@ fn make_packed(params: &[Params; NUM_STAGES]) -> (PackedCorners, [[u16; NUM_COEF
     }
     (packed, words, conjugate)
 }
-
 fn evaluate(params: &[Params; NUM_STAGES], freqs: &[f64], target: &[(f64, f64)]) -> Metrics {
     let (packed, words, valid_conjugate) = make_packed(params);
     let rows = packed.interpolate_biquad(0.0, 0.0);
@@ -254,7 +217,6 @@ fn evaluate(params: &[Params; NUM_STAGES], freqs: &[f64], target: &[(f64, f64)])
         valid_conjugate,
     }
 }
-
 fn clamp_param(params: &mut Params, index: usize) {
     match index {
         0 => params.pole_hz = params.pole_hz.clamp(POLE_HZ_MIN, POLE_HZ_MAX),
@@ -265,7 +227,6 @@ fn clamp_param(params: &mut Params, index: usize) {
         _ => unreachable!(),
     }
 }
-
 fn shift_param(params: &mut Params, index: usize, octaves: f64, radius: f64, gain_db: f64, direction: f64) {
     match index {
         0 => params.pole_hz *= 2.0f64.powf(direction * octaves),
@@ -277,7 +238,6 @@ fn shift_param(params: &mut Params, index: usize, octaves: f64, radius: f64, gai
     }
     clamp_param(params, index);
 }
-
 fn optimize(
     mut current: [Params; NUM_STAGES],
     freqs: &[f64],
@@ -308,7 +268,6 @@ fn optimize(
     }
     (current, best)
 }
-
 fn value_params(params: &[Params; NUM_STAGES]) -> Value {
     Value::Array(
         params
@@ -323,7 +282,6 @@ fn value_params(params: &[Params; NUM_STAGES]) -> Value {
             .collect(),
     )
 }
-
 fn value_stages(metrics: &Metrics) -> Value {
     Value::Array(
         metrics
@@ -343,7 +301,6 @@ fn value_stages(metrics: &Metrics) -> Value {
             .collect(),
     )
 }
-
 fn main() {
     let args: Vec<String> = std::env::args().collect();
     let (input_path, output_path) = match args.as_slice() {

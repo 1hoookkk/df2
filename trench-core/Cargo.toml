@@ -50,6 +50,18 @@ path = "src/bin/fit_complex_candidates.rs"
 name = "rate-ab"
 path = "src/bin/rate_ab.rs"
 
+[[bin]]
+name = "slam-alias-probe"
+path = "src/bin/slam_alias_probe.rs"
+
+[[bin]]
+name = "slam-ab-render"
+path = "src/bin/slam_ab_render.rs"
+
+[[bin]]
+name = "corner-contrast"
+path = "src/bin/corner_contrast.rs"
+
 [dependencies]
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"

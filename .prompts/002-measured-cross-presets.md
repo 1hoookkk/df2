@@ -1,5 +1,11 @@
 # Author new TRENCH bodies — the ROM stage logic, worn by measured sources
 
+> **DO NOT RUN (verdict 2026-07-21, Tyson):** this prompt's output IS the rejected
+> measured-cross set (Glockenspiel→Mine Cave, Kalimba→Middle Tunnel, Steel Pan→China
+> Cymbal, Violin→Winter Bass, Ukulele→ORTF Room, Mine Site 1way→2way) — "all of these
+> are wrong." Kept as a record only. The roster is hand-maintained; nothing may append
+> to `PresetRoster.inc` (see `plugin/presets/approved_bodies.txt`).
+
 ## The idea (one line)
 Take the ROM's stage logic — **4 independently authored corners × 6 serial lanes, Q as its own authored scene** — and populate every corner from a **measured source**. The Morph axis crosses **two different measured objects**; the Q axis is a **second authored scene** of the same objects (damped → resonant). Real recorded objects wearing the E-mu authoring anatomy.
 

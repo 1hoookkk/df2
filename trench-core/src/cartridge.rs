@@ -1,11 +1,7 @@
 use crate::cascade::{NUM_COEFFS, NUM_STAGES};
 use crate::minifloat::{PackedCorners, PackedStage};
 use serde::Deserialize;
-
-/// Exact body container size: 4 corners × 6 stages × 5 u16 words × 2 bytes.
 pub use crate::minifloat::BODY_BYTES;
-
-/// Optional drive-stage config (preceding cascade).
 #[derive(Debug, Clone, Deserialize)]
 pub struct DriveBlock {
     #[serde(rename = "input_gain_dB", default)]
@@ -13,11 +9,9 @@ pub struct DriveBlock {
     #[serde(default = "default_mackie_model")]
     pub model: String,
 }
-
 fn default_mackie_model() -> String {
     "mackie_1202".to_string()
 }
-
 impl Default for DriveBlock {
     fn default() -> Self {
         Self {
@@ -26,23 +20,19 @@ impl Default for DriveBlock {
         }
     }
 }
-
 pub type LawCoeffs6 = [f32; 6];
 pub type BandLawCoeffs12 = [f32; 12];
-
 #[derive(Debug, Clone, Deserialize)]
 pub struct BandChannelCoeffs {
     pub low: BandLawCoeffs12,
     pub mid: BandLawCoeffs12,
     pub high: BandLawCoeffs12,
 }
-
 #[derive(Debug, Clone, Deserialize)]
 pub struct BandCoeffs {
     pub l: BandChannelCoeffs,
     pub r: BandChannelCoeffs,
 }
-
 #[derive(Debug, Clone, Deserialize)]
 pub struct SpatialProfile {
     pub azimuth: f32,
@@ -52,12 +42,8 @@ pub struct SpatialProfile {
     pub ild_coeffs: LawCoeffs6,
     pub band_coeffs: BandCoeffs,
 }
-
 pub const NUM_CORNERS: usize = 4;
 pub type CornerData = [[f64; NUM_COEFFS]; NUM_STAGES];
-
-// ── formats ──
-
 #[derive(Deserialize)]
 #[serde(deny_unknown_fields)]
 struct KeyframeJson {
@@ -66,7 +52,6 @@ struct KeyframeJson {
     #[serde(rename = "packedWords")]
     packed_words: Vec<PackedStage>,
 }
-
 #[derive(Deserialize)]
 #[serde(deny_unknown_fields)]
 struct CartridgeJson {
@@ -80,7 +65,6 @@ struct CartridgeJson {
     #[serde(default, rename = "spatial_profile")]
     spatial_profile: Option<SpatialProfile>,
 }
-
 #[derive(Clone, Debug)]
 pub struct Cartridge {
     pub name: String,
@@ -89,13 +73,7 @@ pub struct Cartridge {
     pub drive: DriveBlock,
     pub spatial_profile: Option<SpatialProfile>,
 }
-
 impl Cartridge {
-    /// Canonical assembler: build a cartridge from a decoded packed corner bank.
-    ///
-    /// This is the single coefficient path. The runtime direct DF2T fallback
-    /// rows (`corners`) are derived from the packed words here so they can never
-    /// disagree with `packed`; `packed` stays the interpolation authority.
     fn from_packed(
         name: String,
         packed: PackedCorners,
@@ -111,13 +89,6 @@ impl Cartridge {
             spatial_profile,
         }
     }
-
-    /// Load a body from exactly 240 raw bytes — the canonical entry point.
-    ///
-    /// Rejects anything that is not exactly [`BODY_BYTES`]. The bytes flow
-    /// `BodyBytes240 → PackedCorners → Cartridge`, the same path JSON
-    /// `packedWords` bodies take, so a raw `.body240` file and its JSON wrapper
-    /// produce an identical `PackedCorners`.
     pub fn from_body_bytes(name: &str, bytes: &[u8], boost: f64) -> Result<Self, String> {
         let packed = PackedCorners::from_body_bytes(bytes).map_err(|e| e.to_string())?;
         Ok(Self::from_packed(
@@ -128,11 +99,6 @@ impl Cartridge {
             None,
         ))
     }
-
-    /// HD island load: same bytes, decode-time view at `target_rate`. Every
-    /// corner's words are re-derived via [`crate::stage_law::reencode_words_at`]
-    /// (same Hz, ring time in seconds preserved). At exactly [`crate::stage_law::STAGE_SR`]
-    /// this is `from_body_bytes` verbatim — the bytes on disk never change.
     pub fn from_body_bytes_at(
         name: &str,
         bytes: &[u8],
@@ -149,7 +115,6 @@ impl Cartridge {
         }
         Ok(cart)
     }
-
     pub fn from_json(json: &str) -> Result<Self, String> {
         let raw: CartridgeJson =
             serde_json::from_str(json).map_err(|e| format!("JSON parse error: {e}"))?;
@@ -165,7 +130,6 @@ impl Cartridge {
                 raw.keyframes.len()
             ));
         }
-
         const LABELS: [&str; NUM_CORNERS] = ["M0_Q0", "M100_Q0", "M0_Q100", "M100_Q100"];
         let mut packed_words = [[[0u16; NUM_COEFFS]; NUM_STAGES]; NUM_CORNERS];
         let mut boosts = [1.0f64; NUM_CORNERS];
@@ -187,7 +151,6 @@ impl Cartridge {
                 packed_words[idx][stage_index] = words;
             }
         }
-
         Ok(Self::from_packed(
             raw.name,
             PackedCorners {
@@ -198,14 +161,9 @@ impl Cartridge {
             raw.spatial_profile,
         ))
     }
-
-    /// The single shipping morph/Q interpolation entry point.
-    ///
-    /// All cartridge inputs converge to packed-u16 interpolation.
     pub fn interpolate(&self, morph: f64, q: f64) -> CornerData {
         self.packed.interpolate_biquad(morph as f32, q as f32)
     }
-
     pub fn interpolate_boost(&self, morph: f64, q: f64) -> f64 {
         let q_m0 = self.boosts[0] + (self.boosts[2] - self.boosts[0]) * q;
         let q_m1 = self.boosts[1] + (self.boosts[3] - self.boosts[1]) * q;

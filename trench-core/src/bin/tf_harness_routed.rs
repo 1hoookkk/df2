@@ -1,58 +1,5 @@
-//! TRENCH transfer-function HARNESS — a source-agnostic experimental instrument.
-//!
-//! ```text
-//! arbitrary continuous H_target(f, morph, q)
-//!   -> jointly registered four-corner / six-lane candidate
-//!   -> trench-core packing
-//!   -> packed-runtime interpolation
-//!   -> measured H_packed(f, morph, q)
-//!   -> plots, audio, feature survival, residuals
-//! ```
-//!
-//! The harness knows NOTHING about what a target means. It takes a [`Target`]
-//! (any complex function of frequency × morph × q), jointly registers a
-//! four-corner / six-lane candidate against the whole sampled Morph×Q surface
-//! through the REAL packed loop, and reports what survived and what did not.
-//!
-//! ONE kernel. Packing, decode, packed-u16 interpolation, per-stage/cascade
-//! complex response, and audio all come from `trench-core`:
-//!   `params -> stage_law::words_from_geometry -> PackedCorners -> 240 bytes
-//!    -> PackedCorners::interpolate_biquad -> response::biquad_cascade_complex`
-//! and audio through `cascade::Cascade`. This bin adds only generic glue:
-//! a pattern-search optimizer, SVG, WAV, JSON, SHA-256. No filter math is
-//! re-implemented. The one piece of algebra that mirrors a private trench-core
-//! function (`classify_pair` ~ `stage_law::pair_geometry`) is pinned against the
-//! owned decoder by `classify_pair_mirrors_stage_law`.
-//!
-//! THE IDENTIFIABILITY BOUNDARY (H17, the harness's central contract).
-//! MEASURED: permuting one corner's six lanes changes that corner's transfer
-//! function by 0.0 dB while moving the interior by 25.82 dB. The cascade is a
-//! permutation-invariant PRODUCT, so the corner transfer functions DO NOT
-//! CONTAIN the lane registration. Recovering it from endpoints is not hard — it
-//! is impossible. The harness therefore never asks "what is the true
-//! correspondence?"; it asks what evidence exists (see [`EvidenceMode`]):
-//!   ENDPOINT_ONLY       -> equivalence class, verdict AMBIGUOUS, select nothing
-//!   OBSERVED_SURFACE    -> rank by measured interior error, REFUSE on a thin margin
-//!   AUTHORED_TRAJECTORY -> preserve the source model's identities, label AUTHORED
-//!
-//! WHAT THIS HARNESS DOES NOT DO (deliberate, per the neutral-instrument brief):
-//!   · no automatic normalization (absolute gain is preserved everywhere)
-//!   · no derived Q (SCALE and both radii are explicit free parameters)
-//!   · no stage sorting / no frequency-sorted correspondence
-//!   · no category mapping, no named archetypes, no aesthetic scoring
-//!   · no smart repair (an illegal candidate is reported, never patched)
-//! Stable + finite + packable = LEGAL. Legal is never a claim of quality.
-//!
-//! Every non-runtime choice is labelled HYPOTHESIS in `hypotheses()` and echoed
-//! into every emitted report.
-//!
-//!   cargo run --release -p trench-core --bin tf-harness -- all
-//!
-//! Artifacts land in dev/tmp/tf_harness/<fixture>/.
-
 use std::f64::consts::TAU;
 use std::path::{Path, PathBuf};
-
 use trench_core::cartridge::{Cartridge, CornerData};
 use trench_core::cascade::{Cascade, NUM_COEFFS, NUM_STAGES};
 use trench_core::compiler::{biquad_to_words, section_biquad, TYPE_NOTCH, TYPE_PEAK};
@@ -61,43 +8,24 @@ use trench_core::response::{biquad_cascade_complex, biquad_stage_complex, log_fr
 use trench_core::stage_law::{
     geometry_from_words, words_from_geometry, RootPair, StageGeometry, StageRoots, STAGE_SR,
 };
-
-// ── runtime constants (OBSERVED from trench-core, not chosen here) ───────────
-
-/// The island rate. Owned by `trench-core`; this harness does not pick it.
 const SR: f64 = STAGE_SR;
-/// 4 corners × 6 lanes × 5 params. The candidate's entire degrees of freedom.
 const PPS: usize = 5;
-const NPARAM: usize = 4 * NUM_STAGES * PPS; // 120
+const NPARAM: usize = 4 * NUM_STAGES * PPS;
 const CORNER_LABELS: [&str; 4] = ["M0_Q0", "M100_Q0", "M0_Q100", "M100_Q100"];
-/// Corner (morph, q) coordinates, in the runtime's corner order.
 const CORNER_MQ: [(f64, f64); 4] = [(0.0, 0.0), (1.0, 0.0), (0.0, 1.0), (1.0, 1.0)];
-
-// ── HYPOTHESES: every non-runtime decision, declared ─────────────────────────
-
-/// H1 objective frequency band + grid.
 const F_LO: f64 = 30.0;
 const F_HI: f64 = 16_000.0;
 const OBJ_F_BINS: usize = 192;
-/// H2 objective Morph×Q grid (the surface the optimizer actually sees).
 const OBJ_MQ: usize = 5;
-/// H3 verification Morph×Q grid (held-out interior points the fit never saw).
 const VERIFY_MQ: usize = 9;
-/// H4 sampled-certification grid.
 const CERT_MQ: usize = 33;
-/// H5 phase weight, rad² vs dB².
 const LAMBDA_PH: f64 = 4.0;
-/// H6 interior-stability barrier: radius ceiling + weight. LEGALITY, not taste.
 const STAB_R: f64 = 0.997;
 const PEN_STAB: f64 = 3.0e4;
-/// H7 param-box pole radius ceiling (packability + resolvability of the grid).
-const POLE_Q_MAX: f64 = 0.994; // r <= ~0.997
-/// H8 feature-survival matching tolerance (reporting only, never correspondence).
+const POLE_Q_MAX: f64 = 0.994;
 const FEATURE_TOL_OCT: f64 = 1.0 / 6.0;
 const FEATURE_PROM_DB: f64 = 1.5;
-/// H9 optimizer iteration budget.
 const DEFAULT_ITERS: usize = 300;
-
 fn hypotheses() -> serde_json::Value {
     serde_json::json!([
         {"id":"H1","claim":"objective band 30..16000 Hz on a 192-point log grid","status":"HYPOTHESIS","why":"log spacing matches how the response is read; the band excludes DC/Nyquist edges the packed format resolves poorly. Applied identically to target and candidate."},
@@ -120,9 +48,6 @@ fn hypotheses() -> serde_json::Value {
         {"id":"H14","claim":"packed-interpolation wrap barrier, weight 1e4","status":"HYPOTHESIS","why":"LEGALITY: the runtime u16 lerp casts the corner delta to i16 before adding the base, so |delta| > 32767 wraps to garbage. OBSERVED: without this barrier the optimizer parked words at a 65535 delta and emitted an illegal body. The weight is arbitrary."}
     ])
 }
-
-// ── complex helpers (tuple form) ─────────────────────────────────────────────
-
 type Cf = (f64, f64);
 #[inline]
 fn cmul(a: Cf, b: Cf) -> Cf {
@@ -146,11 +71,6 @@ fn wrap_pi(x: f64) -> f64 {
     }
     y
 }
-
-/// Ordered product of per-stage complex responses over ANY number of rows.
-/// `response::biquad_stage_complex` is the single owner of per-stage response;
-/// the cascade is defined as the ordered product of them. Pinned against
-/// `biquad_cascade_complex` for the 6-row case by `rows_complex_matches_owner`.
 fn rows_complex(rows: &[[f64; NUM_COEFFS]], f: f64) -> Cf {
     let mut acc = (1.0f64, 0.0f64);
     for r in rows {
@@ -158,45 +78,12 @@ fn rows_complex(rows: &[[f64; NUM_COEFFS]], f: f64) -> Cf {
     }
     acc
 }
-
-// ── the source-agnostic target interface ────────────────────────────────────
-
-// ── THE IDENTIFIABILITY BOUNDARY (the harness's central contract) ───────────
-//
-// MEASURED, and decisive: permuting one corner's six lanes leaves that corner's
-// transfer function EXACTLY unchanged (0.0 dB) while moving the interior by
-// 25.8 dB. The cascade is a permutation-invariant PRODUCT, so the four corner
-// transfer functions do not contain the lane registration. It is not that
-// recovering it is hard — the information is NOT THERE.
-//
-// Therefore the harness never asks "what is the true correspondence?" It asks
-// "what evidence do I actually have?", and answers differently for each:
-//
-//   ENDPOINT_ONLY       -> report the equivalence class. Verdict AMBIGUOUS.
-//                          NEVER select a permutation as truth.
-//   OBSERVED_SURFACE    -> rank candidates by packed-runtime interior error
-//                          against real interior observations. Report the
-//                          winning margin; REFUSE if it is insignificant.
-//   AUTHORED_TRAJECTORY -> a continuous source model supplies the actor
-//                          identities. Preserve them as an explicit authoring
-//                          prior. Label AUTHORED — never RECOVERED.
-//
-// In ENDPOINT_ONLY the two registrations are "pairing A" and "pairing B". There
-// is no truth and no decoy: neither is identifiable from the endpoints, and
-// naming one "truth" would smuggle in the very claim the boundary forbids.
-
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
 enum EvidenceMode {
-    /// Only the four corner transfer functions are available.
     EndpointOnly,
-    /// Interior H_target(f, m, q) samples exist and may be scored against.
     ObservedSurface,
-    /// A continuous source model supplies actor identities / trajectories.
     AuthoredTrajectory,
 }
-
-/// A source-level Q gesture measured on the COMPLETE target response. The
-/// route may not inspect individual lane geometry to satisfy this contract.
 #[derive(Clone, Copy, Debug)]
 struct SourceGestureSpec {
     label: &'static str,
@@ -205,10 +92,6 @@ struct SourceGestureSpec {
     companion_band_hz: (f64, f64),
     companion_db: (f64, f64),
 }
-
-/// Product-facing source gate declaration. Structural fixtures may declare an
-/// empty gesture list; a real authored candidate must declare its intended
-/// response gestures and total-gain policy explicitly.
 #[derive(Clone, Copy, Debug)]
 struct SourceGateSpec {
     gestures: &'static [SourceGestureSpec],
@@ -216,12 +99,10 @@ struct SourceGateSpec {
     response_db: (f64, f64),
     max_adjacent_step_db: f64,
 }
-
 struct SourceGateReport {
     passed: bool,
     json: serde_json::Value,
 }
-
 impl EvidenceMode {
     fn label(&self) -> &'static str {
         match self {
@@ -238,57 +119,30 @@ impl EvidenceMode {
         }
     }
 }
-
-/// An arbitrary continuous transfer function over frequency × morph × q.
-///
-/// The harness treats this as a black box. It is NOT required to be
-/// representable, causal-minimum-phase, six-section, or anything else.
 trait Target {
     fn name(&self) -> &str;
     fn describe(&self) -> String;
-    /// What evidence about this target is ACTUALLY available. Governs what the
-    /// harness is permitted to conclude about lane correspondence.
     fn evidence_mode(&self) -> EvidenceMode;
-    /// AUTHORED_TRAJECTORY only: the source-level musical/headroom contract.
-    /// A missing declaration is a pre-compilation rejection, not permission
-    /// to fall through to response recovery.
     fn source_gate_spec(&self) -> Option<SourceGateSpec> {
         None
     }
-    /// AUTHORED_TRAJECTORY only: the source model's declared actor identity per
-    /// lane. Returned as an authoring PRIOR — it is a declaration, not a
-    /// measurement, and is always labelled AUTHORED.
     fn authored_lanes(&self, _m: f64, _q: f64) -> Option<Vec<String>> {
         None
     }
-    /// THE definition of the target: complex response at (f, morph, q).
     fn h(&self, f: f64, m: f64, q: f64) -> Cf;
-    /// Optional exact realization as ordered DF2T rows, when the target happens
-    /// to be a section product. Enables target-side audio through the owned
-    /// `Cascade`. `None` => no target audio; residual spectra only.
     fn rows(&self, _m: f64, _q: f64) -> Option<Vec<[f64; NUM_COEFFS]>> {
         None
     }
-    /// Pole-pair count of the target realization, when known. Used ONLY for the
-    /// analytic order-deficit statement (a proof), never for fitting.
     fn pole_pairs(&self) -> Option<usize> {
         None
     }
-    /// EXACT causal Markov parameters, when the source can supply them.
-    /// `None` => only SAMPLED_SPECTRUM_ESTIMATE is available; no bound may be
-    /// claimed. Never used by any solver — this is an analysis channel.
     fn markov(&self, _m: f64, _q: f64, _n: usize) -> Option<Vec<f64>> {
         None
     }
-    /// DECLARED pure transport delay in samples. Only this is ever removed from
-    /// a comparison; group delay is never removed.
     fn transport_delay_samples(&self) -> usize {
         0
     }
 }
-
-/// A target that IS an ordered section product: `h` is derived from `rows`
-/// through the owned response engine, so there is exactly one response law.
 trait SectionTarget {
     fn name(&self) -> &str;
     fn describe(&self) -> String;
@@ -302,7 +156,6 @@ trait SectionTarget {
         None
     }
 }
-
 impl<T: SectionTarget> Target for T {
     fn name(&self) -> &str {
         SectionTarget::name(self)
@@ -328,42 +181,23 @@ impl<T: SectionTarget> Target for T {
     fn pole_pairs(&self) -> Option<usize> {
         Some(SectionTarget::pole_pairs(self))
     }
-    /// A section product can supply EXACT Markov parameters — no DFT, so no
-    /// aliasing and no frequency sampling.
     fn markov(&self, m: f64, q: f64, n: usize) -> Option<Vec<f64>> {
         Some(exact_markov(&self.rows_at(m, q), n))
     }
 }
-
-// ── FIXTURE 1: exactly representable six-section surface ────────────────────
-//
-// The target IS the packed-runtime surface of a KNOWN 240-byte body. A perfect
-// candidate therefore EXISTS by construction (the known body itself). This
-// fixture answers: is the objective minimized at truth, and can the optimizer
-// find it? It is the harness's own noise floor. Any error here is harness error,
-// not budget error and not correspondence error.
-
 struct ExactSix {
     known: PackedCorners,
 }
-
 impl ExactSix {
     fn new() -> Self {
-        // Six distinct lanes with morph AND q motion. Deliberately includes the
-        // format's awkward cases: a near-unit-circle notch zero and an explicit
-        // REAL-ROOT numerator pair (which the conjugate reader must refuse).
-        // Lane frequencies are monotone and well separated — correspondence is
-        // NOT the subject of this fixture.
         let mut words = [[[0u16; NUM_COEFFS]; NUM_STAGES]; 4];
         for (ci, &(m, q)) in CORNER_MQ.iter().enumerate() {
             let lerp = |a: f64, b: f64, t: f64| a + (b - a) * t;
             let rq = |lo: f64, hi: f64| lerp(lo, hi, q);
             let g = |lo: f64, hi: f64| lerp(lo, hi, m);
-
             let lane =
                 |pole: RootPair, zero: RootPair, scale: f64| StageGeometry { pole, zero, scale };
             let conj = |hz: f64, r: f64| RootPair::Conjugate { hz, r };
-
             words[ci][0] = words_from_geometry(&lane(
                 conj(g(320.0, 480.0), rq(0.88, 0.955)),
                 RootPair::Degenerate,
@@ -374,7 +208,6 @@ impl ExactSix {
                 RootPair::Degenerate,
                 0.45,
             ));
-            // lane 2 carries a near-unit notch zero travelling on morph
             words[ci][2] = words_from_geometry(&lane(
                 conj(g(2100.0, 2600.0), rq(0.90, 0.960)),
                 conj(g(1600.0, 3000.0), 0.99),
@@ -385,7 +218,6 @@ impl ExactSix {
                 RootPair::Degenerate,
                 0.6,
             ));
-            // lane 4 carries an explicit REAL-ROOT numerator pair
             words[ci][4] = words_from_geometry(&lane(
                 conj(g(8000.0, 9000.0), rq(0.80, 0.900)),
                 RootPair::RealPair {
@@ -394,7 +226,6 @@ impl ExactSix {
                 },
                 1.0,
             ));
-            // lane 5 stays the exact identity biquad at every corner
             words[ci][5] =
                 words_from_geometry(&lane(RootPair::Degenerate, RootPair::Degenerate, 1.0));
         }
@@ -403,7 +234,6 @@ impl ExactSix {
         }
     }
 }
-
 impl SectionTarget for ExactSix {
     fn name(&self) -> &str {
         "exact6"
@@ -418,33 +248,20 @@ impl SectionTarget for ExactSix {
         self.known.interpolate_biquad(m as f32, q as f32).to_vec()
     }
     fn pole_pairs(&self) -> usize {
-        5 // lane 5 is identity: no pole pair
+        5
     }
-    /// Interior samples of this target are available at any (m, q), so the
-    /// harness may RANK correspondence candidates against real observations.
     fn evidence_mode(&self) -> EvidenceMode {
         EvidenceMode::ObservedSurface
     }
 }
-
-// ── FIXTURE 2: intentionally over-budget target ─────────────────────────────
-//
-// Ten flat-off-resonance peaking sections. A six-section cascade has at most 6
-// pole pairs; this target has 10. The order deficit is an ARITHMETIC FACT — a
-// proof, independent of any optimizer. The fit then shows WHICH features die
-// and how large the residual is. The residual is an UPPER BOUND on achievable
-// error, never a proof of impossibility.
-
 struct OverBudget {
     n: usize,
 }
-
 impl OverBudget {
     fn new() -> Self {
         Self { n: 10 }
     }
 }
-
 impl SectionTarget for OverBudget {
     fn name(&self) -> &str {
         "overbudget"
@@ -464,9 +281,7 @@ impl SectionTarget for OverBudget {
             .map(|i| {
                 let t = i as f64 / (self.n - 1) as f64;
                 let base = 220.0 * (12_000.0f64 / 220.0).powf(t);
-                // every peak glides up a minor third (2^(3/12)) on morph
                 let fc = base * 2.0f64.powf(0.25 * m);
-                // Q sharpens on q; alternate gains so the comb is legible
                 let qq = 3.0 + 9.0 * q;
                 let gain = if i % 2 == 0 { 12.0 } else { 9.0 };
                 section_biquad(TYPE_PEAK, fc, qq, gain)
@@ -480,72 +295,27 @@ impl SectionTarget for OverBudget {
         EvidenceMode::ObservedSurface
     }
 }
-
-// ── FIXTURE 3: crossing / ambiguous actors ─────────────────────────────────
-//
-// Two lanes whose frequencies CROSS between the morph endpoints. The true
-// registration keeps each lane's identity through the crossing.
-//
-// The exposure: the cascade transfer function is a permutation-invariant
-// PRODUCT, so swapping two lanes inside one corner leaves that corner's response
-// EXACTLY unchanged while changing every interior point. Corner data therefore
-// cannot discriminate the crossed registration from the frequency-sorted one.
-// A harness that sorts lanes by frequency would pick the sorted pairing and
-// report a perfect corner match — while silently rendering the wrong interior.
-//
-// This harness does not sort. It reports the discriminability of both.
-
 struct Crossing {
-    /// The AUTHORED pairing. It is the target's realization because the source
-    /// model DECLARES it — never because it was recovered from the corners.
-    /// Under ENDPOINT_ONLY evidence this body is "pairing A", nothing more.
     authored: PackedCorners,
 }
-
 static CROSSING_SOURCE_GESTURES: [SourceGestureSpec; 0] = [];
-
 impl Crossing {
-    /// `crossed = true` -> **pairing A**: lane 0 rises 600->2600 while lane 1
-    /// falls 2400->560 (each actor's identity preserved through the crossing).
-    /// `crossed = false` -> **pairing B**: the frequency-SORTED registration of
-    /// the very same corner sets (lane 0 600->560, lane 1 2400->2600).
-    ///
-    /// Both have IDENTICAL per-corner section multisets, hence identical corner
-    /// transfer functions — and different interiors. From endpoint evidence
-    /// alone NEITHER is truth and NEITHER is a decoy: they are indistinguishable
-    /// members of one equivalence class. Only an authoring prior or interior
-    /// observations can separate them.
     fn build(crossed: bool) -> PackedCorners {
-        // Flat-off-resonance peak sections. A stack of bare all-pole resonators
-        // cannibalises into a monotone lowpass with NO local extrema (OBSERVED:
-        // the first build of this fixture reported 0 detectable features at every
-        // state), which would make feature survival unmeasurable. Flat-ended
-        // sections keep each actor legible as a real peak.
         let mut words = [[[0u16; NUM_COEFFS]; NUM_STAGES]; 4];
         for (ci, &(m, q)) in CORNER_MQ.iter().enumerate() {
             let peak = |hz: f64, qq: f64, gain: f64| {
                 biquad_to_words_owned(&section_biquad(TYPE_PEAK, hz, qq, gain))
             };
             let q_ac = if q > 0.5 { 9.0 } else { 3.5 };
-            // The two crossing actors, addressed by their TRUE identity.
-            let actor_a: f64 = if m > 0.5 { 2600.0 } else { 600.0 }; // rises
-            let actor_b: f64 = if m > 0.5 { 560.0 } else { 2400.0 }; // falls
-
+            let actor_a: f64 = if m > 0.5 { 2600.0 } else { 600.0 };
+            let actor_b: f64 = if m > 0.5 { 560.0 } else { 2400.0 };
             let (lane0, lane1) = if crossed {
-                // pairing A: each actor keeps its identity through the crossing
                 (actor_a, actor_b)
             } else {
-                // pairing B: the frequency-sorted registration — the low slot
-                // gets the low frequency at EVERY corner. Identical per-corner
-                // multiset {actor_a, actor_b}, hence identical corner responses,
-                // and a different interior.
                 (actor_a.min(actor_b), actor_a.max(actor_b))
             };
             words[ci][0] = peak(lane0, q_ac, 15.0);
             words[ci][1] = peak(lane1, q_ac, 15.0);
-
-            // Three non-crossing spectator lanes + one identity lane, so the
-            // fixture isolates correspondence and nothing else.
             let lerp = |a: f64, b: f64, t: f64| a + (b - a) * t;
             words[ci][2] = peak(lerp(4200.0, 4600.0, m), 4.0, 9.0);
             words[ci][3] = peak(lerp(7000.0, 7600.0, m), 4.0, 7.0);
@@ -558,7 +328,6 @@ impl Crossing {
         }
         PackedCorners { words }
     }
-
     fn pairing_a() -> PackedCorners {
         Self::build(true)
     }
@@ -571,7 +340,6 @@ impl Crossing {
         }
     }
 }
-
 impl SectionTarget for Crossing {
     fn name(&self) -> &str {
         "crossing"
@@ -592,8 +360,6 @@ impl SectionTarget for Crossing {
     fn pole_pairs(&self) -> usize {
         5
     }
-    /// The source model is a continuous authored construction: it DECLARES which
-    /// actor is which. That is a prior, not a recovery.
     fn evidence_mode(&self) -> EvidenceMode {
         EvidenceMode::AuthoredTrajectory
     }
@@ -618,17 +384,7 @@ impl SectionTarget for Crossing {
         ])
     }
 }
-
-// ── NEW AUTHORED CANDIDATE: Companion Mouth ─────────────────────────────────
-//
-// This is a new source product, deliberately separate from BranchingMouth.
-// Its Q gesture is authored as two explicit notch/companion-peak pairs in the
-// complete response: low-mid branch = notch + positive lobe, upper branch =
-// notch + positive lobe. The source gate measures those total-response
-// differences before any body is created.
-
 struct CompanionMouth;
-
 static COMPANION_MOUTH_SOURCE_GESTURES: [SourceGestureSpec; 2] = [
     SourceGestureSpec {
         label: "low-mid companion branch",
@@ -645,19 +401,15 @@ static COMPANION_MOUTH_SOURCE_GESTURES: [SourceGestureSpec; 2] = [
         companion_db: (0.0, 6.0),
     },
 ];
-
 const COMPANION_MOUTH_GAIN_DB: [f64; 4] = [-3.0, -4.0, -3.0, -4.0];
-
 fn companion_geo(a: f64, b: f64, t: f64) -> f64 {
     a * (b / a).powf(t)
 }
-
 fn companion_bilerp(values: [f64; 4], m: f64, q: f64) -> f64 {
     let a = values[0] + (values[1] - values[0]) * m;
     let b = values[2] + (values[3] - values[2]) * m;
     a + (b - a) * q
 }
-
 fn companion_rows(m: f64, q: f64) -> Vec<[f64; NUM_COEFFS]> {
     let total_gain = 10.0f64.powf(companion_bilerp(COMPANION_MOUTH_GAIN_DB, m, q) / 20.0);
     let mut low_formant = section_biquad(
@@ -666,8 +418,6 @@ fn companion_rows(m: f64, q: f64) -> Vec<[f64; NUM_COEFFS]> {
         2.2,
         4.5,
     );
-    // The complete authored gain is explicit and carried by one declared
-    // lane. This is a scale, not a per-render or per-section normalization.
     for b in &mut low_formant[..3] {
         *b *= total_gain;
     }
@@ -677,10 +427,6 @@ fn companion_rows(m: f64, q: f64) -> Vec<[f64; NUM_COEFFS]> {
         2.8,
         5.0,
     );
-
-    // Q=0 is exactly identity for each branch actor. Q=1 adds the intended
-    // cut and its positive companion lobe; intermediate Q is a source-level
-    // trajectory, not packed interpolation.
     let low_notch = section_biquad(
         TYPE_NOTCH,
         companion_geo(650.0, 900.0, m),
@@ -705,7 +451,6 @@ fn companion_rows(m: f64, q: f64) -> Vec<[f64; NUM_COEFFS]> {
         5.0,
         3.0 * q,
     );
-
     vec![
         low_formant,
         high_formant,
@@ -715,7 +460,6 @@ fn companion_rows(m: f64, q: f64) -> Vec<[f64; NUM_COEFFS]> {
         upper_companion,
     ]
 }
-
 impl SectionTarget for CompanionMouth {
     fn name(&self) -> &str {
         "companion_mouth"
@@ -752,26 +496,7 @@ impl SectionTarget for CompanionMouth {
         ])
     }
 }
-
-// ── DEFAULT AUTHORED STAGE-LAW FRAME ───────────────────────────────────────
-//
-// This is the workstation's default authoring shape, expressed here as a
-// source target so the same source-vs-packed proof machinery can inspect it.
-// The values are authored pole/zero/SCALE coordinates, not a recovered preset
-// and not a copy of a reference body's packed bytes. Q100 is a second authored
-// scene. In particular, several lanes move their zeros independently of their
-// poles; that is the frame gesture the broad Companion Mouth probe does not
-// contain.
-
 struct TalkingFrameStageLaw;
-
-/// Four authored corners × six registered lanes ×
-/// [pole_hz, pole_radius, zero_hz, zero_radius, SCALE].
-///
-/// This is intentionally the same clean-room starter contract used by the
-/// workstation's `talking_frame_starter()`. It remains explicit here because
-/// trench-core cannot depend on the workstation crate without creating a
-/// dependency cycle.
 const TALKING_FRAME_SPECS: [[[f64; PPS]; NUM_STAGES]; 4] = [
     [
         [8800.0, 0.910, 420.0, 0.780, 0.562],
@@ -806,11 +531,8 @@ const TALKING_FRAME_SPECS: [[[f64; PPS]; NUM_STAGES]; 4] = [
         [1380.0, 0.977, 6900.0, 0.910, 0.499],
     ],
 ];
-
-/// The lane-0 SCALE anchors are explicit headroom intent, not a gain fit.
 const TALKING_FRAME_SCALE_HEADROOM_DB: [f64; 4] = [-5.0, -4.5, -5.8, -5.3];
 static TALKING_FRAME_SOURCE_GESTURES: [SourceGestureSpec; 0] = [];
-
 fn talking_frame_corner_root(corner: usize, lane: usize) -> StageRoots {
     let [pole_hz, pole_r, zero_hz, zero_r, scale] = TALKING_FRAME_SPECS[corner][lane];
     StageRoots {
@@ -821,7 +543,6 @@ fn talking_frame_corner_root(corner: usize, lane: usize) -> StageRoots {
         scale,
     }
 }
-
 fn talking_frame_bilerp(values: [f64; 4], morph: f64, q: f64) -> f64 {
     let m = morph.clamp(0.0, 1.0);
     let q = q.clamp(0.0, 1.0);
@@ -829,7 +550,6 @@ fn talking_frame_bilerp(values: [f64; 4], morph: f64, q: f64) -> f64 {
     let high = values[2] + (values[3] - values[2]) * m;
     low + (high - low) * q
 }
-
 fn talking_frame_roots_at(morph: f64, q: f64, lane: usize) -> StageRoots {
     let corners = std::array::from_fn(|corner| talking_frame_corner_root(corner, lane));
     StageRoots {
@@ -840,7 +560,6 @@ fn talking_frame_roots_at(morph: f64, q: f64, lane: usize) -> StageRoots {
         scale: talking_frame_bilerp(corners.map(|r| r.scale), morph, q),
     }
 }
-
 impl SectionTarget for TalkingFrameStageLaw {
     fn name(&self) -> &str {
         "talking_frame_stage_law"
@@ -866,8 +585,6 @@ impl SectionTarget for TalkingFrameStageLaw {
     }
     fn source_gate_spec(&self) -> Option<SourceGateSpec> {
         Some(SourceGateSpec {
-            // This default is a frame-geometry target, not a branch product.
-            // It therefore declares no companion cut/boost it has not earned.
             gestures: &TALKING_FRAME_SOURCE_GESTURES,
             gain_anchor_db: Some(TALKING_FRAME_SCALE_HEADROOM_DB),
             response_db: (-60.0, 32.0),
@@ -893,19 +610,6 @@ impl SectionTarget for TalkingFrameStageLaw {
         )
     }
 }
-
-// ── candidate parameterization ──────────────────────────────────────────────
-//
-// Per (corner, lane): [zero_p, zero_q, pole_p, pole_q, scale] — the monic
-// quadratic coefficients of numerator and denominator (1 + p z^-1 + q z^-2) plus
-// SCALE = b0. This spans conjugate AND real root pairs CONTINUOUSLY; the pair
-// TYPE is an exact classification of (p,q), never a silent clamp, and a real
-// pair is packed AS a RealPair through the owned `words_from_geometry`.
-//
-// Lane index is the registration. It is fixed by construction and never sorted.
-
-/// Mirrors `stage_law::pair_geometry` (private there). Pinned against the owned
-/// decoder by `classify_pair_mirrors_stage_law`.
 fn classify_pair(p: f64, q: f64) -> RootPair {
     if p == 0.0 && q == 0.0 {
         return RootPair::Degenerate;
@@ -926,17 +630,14 @@ fn classify_pair(p: f64, q: f64) -> RootPair {
         }
     }
 }
-
-/// H8 param box. Legality/packability only — no musical constraint.
 fn clamp_stage(s: &mut [f64]) {
-    s[1] = s[1].clamp(0.0, 1.0); // zero q = rz^2
-    s[0] = s[0].clamp(-2.0, 2.0); // zero p
-    s[3] = s[3].clamp(0.0, POLE_Q_MAX); // pole q = rp^2
-    let lim = (1.0 + s[3]) - 1e-4; // stability triangle
+    s[1] = s[1].clamp(0.0, 1.0);
+    s[0] = s[0].clamp(-2.0, 2.0);
+    s[3] = s[3].clamp(0.0, POLE_Q_MAX);
+    let lim = (1.0 + s[3]) - 1e-4;
     s[2] = s[2].clamp(-lim, lim);
-    s[4] = s[4].clamp(0.0, 4.0); // SCALE = b0, the format's representable k
+    s[4] = s[4].clamp(0.0, 4.0);
 }
-
 fn stage_words(s: &[f64]) -> [u16; NUM_COEFFS] {
     words_from_geometry(&StageGeometry {
         zero: classify_pair(s[0], s[1]),
@@ -944,7 +645,6 @@ fn stage_words(s: &[f64]) -> [u16; NUM_COEFFS] {
         scale: s[4],
     })
 }
-
 fn params_to_packed(params: &[f64]) -> PackedCorners {
     let mut words = [[[0u16; NUM_COEFFS]; NUM_STAGES]; 4];
     for ci in 0..4 {
@@ -955,16 +655,11 @@ fn params_to_packed(params: &[f64]) -> PackedCorners {
     }
     PackedCorners { words }
 }
-
-/// Direct DF2T row -> five packed words, through the OWNED geometry path (so a
-/// real-root pair is packed AS a RealPair and never silently clamped).
 fn biquad_to_words_owned(r: &[f64; NUM_COEFFS]) -> [u16; NUM_COEFFS] {
     let mut sp = biquad_to_stage_params(r);
     clamp_stage(&mut sp);
     stage_words(&sp)
 }
-
-/// Direct DF2T row -> monic-quadratic + SCALE params. Pure algebra.
 fn biquad_to_stage_params(r: &[f64; NUM_COEFFS]) -> [f64; PPS] {
     let b0 = r[0];
     let (zp, zq) = if b0.abs() > 1e-12 {
@@ -974,9 +669,6 @@ fn biquad_to_stage_params(r: &[f64; NUM_COEFFS]) -> [f64; PPS] {
     };
     [zp, zq, r[3], r[4], b0]
 }
-
-/// The exact-identity body. Used as the neutral reference (the "did the fit do
-/// anything at all" yardstick), NOT as an init — see `init_spread`.
 fn init_identity() -> Vec<f64> {
     let mut p = vec![0.0f64; NPARAM];
     for ci in 0..4 {
@@ -987,16 +679,6 @@ fn init_identity() -> Vec<f64> {
     }
     p
 }
-
-/// H13 blind init: six lanes log-spaced across the objective band, each a mild
-/// flat-off-resonance peak. TARGET-AGNOSTIC and deterministic — it never looks
-/// at the target, so it smuggles in no correspondence and no sorting.
-///
-/// WHY (OBSERVED, `blind_identity_init_is_a_symmetry_trap`): the all-identity
-/// init makes every lane numerically IDENTICAL, so the objective is symmetric
-/// under lane permutation and coordinate search cannot differentiate the lanes.
-/// It stalls in that symmetric basin at a fixed objective regardless of the
-/// iteration budget. Distinct starting frequencies break the symmetry.
 fn init_spread() -> Vec<f64> {
     let mut p = vec![0.0f64; NPARAM];
     for ci in 0..4 {
@@ -1011,11 +693,6 @@ fn init_spread() -> Vec<f64> {
     }
     p
 }
-
-/// H11 identifiability probe: seed each corner from the target's OWN rows at
-/// that corner. Only possible when the target exposes exactly six rows. This
-/// measures whether the objective is minimized at truth — it is NOT a claim
-/// about blind performance and is always reported separately.
 fn init_oracle(t: &dyn Target) -> Option<Vec<f64>> {
     let mut p = vec![0.0f64; NPARAM];
     for (ci, &(m, q)) in CORNER_MQ.iter().enumerate() {
@@ -1032,22 +709,17 @@ fn init_oracle(t: &dyn Target) -> Option<Vec<f64>> {
     }
     Some(p)
 }
-
-// ── the sampled target surface (precomputed once) ───────────────────────────
-
 struct SurfaceState {
     label: String,
     m: f64,
     q: f64,
     h: Vec<Cf>,
 }
-
 struct Surface {
     freqs: Vec<f64>,
     w: Vec<f64>,
     states: Vec<SurfaceState>,
 }
-
 fn mq_grid(n: usize) -> Vec<(String, f64, f64)> {
     let mut out = Vec::new();
     for qi in 0..n {
@@ -1067,8 +739,6 @@ fn mq_grid(n: usize) -> Vec<(String, f64, f64)> {
     }
     out
 }
-
-/// ENDPOINT_ONLY evidence: the four corners and nothing else.
 fn corner_only_surface(t: &dyn Target) -> Surface {
     let freqs = log_frequency_grid(F_LO, F_HI, OBJ_F_BINS);
     let w: Vec<f64> = freqs.iter().map(|&f| 1.0 / f.max(F_LO)).collect();
@@ -1084,11 +754,6 @@ fn corner_only_surface(t: &dyn Target) -> Surface {
         .collect();
     Surface { freqs, w, states }
 }
-
-/// H19 TRUE held-out grid: 8×8 at (2k+1)/16, so NO point coincides with the 5×5
-/// training grid (multiples of 1/4). The previous 9×9 verification grid CONTAINED
-/// every training point, so it measured fit-plus-interpolation rather than
-/// generalisation. Acceptance is judged here.
 fn held_out_surface(t: &dyn Target) -> Surface {
     let freqs = log_frequency_grid(F_LO, F_HI, OBJ_F_BINS);
     let w: Vec<f64> = freqs.iter().map(|&f| 1.0 / f.max(F_LO)).collect();
@@ -1111,10 +776,8 @@ fn held_out_surface(t: &dyn Target) -> Surface {
     }
     Surface { freqs, w, states }
 }
-
 fn sample_surface(t: &dyn Target, n_mq: usize) -> Surface {
     let freqs = log_frequency_grid(F_LO, F_HI, OBJ_F_BINS);
-    // H6: equal weight per octave. Applied identically to target and candidate.
     let w: Vec<f64> = freqs.iter().map(|&f| 1.0 / f.max(F_LO)).collect();
     let states = mq_grid(n_mq)
         .into_iter()
@@ -1127,16 +790,10 @@ fn sample_surface(t: &dyn Target, n_mq: usize) -> Surface {
         .collect();
     Surface { freqs, w, states }
 }
-
-// ── authored-source gate ────────────────────────────────────────────────────
-
-/// Dense enough to catch the Branching Mouth failure, while still being a
-/// declared sampled gate rather than a continuum claim.
 const SOURCE_GATE_F_LO: f64 = 200.0;
 const SOURCE_GATE_F_HI: f64 = 8_000.0;
 const SOURCE_GATE_F_BINS: usize = 1_400;
 const SOURCE_GATE_MQ: usize = 9;
-
 fn source_gate(t: &dyn Target) -> SourceGateReport {
     let Some(spec) = t.source_gate_spec() else {
         return SourceGateReport {
@@ -1151,14 +808,12 @@ fn source_gate(t: &dyn Target) -> SourceGateReport {
             }),
         };
     };
-
     let freqs = log_frequency_grid(SOURCE_GATE_F_LO, SOURCE_GATE_F_HI, SOURCE_GATE_F_BINS);
     let states = mq_grid(SOURCE_GATE_MQ);
     let mut levels: Vec<Vec<f64>> = Vec::with_capacity(states.len());
     let mut finite = true;
     let mut min_db = f64::INFINITY;
     let mut max_db = f64::NEG_INFINITY;
-
     for (_, m, q) in &states {
         let mut row = Vec::with_capacity(freqs.len());
         for &f in &freqs {
@@ -1176,9 +831,6 @@ fn source_gate(t: &dyn Target) -> SourceGateReport {
         }
         levels.push(row);
     }
-
-    // Coherence is measured on adjacent held-out Morph/Q states of the total
-    // response. A lane-by-lane geometry check would test the wrong object.
     let mut max_adjacent_step_db: f64 = 0.0;
     for qi in 0..SOURCE_GATE_MQ {
         for mi in 0..SOURCE_GATE_MQ {
@@ -1201,14 +853,12 @@ fn source_gate(t: &dyn Target) -> SourceGateReport {
             }
         }
     }
-
     let response_pass = finite
         && min_db.is_finite()
         && max_db.is_finite()
         && min_db >= spec.response_db.0
         && max_db <= spec.response_db.1;
     let trajectory_pass = finite && max_adjacent_step_db <= spec.max_adjacent_step_db;
-
     let gain_check = match spec.gain_anchor_db {
         Some(anchors) => {
             let pass = anchors
@@ -1231,7 +881,6 @@ fn source_gate(t: &dyn Target) -> SourceGateReport {
         }),
     };
     let gain_pass = gain_check["pass"].as_bool().unwrap_or(false);
-
     let mut gesture_reports = Vec::with_capacity(spec.gestures.len());
     for gesture in spec.gestures {
         let mut morph_reports = Vec::with_capacity(SOURCE_GATE_MQ);
@@ -1293,7 +942,6 @@ fn source_gate(t: &dyn Target) -> SourceGateReport {
         .iter()
         .all(|r| r["pass"].as_bool().unwrap_or(false));
     let passed = finite && response_pass && trajectory_pass && gain_pass && gesture_pass;
-
     let response_range = if min_db.is_finite() && max_db.is_finite() {
         serde_json::json!([min_db, max_db])
     } else {
@@ -1325,9 +973,6 @@ fn source_gate(t: &dyn Target) -> SourceGateReport {
         }),
     }
 }
-
-/// The five scalar values that the owned compiler will encode for one direct
-/// DF2T row. This is validation only; it does not modify the row.
 fn authored_word_values(r: &[f64; NUM_COEFFS]) -> [f64; NUM_COEFFS] {
     let b0 = r[0];
     let c0 = r[1] / b0 + 2.0;
@@ -1336,9 +981,6 @@ fn authored_word_values(r: &[f64; NUM_COEFFS]) -> [f64; NUM_COEFFS] {
     let c3 = 1.0 - r[4];
     [(c0 - c1) / 4.0, c1, (c2 - c3) / 4.0, c3, b0 / 4.0]
 }
-
-/// Direct authored-row route. Rows stay in their declared corner/stage order;
-/// no root recovery, sorting, clamping, gain fitting, or repair occurs.
 fn pack_authored_corners(t: &dyn Target) -> Result<PackedCorners, String> {
     let mut words = [[[0u16; NUM_COEFFS]; NUM_STAGES]; 4];
     for (ci, &(m, q)) in CORNER_MQ.iter().enumerate() {
@@ -1393,7 +1035,6 @@ fn pack_authored_corners(t: &dyn Target) -> Result<PackedCorners, String> {
     }
     Ok(PackedCorners { words })
 }
-
 fn authored_coefficient_loss(t: &dyn Target, pc: &PackedCorners) -> serde_json::Value {
     let mut sum_sq = 0.0;
     let mut count = 0usize;
@@ -1431,7 +1072,6 @@ fn authored_coefficient_loss(t: &dyn Target, pc: &PackedCorners) -> serde_json::
         "includes_solver_error": false,
     })
 }
-
 fn authored_loss_report(
     t: &dyn Target,
     pc: &PackedCorners,
@@ -1451,7 +1091,6 @@ fn authored_loss_report(
         },
     })
 }
-
 enum RouteResult {
     Candidate {
         pc: PackedCorners,
@@ -1464,7 +1103,6 @@ enum RouteResult {
         report: serde_json::Value,
     },
 }
-
 fn endpoint_only_target_report(t: &dyn Target) -> serde_json::Value {
     serde_json::json!({
         "fixture": t.name(),
@@ -1478,7 +1116,6 @@ fn endpoint_only_target_report(t: &dyn Target) -> serde_json::Value {
         "statement": "Endpoint transfer functions do not identify lane registration. No body or lane ordering is selected under ENDPOINT_ONLY evidence.",
     })
 }
-
 fn route_authored(t: &dyn Target) -> RouteResult {
     let gate = source_gate(t);
     if !gate.passed {
@@ -1524,9 +1161,6 @@ fn route_authored(t: &dyn Target) -> RouteResult {
         }),
     }
 }
-
-/// Generic route selector. The evidence mode is the only switch that chooses
-/// between direct authoring, response recovery, and ambiguity reporting.
 fn route_target(t: &dyn Target, iters: usize) -> RouteResult {
     match t.evidence_mode() {
         EvidenceMode::EndpointOnly => RouteResult::Ambiguous {
@@ -1550,11 +1184,6 @@ fn route_target(t: &dyn Target, iters: usize) -> RouteResult {
         }
     }
 }
-
-/// H28 search subset: five diagonal interior states and every twelfth frequency
-/// bin from the declared 5x5x192 training surface. This ranks search moves only;
-/// acceptance is always recomputed on the complete training surface and the
-/// disjoint 8x8 held-out surface.
 fn search_subset(s: &Surface) -> Surface {
     let bins: Vec<usize> = (0..s.freqs.len()).step_by(12).collect();
     let freqs = bins.iter().map(|&i| s.freqs[i]).collect();
@@ -1578,11 +1207,6 @@ fn search_subset(s: &Surface) -> Surface {
         .collect();
     Surface { freqs, w, states }
 }
-
-// ── objective: packed surface vs target surface ─────────────────────────────
-
-/// H7 interior-stability barrier. Corners can be stable while their packed-word
-/// lerp overshoots the unit circle in between. LEGALITY only.
 fn stability_penalty(packed: &PackedCorners) -> f64 {
     let mut acc = 0.0;
     for mi in 0..17 {
@@ -1598,12 +1222,6 @@ fn stability_penalty(packed: &PackedCorners) -> f64 {
     }
     acc
 }
-
-/// H14 packed-interpolation wrap barrier. The runtime's u16 lerp casts the
-/// corner delta to i16 BEFORE adding the base, so a delta beyond i16::MAX wraps
-/// and the interpolated word is garbage. Without this barrier the optimizer is
-/// free to park words at opposite ends of the u16 range and produce an ILLEGAL
-/// body (OBSERVED: `overbudget` reached a 65535 word delta). LEGALITY, not taste.
 fn wrap_penalty(pc: &PackedCorners) -> f64 {
     let mut acc = 0.0;
     for si in 0..NUM_STAGES {
@@ -1619,11 +1237,7 @@ fn wrap_penalty(pc: &PackedCorners) -> f64 {
     }
     acc
 }
-
 const PEN_WRAP: f64 = 1.0e4;
-
-/// H5/H6. Absolute gain preserved: no normalization, no offset, no per-state
-/// gain fit. The number is directly comparable across candidates and fixtures.
 fn response_objective(packed: &PackedCorners, s: &Surface) -> f64 {
     let mut err = 0.0f64;
     let mut wsum = 0.0f64;
@@ -1640,19 +1254,11 @@ fn response_objective(packed: &PackedCorners, s: &Surface) -> f64 {
     }
     err / wsum.max(1e-30)
 }
-
 fn surface_objective(packed: &PackedCorners, s: &Surface) -> f64 {
     response_objective(packed, s)
         + PEN_STAB * stability_penalty(packed)
         + PEN_WRAP * wrap_penalty(packed)
 }
-
-/// H31 qualification loss scaled by the fixed acceptance units.
-///
-/// A 0.5 dB magnitude residual and a 2 degree phase residual contribute equally.
-/// This changes only solver search geometry; it never changes, normalizes, or
-/// repairs the target/candidate response. Acceptance is recomputed independently
-/// from raw residuals on the complete held-out grid.
 fn qualification_response_objective(packed: &PackedCorners, s: &Surface) -> f64 {
     let mut err = 0.0f64;
     let mut wsum = 0.0f64;
@@ -1669,25 +1275,11 @@ fn qualification_response_objective(packed: &PackedCorners, s: &Surface) -> f64 
     }
     err / wsum.max(1e-30)
 }
-
 fn qualification_objective(packed: &PackedCorners, s: &Surface) -> f64 {
     qualification_response_objective(packed, s)
         + PEN_STAB * stability_penalty(packed)
         + PEN_WRAP * wrap_penalty(packed)
 }
-
-// ── optimizer (generic; not filter math) ────────────────────────────────────
-
-/// H10 deterministic Hooke-Jeeves pattern search. Same input, same output.
-///
-/// NEGATIVE RESULT (MEASURED, kept so it is not re-tried): adding deterministic
-/// step RESTARTS (re-inflating the step once it collapses, up to 6 times)
-/// changed the final objective on all three fixtures by NOTHING — exact6 blind
-/// stayed at 1.5275e1 to five significant figures. In hindsight it cannot help:
-/// the exploration is a deterministic function of (incumbent, step), so
-/// re-inflating the step from the same incumbent just replays the same failed
-/// exploration. Escaping requires a DIFFERENT point or a different step pattern,
-/// not a bigger step from the same one. The restart code was removed.
 fn hooke_jeeves(
     mut base: Vec<f64>,
     obj: &dyn Fn(&[f64]) -> f64,
@@ -1740,14 +1332,7 @@ fn hooke_jeeves(
     }
     (base, fb)
 }
-
-// ── legality gates (stable + finite + packable = LEGAL, never "good") ───────
-
 fn wrap_hazard(pc: &PackedCorners) -> (bool, i32) {
-    // The runtime lerps morph first: corner0->corner1 and corner2->corner3. The
-    // E-MU/MSVC lerp casts the delta to i16 BEFORE adding the base, so a delta
-    // beyond i16::MAX wraps. The Q lerp then runs on results bounded by those
-    // pairs, so the conservative bound is the max spread across all four corners.
     let mut worst = 0i32;
     let mut hazard = false;
     for si in 0..NUM_STAGES {
@@ -1764,7 +1349,6 @@ fn wrap_hazard(pc: &PackedCorners) -> (bool, i32) {
     }
     (hazard, worst)
 }
-
 fn cartridge_json(pc: &PackedCorners, name: &str) -> serde_json::Value {
     let keyframes: Vec<serde_json::Value> = (0..4)
         .map(|ci| {
@@ -1778,7 +1362,6 @@ fn cartridge_json(pc: &PackedCorners, name: &str) -> serde_json::Value {
         "format": "compiled-v1", "name": name, "sampleRate": SR, "keyframes": keyframes
     })
 }
-
 fn legality(body: &[u8], pc: &PackedCorners, name: &str) -> serde_json::Value {
     let (hazard, worst) = wrap_hazard(pc);
     let load_save = pc.to_rom_bytes().to_vec() == body;
@@ -1786,8 +1369,6 @@ fn legality(body: &[u8], pc: &PackedCorners, name: &str) -> serde_json::Value {
     let cart_parity = Cartridge::from_json(&cart.to_string())
         .map(|c| c.packed == *pc)
         .unwrap_or(false);
-
-    // H4 sampled certification — NOT a continuum proof.
     let mut unstable = 0usize;
     let mut nonfinite = 0usize;
     let mut max_r = 0.0f64;
@@ -1809,9 +1390,6 @@ fn legality(body: &[u8], pc: &PackedCorners, name: &str) -> serde_json::Value {
             }
         }
     }
-
-    // Real-root rows must be returned exactly and REFUSED by the conjugate
-    // reader — never silently clamped into an approximate (hz, r).
     let mut real_rows = 0usize;
     let mut silent_clamps = 0usize;
     for ci in 0..4 {
@@ -1828,7 +1406,6 @@ fn legality(body: &[u8], pc: &PackedCorners, name: &str) -> serde_json::Value {
             }
         }
     }
-
     serde_json::json!({
         "meaning": "LEGAL = stable + finite + packable + parity. Legality is NEVER a claim of quality.",
         "exactly_240_bytes": body.len() == 240,
@@ -1850,9 +1427,6 @@ fn legality(body: &[u8], pc: &PackedCorners, name: &str) -> serde_json::Value {
             && unstable == 0 && nonfinite == 0 && silent_clamps == 0,
     })
 }
-
-// ── residuals ───────────────────────────────────────────────────────────────
-
 struct Residual {
     rms_db: f64,
     max_db: f64,
@@ -1863,7 +1437,6 @@ struct Residual {
     worst_hz: f64,
     phase_rms_deg: f64,
 }
-
 impl Residual {
     fn json(&self) -> serde_json::Value {
         serde_json::json!({
@@ -1882,7 +1455,6 @@ impl Residual {
         })
     }
 }
-
 fn residual(pc: &PackedCorners, s: &Surface) -> Residual {
     let mut sq = 0.0f64;
     let mut max_db = 0.0f64;
@@ -1920,26 +1492,12 @@ fn residual(pc: &PackedCorners, s: &Surface) -> Residual {
         phase_rms_deg: (psq / n as f64).sqrt(),
     }
 }
-
-// ── feature survival (REPORTING ONLY — assigns no lane identity) ───────────
-
 #[derive(Clone, Copy)]
 struct Feature {
     hz: f64,
     db: f64,
     peak: bool,
 }
-
-/// TRUE topographic prominence of the extremum at `i`: descend both ways until
-/// the curve rises back above (peak) / falls back below (valley) this level or
-/// the band ends; prominence is the height above the HIGHER of the two saddles.
-///
-/// The naive version — comparing against the two IMMEDIATE grid neighbours —
-/// measures sharpness relative to GRID SPACING, not prominence: at the apex of a
-/// smooth peak adjacent samples differ by ~0.05 dB, so a 1.5 dB threshold
-/// rejects genuine resonances. (OBSERVED: it found 1 peak on a 5-resonance
-/// fixture and reported ~1 feature per state on exact6 — the survival metric was
-/// measuring nothing.) Pinned by `prominence_finds_known_resonances`.
 fn prominence(db: &[f64], i: usize, peak: bool) -> f64 {
     let h = db[i];
     let sign = if peak { 1.0 } else { -1.0 };
@@ -1956,14 +1514,13 @@ fn prominence(db: &[f64], i: usize, peak: bool) -> f64 {
                 break;
             }
             if sign * (v - h) > 0.0 {
-                break; // risen back above (peak) / fallen below (valley)
+                break;
             }
             if sign * (v - saddle[s]) < 0.0 {
                 saddle[s] = v;
             }
         }
     }
-    // the limiting saddle is the SHALLOWER descent (higher for a peak)
     let limiting = if peak {
         saddle[0].max(saddle[1])
     } else {
@@ -1971,9 +1528,6 @@ fn prominence(db: &[f64], i: usize, peak: bool) -> f64 {
     };
     sign * (h - limiting)
 }
-
-/// H9 local extrema whose TRUE prominence is >= FEATURE_PROM_DB. Describes the
-/// CURVE, not the lanes.
 fn features(db: &[f64], freqs: &[f64]) -> Vec<Feature> {
     let mut out = Vec::new();
     for i in 1..db.len() - 1 {
@@ -1998,10 +1552,6 @@ fn features(db: &[f64], freqs: &[f64]) -> Vec<Feature> {
     }
     out
 }
-
-/// One-to-one greedy matching within H9's tolerance. Unmatched target features
-/// are LOST; unmatched packed features are SPURIOUS. This is a survival report,
-/// NOT a correspondence solution — it never touches lane registration.
 fn feature_survival(pc: &PackedCorners, t: &dyn Target, s: &Surface) -> serde_json::Value {
     let (mut matched, mut lost, mut spurious) = (0usize, 0usize, 0usize);
     let mut worst_traj_oct = 0.0f64;
@@ -2059,9 +1609,6 @@ fn feature_survival(pc: &PackedCorners, t: &dyn Target, s: &Surface) -> serde_js
         "per_state": per_state,
     })
 }
-
-// ── correspondence diagnostic (exposes; never resolves by sorting) ─────────
-
 fn mag_at(p: &PackedCorners, m: f64, q: f64, f: f64) -> f64 {
     cdb(biquad_cascade_complex(
         &p.interpolate_biquad(m as f32, q as f32),
@@ -2069,10 +1616,6 @@ fn mag_at(p: &PackedCorners, m: f64, q: f64, f: f64) -> f64 {
         SR,
     ))
 }
-
-/// All 720 orderings of six lanes (Heap's algorithm). Used ONLY to MEASURE the
-/// size of the correspondence equivalence class — never to search for a "best"
-/// ordering to declare as truth.
 fn perms6() -> Vec<[usize; 6]> {
     let mut out = Vec::with_capacity(720);
     let mut a = [0usize, 1, 2, 3, 4, 5];
@@ -2096,15 +1639,6 @@ fn perms6() -> Vec<[usize; 6]> {
     }
     out
 }
-
-/// THE decisive measurement, kept as the harness's regression fixture: how far
-/// apart are two registrations at the CORNERS versus in the INTERIOR?
-///
-/// MEASURED: 0.0 dB at the corners, ~25.8 dB in the interior. The cascade is a
-/// permutation-invariant product, so the corner transfer functions simply do not
-/// contain the registration. This is an identifiability boundary, not a hard
-/// problem: no optimizer, no amount of corner data, and no cleverness can
-/// recover what is not present.
 fn discriminability(
     a: &PackedCorners,
     b: &PackedCorners,
@@ -2132,8 +1666,6 @@ fn discriminability(
     }
     (corner_max, interior_max, worst)
 }
-
-/// Interior RMS dB between two bodies over the held-out interior.
 fn interior_rms(a: &PackedCorners, b: &PackedCorners, freqs: &[f64]) -> f64 {
     let mut sq = 0.0;
     let mut n = 0usize;
@@ -2149,24 +1681,10 @@ fn interior_rms(a: &PackedCorners, b: &PackedCorners, freqs: &[f64]) -> f64 {
     }
     (sq / n.max(1) as f64).sqrt()
 }
-
-/// MODE 1 — ENDPOINT_ONLY.
-///
-/// Reports the correspondence EQUIVALENCE CLASS and refuses to choose. There is
-/// no "truth" and no "decoy" here: pairing A and pairing B are indistinguishable
-/// members of one class. `selected_permutation` is ALWAYS null, by contract.
 fn endpoint_only_report(a: &PackedCorners, b: &PackedCorners, freqs: &[f64]) -> serde_json::Value {
     let (corner_db, interior_db, worst) = discriminability(a, b, freqs);
-    // Distinct interiors consistent with the SAME four corner transfer functions:
-    // each corner's six sections may be ordered 6! ways -> (6!)^4 assignments;
-    // relabelling every corner by the same permutation leaves the interior
-    // untouched, so quotient by 6! -> (6!)^3. Upper bound: exactly duplicated
-    // sections (e.g. two identity lanes) collapse the class further.
     let fact6: u64 = 720;
     let class = fact6 * fact6 * fact6;
-    // Concretely: permute ONE corner's lanes and count how many of the 720
-    // orderings give a measurably different interior. All of them share this
-    // body's four corner transfer functions exactly.
     let mut distinct = 0usize;
     for p in perms6() {
         let mut trial = a.clone();
@@ -2212,20 +1730,12 @@ fn endpoint_only_report(a: &PackedCorners, b: &PackedCorners, freqs: &[f64]) -> 
                       sorting would silently pick one and report a perfect corner match.",
     })
 }
-
-/// MODE 2 — OBSERVED_SURFACE.
-///
-/// Interior observations exist, so candidates can be RANKED by their actual
-/// packed-runtime interior error against them. Reports the winning margin and
-/// REFUSES when the margin is insignificant (H16).
 fn observed_surface_report(
     candidates: &[(&str, &PackedCorners)],
     observed: &Surface,
     freqs: &[f64],
 ) -> serde_json::Value {
     const DECIDE_DB: f64 = 0.5;
-    // Rank by error against the OBSERVED interior samples — the real evidence,
-    // through the real packed runtime. Not against any assumed truth.
     let mut ranked: Vec<(String, f64)> = candidates
         .iter()
         .map(|(name, pc)| (name.to_string(), residual(pc, observed).rms_db))
@@ -2260,11 +1770,6 @@ fn observed_surface_report(
         },
     })
 }
-
-/// MODE 3 — AUTHORED_TRAJECTORY.
-///
-/// The source model supplies the actor identities. They are preserved verbatim
-/// as an authoring PRIOR and labelled AUTHORED. Nothing here is a recovery claim.
 fn authored_trajectory_report(
     t: &dyn Target,
     a: &PackedCorners,
@@ -2272,10 +1777,6 @@ fn authored_trajectory_report(
     freqs: &[f64],
 ) -> serde_json::Value {
     let (corner_db, interior_db, _) = discriminability(a, b, freqs);
-    // Only the AUTHORED morph endpoints. This fixture's source model declares
-    // identities at its corners; its interior is produced by packed
-    // interpolation, so quoting an "authored identity" at morph 0.5 would imply
-    // a continuous trajectory the model does not actually define.
     let traj: Vec<serde_json::Value> = [0.0f64, 1.0]
         .iter()
         .filter_map(|&m| {
@@ -2300,23 +1801,6 @@ fn authored_trajectory_report(
                       claim the endpoint evidence identified the registration.",
     })
 }
-
-/// MEASURED SOLVER FAILURE — not a boundary result, and NOT a required invariant.
-///
-/// CORRECTION (this replaces an earlier, wrong reading). The blind fit is trained
-/// on the 5×5 Morph×Q grid, which INCLUDES interior points — that is
-/// OBSERVED_SURFACE evidence. Under the evidence contract such a solver is
-/// PERMITTED AND EXPECTED to resolve the registration: the interior separates
-/// pairing A from pairing B by 25.82 dB, and `observed_surface_report` ranks them
-/// cleanly at a 3.608 dB margin from the very same samples.
-///
-/// So the equidistant result below (3.505 vs 3.502 dB, margin 0.003 dB) is a
-/// MEASURED FAILURE OF THE SOLVER — it could not exploit evidence that is
-/// demonstrably present and sufficient. Treating it as a "required negative
-/// result" was an error: it enshrined a solver deficiency as if it were the
-/// identifiability boundary. The boundary is ENDPOINT_ONLY => AMBIGUOUS, and it
-/// stands on its own (0.0 dB corner discriminability). It says nothing about what
-/// an interior-trained solver should achieve.
 fn solver_correspondence_failure(
     fitted: &PackedCorners,
     pairing_a: &PackedCorners,
@@ -2350,11 +1834,6 @@ fn solver_correspondence_failure(
         },
     })
 }
-
-// ── audio: BODY SOLO through the owned Cascade, no normalization ────────────
-
-/// Deterministic pink-ish noise. Identical bytes for every render in every
-/// fixture, so any level difference between renders is the filter, not the input.
 fn dry_signal(n: usize) -> Vec<f32> {
     let mut rng = 0x2545_F491_4F6C_DD1Du64;
     let mut pb = [0f64; 7];
@@ -2376,10 +1855,6 @@ fn dry_signal(n: usize) -> Vec<f32> {
         })
         .collect()
 }
-
-/// Render ANY number of ordered rows through the OWNED `Cascade`, six at a time.
-/// A serial cascade composes, so >6 rows = successive passes. Static state:
-/// coefficients are snapped, never ramped. No AGC, no drive, no boost, no gain.
 fn render_rows(rows: &[[f64; NUM_COEFFS]], dry: &[f32]) -> Vec<f32> {
     let mut buf = dry.to_vec();
     for chunk in rows.chunks(NUM_STAGES) {
@@ -2393,9 +1868,6 @@ fn render_rows(rows: &[[f64; NUM_COEFFS]], dry: &[f32]) -> Vec<f32> {
     }
     buf
 }
-
-/// Packed morph/Q sweep through the runtime path: per-block `set_targets` with a
-/// block-length ramp — the shipped behaviour. No normalization.
 fn render_sweep(pc: &PackedCorners, dry: &[f32], from: (f64, f64), to: (f64, f64)) -> Vec<f32> {
     const BLOCK: usize = 32;
     let mut casc = Cascade::new();
@@ -2414,7 +1886,6 @@ fn render_sweep(pc: &PackedCorners, dry: &[f32], from: (f64, f64), to: (f64, f64
     }
     out
 }
-
 fn stats(x: &[f32]) -> (f64, f64, usize) {
     let peak = x.iter().fold(0.0f64, |m, &v| m.max(v.abs() as f64));
     let rms =
@@ -2422,9 +1893,6 @@ fn stats(x: &[f32]) -> (f64, f64, usize) {
     let clip = x.iter().filter(|&&v| v.abs() >= 1.0).count();
     (peak, rms, clip)
 }
-
-/// Energy ratio of (target - packed) to target, over identical input. Absolute:
-/// no delay search (H12: zero transport delay), no gain match, no normalization.
 fn null_db(a: &[f32], b: &[f32]) -> f64 {
     let n = a.len().min(b.len());
     let mut num = 0.0f64;
@@ -2436,7 +1904,6 @@ fn null_db(a: &[f32], b: &[f32]) -> f64 {
     }
     10.0 * (num.max(1e-30) / den.max(1e-30)).log10()
 }
-
 fn wav_write(path: &Path, x: &[f32], sr: u32) {
     let mut b = Vec::with_capacity(44 + x.len() * 4);
     let dl = (x.len() * 4) as u32;
@@ -2444,7 +1911,7 @@ fn wav_write(path: &Path, x: &[f32], sr: u32) {
     b.extend_from_slice(&(36 + dl).to_le_bytes());
     b.extend_from_slice(b"WAVEfmt ");
     b.extend_from_slice(&16u32.to_le_bytes());
-    b.extend_from_slice(&3u16.to_le_bytes()); // IEEE float: absolute values preserved
+    b.extend_from_slice(&3u16.to_le_bytes());
     b.extend_from_slice(&1u16.to_le_bytes());
     b.extend_from_slice(&sr.to_le_bytes());
     b.extend_from_slice(&(sr * 4).to_le_bytes());
@@ -2457,7 +1924,6 @@ fn wav_write(path: &Path, x: &[f32], sr: u32) {
     }
     std::fs::write(path, b).expect("write wav");
 }
-
 fn audio_proof(root: &Path, pc: &PackedCorners, t: &dyn Target) -> serde_json::Value {
     let dir = root.join("audio");
     std::fs::create_dir_all(&dir).unwrap();
@@ -2465,7 +1931,6 @@ fn audio_proof(root: &Path, pc: &PackedCorners, t: &dyn Target) -> serde_json::V
     let dry = dry_signal(n);
     wav_write(&dir.join("dry.wav"), &dry, SR as u32);
     let (dpk, drms, _) = stats(&dry);
-
     let mut per_state = Vec::new();
     for (ci, &(m, q)) in CORNER_MQ.iter().enumerate() {
         let prows = pc.interpolate_biquad(m as f32, q as f32);
@@ -2503,8 +1968,6 @@ fn audio_proof(root: &Path, pc: &PackedCorners, t: &dyn Target) -> serde_json::V
         }
         per_state.push(row);
     }
-
-    // Interior state the fit never saw at this exact point, plus the journeys.
     let mut sweeps = Vec::new();
     for (name, from, to) in [
         ("morph_q0", (0.0, 0.0), (1.0, 0.0)),
@@ -2517,7 +1980,6 @@ fn audio_proof(root: &Path, pc: &PackedCorners, t: &dyn Target) -> serde_json::V
         let (p, r, c) = stats(&w);
         sweeps.push(serde_json::json!({"sweep": name, "peak": p, "rms": r, "clip_samples": c}));
     }
-
     serde_json::json!({
         "path": "BODY SOLO: the owned Cascade only. No AGC, no drive, no boost, no make-up gain.",
         "input": "identical deterministic pink-ish noise for EVERY render in every fixture",
@@ -2530,9 +1992,6 @@ fn audio_proof(root: &Path, pc: &PackedCorners, t: &dyn Target) -> serde_json::V
                          the target's actual waveform.",
     })
 }
-
-// ── SVG (target vs packed, shared dB axis) ─────────────────────────────────
-
 fn svg_response(title: &str, freqs: &[f64], curves: &[(&str, &str, Vec<f64>)]) -> String {
     let (w, h) = (1100.0f64, 600.0f64);
     let (ml, mr, mt, mb) = (70.0, 20.0, 40.0, 50.0);
@@ -2602,7 +2061,6 @@ fn svg_response(title: &str, freqs: &[f64], curves: &[(&str, &str, Vec<f64>)]) -
     s.push_str("</svg>");
     s
 }
-
 fn plot_states(
     root: &Path,
     pc: &PackedCorners,
@@ -2636,9 +2094,6 @@ fn plot_states(
     }
     out
 }
-
-// ── SHA-256 (dependency-free; KAT-checked below) ───────────────────────────
-
 fn sha256_hex(bytes: &[u8]) -> String {
     const K: [u32; 64] = [
         0x428a2f98, 0x71374491, 0xb5c0fbcf, 0xe9b5dba5, 0x3956c25b, 0x59f111f1, 0x923f82a4,
@@ -2717,9 +2172,6 @@ fn sha256_hex(bytes: &[u8]) -> String {
     }
     out
 }
-
-// ── lane registration table (what actually got packed, per lane) ────────────
-
 fn lane_table(pc: &PackedCorners) -> serde_json::Value {
     let mut rows = Vec::new();
     for si in 0..NUM_STAGES {
@@ -2756,23 +2208,18 @@ fn lane_table(pc: &PackedCorners) -> serde_json::Value {
         "lanes": rows,
     })
 }
-
-// ── one fixture run ─────────────────────────────────────────────────────────
-
 fn repo_root() -> PathBuf {
     Path::new(env!("CARGO_MANIFEST_DIR"))
         .parent()
         .unwrap()
         .to_path_buf()
 }
-
 struct FitRun {
     init: &'static str,
     obj_init: f64,
     obj_final: f64,
     params: Vec<f64>,
 }
-
 fn fit(init: &'static str, start: Vec<f64>, surf: &Surface, iters: usize) -> FitRun {
     let obj = |p: &[f64]| surface_objective(&params_to_packed(p), surf);
     let obj_init = obj(&start);
@@ -2784,10 +2231,6 @@ fn fit(init: &'static str, start: Vec<f64>, surf: &Surface, iters: usize) -> Fit
         params,
     }
 }
-
-/// Run an authored target after the source gate. This path intentionally has
-/// no FitRun or blind/oracle fields: a direct authoring result is not a solver
-/// result with a different label.
 fn run_authored_fixture(t: &dyn Target) -> serde_json::Value {
     let root = repo_root()
         .join("dev")
@@ -2797,7 +2240,6 @@ fn run_authored_fixture(t: &dyn Target) -> serde_json::Value {
     std::fs::create_dir_all(&root).unwrap();
     println!("\n=== authored fixture: {} ===", t.name());
     println!("{}", t.describe());
-
     let route = route_authored(t);
     let RouteResult::Candidate { pc, report: route_report } = route else {
         let route_report = match route {
@@ -2825,7 +2267,6 @@ fn run_authored_fixture(t: &dyn Target) -> serde_json::Value {
         println!("  route rejected before body creation; report: {}", root.display());
         return report;
     };
-
     let body = pc.to_rom_bytes();
     std::fs::write(root.join("candidate.body240"), body).unwrap();
     let cart = cartridge_json(&pc, &format!("tf-harness-{}", t.name()));
@@ -2883,7 +2324,6 @@ fn run_authored_fixture(t: &dyn Target) -> serde_json::Value {
             "Certification is sampled on finite grids and is never a continuum proof.",
         ],
     });
-
     if t.name() == "crossing" {
         let pa = Crossing::pairing_a();
         let pb = Crossing::pairing_b();
@@ -2897,7 +2337,6 @@ fn run_authored_fixture(t: &dyn Target) -> serde_json::Value {
             "direct_route_note": "The authored candidate above was packed from declared rows; no solver residual is attached to it.",
         });
     }
-
     std::fs::write(
         root.join("report.json"),
         serde_json::to_string_pretty(&report).unwrap(),
@@ -2906,7 +2345,6 @@ fn run_authored_fixture(t: &dyn Target) -> serde_json::Value {
     println!("  direct authored body: {}", root.display());
     report
 }
-
 fn run_fixture(t: &dyn Target, iters: usize) -> serde_json::Value {
     let root = repo_root()
         .join("dev")
@@ -2916,23 +2354,10 @@ fn run_fixture(t: &dyn Target, iters: usize) -> serde_json::Value {
     std::fs::create_dir_all(&root).unwrap();
     println!("\n=== fixture: {} ===", t.name());
     println!("{}", t.describe());
-
-    // The surface the optimizer sees (H2) and the held-out verification surface (H3).
     let train = sample_surface(t, OBJ_MQ);
     let verify = sample_surface(t, VERIFY_MQ);
-
-    // THE CANDIDATE is always the BLIND run. A real arbitrary target has no
-    // oracle, so the blind path is the harness's actual capability and the only
-    // honest thing to report as "the candidate".
     let blind = fit("spread_blind", init_spread(), &train, iters);
-
-    // Identifiability PROBE (H11), reported separately and never promoted to
-    // "the candidate": seed from the target's own rows and ask whether the
-    // objective bottoms out AT truth. It answers "is the objective correct?",
-    // NOT "can the harness find it?". Conflating the two would let the oracle
-    // launder a blind failure into a perfect-looking result.
     let oracle = init_oracle(t).map(|p| fit("oracle_rows", p, &train, iters));
-
     let chosen: &FitRun = &blind;
     let pc = params_to_packed(&chosen.params);
     let body = pc.to_rom_bytes();
@@ -2943,17 +2368,12 @@ fn run_fixture(t: &dyn Target, iters: usize) -> serde_json::Value {
         serde_json::to_string_pretty(&cart).unwrap(),
     )
     .unwrap();
-
     let legal = legality(&body, &pc, &format!("tf-harness-{}", t.name()));
     let res_train = residual(&pc, &train);
     let res_verify = residual(&pc, &verify);
     let surv = feature_survival(&pc, t, &verify);
-
-    // Neutral reference: the identity body. Establishes what "did the fit do
-    // anything at all" means, in the same units. Not a quality claim.
     let ident_pc = params_to_packed(&init_identity());
     let res_ident = residual(&ident_pc, &verify);
-
     let plots = plot_states(
         &root,
         &pc,
@@ -2969,7 +2389,6 @@ fn run_fixture(t: &dyn Target, iters: usize) -> serde_json::Value {
         ],
     );
     let audio = audio_proof(&root, &pc, t);
-
     let mut report = serde_json::json!({
         "schema": "tf-harness-fixture-v1",
         "fixture": t.name(),
@@ -3028,14 +2447,6 @@ fn run_fixture(t: &dyn Target, iters: usize) -> serde_json::Value {
             "cart": "candidate.cart.json",
         },
     });
-
-    // ── the identifiability boundary, exercised in all three evidence modes ──
-    //
-    // The crossing fixture is the harness's decisive regression fixture: 0.0 dB
-    // corner discriminability, ~25.8 dB interior. Running one body through all
-    // three modes shows the boundary is about EVIDENCE, not about difficulty:
-    // the same body is AMBIGUOUS, RANKED, or AUTHORED depending only on what is
-    // actually known.
     if t.name() == "crossing" {
         let pa = Crossing::pairing_a();
         let pb = Crossing::pairing_b();
@@ -3066,9 +2477,6 @@ fn run_fixture(t: &dyn Target, iters: usize) -> serde_json::Value {
             });
         }
     }
-
-    // The harness states its own failure modes in its own output. A number
-    // without its caveat is a claim; a number with it is evidence.
     report["limitations"] = serde_json::json!([
         "IDENTIFIABILITY BOUNDARY (H17): lane correspondence is NOT identifiable from corner-only \
          transfer functions. MEASURED 0.0 dB corner discriminability vs 25.82 dB interior. This is \
@@ -3100,13 +2508,11 @@ fn run_fixture(t: &dyn Target, iters: usize) -> serde_json::Value {
         "The harness has no opinion about whether any target is worth hitting. Stable and finite \
          means legal, never good. Only the ear decides the rest.",
     ]);
-
     std::fs::write(
         root.join("report.json"),
         serde_json::to_string_pretty(&report).unwrap(),
     )
     .unwrap();
-
     println!(
         "  fit: blind {:.4e} -> {:.4e}{}",
         blind.obj_init,
@@ -3144,14 +2550,8 @@ fn run_fixture(t: &dyn Target, iters: usize) -> serde_json::Value {
     println!("  artifacts: {}", root.display());
     report
 }
-
-// ── main ────────────────────────────────────────────────────────────────────
-
 fn main() {
     let args: Vec<String> = std::env::args().collect();
-    // The default product path is the authored stage-law frame. The generic
-    // fixtures remain available explicitly through `all`/`exact6`/...; they
-    // are qualification probes, not the default authoring route.
     let which = args.get(1).map(|s| s.as_str()).unwrap_or("stage-law");
     let iters = args
         .iter()
@@ -3159,27 +2559,22 @@ fn main() {
         .and_then(|i| args.get(i + 1))
         .and_then(|v| v.parse::<usize>().ok())
         .unwrap_or(DEFAULT_ITERS);
-
     if which == "floor" {
         cmd_floor();
         return;
     }
-
     if which == "mouth" {
         cmd_mouth();
         return;
     }
-
     if which == "companion" {
         cmd_companion_mouth();
         return;
     }
-
     if which == "stage-law" || which == "default" {
         cmd_talking_frame_stage_law();
         return;
     }
-
     if which == "qualify" {
         let seeds = args
             .iter()
@@ -3198,9 +2593,6 @@ fn main() {
             .and_then(|i| args.get(i + 1))
             .and_then(|v| v.parse::<usize>().ok())
             .unwrap_or(140);
-        // ONE unmistakable opt-in. The old `--approach <name>` selector is gone:
-        // it was a second, quieter route to the REJECTED evolutionary solver, and
-        // the contract is that evolutionary must never execute by accident.
         let include_evo = args.iter().any(|a| a == "--include-evolutionary-benchmark");
         if let Some(i) = args.iter().position(|a| a == "--approach") {
             eprintln!(
@@ -3214,12 +2606,10 @@ fn main() {
         cmd_qualify(seeds, fixture, include_evo, qual_iters);
         return;
     }
-
     let exact = ExactSix::new();
     let over = OverBudget::new();
     let cross = Crossing::new();
     let all: Vec<&dyn Target> = vec![&exact, &over, &cross];
-
     let selected: Vec<&dyn Target> = match which {
         "all" => all,
         n => all.into_iter().filter(|t| t.name() == n).collect(),
@@ -3230,7 +2620,6 @@ fn main() {
         );
         std::process::exit(2);
     }
-
     let mut reports = Vec::new();
     for t in selected {
         reports.push(match t.evidence_mode() {
@@ -3244,7 +2633,6 @@ fn main() {
             EvidenceMode::AuthoredTrajectory => run_authored_fixture(t),
         });
     }
-
     let root = repo_root().join("dev").join("tmp").join("tf_harness");
     std::fs::create_dir_all(&root).unwrap();
     std::fs::write(
@@ -3260,21 +2648,6 @@ fn main() {
     .unwrap();
     println!("\nwrote {}", root.join("all_reports.json").display());
 }
-
-// ════════════════════════════════════════════════════════════════════════════
-// SOLVER QUALIFICATION
-// ════════════════════════════════════════════════════════════════════════════
-//
-// The blind Hooke-Jeeves search is NOT an authoring instrument: it fails the
-// exactly-representable exact6 fixture (MEASURED). Two oracle-free,
-// source-agnostic solvers are built and BENCHMARKED against each other.
-//
-// Both may see ONLY sampled complex H_target(f, m, q). Neither may see the
-// target's corner rows, packed words, lane identities, or any oracle init.
-// Every candidate is scored through the REAL trench-core packed loop.
-
-// ── complex helpers the solvers need ────────────────────────────────────────
-
 #[inline]
 fn cadd(a: Cf, b: Cf) -> Cf {
     (a.0 + b.0, a.1 + b.1)
@@ -3291,8 +2664,6 @@ fn cdiv(a: Cf, b: Cf) -> Cf {
     }
     ((a.0 * b.0 + a.1 * b.1) / d, (a.1 * b.0 - a.0 * b.1) / d)
 }
-
-/// Evaluate Σ c[i]·x^i at complex x.
 fn poly_eval_c(c: &[f64], x: Cf) -> Cf {
     let mut acc = (0.0, 0.0);
     for &ci in c.iter().rev() {
@@ -3300,10 +2671,6 @@ fn poly_eval_c(c: &[f64], x: Cf) -> Cf {
     }
     acc
 }
-
-/// Roots of Σ c[i]·x^i by Durand-Kerner. Leading near-zero coefficients are
-/// trimmed first: a degree-deficient polynomial genuinely has fewer finite
-/// roots (the missing ones sit at infinity in x, i.e. at the origin in z).
 fn poly_roots(c: &[f64]) -> Vec<Cf> {
     let scale = c.iter().fold(0.0f64, |m, &v| m.max(v.abs()));
     if scale <= 0.0 {
@@ -3319,7 +2686,6 @@ fn poly_roots(c: &[f64]) -> Vec<Cf> {
     }
     let lead = c[deg];
     let mono: Vec<f64> = c[..n].iter().map(|&v| v / lead).collect();
-    // spread the initial guesses around a circle (standard Durand-Kerner seed)
     let mut roots: Vec<Cf> = (0..deg)
         .map(|k| {
             let ang = TAU * (k as f64 + 0.25) / deg as f64;
@@ -3346,15 +2712,6 @@ fn poly_roots(c: &[f64]) -> Vec<Cf> {
     }
     roots
 }
-
-/// Householder QR least squares: min ||A·x − b||₂ for an overdetermined system.
-///
-/// Normal equations (AᵀA x = Aᵀb) SQUARE the condition number. Here |H| spans
-/// ~100 dB across the band, so the a-columns (scaled by H) and b-columns differ
-/// by many orders of magnitude and cond(A) is already large; squaring it destroys
-/// the solution. MEASURED: the normal-equation version recovered corners only to
-/// ~1.7 dB where the data supports machine precision. QR never forms AᵀA.
-/// Generic linear algebra, not filter math.
 fn lstsq_qr(mut a: Vec<Vec<f64>>, mut b: Vec<f64>) -> Option<Vec<f64>> {
     let m = a.len();
     if m == 0 {
@@ -3410,40 +2767,19 @@ fn lstsq_qr(mut a: Vec<Vec<f64>>, mut b: Vec<f64>) -> Option<Vec<f64>> {
     }
     Some(x)
 }
-
-/// A(x) = 1 + a1 x + ... ; B(x) = b0 + b1 x + ... , with x = z^-1.
 struct Rational {
-    a: Vec<f64>, // a[0] == 1
+    a: Vec<f64>,
     b: Vec<f64>,
 }
-
-/// H20 Levy's linear rational fit. For each sample:
-///     H_k·A(x_k) − B(x_k) = 0   =>   Σ_j b_j x_k^j − H_k·Σ_{i≥1} a_i x_k^i = H_k
-/// linear in (b, a). For NOISELESS, exactly-representable data the true
-/// coefficients make every residual EXACTLY zero, so plain least squares
-/// recovers them without any Sanathanan-Koerner reweighting — Levy's usual |A|
-/// bias cannot matter at a zero residual.
-///
-/// Columns are scaled to unit norm before the solve (Jacobi preconditioning) and
-/// unscaled after: |H| spans orders of magnitude, so the a-columns and b-columns
-/// otherwise differ enormously in scale. This conditions the SOLVE only — it does
-/// not touch the data, and is not a normalization of the target.
-/// H24 Sanathanan-Koerner iterations: Levy's equation implicitly weights each
-/// residual by |A(x_k)|, which biases the fit toward high-gain regions. SK
-/// divides row k by |A_prev(x_k)| so the weighting converges to the true
-/// equation-error. Cheap, standard, and it costs nothing on data that is already
-/// exactly representable.
 const SK_ITERS: usize = 6;
-
 fn fit_rational(freqs: &[f64], h: &[Cf], na: usize, nb: usize) -> Option<Rational> {
-    let nun = (nb + 1) + na; // b0..b_nb , a1..a_na
+    let nun = (nb + 1) + na;
     let np = na.max(nb) + 1;
-    // precompute x^j per frequency
     let xp: Vec<Vec<Cf>> = freqs
         .iter()
         .map(|&f| {
             let w = TAU * f / SR;
-            let x = ((-w).cos(), (-w).sin()); // x = z^-1 = e^{-jw}
+            let x = ((-w).cos(), (-w).sin());
             let mut v = vec![(1.0f64, 0.0f64); np];
             for i in 1..np {
                 v[i] = cmul(v[i - 1], x);
@@ -3451,14 +2787,12 @@ fn fit_rational(freqs: &[f64], h: &[Cf], na: usize, nb: usize) -> Option<Rationa
             v
         })
         .collect();
-
     let mut a_prev: Option<Vec<f64>> = None;
     let mut out: Option<Rational> = None;
     for _sk in 0..SK_ITERS {
         let mut rows: Vec<Vec<f64>> = Vec::with_capacity(h.len() * 2);
         let mut rhs: Vec<f64> = Vec::with_capacity(h.len() * 2);
         for k in 0..freqs.len() {
-            // SK weight: 1/|A_prev(x_k)| (1.0 on the first pass = plain Levy)
             let wk = match &a_prev {
                 None => 1.0,
                 Some(a) => {
@@ -3489,8 +2823,6 @@ fn fit_rational(freqs: &[f64], h: &[Cf], na: usize, nb: usize) -> Option<Rationa
             rows.push(ri);
             rhs.push(h[k].1 * wk);
         }
-        // column scaling (Jacobi preconditioning of the SOLVE only; the data is
-        // untouched and both sides see the same transform — not a normalization)
         let mut cs = vec![0.0f64; nun];
         for r in &rows {
             for j in 0..nun {
@@ -3518,20 +2850,11 @@ fn fit_rational(freqs: &[f64], h: &[Cf], na: usize, nb: usize) -> Option<Rationa
     }
     out
 }
-
-/// Poles/zeros (in z) and total gain recovered from one corner's spectrum.
 struct CornerModel {
-    poles: Vec<(f64, f64)>, // (p, q) of z^2 + p z + q
+    poles: Vec<(f64, f64)>,
     zeros: Vec<(f64, f64)>,
-    gain: f64, // K = product of the six SCALEs
+    gain: f64,
 }
-
-/// Group roots (in z) into six real quadratics z^2 + p z + q.
-///
-/// Conjugate roots MUST pair with their conjugate (that is forced by realness).
-/// Real roots have a genuine pairing freedom — H21: they are paired by sorted
-/// adjacency. That is an INITIALIZATION hypothesis, never a verdict: the
-/// correspondence search and packed refinement are free to move away from it.
 fn group_into_quads(roots: &[Cf], want: usize) -> Vec<(f64, f64)> {
     let mut reals: Vec<f64> = Vec::new();
     let mut cplx: Vec<Cf> = Vec::new();
@@ -3548,7 +2871,6 @@ fn group_into_quads(roots: &[Cf], want: usize) -> Vec<(f64, f64)> {
         if used[i] {
             continue;
         }
-        // find the conjugate partner
         let mut best = usize::MAX;
         let mut bd = f64::INFINITY;
         for j in i + 1..cplx.len() {
@@ -3566,31 +2888,25 @@ fn group_into_quads(roots: &[Cf], want: usize) -> Vec<(f64, f64)> {
             used[best] = true;
         }
         let u = cplx[i];
-        // z^2 - 2Re(u) z + |u|^2
         quads.push((-2.0 * u.0, u.0 * u.0 + u.1 * u.1));
     }
     reals.sort_by(|a, b| a.partial_cmp(b).unwrap_or(std::cmp::Ordering::Equal));
     let mut i = 0;
     while i + 1 < reals.len() {
         let (r1, r2) = (reals[i], reals[i + 1]);
-        quads.push((-(r1 + r2), r1 * r2)); // H21 sorted-adjacent pairing
+        quads.push((-(r1 + r2), r1 * r2));
         i += 2;
     }
     if i < reals.len() {
         let r1 = reals[i];
-        quads.push((-r1, 0.0)); // odd real root pairs with a root at the origin
+        quads.push((-r1, 0.0));
     }
     while quads.len() < want {
-        quads.push((0.0, 0.0)); // degenerate = the identity side
+        quads.push((0.0, 0.0));
     }
     quads.truncate(want);
     quads
 }
-
-/// Relative complex-response RMS of a recovered rational model.
-///
-/// This is used only for numerical model-order selection. It preserves absolute
-/// complex response: there is no gain, phase, or delay normalization.
 fn rational_relative_rms(r: &Rational, freqs: &[f64], h: &[Cf]) -> f64 {
     let mut err = 0.0;
     let mut reference = 0.0;
@@ -3604,23 +2920,7 @@ fn rational_relative_rms(r: &Rational, freqs: &[f64], h: &[Cf]) -> f64 {
     }
     (err / reference.max(1e-300)).sqrt()
 }
-
-/// H27 MODEL-ORDER SELECTION — replaces the rejected radius-pruning rule.
-///
-/// OBSERVED failure of the old rule: a fixed `radius < 0.15 => identity` prune
-/// repaired exact6 corner 0 but damaged corner 3 to 0.279 dB median / 0.860 dB
-/// p90. It guessed which factors were surplus and therefore was not a valid
-/// source-agnostic recovery rule.
-///
-/// The packed representation contains six real quadratics, so candidate orders
-/// 0,2,...,12 cover complete biquad factors. We test them in ascending TOTAL
-/// order using only sampled complex H. The first model below the fixed numerical
-/// tolerance is the minimal measured realization. Frequency sorting, target
-/// rows, target words, and target identities are not consulted. If no reduced
-/// model qualifies, the best measured candidate (including 12/12) is retained;
-/// that fallback is a solver result, never a representation-limit claim.
 const ORDER_REL_RMS: f64 = 1.0e-8;
-
 fn select_rational_order(freqs: &[f64], h: &[Cf]) -> Option<Rational> {
     let orders = [0usize, 2, 4, 6, 8, 10, 12];
     let mut best: Option<(f64, Rational)> = None;
@@ -3652,13 +2952,6 @@ fn select_rational_order(freqs: &[f64], h: &[Cf]) -> Option<Rational> {
     }
     best.map(|(_, r)| r)
 }
-
-/// Cancel near-coincident pole/zero pairs.
-///
-/// A degree-12/12 fit of a lower-order target is rank-deficient: A and B share a
-/// spurious common factor (any C(x) gives A·C / B·C). Cancelling recovers the
-/// true reduced order. Without this the recovered "poles" include artefacts that
-/// exactly cancel and waste lanes.
 fn cancel_common(poles: &mut Vec<Cf>, zeros: &mut Vec<Cf>, tol: f64) {
     let mut i = 0;
     while i < poles.len() {
@@ -3678,14 +2971,10 @@ fn cancel_common(poles: &mut Vec<Cf>, zeros: &mut Vec<Cf>, tol: f64) {
         }
     }
 }
-
-/// SOLVER A, step 1 — structured recovery from ONE corner's sampled spectrum.
-/// Sees only (freqs, H). No rows, no words, no identities.
 fn recover_corner(freqs: &[f64], h: &[Cf]) -> Option<CornerModel> {
     let r = select_rational_order(freqs, h)?;
-    let mut pz = poly_roots(&r.a); // roots in x = z^-1
+    let mut pz = poly_roots(&r.a);
     let mut zz = poly_roots(&r.b);
-    // x -> z
     let inv = |v: &Vec<Cf>| -> Vec<Cf> { v.iter().map(|&x| cdiv((1.0, 0.0), x)).collect() };
     let mut poles = inv(&pz);
     let mut zeros = inv(&zz);
@@ -3697,13 +2986,8 @@ fn recover_corner(freqs: &[f64], h: &[Cf]) -> Option<CornerModel> {
     if poles.len() > 2 * NUM_STAGES || zeros.len() > 2 * NUM_STAGES {
         return None;
     }
-    // K = B(0)/A(0) = b0 (A(0) = 1). This is the true total SCALE product only
-    // after cancellation leaves the numerator monic-free; recompute robustly by
-    // matching the model to the data at the sampled points instead.
     let pq = group_into_quads(&poles, NUM_STAGES);
     let zq = group_into_quads(&zeros, NUM_STAGES);
-    // gain by least squares in the log domain against the recovered shape,
-    // using the SAME owned response engine (no second law).
     let shape_rows: Vec<[f64; NUM_COEFFS]> = (0..NUM_STAGES)
         .map(|i| {
             let (zp, zqq) = zq[i];
@@ -3729,9 +3013,6 @@ fn recover_corner(freqs: &[f64], h: &[Cf]) -> Option<CornerModel> {
         gain,
     })
 }
-
-/// Build the 120-param vector from four corner models + per-corner lane
-/// permutations + per-corner scale splits.
 fn assemble_params(
     cm: &[CornerModel; 4],
     pole_perm: &[[usize; 6]; 4],
@@ -3751,14 +3032,6 @@ fn assemble_params(
     }
     p
 }
-
-/// H30 frequency-sorted POLE initialization only — never a verdict.
-///
-/// Durand-Kerner returns roots in an arbitrary enumeration, so an identity
-/// permutation is not a neutral correspondence hypothesis. For conjugate pole
-/// pairs, sort by angle (hence frequency); exact identity is placed last. The
-/// observed-surface correspondence search remains free to replace every
-/// non-gauge permutation and is the only source of a correspondence decision.
 fn frequency_sorted_quad_perm(values: &[(f64, f64)]) -> [usize; 6] {
     let key = |&(p, q): &(f64, f64)| {
         if p == 0.0 && q == 0.0 {
@@ -3768,9 +3041,6 @@ fn frequency_sorted_quad_perm(values: &[(f64, f64)]) -> [usize; 6] {
         if r > 0.0 && p * p < 4.0 * q {
             (-p / (2.0 * r)).clamp(-1.0, 1.0).acos()
         } else {
-            // Independent real-root pole pairs have no unique resonant angle.
-            // Keep them after conjugate actors but before identity; the interior
-            // search, not this key, must decide their correspondence.
             std::f64::consts::PI + p.abs() * 1.0e-3 + q.abs() * 1.0e-6
         }
     };
@@ -3782,16 +3052,6 @@ fn frequency_sorted_quad_perm(values: &[(f64, f64)]) -> [usize; 6] {
     });
     idx
 }
-
-/// H29 explicit total-gain allocation hypothesis.
-///
-/// A corner transfer function identifies only the PRODUCT of the six SCALEs.
-/// Splitting K as K^(1/6) compounds six independent quantization errors and was
-/// MEASURED to produce 0.606 dB corner error on exact6 before correspondence.
-/// Allocate K to the fewest lanes representable in [0,4], leaving the rest at
-/// exact unity. The seed rotates the carrier lane, so multiple deterministic
-/// seeds expose the otherwise endpoint-ambiguous scale trajectory to the
-/// interior scorer. This is initialization, never recovered per-lane SCALE.
 fn initial_scales(cm: &[CornerModel; 4], seed: u64) -> [[f64; 6]; 4] {
     let mut out = [[1.0f64; 6]; 4];
     let carrier = seed as usize % NUM_STAGES;
@@ -3809,19 +3069,6 @@ fn initial_scales(cm: &[CornerModel; 4], seed: u64) -> [[f64; 6]; 4] {
     }
     out
 }
-
-/// SOLVER A, step 2 — CORRESPONDENCE SEARCH against the interior surface.
-///
-/// Corner 0's POLE order is the gauge (relabelling every complete lane at every
-/// corner identically leaves the interior untouched). Its pole-to-zero pairing
-/// is still unknown and is searched. Starting from H30's frequency pole order,
-/// alternate exhaustive zero pairing at all corners with exhaustive pole
-/// correspondence at non-gauge corners. Every move is ranked by packed-runtime
-/// interior response. This can leave the sorting initialization without the
-/// 720x720 joint enumeration that was measured to exceed two minutes.
-///
-/// This is not frequency sorting. Sorting is only ever the starting hypothesis
-/// (H21/H22); the verdict is measured interior error.
 fn correspondence_search(
     cm: &[CornerModel; 4],
     surf: &Surface,
@@ -3844,7 +3091,6 @@ fn correspondence_search(
         }
         out
     }
-
     let search = search_subset(surf);
     let score = |pc: &PackedCorners| {
         qualification_response_objective(pc, &search) + PEN_WRAP * wrap_penalty(pc)
@@ -3868,7 +3114,6 @@ fn correspondence_search(
             }
             zero_perm[ci] = bz;
         }
-
         for ci in 1..4 {
             let pperms = unique_quad_perms(&cm[ci].poles);
             let mut bp = pole_perm[ci];
@@ -3887,19 +3132,6 @@ fn correspondence_search(
     }
     best
 }
-
-/// H25 PACKED-WORD REFINEMENT — discrete coordinate descent on the actual u16
-/// words, the quantity the runtime actually consumes.
-///
-/// WHY this and not more param-domain search: recovery is response-exact in the
-/// CONTINUOUS domain (MEASURED: median < 1e-3 dB per corner), but re-encoding
-/// those roots lands on words one or more LSB away from the target's, and near a
-/// sharp resonance a 1-LSB coefficient step is a real frequency/Q shift. No
-/// amount of continuous-parameter search fixes a quantization landing error,
-/// because the map param -> word is a step function. Searching the words
-/// directly is the only refinement that can.
-///
-/// Scored through the REAL packed loop. Deterministic. No target words are read.
 fn refine_words(
     mut pc: PackedCorners,
     objective: &dyn Fn(&PackedCorners) -> f64,
@@ -3936,13 +3168,8 @@ fn refine_words(
     }
     pc
 }
-
-/// SOLVER A — structured rational/root recovery -> correspondence search against
-/// the interior surface -> packed-word refinement. Oracle-free: it touches only
-/// `surf` (sampled complex H_target).
 fn solver_structured(surf: &Surface, seed: u64, iters: usize) -> PackedCorners {
     let started = std::time::Instant::now();
-    // step 1: recover each corner's roots + gain from its spectrum alone
     let mut models: Vec<CornerModel> = Vec::new();
     for &(m, q) in &CORNER_MQ {
         let st = surf
@@ -3951,7 +3178,7 @@ fn solver_structured(surf: &Surface, seed: u64, iters: usize) -> PackedCorners {
             .find(|s| (s.m - m).abs() < 1e-9 && (s.q - q).abs() < 1e-9);
         match st.and_then(|s| recover_corner(&surf.freqs, &s.h)) {
             Some(cm) => models.push(cm),
-            None => return params_to_packed(&init_spread()), // recovery failed; reported
+            None => return params_to_packed(&init_spread()),
         }
     }
     let cm: [CornerModel; 4] = match models.try_into() {
@@ -3963,9 +3190,6 @@ fn solver_structured(surf: &Surface, seed: u64, iters: usize) -> PackedCorners {
         started.elapsed().as_secs_f64()
     );
     let scales = initial_scales(&cm, seed);
-
-    // step 2: correspondence from interior behaviour (H22: identity permutation
-    // is the starting hypothesis; the search may leave it)
     let mut pp: [[usize; 6]; 4] =
         std::array::from_fn(|ci| frequency_sorted_quad_perm(&cm[ci].poles));
     let mut zp = [[0usize, 1, 2, 3, 4, 5]; 4];
@@ -3974,10 +3198,6 @@ fn solver_structured(surf: &Surface, seed: u64, iters: usize) -> PackedCorners {
         "    structured: correspondence {:.2}s",
         started.elapsed().as_secs_f64()
     );
-
-    // step 3: continuous polish, then packed-word refinement (H25) — the words
-    // are what the runtime consumes, and quantization landing errors are only
-    // reachable there.
     let base = assemble_params(&cm, &pp, &zp, &scales);
     if iters == 0 {
         eprintln!(
@@ -4000,10 +3220,6 @@ fn solver_structured(surf: &Surface, seed: u64, iters: usize) -> PackedCorners {
     );
     out
 }
-
-/// SOLVER B — deterministic differential evolution over the 120 packed-domain
-/// params, then packed-runtime coordinate refinement. Population/global search:
-/// no structure assumed, no roots recovered. Oracle-free.
 fn solver_evolutionary(surf: &Surface, seed: u64, iters: usize) -> PackedCorners {
     const POP: usize = 48;
     const GENS: usize = 260;
@@ -4025,9 +3241,6 @@ fn solver_evolutionary(surf: &Surface, seed: u64, iters: usize) -> PackedCorners
             + PEN_STAB * stability_penalty(&pc)
             + PEN_WRAP * wrap_penalty(&pc)
     };
-
-    // H23 seeded population: one member is the target-agnostic spread; the rest
-    // are random inside the param box. No target information is used.
     let mut pop: Vec<Vec<f64>> = Vec::with_capacity(POP);
     pop.push(init_spread());
     for _ in 1..POP {
@@ -4044,7 +3257,6 @@ fn solver_evolutionary(surf: &Surface, seed: u64, iters: usize) -> PackedCorners
         pop.push(v);
     }
     let mut fit_v: Vec<f64> = pop.iter().map(|p| obj(p)).collect();
-
     for _g in 0..GENS {
         for i in 0..POP {
             let (a, b, c) = (
@@ -4077,22 +3289,14 @@ fn solver_evolutionary(surf: &Surface, seed: u64, iters: usize) -> PackedCorners
         .unwrap();
     let full_obj = |p: &[f64]| qualification_objective(&params_to_packed(p), surf);
     let (refined, _) = hooke_jeeves(pop[best].clone(), &full_obj, iters);
-    // same final packed-word refinement (H25), so the two approaches are
-    // compared on equal footing and the benchmark isolates the SEARCH.
     let packed_obj = |pc: &PackedCorners| qualification_objective(pc, surf);
     refine_words(params_to_packed(&refined), &packed_obj, 2)
 }
-
-// ── qualification fixtures: exactly representable, varied arrangements ───────
-
-/// Build an exactly-representable target from a declared lane recipe. The
-/// SOLVER never sees this construction — only the sampled spectrum.
 struct PackedSurfaceTarget {
     name: &'static str,
     describe: &'static str,
     body: PackedCorners,
 }
-
 impl SectionTarget for PackedSurfaceTarget {
     fn name(&self) -> &str {
         self.name
@@ -4110,9 +3314,6 @@ impl SectionTarget for PackedSurfaceTarget {
         EvidenceMode::ObservedSurface
     }
 }
-
-/// QUAL-2: notch-dominated — near-unit-circle zeros travelling on morph, mild
-/// poles. Stresses zero recovery and the unbounded-dB-near-a-null regime.
 fn qual_notchy() -> PackedSurfaceTarget {
     let mut words = [[[0u16; NUM_COEFFS]; NUM_STAGES]; 4];
     for (ci, &(m, q)) in CORNER_MQ.iter().enumerate() {
@@ -4167,10 +3368,6 @@ fn qual_notchy() -> PackedSurfaceTarget {
         body: PackedCorners { words },
     }
 }
-
-/// QUAL-3: real-root + wide-spread — explicit REAL root pairs (which the
-/// conjugate reader must refuse), a DC-adjacent lane, and an identity lane that
-/// stays identity. Stresses the real/conjugate classification path.
 fn qual_realroot() -> PackedSurfaceTarget {
     let mut words = [[[0u16; NUM_COEFFS]; NUM_STAGES]; 4];
     for (ci, &(m, q)) in CORNER_MQ.iter().enumerate() {
@@ -4242,27 +3439,10 @@ fn qual_realroot() -> PackedSurfaceTarget {
         body: PackedCorners { words },
     }
 }
-
-// ── MANDATORY FAILURE FIXTURES for the floor instrument ─────────────────────
-//
-// Each one is a case where a naive finite-section reading gives a confidently
-// WRONG answer. They exist to make the instrument falsifiable: the guards must
-// REFUSE on these, not produce a number.
-
-/// FAILURE 1 & 2: a pure delay z^-d, optionally with the delay DECLARED.
-///
-/// Undeclared with d=320: the L=160 section reads h[1..319] and never touches
-/// h[320], so it returns sigma = 0 — while the true Hankel operator of a pure
-/// d-sample delay has sigma_1..sigma_d = 1 exactly (its Hankel matrix is an
-/// exchange/anti-diagonal block). MEASURED before the guard: the instrument
-/// reported "-301 dB, six destroys nothing" for a system 12 poles cannot touch
-/// at all. With d = the DFT period, the sampled path aliases it to h[0] and the
-/// same catastrophe arrives via aliasing rather than truncation.
 struct PureDelay {
     d: usize,
     declare: bool,
 }
-
 impl Target for PureDelay {
     fn name(&self) -> &str {
         if self.declare { "pure_delay_declared" } else { "pure_delay_undeclared" }
@@ -4295,14 +3475,9 @@ impl Target for PureDelay {
         EvidenceMode::ObservedSurface
     }
 }
-
-/// FAILURE 3: a slowly decaying, high-radius pole. Its impulse response outlives
-/// any short section, so the omitted tail carries real energy and a finite
-/// section understates the truth without saying so.
 struct SlowPole {
     r: f64,
 }
-
 impl SectionTarget for SlowPole {
     fn name(&self) -> &str {
         "slow_pole"
@@ -4326,11 +3501,7 @@ impl SectionTarget for SlowPole {
         EvidenceMode::ObservedSurface
     }
 }
-
-/// FAILURE 4: a feature narrower than the frequency grid spacing. The sampled
-/// path steps straight over it and reports a system that is not there.
 struct NarrowFeature;
-
 impl SectionTarget for NarrowFeature {
     fn name(&self) -> &str {
         "narrow_feature"
@@ -4346,7 +3517,7 @@ impl SectionTarget for NarrowFeature {
     }
     fn rows_at(&self, _m: f64, _q: f64) -> Vec<[f64; NUM_COEFFS]> {
         let w = TAU * 5000.0 / SR;
-        let rz = 0.99995; // razor-thin notch
+        let rz = 0.99995;
         let rp = 0.9;
         vec![[
             1.0,
@@ -4363,14 +3534,9 @@ impl SectionTarget for NarrowFeature {
         EvidenceMode::ObservedSurface
     }
 }
-
-/// FAILURE 5: interval-valued (noisy) measurements. Deterministic bounded noise
-/// on H. No exact Markov parameters exist, so only an ESTIMATE is available and
-/// the perturbation must be carried explicitly rather than ignored.
 struct NoisyMeasurement {
     eps: f64,
 }
-
 impl Target for NoisyMeasurement {
     fn name(&self) -> &str {
         "noisy_measurement"
@@ -4384,7 +3550,6 @@ impl Target for NoisyMeasurement {
     }
     fn h(&self, f: f64, m: f64, q: f64) -> Cf {
         let base = ExactSix::new().h(f, m, q);
-        // deterministic, reproducible perturbation keyed to the frequency
         let k = (f * 7.3).sin() * 43758.5453;
         let n1 = (k - k.floor()) - 0.5;
         let k2 = (f * 12.9898 + 78.233).sin() * 43758.5453;
@@ -4394,32 +3559,8 @@ impl Target for NoisyMeasurement {
     fn evidence_mode(&self) -> EvidenceMode {
         EvidenceMode::ObservedSurface
     }
-    // markov(): deliberately None — noisy measurements cannot certify.
 }
-
-// ════════════════════════════════════════════════════════════════════════════
-// THE HERO BODY — Branching Mouth
-// ════════════════════════════════════════════════════════════════════════════
-//
-// PRODUCT INTENT: make basses, synths and drums sound as if they are SPEAKING.
-//   Morph = what it becomes:  dark/back /ɑ/-like  ->  bright/front /i/-like
-//   Q     = how strongly:     clean oral path     ->  nasal/lateral branch
-//
-// This is NOT an anatomical reproduction exercise. The physical model supplies
-// the STRUCTURE — formant poles, and branches whose transmission zeros come from
-// the branch quarter-wave — and the numbers are then tuned for musical legibility
-// on bass and drums.
-//
-// The source model is INDEPENDENT and CONTINUOUS: at any (m,q) it is evaluated
-// from physical parameters gliding in physical space. Its interior is NOT defined
-// The killed serial-branch prototype and its proof bundle are preserved at
-// `dev/tmp/serial_branch_prototype_KILLED`.  Its mistake was to treat six
-// independently normalised pieces as creative objects.  This candidate starts
-// from the opposite boundary: the complete complex product, including one
-// authored absolute gain, is the creative object.  The six roots below are only
-// coordinates used to author that product.
 struct BranchingMouth;
-
 const MOUTH_ROLES: [&str; NUM_STAGES] = [
     "low oral / F1 actor",
     "front-back / F2 actor",
@@ -4428,7 +3569,6 @@ const MOUTH_ROLES: [&str; NUM_STAGES] = [
     "low-mid branch-inspired pole-zero actor",
     "upper branch-inspired or closure pole-zero actor",
 ];
-
 static MOUTH_SOURCE_GESTURES: [SourceGestureSpec; 2] = [
     SourceGestureSpec {
         label: "nasal branch",
@@ -4445,11 +3585,7 @@ static MOUTH_SOURCE_GESTURES: [SourceGestureSpec; 2] = [
         companion_db: (0.0, 6.0),
     },
 ];
-
-/// Explicit TOTAL-response gain anchors, in runtime corner order.  These are
-/// authored constants, not measurements and not normalisation targets.
 const MOUTH_GAIN_DB: [f64; 4] = [-4.0, -5.0, -5.0, -6.0];
-
 #[derive(Clone, Copy)]
 struct MouthLaneCorner {
     pole_hz: f64,
@@ -4457,10 +3593,6 @@ struct MouthLaneCorner {
     zero_hz: f64,
     zero_r: f64,
 }
-
-/// Four genuinely authored poses.  Q0 branch actors are exact cancellations;
-/// Q100 separates each zero from its restrained companion pole.  Lane index is
-/// never sorted or changed.
 const MOUTH_CORNERS: [[MouthLaneCorner; NUM_STAGES]; 4] = [
     [
         MouthLaneCorner { pole_hz: 730.0, pole_r: 0.958, zero_hz: 730.0, zero_r: 0.915 },
@@ -4495,19 +3627,14 @@ const MOUTH_CORNERS: [[MouthLaneCorner; NUM_STAGES]; 4] = [
         MouthLaneCorner { pole_hz: 2860.0, pole_r: 0.640, zero_hz: 3380.0, zero_r: 0.780 },
     ],
 ];
-
 fn mouth_bilerp(values: [f64; 4], m: f64, q: f64) -> f64 {
     let a = values[0] + (values[1] - values[0]) * m;
     let b = values[2] + (values[3] - values[2]) * m;
     a + (b - a) * q
 }
-
 fn mouth_geo(values: [f64; 4], m: f64, q: f64) -> f64 {
     mouth_bilerp(values.map(f64::ln), m, q).exp()
 }
-
-/// Direct root geometry to DF2T.  SCALE is passed explicitly.  There is no DC,
-/// peak, log-mean, RMS, pose, or render normalisation anywhere in this path.
 fn mouth_section(g: MouthLaneCorner, scale: f64) -> [f64; NUM_COEFFS] {
     let wp = TAU * g.pole_hz / SR;
     let wz = TAU * g.zero_hz / SR;
@@ -4519,7 +3646,6 @@ fn mouth_section(g: MouthLaneCorner, scale: f64) -> [f64; NUM_COEFFS] {
         g.pole_r * g.pole_r,
     ]
 }
-
 fn mouth_lane_at(lane: usize, m: f64, q: f64) -> MouthLaneCorner {
     let v = |f: fn(MouthLaneCorner) -> f64| MOUTH_CORNERS.map(|c| f(c[lane]));
     MouthLaneCorner {
@@ -4529,7 +3655,6 @@ fn mouth_lane_at(lane: usize, m: f64, q: f64) -> MouthLaneCorner {
         zero_r: mouth_bilerp(v(|x| x.zero_r), m, q),
     }
 }
-
 impl SectionTarget for BranchingMouth {
     fn name(&self) -> &str {
         "branching_mouth"
@@ -4553,8 +3678,6 @@ impl SectionTarget for BranchingMouth {
         NUM_STAGES
     }
     fn evidence_mode(&self) -> EvidenceMode {
-        // The source model DECLARES which actor is which lane. That is an
-        // authoring prior — never a recovery from the transfer functions.
         EvidenceMode::AuthoredTrajectory
     }
     fn source_gate_spec(&self) -> Option<SourceGateSpec> {
@@ -4579,13 +3702,9 @@ impl SectionTarget for BranchingMouth {
         )
     }
 }
-
-// ── acceptance gate (thresholds fixed BEFORE any result was seen) ───────────
-
 const ACC_MEDIAN_DB: f64 = 0.1;
 const ACC_P90_DB: f64 = 0.5;
 const ACC_PHASE_DEG: f64 = 2.0;
-
 fn qualify_one(
     t: &dyn Target,
     approach: &str,
@@ -4603,9 +3722,6 @@ fn qualify_one(
     let body = pc.to_rom_bytes();
     let rt = residual(&pc, train);
     let rh = residual(&pc, held);
-    // DIAGNOSTIC: corner-only error localises the failure. Corners good +
-    // interior bad => assembly/correspondence/scale-split. Corners bad =>
-    // recovery or packing.
     let rc = residual(&pc, &corner_only_surface(t));
     let legal = legality(&body, &pc, "qual");
     let pass = rh.median_db <= ACC_MEDIAN_DB
@@ -4634,19 +3750,9 @@ fn qualify_one(
         "thresholds": {"median_db": ACC_MEDIAN_DB, "p90_db": ACC_P90_DB, "phase_rms_deg": ACC_PHASE_DEG},
     })
 }
-
-/// The routine qualification/authoring route. `structured` ONLY.
-///
-/// `evolutionary` has finished its job: it was required to benchmark a competing
-/// approach, and it FAILED (0/12 vs structured's 12/12 on identical fixtures and
-/// seeds). Keeping it in the default path buys no evidence and costs more than
-/// half of every qualification run. It is quarantined behind an explicit opt-in,
-/// NOT deleted, so the negative result stays reproducible.
 const ROUTINE_APPROACHES: [&str; 1] = ["structured"];
 const BENCHMARK_APPROACHES: [&str; 2] = ["structured", "evolutionary"];
-/// The preserved 24-run comparison that REJECTED the evolutionary solver.
 const COMPARISON_ARTIFACT: &str = "dev/tmp/tf_harness/comparison_24run_structured_vs_evolutionary.json";
-
 fn cmd_qualify(
     seeds: u64,
     fixture_filter: Option<&str>,
@@ -4787,9 +3893,6 @@ fn cmd_qualify(
     });
     let root = repo_root().join("dev").join("tmp").join("tf_harness");
     std::fs::create_dir_all(&root).unwrap();
-    // Artifact separation: the routine report is the official one. A partial
-    // probe or an explicit evolutionary benchmark writes ELSEWHERE, so neither a
-    // narrowed run nor a diagnostic of the REJECTED solver can overwrite it.
     let output_name = if fixture_filter.is_some() {
         "qualification_probe.json"
     } else if include_evolutionary_benchmark {
@@ -4816,54 +3919,12 @@ fn cmd_qualify(
     println!("  verdict: {}", summary["verdict"].as_str().unwrap());
     println!("  wrote {}", root.join(output_name).display());
 }
-
-// ════════════════════════════════════════════════════════════════════════════
-// DESTRUCTION FLOOR — what six stages CANNOT keep, proven before any fit
-// ════════════════════════════════════════════════════════════════════════════
-//
-// The question is no longer "can we fit into six?" but "what does six destroy,
-// and is that destruction musically acceptable?" The first half of that is a
-// solved problem in system theory, and it does NOT require a solver, an oracle,
-// or a fit — all of which only ever produce an UPPER bound.
-//
-// GLOVER (1984) / model order reduction. For a stable LTI system G with Hankel
-// singular values σ₁ ≥ σ₂ ≥ … ≥ σₙ:
-//
-//     inf over ALL stable Ĝ of order ≤ k  of  ‖G − Ĝ‖_∞   ≥   σ_{k+1}
-//
-// Six biquads are 12 poles, so k = 12 and **σ₁₃ is a PROVEN LOWER BOUND on the
-// error of every six-stage cascade that could ever exist** — however cleverly
-// fitted. Balanced truncation attains ≤ 2·Σ_{i>k} σᵢ, so the achievable error is
-// BRACKETED with no optimizer in the loop.
-//
-// This is the attribution instrument the harness was missing:
-//   · my solver's error ≈ σ₁₃  -> the solver is near-optimal; the loss IS the format
-//   · my solver's error ≫ σ₁₃  -> the loss is MY SOLVER, and the format is innocent
-//
-// The σ spectrum itself is the answer to "what does six destroy": if σ collapses
-// after 12, six stages lose nothing. If it decays slowly, six stages destroy a
-// measurable amount and you know how much BEFORE authoring anything.
-//
-// Source-agnostic by construction: it needs only sampled H(f), so it works on an
-// authored model, a physical simulation, or a real measurement alike.
-//
-// CAVEAT (declared): σ₁₃ bounds the ORDER constraint only. The packed format
-// adds quantization and the 4-corner bilinear word interpolation on top, so the
-// truly achievable error is ≥ σ₁₃. It is a floor on the floor — but a floor that
-// is already musically fatal ends the argument without a single render.
-
-/// EXACT causal Markov parameters of an ordered section product, by the DF2T
-/// difference equation in f64. No DFT, so no time aliasing and no frequency
-/// sampling — the only error is f64 rounding, which the certified allowance
-/// covers. Pinned against the OWNED response engine by
-/// `exact_markov_matches_owned_response`, so this is an analysis reader of the
-/// same law, not a second kernel.
 fn exact_markov(rows: &[[f64; NUM_COEFFS]], n: usize) -> Vec<f64> {
     let mut sig = vec![0.0f64; n];
     if n == 0 {
         return sig;
     }
-    sig[0] = 1.0; // unit impulse
+    sig[0] = 1.0;
     for r in rows {
         let (b0, b1, b2, a1, a2) = (r[0], r[1], r[2], r[3], r[4]);
         let (mut w1, mut w2) = (0.0f64, 0.0f64);
@@ -4876,15 +3937,7 @@ fn exact_markov(rows: &[[f64; NUM_COEFFS]], n: usize) -> Vec<f64> {
     }
     sig
 }
-
-/// Impulse (Markov) parameters from a sampled spectrum, by inverse DFT.
-///
-/// Source-agnostic — it needs only H(f), so the same path serves a measurement.
-/// But it is NOT exact: the IDFT returns the TIME-ALIASED (periodized) impulse
-/// response, h_alias[n] = Σ_k h[n + kN], and it can only see features the
-/// frequency grid resolves. Both are why anything built on it is ESTIMATED.
 fn impulse_from_spectrum(t: &dyn Target, m: f64, q: f64, n: usize) -> Vec<f64> {
-    // uniform grid to Nyquist; Hermitian symmetry makes the result real
     let half = n / 2;
     let spec: Vec<Cf> = (0..=half)
         .map(|k| {
@@ -4897,7 +3950,6 @@ fn impulse_from_spectrum(t: &dyn Target, m: f64, q: f64, n: usize) -> Vec<f64> {
         let mut acc = 0.0f64;
         for (k, s) in spec.iter().enumerate() {
             let ang = TAU * (k as f64) * (nn as f64) / n as f64;
-            // k and its mirror N-k contribute conjugates -> 2·Re, except DC/Nyquist
             let w = if k == 0 || (k == half && n % 2 == 0) { 1.0 } else { 2.0 };
             acc += w * (s.0 * ang.cos() - s.1 * ang.sin());
         }
@@ -4905,13 +3957,6 @@ fn impulse_from_spectrum(t: &dyn Target, m: f64, q: f64, n: usize) -> Vec<f64> {
     }
     h
 }
-
-/// Singular values of A by ONE-SIDED JACOBI.
-///
-/// Not via the eigenvalues of AᵀA: squaring destroys exactly the SMALL singular
-/// values, and σ₁₃ — the whole point — is small by construction. One-sided Jacobi
-/// computes small singular values to high RELATIVE accuracy, which is what makes
-/// "σ₁₃ ≈ 0 means representable" a trustworthy statement.
 fn jacobi_singular_values(mut a: Vec<Vec<f64>>) -> Vec<f64> {
     let rows = a.len();
     let cols = if rows == 0 { 0 } else { a[0].len() };
@@ -4953,10 +3998,6 @@ fn jacobi_singular_values(mut a: Vec<Vec<f64>>) -> Vec<f64> {
     sv.sort_by(|x, y| y.partial_cmp(x).unwrap_or(std::cmp::Ordering::Equal));
     sv
 }
-
-/// Hankel singular values of the system whose Markov parameters are `h`.
-/// The Hankel matrix uses h[1..] — h[0] is the direct feedthrough D, which the
-/// Hankel operator ignores (and which an approximant may match exactly).
 fn hankel_singular_values(h: &[f64], l: usize) -> Vec<f64> {
     let mut mat = vec![vec![0.0f64; l]; l];
     for (i, row) in mat.iter_mut().enumerate() {
@@ -4966,22 +4007,11 @@ fn hankel_singular_values(h: &[f64], l: usize) -> Vec<f64> {
     }
     jacobi_singular_values(mat)
 }
-
-/// Two explicit evidence modes. What may be CLAIMED depends only on what the
-/// evidence actually supports — the same discipline as the correspondence
-/// contract.
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
 enum FloorMode {
-    /// Exact (or interval-bounded) causal Markov parameters available.
-    /// Yields a finite-section lower bound WITH a rigorous perturbation
-    /// allowance and convergence evidence — or an explicit refusal.
     CertifiedMarkovBound,
-    /// Only sampled H(f). σ_{k+1} is ESTIMATED, never proven: the inverse DFT
-    /// time-aliases the impulse response and the frequency grid cannot see
-    /// between its own samples.
     SampledSpectrumEstimate,
 }
-
 impl FloorMode {
     fn label(&self) -> &'static str {
         match self {
@@ -4990,81 +4020,48 @@ impl FloorMode {
         }
     }
 }
-
 struct Floor {
     mode: FloorMode,
     sigma: Vec<f64>,
-    sigma_k1: f64,      // σ_{k+1} of the FINITE section actually computed
-    allowance: f64,     // rigorous perturbation allowance (Weyl)
-    lower_bound: f64,   // certified: max(0, σ_{k+1} − allowance). estimate: NaN
-    /// Whether the bound MEANS anything. A near-zero bound from a section that
-    /// missed the system is valid and worthless. Never read a non-informative
-    /// bound as "six destroys nothing".
+    sigma_k1: f64,
+    allowance: f64,
+    lower_bound: f64,
     informative: bool,
     peak_gain: f64,
     l_used: usize,
-    markov_extent: usize,     // the section reads h[1 ..= 2L−1]
-    tail_energy_fraction: f64, // energy in h beyond the section's reach
-    convergence: Vec<(usize, f64)>, // (L, σ_{k+1}) — the L-sweep
+    markov_extent: usize,
+    tail_energy_fraction: f64,
+    convergence: Vec<(usize, f64)>,
     converged: bool,
     declared_delay: usize,
     status: &'static str,
 }
-
-/// Finite-section σ_{k+1} for one L.
 fn section_sigma_k1(h: &[f64], l: usize, order: usize) -> (f64, Vec<f64>) {
     let sv = hankel_singular_values(h, l);
     (sv.get(order).copied().unwrap_or(0.0), sv)
 }
-
-/// THE instrument. `order` = pole budget (12 = six biquads).
-///
-/// VALIDITY (certified mode). The L×L section Γ_L is a SUBMATRIX of the infinite
-/// Hankel operator Γ, so by the interlacing property σ_j(Γ_L) ≤ σ_j(Γ) for every
-/// j. Combined with Glover: achievable ‖G−Ĝ‖_∞ ≥ σ_{k+1}(Γ) ≥ σ_{k+1}(Γ_L).
-/// The finite section is therefore CONSERVATIVE — it can only ever understate.
-///
-/// THE TRAP THIS ENCODES. "Conservative" is not "informative". A section that
-/// reaches h[1..2L−1] and misses where the system's energy actually lives returns
-/// ~0, which is a VALID bound and a WORTHLESS one. MEASURED: for a pure delay
-/// z^-320 the L=160 section reads h[1..319], never touches h[320], and returns
-/// σ₁₃ = 0 — while the truth is σ₁₃ = 1 (a 320-sample delay is untouchable by 12
-/// poles). Reporting that as "six destroys nothing" inverts the meaning of the
-/// number. So a near-zero σ is only informative when the section provably
-/// CAPTURED the system: the tail-energy guard and the L-sweep below decide that,
-/// and refuse otherwise.
 fn destruction_floor(t: &dyn Target, m: f64, q: f64, order: usize) -> Floor {
     const NIMP: usize = 8192;
     const L_MAX: usize = 320;
     const L_SWEEP: [usize; 4] = [40, 80, 160, 320];
-
     let grid = log_frequency_grid(F_LO, F_HI, 512);
     let peak_gain = grid.iter().map(|&f| cabs(t.h(f, m, q))).fold(0.0f64, f64::max);
     let declared_delay = t.transport_delay_samples();
-
-    // ── certified path: exact Markov parameters, no DFT anywhere ──
     if let Some(mut h) = t.markov(m, q, NIMP) {
-        // Remove ONLY the declared pure transport delay — nothing else.
         if declared_delay > 0 && declared_delay < h.len() {
             h.drain(..declared_delay);
         }
         let total: f64 = h.iter().skip(1).map(|v| v * v).sum();
-        let reach = 2 * L_MAX - 1; // the largest Markov index any section reads
+        let reach = 2 * L_MAX - 1;
         let tail: f64 = h.iter().skip(reach + 1).map(|v| v * v).sum();
         let tail_frac = if total > 0.0 { tail / total } else { 0.0 };
-
         let mut convergence = Vec::new();
         for &l in &L_SWEEP {
             convergence.push((l, section_sigma_k1(&h, l, order).0));
         }
         let (sigma_k1, sigma) = section_sigma_k1(&h, L_MAX, order);
-
-        // Weyl: |σ_k(A+E) − σ_k(A)| ≤ ‖E‖₂ ≤ ‖E‖_F. Each Markov entry carries at
-        // most `eps_rel` relative f64 rounding; the L×L section has L² entries.
         let hmax = h.iter().fold(0.0f64, |a, &v| a.max(v.abs()));
         let allowance = (L_MAX as f64) * hmax * 1e-14;
-
-        // Convergence: σ_{k+1} must have stopped moving as L grew.
         let last = convergence.last().map(|c| c.1).unwrap_or(0.0);
         let prev = convergence
             .get(convergence.len().saturating_sub(2))
@@ -5072,22 +4069,8 @@ fn destruction_floor(t: &dyn Target, m: f64, q: f64, order: usize) -> Floor {
             .unwrap_or(0.0);
         let scale = sigma.first().copied().unwrap_or(0.0).max(1e-300);
         let l_converged = (last - prev).abs() <= 1e-6 * scale + allowance;
-        // Capture: the section must actually contain the system's energy.
         let captured = tail_frac < 1e-9;
         let converged = l_converged && captured;
-
-        // VALIDITY vs INFORMATIVENESS — these are different, and conflating them
-        // was the original error.
-        //
-        // The bound is ALWAYS valid: Γ_L is a submatrix of the infinite Hankel
-        // operator, so σ_j(Γ_L) ≤ σ_j(Γ) by interlacing, with NO perturbation
-        // from the omitted tail. A finite section can only ever UNDERSTATE.
-        // So a POSITIVE bound is certified destruction whatever the tail does.
-        //
-        // A NEAR-ZERO bound is where the tail matters — not for validity but for
-        // meaning. Zero is what you get both when the target genuinely fits in k
-        // poles AND when the section simply missed the system (the z^-320 case).
-        // Only the capture guard plus L-convergence can tell those apart.
         let bound = (sigma_k1 - allowance).max(0.0);
         let sigma1 = sigma.first().copied().unwrap_or(0.0);
         let materially_positive = bound > 1e-6 * sigma1.max(1e-300);
@@ -5109,7 +4092,6 @@ fn destruction_floor(t: &dyn Target, m: f64, q: f64, order: usize) -> Floor {
             sigma,
             sigma_k1,
             allowance,
-            // the bound is valid unconditionally; `informative` gates what it MEANS
             lower_bound: bound,
             informative,
             peak_gain,
@@ -5122,8 +4104,6 @@ fn destruction_floor(t: &dyn Target, m: f64, q: f64, order: usize) -> Floor {
             status,
         };
     }
-
-    // ── estimate path: sampled spectrum only ──
     let h = impulse_from_spectrum(t, m, q, NIMP);
     let mut convergence = Vec::new();
     for &l in &L_SWEEP {
@@ -5136,7 +4116,7 @@ fn destruction_floor(t: &dyn Target, m: f64, q: f64, order: usize) -> Floor {
         sigma_k1,
         allowance: f64::NAN,
         lower_bound: f64::NAN,
-        informative: false, // an estimate never certifies anything
+        informative: false,
         peak_gain,
         l_used: L_MAX,
         markov_extent: 2 * L_MAX - 1,
@@ -5150,14 +4130,6 @@ fn destruction_floor(t: &dyn Target, m: f64, q: f64, order: usize) -> Floor {
                  omitted impulse response.",
     }
 }
-
-/// ADDITIVE H-infinity error over the sampled surface: max over (m,q,f) of
-/// |H_candidate − H_target| in LINEAR magnitude.
-///
-/// This is the SAME norm and the SAME units as the Hankel bound, which is the
-/// only reason the two may be compared. The harness's dB median/p90 is
-/// |20·log10(|Hc|/|Ht|)| — a RATIO in dB — and the weighted dB+phase objective is
-/// a different quantity again. Comparing either to σ_{k+1} is meaningless.
 fn linf_additive_error(pc: &PackedCorners, s: &Surface) -> (f64, String, f64) {
     let mut worst = 0.0f64;
     let mut where_state = String::new();
@@ -5176,9 +4148,6 @@ fn linf_additive_error(pc: &PackedCorners, s: &Surface) -> (f64, String, f64) {
     }
     (worst, where_state, where_hz)
 }
-
-/// Sweep the COMPLETE sampled Morph×Q surface and report the strongest lower
-/// bound and where it lives. A single mid-point is not the surface.
 fn floor_over_surface(t: &dyn Target, order: usize) -> (f64, f64, f64, Vec<serde_json::Value>) {
     let mut best = f64::NEG_INFINITY;
     let (mut bm, mut bq) = (0.0f64, 0.0f64);
@@ -5213,9 +4182,8 @@ fn floor_over_surface(t: &dyn Target, order: usize) -> (f64, f64, f64, Vec<serde
     }
     (best, bm, bq, rows)
 }
-
 fn cmd_floor() {
-    const ORDER: usize = 2 * NUM_STAGES; // 12 poles = six biquads
+    const ORDER: usize = 2 * NUM_STAGES;
     println!("\n=== DESTRUCTION FLOOR — what six stages CANNOT keep ===");
     println!(
         "Glover (1984): the infimum of ||G - G_hat||_inf over ALL stable G_hat of order <= {ORDER}\n\
@@ -5225,14 +4193,13 @@ fn cmd_floor() {
     println!("TWO MODES — what may be claimed depends ONLY on the evidence:");
     println!("  CERTIFIED_MARKOV_BOUND    exact Markov params + Weyl allowance + L-convergence + capture guard");
     println!("  SAMPLED_SPECTRUM_ESTIMATE sampled H(f) only -> sigma is ESTIMATED, never proven\n");
-
     let f1 = ExactSix::new();
     let f2 = qual_notchy();
     let f3 = qual_realroot();
     let f4 = OverBudget::new();
     let d1 = PureDelay { d: 320, declare: false };
     let d2 = PureDelay { d: 320, declare: true };
-    let d3 = PureDelay { d: 8192, declare: false }; // delay == the DFT period
+    let d3 = PureDelay { d: 8192, declare: false };
     let sp = SlowPole { r: 0.9995 };
     let nf = NarrowFeature;
     let nm = NoisyMeasurement { eps: 1e-3 };
@@ -5333,10 +4300,6 @@ fn cmd_floor() {
     .unwrap();
     println!("wrote {}", root.join("destruction_floor.json").display());
 }
-
-// ── audition material: what the gate is actually judged on ──────────────────
-
-/// A saw bass at 55 Hz (A1). Deterministic, band-limited enough to be honest.
 fn sig_saw_bass(n: usize) -> Vec<f32> {
     let f0 = 55.0;
     (0..n)
@@ -5352,11 +4315,9 @@ fn sig_saw_bass(n: usize) -> Vec<f32> {
         })
         .collect()
 }
-
-/// A drum loop: kick on the beat, snare-ish noise burst on the off-beat.
 fn sig_drums(n: usize) -> Vec<f32> {
     let mut rng = 0x9E37_79B9_7F4A_7C15u64;
-    let beat = (SR * 0.5) as usize; // 120 bpm
+    let beat = (SR * 0.5) as usize;
     (0..n)
         .map(|i| {
             let p = i % beat;
@@ -5377,18 +4338,12 @@ fn sig_drums(n: usize) -> Vec<f32> {
         })
         .collect()
 }
-
-/// Broadband: the pink-ish noise already used everywhere else.
 fn sig_broadband(n: usize) -> Vec<f32> {
     dry_signal(n)
 }
-
 fn rms_of(x: &[f32]) -> f64 {
     (x.iter().map(|&v| (v as f64) * (v as f64)).sum::<f64>() / x.len().max(1) as f64).sqrt()
 }
-
-/// Render a packed body at a STATIC (m,q). BODY SOLO: the owned Cascade only.
-/// No AGC, no drive, no boost, NO normalization — absolute values preserved.
 fn render_static(pc: &PackedCorners, m: f64, q: f64, dry: &[f32]) -> Vec<f32> {
     let rows = pc.interpolate_biquad(m as f32, q as f32);
     let mut c = Cascade::new();
@@ -5397,7 +4352,6 @@ fn render_static(pc: &PackedCorners, m: f64, q: f64, dry: &[f32]) -> Vec<f32> {
     c.process_block_mono(&mut buf);
     buf
 }
-
 fn mouth_authored_table() -> serde_json::Value {
     let lanes: Vec<_> = (0..NUM_STAGES)
         .map(|lane| {
@@ -5431,7 +4385,6 @@ fn mouth_authored_table() -> serde_json::Value {
         "lanes": lanes,
     })
 }
-
 fn mouth_packed_lane_evidence(root: &Path, pc: &PackedCorners) -> serde_json::Value {
     let freqs = log_frequency_grid(F_LO, F_HI, 720);
     let states = [
@@ -5478,7 +4431,6 @@ fn mouth_packed_lane_evidence(root: &Path, pc: &PackedCorners) -> serde_json::Va
             plot_paths.push(rel);
         }
     }
-
     let mut trajectories = Vec::new();
     for lane in 0..NUM_STAGES {
         let mut samples = Vec::new();
@@ -5509,10 +4461,6 @@ fn mouth_packed_lane_evidence(root: &Path, pc: &PackedCorners) -> serde_json::Va
         "sampled_trajectories_9x9":trajectories,
     })
 }
-
-/// Raw source-vs-body renders plus one fixed calibration gain per reference
-/// body. RAW files stay at unity I/O; the reference gain is never recomputed
-/// per material or pose. The final perceptual verdict remains human-owned.
 fn authored_audition(
     root: &Path,
     pc: &PackedCorners,
@@ -5534,7 +4482,6 @@ fn authored_audition(
         ("M100_Q100", 1.0, 1.0),
         ("M050_Q050", 0.5, 0.5),
     ];
-
     let mut unity = Vec::new();
     for &(mat, ref dry) in &mats {
         let dry_rms = rms_of(dry);
@@ -5565,7 +4512,6 @@ fn authored_audition(
             }));
         }
     }
-
     let calibration = sig_broadband(n);
     wav_write(&dir.join("calibration_broadband.wav"), &calibration, SR as u32);
     let candidate_cal = render_static(pc, 0.5, 0.0, &calibration);
@@ -5630,7 +4576,6 @@ fn authored_audition(
             "files": files,
         }));
     }
-
     serde_json::json!({
         "raw_unity_gain": {
             "normalization": "NONE — source and body samples are written at unity I/O",
@@ -5645,7 +4590,6 @@ fn authored_audition(
         },
     })
 }
-
 fn cmd_talking_frame_stage_law() {
     let root = repo_root()
         .join("dev")
@@ -5654,7 +4598,6 @@ fn cmd_talking_frame_stage_law() {
     let t = TalkingFrameStageLaw;
     println!("\n=== TALKING FRAME — default stage-law candidate ===");
     println!("{}\n", Target::describe(&t));
-
     let route = route_authored(&t);
     let (pc, route_report) = match route {
         RouteResult::Candidate { pc, report } => (pc, report),
@@ -5666,14 +4609,12 @@ fn cmd_talking_frame_stage_law() {
             return;
         }
     };
-
     std::fs::create_dir_all(&root).unwrap();
     let body = pc.to_rom_bytes();
     std::fs::write(root.join("talking_frame_stage_law.body240"), body).unwrap();
     let cart = cartridge_json(&pc, "talking-frame-stage-law-v1");
     let cart_text = serde_json::to_string_pretty(&cart).unwrap();
     std::fs::write(root.join("talking_frame_stage_law.cart.json"), &cart_text).unwrap();
-
     let held = held_out_surface(&t);
     let held_out = residual(&pc, &held);
     let legal = legality(&body, &pc, "talking-frame-stage-law-v1");
@@ -5744,7 +4685,6 @@ fn cmd_talking_frame_stage_law() {
     println!("audio:  {}", root.join("audio").display());
     println!("report: {}", root.join("report.json").display());
 }
-
 fn cmd_companion_mouth() {
     let root = repo_root()
         .join("dev")
@@ -5753,7 +4693,6 @@ fn cmd_companion_mouth() {
     let t = CompanionMouth;
     println!("\n=== COMPANION MOUTH — new authored candidate ===");
     println!("{}\n", Target::describe(&t));
-
     let route = route_authored(&t);
     let (pc, route_report) = match route {
         RouteResult::Candidate { pc, report } => (pc, report),
@@ -5765,14 +4704,12 @@ fn cmd_companion_mouth() {
             return;
         }
     };
-
     std::fs::create_dir_all(&root).unwrap();
     let body = pc.to_rom_bytes();
     std::fs::write(root.join("companion_mouth.body240"), body).unwrap();
     let cart = cartridge_json(&pc, "companion-mouth-v1");
     let cart_text = serde_json::to_string_pretty(&cart).unwrap();
     std::fs::write(root.join("companion_mouth.cart.json"), &cart_text).unwrap();
-
     let held = held_out_surface(&t);
     let held_out = residual(&pc, &held);
     let legal = legality(&body, &pc, "companion-mouth-v1");
@@ -5830,24 +4767,17 @@ fn cmd_companion_mouth() {
     println!("audio:  {}", root.join("audio").display());
     println!("report: {}", root.join("report.json").display());
 }
-
 fn cmd_mouth() {
-    // The historical Branching Mouth directory is immutable evidence. Any
-    // corrected-harness output gets a distinct artifact root.
     let root = repo_root().join("dev").join("tmp").join("branching_mouth_routed");
     let t = BranchingMouth;
     println!("\n=== BRANCHING MOUTH — one product candidate ===");
     println!("{}\n", Target::describe(&t));
-
-    // ── 1. PRE-CHECK: will six stages even hold the branch antiresonances? ──
     let (floor_best, fm, fq, _pts) = floor_over_surface(&t, 2 * NUM_STAGES);
     let fl0 = destruction_floor(&t, fm, fq, 2 * NUM_STAGES);
     println!(
         "pre-check (Hankel floor): strongest lower bound {floor_best:.3e} at morph {fm:.2} q {fq:.2}"
     );
     println!("   {}", &fl0.status[..fl0.status.len().min(72)]);
-
-    // ── 2. SOURCE GATE, THEN DIRECTLY PACK THE AUTHORED CORNERS ──
     let route = route_authored(&t);
     let (pc, route_report) = match route {
         RouteResult::Candidate { pc, report } => (pc, report),
@@ -5901,8 +4831,6 @@ fn cmd_mouth() {
         legal["legal"], legal["sampled_certification"]["unstable_rows"],
         legal["sampled_certification"]["nonfinite_rows"], legal["packed_interp_wrap_hazard"]
     );
-
-    // ── 2b. TOTAL-response gain audit: source and compiled, same dry signal. ──
     {
         let probe = sig_broadband((0.5 * SR) as usize);
         let dry_r = rms_of(&probe);
@@ -5920,22 +4848,15 @@ fn cmd_mouth() {
         }
         println!("      worst source/compile level gap {worst_gap:.1} dB");
     }
-
-    // ── 3. Did the BRANCH ZEROS survive packing? The whole point of Q. ──
     let grid = log_frequency_grid(200.0, 8000.0, 1400);
     let mut branch_report = Vec::new();
-    // WHAT Q CARVES. Peak-to-trough inside a band is the WRONG measure: it reads
-    // whichever formant is passing through (MEASURED: it reported the nasal notch
-    // "16.5 dB deep at Q0" when Q0 has no notch at all — it was reading F2).
-    // The branch's real signature is the DIFFERENCE the coupling makes:
-    // dB(Q=0) − dB(Q=1) at each frequency. That is what Q owns, and nothing else.
     for &mm in &[0.0f64, 0.5, 1.0] {
         let carve = |lo: f64, hi: f64| -> (f64, f64, f64) {
             let r0 = pc.interpolate_biquad(mm as f32, 0.0);
             let r1 = pc.interpolate_biquad(mm as f32, 1.0);
             let mut best_hz = 0.0;
-            let mut cut = f64::NEG_INFINITY; // deepest carve (Q1 below Q0)
-            let mut boost = f64::NEG_INFINITY; // tallest companion peak
+            let mut cut = f64::NEG_INFINITY;
+            let mut boost = f64::NEG_INFINITY;
             for &f in grid.iter().filter(|&&f| f >= lo && f <= hi) {
                 let d = cdb(biquad_cascade_complex(&r0, f, SR)) - cdb(biquad_cascade_complex(&r1, f, SR));
                 if d > cut {
@@ -5948,8 +4869,8 @@ fn cmd_mouth() {
             }
             (best_hz, cut, boost)
         };
-        let (nz_hz, nz_cut, nz_boost) = carve(450.0, 1400.0); // nasal branch region
-        let (lz_hz, lz_cut, lz_boost) = carve(1700.0, 3600.0); // lateral branch region
+        let (nz_hz, nz_cut, nz_boost) = carve(450.0, 1400.0);
+        let (lz_hz, lz_cut, lz_boost) = carve(1700.0, 3600.0);
         println!(
             "   morph {mm:.1}: Q carves {nz_cut:.1} dB @ {nz_hz:.0} Hz (nasal, companion peak \
              +{nz_boost:.1}) | {lz_cut:.1} dB @ {lz_hz:.0} Hz (lateral, +{lz_boost:.1})"
@@ -5965,8 +4886,6 @@ fn cmd_mouth() {
                 && ((0.0..=6.0).contains(&nz_boost) || (0.0..=6.0).contains(&lz_boost)),
         }));
     }
-
-    // ── 4. AUDITION — the actual gate. Raw first (no normalization). ──
     let n = (2.5 * SR) as usize;
     let mats: [(&str, Vec<f32>); 3] = [
         ("sawbass", sig_saw_bass(n)),
@@ -5979,7 +4898,6 @@ fn cmd_mouth() {
     let vowl = std::fs::read("filters/bodies/VOWL_iy_to_aa.body240")
         .ok()
         .and_then(|b| PackedCorners::from_body_bytes(&b).ok());
-
     let poses = [
         ("M000_Q000", 0.0, 0.0), ("M050_Q000", 0.5, 0.0), ("M100_Q000", 1.0, 0.0),
         ("M000_Q100", 0.0, 1.0), ("M050_Q100", 0.5, 1.0), ("M100_Q100", 1.0, 1.0),
@@ -6004,7 +4922,6 @@ fn cmd_mouth() {
                 "rms_rel_dry_db": rel, "clip_samples": clip,
             }));
         }
-        // the morph journey, eyes closed
         let sweep = render_sweep(&pc, dry, (0.0, 0.35), (1.0, 0.35));
         wav_write(&root.join("audio").join(format!("RAW_{mat}_MORPH_SWEEP.wav")), &sweep, SR as u32);
         let sweep_q = render_sweep(&pc, dry, (0.5, 0.0), (0.5, 1.0));
@@ -6021,10 +4938,6 @@ fn cmd_mouth() {
          {lvl_min:+.1} .. {lvl_max:+.1} dB (jump {:.1} dB)",
         lvl_max - lvl_min
     );
-
-    // ── 5. BLIND A/B — one calibration gain per reference body, then fixed. ──
-    // Calibration is deterministic broadband at the declared neutral pose
-    // M050_Q000.  The gain is never recomputed per material, pose, or render.
     let mut ab = Vec::new();
     let calibration = sig_broadband(n);
     let cal_mouth = render_static(&pc, 0.5, 0.0, &calibration);
@@ -6053,7 +4966,6 @@ fn cmd_mouth() {
             }
         }
     }
-
     let compile_pass = rh.median_db <= ACC_MEDIAN_DB
         && rh.p90_db <= ACC_P90_DB
         && rh.phase_rms_deg <= ACC_PHASE_DEG;
@@ -6142,16 +5054,9 @@ fn cmd_mouth() {
     println!("audio:  {}", root.join("audio").display());
     println!("report: {}", root.join("report.json").display());
 }
-
-// ── self-checks: every mirror and every generic tool is pinned ──────────────
-
 #[cfg(test)]
 mod tests {
     use super::*;
-
-    /// The ONLY piece of algebra in this bin that mirrors a private trench-core
-    /// function. Pinned: for any packable (p,q), our classification must equal
-    /// what the OWNED decoder reports after a real pack/unpack round trip.
     #[test]
     fn classify_pair_mirrors_stage_law() {
         let mut checked = 0usize;
@@ -6166,8 +5071,6 @@ mod tests {
                     (RootPair::Degenerate, RootPair::Degenerate) => {}
                     (RootPair::Conjugate { .. }, RootPair::Conjugate { .. }) => {}
                     (RootPair::RealPair { .. }, RootPair::RealPair { .. }) => {}
-                    // Quantization can move a pair across the discriminant
-                    // boundary (disc ~ 0). Accept ONLY that documented case.
                     (a, b) => {
                         let disc = s[0] * s[0] - 4.0 * s[1];
                         assert!(
@@ -6182,8 +5085,6 @@ mod tests {
         }
         assert!(checked > 400);
     }
-
-    /// Our N-row product must equal the owned 6-row cascade response exactly.
     #[test]
     fn rows_complex_matches_owner() {
         let pc = ExactSix::new().known;
@@ -6198,9 +5099,6 @@ mod tests {
             );
         }
     }
-
-    /// A section-product target's `h` must equal its own rows' response — one
-    /// response law, no second engine.
     #[test]
     fn target_h_is_its_rows() {
         let t = OverBudget::new();
@@ -6215,9 +5113,6 @@ mod tests {
             }
         }
     }
-
-    /// The identity init must pack to the EXACT identity biquad — "off" is a
-    /// real runtime state, not an approximation.
     #[test]
     fn identity_init_packs_to_exact_identity() {
         let pc = params_to_packed(&init_identity());
@@ -6228,14 +5123,6 @@ mod tests {
             }
         }
     }
-
-    /// THE DECISIVE REGRESSION FIXTURE — the identifiability boundary itself.
-    ///
-    /// Pinned: 0.0 dB corner discriminability, ~25.82 dB interior. Permuting one
-    /// corner's lanes leaves that corner's transfer function EXACTLY unchanged
-    /// while moving the interior enormously. The corner transfer functions do not
-    /// contain the registration — this is a mathematical boundary, not a hard
-    /// problem. Everything else in the evidence-mode contract rests on it.
     #[test]
     fn identifiability_boundary_zero_db_corners_25db_interior() {
         let pa = Crossing::pairing_a();
@@ -6256,10 +5143,6 @@ mod tests {
             worst.2
         );
     }
-
-    /// CONTRACT: under ENDPOINT_ONLY evidence the harness must return AMBIGUOUS
-    /// and must NEVER select a permutation. This is the rule that frequency
-    /// sorting violates.
     #[test]
     fn endpoint_only_is_ambiguous_and_selects_nothing() {
         let pa = Crossing::pairing_a();
@@ -6272,7 +5155,6 @@ mod tests {
             "ENDPOINT_ONLY selected a permutation — the contract forbids this"
         );
         assert_eq!(r["mode"], "ENDPOINT_ONLY");
-        // the class must be reported and non-trivial
         assert_eq!(
             r["equivalence_class"]["distinct_interiors_upper_bound"],
             373_248_000u64
@@ -6286,34 +5168,23 @@ mod tests {
             "only {changing}/720 orderings moved the interior"
         );
     }
-
-    /// CONTRACT: OBSERVED_SURFACE ranks against real interior observations, and
-    /// REFUSES when the margin is insignificant. Ranking pairing A against
-    /// itself-as-observations must pick A by a real margin; two identical
-    /// candidates must be REFUSED.
     #[test]
     fn observed_surface_ranks_then_refuses_on_insignificant_margin() {
         let pa = Crossing::pairing_a();
         let pb = Crossing::pairing_b();
-        let t = Crossing::new(); // authors pairing A, so its surface observes A
+        let t = Crossing::new();
         let surf = sample_surface(&t, 5);
         let grid = log_frequency_grid(F_LO, F_HI, OBJ_F_BINS);
-
         let r = observed_surface_report(&[("pairing_a", &pa), ("pairing_b", &pb)], &surf, &grid);
         assert_eq!(r["verdict"], "RANKED");
         assert_eq!(
             r["winner"], "pairing_a",
             "interior observations of A must rank A first"
         );
-
-        // identical candidates cannot be separated -> must REFUSE, not guess
         let r2 = observed_surface_report(&[("one", &pa), ("same", &pa)], &surf, &grid);
         assert!(r2["verdict"].as_str().unwrap().starts_with("REFUSED"));
         assert!(r2["winner"].is_null(), "REFUSED must name no winner");
     }
-
-    /// CONTRACT: AUTHORED_TRAJECTORY carries the source model's identities as a
-    /// prior labelled AUTHORED, and must never claim recovery.
     #[test]
     fn authored_trajectory_is_labelled_authored_never_recovered() {
         let t = Crossing::new();
@@ -6329,7 +5200,6 @@ mod tests {
             !blob.contains("RECOVERED") || blob.contains("never RECOVERED"),
             "AUTHORED_TRAJECTORY must never claim recovery"
         );
-        // the identities must actually be carried, and must track the crossing
         let at_m0 = t.authored_lanes(0.0, 0.0).unwrap();
         let at_m1 = t.authored_lanes(1.0, 0.0).unwrap();
         assert!(
@@ -6341,9 +5211,6 @@ mod tests {
             "actor B must fall"
         );
     }
-
-    /// The exactly-representable fixture must have a ZERO-error solution: the
-    /// known body itself. If this fails, "exactly representable" is a lie.
     #[test]
     fn exact6_truth_has_zero_objective_error() {
         let t = ExactSix::new();
@@ -6364,18 +5231,9 @@ mod tests {
             (sq / n as f64).sqrt()
         );
     }
-
-    /// PINNED FINDING: the all-identity init is a permutation-symmetry trap.
-    /// Every lane is numerically identical, so the objective is symmetric under
-    /// lane permutation and coordinate search cannot differentiate the lanes. It
-    /// stalls in that basin at an objective that a 13x larger iteration budget
-    /// barely moves (MEASURED: 90 -> 22.01, 300 -> 21.97, 1200 -> 21.88 on
-    /// exact6). The target-agnostic spread init escapes it. This test pins the
-    /// mechanism so H13 can never be quietly reverted.
     #[test]
     fn blind_identity_init_is_a_symmetry_trap() {
         let ident = init_identity();
-        // all six lanes of a corner are numerically identical -> symmetric
         for si in 1..NUM_STAGES {
             assert_eq!(
                 ident[0..PPS],
@@ -6383,7 +5241,6 @@ mod tests {
                 "identity init lane {si} differs — the symmetry premise changed"
             );
         }
-        // the spread init breaks that symmetry
         let spread = init_spread();
         for si in 1..NUM_STAGES {
             assert_ne!(
@@ -6392,12 +5249,8 @@ mod tests {
                 "spread init lane {si} is NOT distinct — the symmetry trap is back"
             );
         }
-        // and it must still be target-agnostic: identical for every fixture
         assert_eq!(init_spread(), spread, "spread init is not deterministic");
     }
-
-    /// The wrap barrier must actually fire on a body that wraps, and stay silent
-    /// on one that does not. Without it the optimizer emits illegal bodies.
     #[test]
     fn wrap_penalty_fires_only_on_real_hazard() {
         let clean = params_to_packed(&init_spread());
@@ -6405,17 +5258,13 @@ mod tests {
         assert!(!wrap_hazard(&clean).0);
         let mut bad = clean.clone();
         bad.words[0][0][0] = 0x0000;
-        bad.words[1][0][0] = 0xFFFF; // 65535 delta across the morph lerp
+        bad.words[1][0][0] = 0xFFFF;
         assert!(
             wrap_penalty(&bad) > 0.0,
             "wrap barrier missed a 65535 delta"
         );
         assert!(wrap_hazard(&bad).0);
     }
-
-    /// PINNED: the detector must find resonances at frequencies we PUT there.
-    /// Guards the exact bug the naive immediate-neighbour prominence had — it
-    /// found 1 of 5 known peaks because it measured sharpness-vs-grid-spacing.
     #[test]
     fn prominence_finds_known_resonances() {
         let want = [220.0f64, 900.0, 3000.0, 9000.0];
@@ -6442,10 +5291,6 @@ mod tests {
             );
         }
     }
-
-    /// Fixture 3 must have measurable features, or feature survival on it is
-    /// meaningless. (The first build used bare all-pole lanes and reported ZERO
-    /// features at every state — a stack of resonators is a monotone lowpass.)
     #[test]
     fn crossing_fixture_has_detectable_features() {
         let t = Crossing::new();
@@ -6456,35 +5301,17 @@ mod tests {
             assert!(peaks >= 3, "crossing at ({m},{q}) has only {peaks} peaks");
         }
     }
-
-    /// GENUINELY ENDPOINT-ONLY OPTIMIZATION TEST.
-    ///
-    /// Optimize against the FOUR CORNERS ONLY — no interior samples anywhere.
-    /// Under that evidence a unique correspondence cannot be claimed, and the
-    /// test proves why operationally: pairing A and pairing B score IDENTICALLY
-    /// on corner-only evidence, so no objective built from it can prefer either.
-    /// Any solver that reports one is reporting an artifact of its own
-    /// initialization, not a measurement.
-    ///
-    /// (This REPLACES an earlier, wrong invariant that required an
-    /// INTERIOR-trained solver to remain unresolved. That conflated a solver
-    /// deficiency with the identifiability boundary — an interior-trained solver
-    /// is expected to resolve. The boundary is about endpoint evidence only.)
     #[test]
     fn endpoint_only_optimization_never_claims_unique_correspondence() {
         let t = Crossing::new();
-        // evidence = the four corners and NOTHING else
         let corners_only = corner_only_surface(&t);
         assert_eq!(
             corners_only.states.len(),
             4,
             "this must be endpoint-only evidence"
         );
-
         let pa = Crossing::pairing_a();
         let pb = Crossing::pairing_b();
-
-        // Both pairings are EXACTLY equally consistent with endpoint evidence.
         let ea = surface_objective(&pa, &corners_only);
         let eb = surface_objective(&pb, &corners_only);
         assert!(
@@ -6492,9 +5319,6 @@ mod tests {
             "endpoint-only objective separated the pairings ({ea} vs {eb}) — it must not: the \
              corners are permutation-invariant"
         );
-
-        // Therefore optimizing on endpoint-only evidence cannot single one out:
-        // whichever it lands nearer is decided by its init, not by the data.
         let grid = log_frequency_grid(F_LO, F_HI, OBJ_F_BINS);
         let r = endpoint_only_report(&pa, &pb, &grid);
         assert_eq!(r["verdict"], "AMBIGUOUS");
@@ -6502,29 +5326,21 @@ mod tests {
             r["selected_permutation"].is_null(),
             "endpoint-only evidence selected a permutation — forbidden"
         );
-
-        // And a real optimizer run on this evidence must not be reported as
-        // having identified the registration.
         let run = fit("spread_blind", init_spread(), &corners_only, 40);
         let fitted = params_to_packed(&run.params);
         let da = interior_rms(&fitted, &pa, &grid);
         let db_ = interior_rms(&fitted, &pb, &grid);
-        let _ = (da, db_); // recorded, never used to claim a correspondence
+        let _ = (da, db_);
         assert_eq!(
             endpoint_only_report(&pa, &pb, &grid)["verdict"],
             "AMBIGUOUS",
             "a corner-only fit must not upgrade the endpoint verdict"
         );
     }
-
-    /// The interior evidence that the solver is EXPECTED to exploit really is
-    /// present and sufficient: ranking the pairings against interior
-    /// observations separates them cleanly. Any interior-trained solver that
-    /// fails to resolve is failing to use available evidence.
     #[test]
     fn interior_evidence_is_sufficient_to_resolve() {
         let t = Crossing::new();
-        let surf = sample_surface(&t, OBJ_MQ); // the SAME grid the solver trains on
+        let surf = sample_surface(&t, OBJ_MQ);
         let pa = Crossing::pairing_a();
         let pb = Crossing::pairing_b();
         let ea = surface_objective(&pa, &surf);
@@ -6535,10 +5351,6 @@ mod tests {
              cannot be blamed for failing to resolve"
         );
     }
-
-    /// The structured solver's foundation: from a corner spectrum ALONE, does
-    /// rational recovery reproduce that corner's transfer function? If this
-    /// fails, solver A is built on sand and its benchmark means nothing.
     #[test]
     fn rational_recovery_reproduces_the_corner_spectrum() {
         for (name, t) in [
@@ -6551,7 +5363,6 @@ mod tests {
                 let h: Vec<Cf> = freqs.iter().map(|&f| t.h(f, m, q)).collect();
                 let cm = recover_corner(&freqs, &h)
                     .unwrap_or_else(|| panic!("{name} corner {ci}: recovery returned None"));
-                // rebuild the corner from recovered roots + gain and compare dB
                 let rows: Vec<[f64; NUM_COEFFS]> = (0..NUM_STAGES)
                     .map(|i| {
                         let (zp, zq) = cm.zeros[i];
@@ -6570,10 +5381,6 @@ mod tests {
                 errs.sort_by(|a, b| a.partial_cmp(b).unwrap());
                 let med = errs[errs.len() / 2];
                 let p90 = errs[errs.len() * 9 / 10];
-                // The data is NOISELESS and EXACTLY representable, so recovery
-                // should be near machine precision. An earlier 0.5 dB threshold
-                // was loose enough to PASS while hiding a ~1.7 dB corner failure
-                // downstream — a threshold that cannot fail is not a test.
                 assert!(
                     med < 1e-3 && p90 < 1e-2,
                     "{name} corner {ci}: recovered spectrum median {med:.3e} dB / p90 {p90:.3e} dB \
@@ -6583,28 +5390,18 @@ mod tests {
             }
         }
     }
-
-    /// DIAGNOSTIC (prints; asserts only the mechanism, not a quality bar).
-    ///
-    /// Recovery is response-exact, yet packed corners land ~0.24 dB off. This
-    /// measures the quantity that actually gets ENCODED — the (p,q) quad
-    /// coefficients — against the target's true decoded quads. Oracle knowledge
-    /// is used HERE ONLY, for diagnosis; the solver never sees it.
     #[test]
     fn diagnose_recovered_quad_precision() {
         let t = ExactSix::new();
         let freqs = log_frequency_grid(F_LO, F_HI, OBJ_F_BINS);
         let h: Vec<Cf> = freqs.iter().map(|&f| t.h(f, 0.0, 0.0)).collect();
         let cm = recover_corner(&freqs, &h).expect("recovery");
-
-        // TRUE quads of corner 0, straight from the target's own decoded rows.
         let rows = t.known.interpolate_biquad(0.0, 0.0);
         let mut true_poles: Vec<(f64, f64)> = rows.iter().map(|r| (r[3], r[4])).collect();
         let mut got_poles = cm.poles.clone();
         let key = |x: &(f64, f64)| x.0;
         true_poles.sort_by(|a, b| key(a).partial_cmp(&key(b)).unwrap());
         got_poles.sort_by(|a, b| key(a).partial_cmp(&key(b)).unwrap());
-
         println!("\n--- recovered vs TRUE pole quads (corner 0, exact6) ---");
         let mut worst = 0.0f64;
         for (g, tr) in got_poles.iter().zip(&true_poles) {
@@ -6615,11 +5412,7 @@ mod tests {
                 g.0, g.1, tr.0, tr.1, d
             );
         }
-        // The minifloat grid step near a sharp pole's (p+1+q)/4 is ~1e-7, so a
-        // (p,q) error above that lands on a DIFFERENT word.
         println!("  worst |d(p,q)| = {worst:.3e}   (minifloat landing step ~1e-7)");
-
-        // zeros: b1/b0, b2/b0 from the target's own decoded rows
         let mut true_zeros: Vec<(f64, f64)> = rows
             .iter()
             .map(|r| {
@@ -6644,8 +5437,6 @@ mod tests {
             );
         }
         println!("  worst |d(zero p,q)| = {zworst:.3e}");
-
-        // total gain: product of the target's true per-lane b0
         let true_k: f64 = rows.iter().map(|r| r[0]).product();
         println!("--- gain ---");
         println!(
@@ -6654,8 +5445,6 @@ mod tests {
             true_k,
             20.0 * (cm.gain / true_k).log10()
         );
-
-        // and the decisive number: does the ASSEMBLED+PACKED corner reproduce it?
         let per_lane_scale = cm.gain.max(1e-12).powf(1.0 / NUM_STAGES as f64);
         let mut w = [[[0u16; NUM_COEFFS]; NUM_STAGES]; 4];
         for si in 0..NUM_STAGES {
@@ -6685,10 +5474,8 @@ mod tests {
         );
         assert!(worst.is_finite() && zworst.is_finite());
     }
-
     #[test]
     fn poly_roots_finds_planted_roots() {
-        // (x-0.5)(x+0.3)(x^2+0.4x+0.29)  -> roots 0.5, -0.3, -0.2 +- 0.5i
         let a = [1.0f64, -0.5];
         let b = [1.0f64, 0.3];
         let c = [0.29f64, 0.4, 1.0];
@@ -6701,7 +5488,6 @@ mod tests {
             }
             r
         };
-        // build in ascending powers: (-0.5 + x)(0.3 + x)(0.29 + 0.4x + x^2)
         let p1 = mul(&[-0.5, 1.0], &[0.3, 1.0]);
         let poly = mul(&p1, &c);
         let _ = (a, b);
@@ -6712,10 +5498,6 @@ mod tests {
             assert!(hit, "root {want:?} not found in {roots:?}");
         }
     }
-
-    /// CONTRACT: ordinary qualification runs the structured solver ONLY. The
-    /// evolutionary solver is REJECTED for routine use (0/12 vs 12/12) and must
-    /// never execute by accident — it is reachable only via an explicit opt-in.
     #[test]
     fn routine_qualification_never_runs_the_rejected_solver() {
         assert_eq!(
@@ -6727,37 +5509,25 @@ mod tests {
             !ROUTINE_APPROACHES.contains(&"evolutionary"),
             "the REJECTED evolutionary solver is in the routine path"
         );
-        // the benchmark path still reaches it, so the negative result stays
-        // reproducible rather than being deleted
         assert!(
             BENCHMARK_APPROACHES.contains(&"evolutionary"),
             "the evolutionary negative result must remain reproducible via the explicit benchmark"
         );
         assert!(BENCHMARK_APPROACHES.contains(&"structured"));
     }
-
-    /// The quarantined implementation must still EXIST — quarantine, not deletion.
     #[test]
     fn evolutionary_implementation_is_retained_not_deleted() {
         let t = ExactSix::new();
         let surf = sample_surface(&t, 3);
-        // one tiny run purely to prove the code path is alive and callable
         let pc = solver_evolutionary(&surf, 0, 1);
         assert_eq!(pc.to_rom_bytes().len(), 240);
     }
-
-    /// Acceptance thresholds are the values declared BEFORE any solver ran.
-    /// Retiring a failed benchmark must never move them.
     #[test]
     fn acceptance_thresholds_are_unchanged() {
         assert_eq!(ACC_MEDIAN_DB, 0.1);
         assert_eq!(ACC_P90_DB, 0.5);
         assert_eq!(ACC_PHASE_DEG, 2.0);
     }
-
-    /// The floor instrument must be FALSIFIABLE. A target built from 5 pole
-    /// pairs (10 poles) MUST certify at ~0 — and must be CONVERGED and CAPTURED,
-    /// not merely small.
     #[test]
     fn floor_is_zero_for_a_representable_target() {
         for t in [
@@ -6779,13 +5549,6 @@ mod tests {
             );
         }
     }
-
-    /// MANDATORY FAILURE FIXTURE 1 — the one that indicted the first build.
-    ///
-    /// An UNDECLARED pure delay z^-320: a finite section reaching only h[1..639]
-    /// DOES now contain h[320], so it must see sigma ~= 1 and NOT report zero.
-    /// The old L=160 build read h[1..319], returned 0, and printed "-301 dB, six
-    /// destroys nothing" for a system 12 poles cannot touch at all.
     #[test]
     fn undeclared_pure_delay_is_not_reported_as_harmless() {
         let t = PureDelay { d: 320, declare: false };
@@ -6794,7 +5557,6 @@ mod tests {
             "undeclared z^-320: sigma1 {:.4e} sigma13 {:.4e} converged {} status {}",
             fl.sigma[0], fl.sigma_k1, fl.converged, fl.status
         );
-        // The true Hankel singular values of a d-sample delay are 1 (x d).
         assert!(
             fl.sigma_k1 > 0.5,
             "sigma_13 = {:.3e} for an UNDECLARED 320-sample delay. The truth is 1: a pure delay of \
@@ -6802,7 +5564,6 @@ mod tests {
              this fixture exists to prevent.",
             fl.sigma_k1
         );
-        // And the naive short section must be provably vacuous, not trusted.
         let (short, _) = section_sigma_k1(&t.markov(0.0, 0.0, 8192).unwrap(), 160, 2 * NUM_STAGES);
         assert_eq!(
             short, 0.0,
@@ -6810,9 +5571,6 @@ mod tests {
              changes, the fixture no longer pins the failure it was written for"
         );
     }
-
-    /// MANDATORY FAILURE FIXTURE 2 — a DECLARED delay is removed, and ONLY that.
-    /// z^-320 declared becomes the identity: genuinely order 0, floor 0.
     #[test]
     fn declared_pure_delay_is_removed_and_only_that() {
         let t = PureDelay { d: 320, declare: true };
@@ -6826,19 +5584,13 @@ mod tests {
             fl.sigma_k1
         );
     }
-
-    /// MANDATORY FAILURE FIXTURE 3 — delay equal to the DFT period aliases to
-    /// h[0] in the SAMPLED path. The estimate is therefore wrong, and the mode
-    /// label must not dress it up as a bound.
     #[test]
     fn delay_equal_to_dft_period_aliases_and_is_only_an_estimate() {
         let t = PureDelay { d: 8192, declare: false };
-        // sampled path: no exact Markov -> must be labelled ESTIMATE, never proven
         let est = destruction_floor(&NoisyMeasurement { eps: 1e-3 }, 0.0, 0.0, 2 * NUM_STAGES);
         assert_eq!(est.mode, FloorMode::SampledSpectrumEstimate);
         assert!(!est.lower_bound.is_finite(), "an estimate must expose NO certified bound");
         assert!(est.status.starts_with("ESTIMATED"));
-        // and the aliasing itself: IDFT of z^-8192 at N=8192 folds to h[0]
         let h = impulse_from_spectrum(&t, 0.0, 0.0, 8192);
         assert!(
             h[0].abs() > 0.5,
@@ -6847,10 +5599,6 @@ mod tests {
             h[0]
         );
     }
-
-    /// MANDATORY FAILURE FIXTURE 4 — a slowly decaying pole leaves energy beyond
-    /// the section's reach. The capture guard must REFUSE rather than certify a
-    /// number computed from a section that does not contain the system.
     #[test]
     fn slow_pole_is_refused_not_silently_understated() {
         let t = SlowPole { r: 0.9995 };
@@ -6864,9 +5612,6 @@ mod tests {
             "a pole at r=0.9995 must leave measurable energy beyond h[2L-1]; got tail {:.3e}",
             fl.tail_energy_fraction
         );
-        // This target IS order 2, so the truth is sigma_13 = 0 — but the section
-        // cannot SHOW that, because it does not contain the system. The honest
-        // outcome is VACUOUS ("no conclusion"), never "six destroys nothing".
         assert!(
             !fl.informative,
             "a near-zero bound from a section that does not capture the system must be VACUOUS, \
@@ -6875,18 +5620,6 @@ mod tests {
         );
         assert!(fl.status.starts_with("VACUOUS"), "status: {}", fl.status);
     }
-
-    /// MANDATORY FAILURE FIXTURE 5 — a feature narrower than the SAMPLING GRID.
-    ///
-    /// CORRECTED FRAMING (my first version asserted the wrong thing and failed).
-    /// A razor ZERO does not lengthen the impulse response — only poles do — so
-    /// with h shorter than N the inverse DFT reconstructs it EXACTLY and nothing
-    /// is missed. The narrow-feature failure is therefore NOT an IDFT failure.
-    ///
-    /// It is a SAMPLING failure, and it bites the fit: the harness's own 192-bin
-    /// log grid steps straight over a 0.6 Hz null at 5 kHz, so every sampled
-    /// H(f) the solver and the estimate ever see is blind to it. Nothing
-    /// downstream can retain a feature the evidence never contained.
     #[test]
     fn narrow_feature_exposes_the_sampled_path() {
         let t = NarrowFeature;
@@ -6895,7 +5628,6 @@ mod tests {
             .iter()
             .map(|&f| cabs(t.h(f, 0.0, 0.0)))
             .fold(f64::INFINITY, f64::min);
-        // the truth, swept densely through the null
         let dense_min = (0..40_000)
             .map(|k| {
                 let f = 4990.0 + 20.0 * (k as f64 / 40_000.0);
@@ -6911,13 +5643,6 @@ mod tests {
             dense_min < 1e-3,
             "the fixture must actually contain a deep null; got {dense_min:.3e}"
         );
-        // BAR: one decade (20 dB) of understatement = "the evidence does not
-        // contain this feature". Chosen for interpretability, NOT to pass.
-        // DISCLOSURE: my first bar was 1000x, an arbitrary guess, and it failed.
-        // MEASURED here: grid min 1.06e-1 vs true 5.26e-4 — a 202x (46 dB)
-        // understatement, which is what the physics predicts (a 164 Hz grid step
-        // at 5 kHz against a 0.6 Hz null lands ~100 half-bandwidths off centre).
-        // The demonstration was always decisive; only my threshold was wrong.
         assert!(
             on_grid_min > 10.0 * dense_min,
             "the sampling grid was expected to MISS the narrow null by >20 dB (grid min \
@@ -6926,8 +5651,6 @@ mod tests {
              between its own samples."
         );
     }
-
-    /// Noisy/interval evidence may NEVER certify.
     #[test]
     fn noisy_measurement_cannot_certify() {
         let t = NoisyMeasurement { eps: 1e-3 };
@@ -6936,9 +5659,6 @@ mod tests {
         assert!(fl.lower_bound.is_nan(), "noisy evidence produced a certified bound");
         assert!(fl.allowance.is_nan());
     }
-
-    /// The exact Markov reader must agree with the OWNED response engine, or it
-    /// is a second kernel telling a different story.
     #[test]
     fn exact_markov_matches_owned_response() {
         let t = ExactSix::new();
@@ -6946,7 +5666,6 @@ mod tests {
         let n = 8192;
         let h = exact_markov(&rows, n);
         for &hz in &[80.0f64, 500.0, 2000.0, 7000.0, 15000.0] {
-            // DFT of the Markov parameters at this frequency
             let w = TAU * hz / SR;
             let mut acc = (0.0f64, 0.0f64);
             for (k, &v) in h.iter().enumerate() {
@@ -6962,18 +5681,12 @@ mod tests {
             );
         }
     }
-
-    /// Attribution must be compared in the SAME norm as the bound. This pins the
-    /// additive linear H-infinity metric and proves it is NOT the dB ratio.
     #[test]
     fn linf_additive_error_is_the_bound_norm_not_a_db_ratio() {
         let t = ExactSix::new();
         let surf = sample_surface(&t, 3);
-        // the target against ITSELF: zero additive error
         let (e, _, _) = linf_additive_error(&t.known, &surf);
         assert!(e < 1e-9, "self-comparison must be 0, got {e:.3e}");
-        // the identity body: additive error is a LINEAR magnitude, and must not
-        // coincide with the dB-ratio residual (they are different quantities)
         let ident = params_to_packed(&init_identity());
         let (e2, _, _) = linf_additive_error(&ident, &surf);
         let db = residual(&ident, &surf);
@@ -6984,10 +5697,6 @@ mod tests {
              what it claims to be"
         );
     }
-
-    /// And it must FIRE on a target that genuinely cannot fit. 10 pole pairs =
-    /// 20 poles into a 12-pole budget: sigma_13 must be materially non-zero, and
-    /// that is the certified minimum destruction.
     #[test]
     fn floor_fires_on_an_over_budget_target() {
         let t = OverBudget::new();
@@ -7004,10 +5713,6 @@ mod tests {
             "sigma_13 is only {rel:.3e} of sigma_1 on a 20-pole target squeezed into 12 — the \
              instrument failed to detect destruction that is arithmetically certain"
         );
-        // A POSITIVE bound is valid by interlacing whatever the omitted tail
-        // does — a finite section can only understate. (This target's Q=12 pole
-        // at 220 Hz rings ~23k samples, far beyond the section's reach, and the
-        // bound is certified anyway. Requiring capture here was my error.)
         assert!(
             fl.informative && fl.lower_bound > 0.0 && fl.lower_bound.is_finite(),
             "a strictly positive finite-section sigma must be certified regardless of the tail; \
@@ -7016,11 +5721,8 @@ mod tests {
         );
         assert!(fl.status.starts_with("CERTIFIED (positive)"), "status: {}", fl.status);
     }
-
-    /// Jacobi SVD pinned against planted singular values.
     #[test]
     fn jacobi_singular_values_are_correct() {
-        // diag(3,2,1) rotated: singular values must be exactly {3,2,1}
         let c = (0.6f64).acos().cos();
         let s = (1.0f64 - c * c).sqrt();
         let a = vec![
@@ -7033,20 +5735,15 @@ mod tests {
             assert!((got - want).abs() < 1e-10, "got {sv:?}");
         }
     }
-
-    /// The impulse response must come back real and causal-decaying, and must
-    /// reproduce the spectrum it came from (round trip through the owned engine).
     #[test]
     fn impulse_from_spectrum_round_trips() {
         let t = ExactSix::new();
         let h = impulse_from_spectrum(&t, 0.0, 0.0, 2048);
         assert!(h.iter().all(|v| v.is_finite()));
-        // energy must decay: the tail is far smaller than the head
         let head: f64 = h[..64].iter().map(|v| v * v).sum();
         let tail: f64 = h[1024..].iter().map(|v| v * v).sum();
         assert!(tail < head * 1e-6, "impulse did not decay: head {head:.3e} tail {tail:.3e}");
     }
-
     #[test]
     fn sha256_known_vector() {
         assert_eq!(
@@ -7054,9 +5751,6 @@ mod tests {
             "ba7816bf8f01cfea414140de5dae2223b00361a396177a9cb410ff61f20015ad"
         );
     }
-
-    /// No normalization anywhere: rendering the SAME rows twice with the same
-    /// input must be bit-identical, and a louder input must come out louder.
     #[test]
     fn render_is_absolute_not_normalized() {
         let t = ExactSix::new();
@@ -7074,7 +5768,6 @@ mod tests {
             "gain was normalized away: {pa} vs {pcx}"
         );
     }
-
     #[test]
     fn mouth_total_gain_is_explicit_and_section_normalization_is_absent() {
         let t = BranchingMouth;
@@ -7087,7 +5780,6 @@ mod tests {
             assert!(rows[1..].iter().all(|r| r[0] == 1.0));
         }
     }
-
     #[test]
     fn mouth_q0_branch_actors_are_exact_cancellations() {
         let t = BranchingMouth;
@@ -7101,9 +5793,7 @@ mod tests {
             assert!(coloured[5][1] != coloured[5][3]);
         }
     }
-
     struct EndpointFixture;
-
     impl Target for EndpointFixture {
         fn name(&self) -> &str {
             "endpoint_fixture"
@@ -7118,7 +5808,6 @@ mod tests {
             (1.0, 0.0)
         }
     }
-
     #[test]
     fn authored_source_gate_rejects_branching_mouth_before_pack() {
         let t = BranchingMouth;
@@ -7139,7 +5828,6 @@ mod tests {
             RouteResult::Ambiguous { .. } => panic!("authored source became ambiguous"),
         }
     }
-
     #[test]
     fn authored_route_directly_preserves_crossing_corner_lanes() {
         let t = Crossing::new();
@@ -7162,7 +5850,6 @@ mod tests {
             RouteResult::Ambiguous { .. } => panic!("authored fixture was routed as ambiguous"),
         }
     }
-
     #[test]
     fn endpoint_route_reports_ambiguity_without_a_body_or_lane_selection() {
         let t = EndpointFixture;
@@ -7178,7 +5865,6 @@ mod tests {
             RouteResult::Rejected { .. } => panic!("endpoint evidence was not reported ambiguous"),
         }
     }
-
     #[test]
     fn companion_mouth_source_gate_passes_with_positive_companion_lobes() {
         let t = CompanionMouth;
@@ -7196,7 +5882,6 @@ mod tests {
             }
         }
     }
-
     #[test]
     fn companion_mouth_routes_directly_without_solver() {
         let t = CompanionMouth;
@@ -7215,7 +5900,6 @@ mod tests {
             RouteResult::Ambiguous { .. } => panic!("authored candidate became ambiguous"),
         }
     }
-
     #[test]
     fn default_talking_frame_source_gate_passes_without_claiming_a_branch() {
         let t = TalkingFrameStageLaw;
@@ -7227,7 +5911,6 @@ mod tests {
             .is_empty());
         assert_eq!(gate.json["checks"]["intentional_gain_and_headroom"]["pass"], true);
     }
-
     #[test]
     fn default_talking_frame_keeps_pole_and_zero_trajectories_independent() {
         let a = talking_frame_corner_root(0, 0);
@@ -7237,7 +5920,6 @@ mod tests {
         assert!(zero_motion > pole_motion * 2.0);
         assert!(zero_motion > 1.0, "zero motion is not a frame-scale gesture");
     }
-
     #[test]
     fn default_talking_frame_rows_use_the_owned_stage_law() {
         for corner in 0..4 {
@@ -7261,7 +5943,6 @@ mod tests {
             }
         }
     }
-
     #[test]
     fn default_talking_frame_routes_directly_without_solver() {
         let t = TalkingFrameStageLaw;

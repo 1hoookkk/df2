@@ -1,31 +1,15 @@
 #pragma once
-
 #include "Theme.h"
 #include "../parameters/TrenchParameters.h"
-
 #include <juce_audio_processors/juce_audio_processors.h>
-
 namespace trench::ui
 {
-
-// The ● record button next to a roller — the whole keyframe-recorder gesture in
-// one self-contained component so it barely touches the shared editor.
-//
-// Flow (one button, three states, you always exit with the same click):
-//   ○ IDLE     click → capture the wheel's CURRENT value as A;  go ARMED
-//   ◐ ARMED    (turn the wheel to the target)  click → capture as B, arm the
-//              loop;  go LOOPING
-//   ● LOOPING  click → clear;  go IDLE
-//
-// Rate: mouse-wheel over the button cycles the bar length. Shape: right-click
-// cycles Pendulum/Rise/Saw/OneShot. Everything lives on the button, so no other
-// widget (and none of the shared UI files) has to change to set them.
 class KeyframeButton : public juce::Component,
                        public juce::SettableTooltipClient
 {
 public:
     KeyframeButton (juce::AudioProcessorValueTreeState& state,
-                    juce::String wheelParamId,          // the wheel this records (morph / q)
+                    juce::String wheelParamId,
                     juce::String onId, juce::String aId, juce::String bId,
                     juce::String barsId, juce::String modeId,
                     const Theme& theme)
@@ -34,27 +18,19 @@ public:
           barsP (std::move (barsId)), modeP (std::move (modeId)), t (theme)
     {
         setMouseCursor (juce::MouseCursor::PointingHandCursor);
-        // Reflect a state already restored from a saved session.
         if (getBool (onP)) state_ = State::looping;
         refreshTooltip();
     }
-
     void paint (juce::Graphics& g) override
     {
-        // A legible chip, not a bare lamp: a state dot + a word for what it is +
-        // the rate + the shape, so you can always SEE what it's doing. Recessed
-        // into the plate, amber LCD text to match the readouts.
         auto r = getLocalBounds().toFloat().reduced (0.5f);
         const float rad = 3.5f;
-        g.setColour (juce::Colour (0xff211c16));                 // seated dark well
+        g.setColour (juce::Colour (0xff211c16));
         g.fillRoundedRectangle (r, rad);
         g.setColour (juce::Colour (0xff5a4f3d).withAlpha (0.75f));
         g.drawRoundedRectangle (r.reduced (0.5f), rad, 1.0f);
-
-        const juce::Colour amber { 0xffe7a53a };   // the readout LCD amber
-        const juce::Colour rec   { 0xffcf4436 };   // signal red, only while recording
-
-        // state lamp on the left
+        const juce::Colour amber { 0xffe7a53a };
+        const juce::Colour rec   { 0xffcf4436 };
         auto lamp = juce::Rectangle<float> (7.0f, 7.0f)
                         .withCentre ({ r.getX() + 9.0f, r.getCentreY() });
         juce::Colour lampC = state_ == State::looping ? rec
@@ -67,8 +43,6 @@ public:
             g.setColour (lampC.withAlpha (0.25f));
             g.fillEllipse (lamp.expanded (2.5f));
         }
-
-        // label: what it is / what it's doing, then the rate + shape
         auto textArea = r.withTrimmedLeft (18.0f).reduced (2.0f, 0.0f);
         const juce::String head = state_ == State::armed ? "SET B"
                                 : state_ == State::looping ? "REC" : "KEY";
@@ -81,7 +55,6 @@ public:
         g.setColour (amber.withAlpha (0.7f));
         g.drawText (info, textArea, juce::Justification::centredLeft, false);
     }
-
     juce::String choice (const juce::String& id) const
     {
         if (auto* p = dynamic_cast<juce::AudioParameterChoice*> (apvts.getParameter (id)))
@@ -93,26 +66,23 @@ public:
         auto s = choice (modeP);
         return s.isEmpty() ? juce::String() : s.substring (0, 4).toUpperCase();
     }
-
     void mouseEnter (const juce::MouseEvent&) override { hover = true;  repaint(); }
     void mouseExit  (const juce::MouseEvent&) override { hover = false; repaint(); }
-
     void mouseDown (const juce::MouseEvent& e) override
     {
-        if (e.mods.isPopupMenu()) { cycleMode(); return; }   // right-click = shape
-
+        if (e.mods.isPopupMenu()) { cycleMode(); return; }
         switch (state_)
         {
-            case State::idle:                                 // capture A = current wheel
+            case State::idle:
                 setFloat (aP, wheelValue());
                 state_ = State::armed;
                 break;
-            case State::armed:                                // capture B, start the loop
+            case State::armed:
                 setFloat (bP, wheelValue());
                 setBool (onP, true);
                 state_ = State::looping;
                 break;
-            case State::looping:                              // clear
+            case State::looping:
                 setBool (onP, false);
                 state_ = State::idle;
                 break;
@@ -120,10 +90,9 @@ public:
         refreshTooltip();
         repaint();
     }
-
     void mouseWheelMove (const juce::MouseEvent&, const juce::MouseWheelDetails& w) override
     {
-        if (auto* p = apvts.getParameter (barsP))             // scroll = rate
+        if (auto* p = apvts.getParameter (barsP))
         {
             const int n = p->getNumSteps();
             int idx = (int) std::lround (p->convertFrom0to1 (p->getValue()));
@@ -133,8 +102,6 @@ public:
             repaint();
         }
     }
-
-    // Driven by the editor's existing repaint timer so ARMED can pulse.
     void tick() noexcept
     {
         if (state_ != State::armed) return;
@@ -142,10 +109,8 @@ public:
         pulse = 0.45f + 0.45f * (0.5f + 0.5f * std::sin (phase));
         repaint();
     }
-
 private:
     enum class State { idle, armed, looping };
-
     float wheelValue() const
     {
         if (auto* v = apvts.getRawParameterValue (wheelParam)) return v->load();
@@ -189,15 +154,12 @@ private:
         setTooltip (juce::String (s) + "  |  " + choiceText (barsP)
                     + " · " + choiceText (modeP) + "  (scroll = rate, right-click = shape)");
     }
-
     juce::AudioProcessorValueTreeState& apvts;
     juce::String wheelParam, onP, aP, bP, barsP, modeP;
     const Theme& t;
     State state_ = State::idle;
     bool  hover = false;
     float phase = 0.0f, pulse = 0.6f;
-
     JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR (KeyframeButton)
 };
-
-} // namespace trench::ui
+}
