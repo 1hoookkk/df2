@@ -1504,6 +1504,8 @@ void WorkstationEditor::timerCallback()
         || ! juce::approximatelyEqual (q, lastProbedQ))
     {
         refreshCurves();
+        if (designerOpen)
+            designerRefreshLive();   // the loud curve follows the wheel
         repaint();
     }
 }

@@ -229,6 +229,37 @@ void WorkstationEditor::designerApply (bool certifyNow)
     repaint();
 }
 
+void WorkstationEditor::designerRefreshLive()
+{
+    designerLiveOk = false;
+    if (! hasBody)
+        return;
+    const float m = juce::jlimit (0.0f, 1.0f, paramValue (ParamID::morph));
+    designerLiveMorph = m;
+    double biquad[30] {};
+    double maxR = 0.0;
+    juce::uint32 unstable = 0, nonfinite = 0;
+    if (trench_packed_probe (workingBytes.data(), 240, (double) m,
+                             designerPage == 1 ? 1.0 : 0.0,
+                             biquad, &maxR, &unstable, &nonfinite) != 0)
+        return;
+    float coeffs[30];
+    for (int i = 0; i < 30; ++i)
+        coeffs[i] = (float) biquad[i];
+    for (int i = 0; i < kNumPlotPoints; ++i)
+    {
+        const double hz = kMinHz * std::pow (kMaxHz / kMinHz, (double) i / (kNumPlotPoints - 1));
+        const double w = juce::MathConstants<double>::twoPi * hz / kEvalSampleRate;
+        float sum = 0.0f;
+        for (int s = 0; s < 6; ++s)
+            if ((nonfinite & (1u << s)) == 0)
+                sum += stageMagDb (&coeffs[s * 5], std::cos (w), std::sin (w),
+                                   std::cos (2.0 * w), std::sin (2.0 * w));
+        designerLiveDb[(size_t) i] = sum;
+    }
+    designerLiveOk = true;
+}
+
 void WorkstationEditor::designerRefreshJourney()
 {
     designerJourneyOk = hasBody;
@@ -274,6 +305,7 @@ void WorkstationEditor::designerRefreshJourney()
         designerJourneyCrown[k] = crown;
     }
     designerJourneyPass = designerJourneyGate();
+    designerRefreshLive();
     if (designerGhostValid)
         for (int k = 0; k < 5; ++k)
         {
@@ -1131,25 +1163,35 @@ void WorkstationEditor::drawDesigner (juce::Graphics& g)
                 if (i == 0) path.startNewSubPath (x, y);
                 else path.lineTo (x, y);
             }
-            g.setColour (juce::Colour (0x40aab4be));
+            g.setColour (juce::Colour (0x28aab4be));
             g.strokePath (path, juce::PathStrokeType (1.0f));
         }
-    if (designerJourneyOk)
-        for (int k = 0; k < 5; ++k)
+    const auto strokeCurve = [&] (const float* db, juce::Colour c, float thickness)
+    {
+        juce::Path path;
+        for (int i = 0; i < kNumPlotPoints; ++i)
         {
-            juce::Path path;
-            for (int i = 0; i < kNumPlotPoints; ++i)
-            {
-                const float x = inner.getX() + ((float) i / (kNumPlotPoints - 1)) * inner.getWidth();
-                const float norm = (std::clamp (designerJourneyDb[(size_t) k][(size_t) i], kMinDb, kMaxDb) - kMinDb)
-                                 / (kMaxDb - kMinDb);
-                const float y = inner.getY() + inner.getHeight() * (1.0f - norm);
-                if (i == 0) path.startNewSubPath (x, y);
-                else path.lineTo (x, y);
-            }
-            g.setColour (kCyan.withAlpha (0.25f + 0.1875f * (float) k));
-            g.strokePath (path, juce::PathStrokeType (k == 4 ? 1.4f : 1.0f));
+            const float x = inner.getX() + ((float) i / (kNumPlotPoints - 1)) * inner.getWidth();
+            const float norm = (std::clamp (db[i], kMinDb, kMaxDb) - kMinDb) / (kMaxDb - kMinDb);
+            const float y = inner.getY() + inner.getHeight() * (1.0f - norm);
+            if (i == 0) path.startNewSubPath (x, y);
+            else path.lineTo (x, y);
         }
+        g.setColour (c);
+        g.strokePath (path, juce::PathStrokeType (thickness));
+    };
+    if (designerJourneyOk)
+    {
+        // hierarchy: endpoints medium, intermediates whisper (speak mid-gesture),
+        // the pose you are AT is the loud one
+        const float midAlpha = designerGestureActive() ? 0.30f : 0.10f;
+        for (int k = 1; k < 4; ++k)
+            strokeCurve (designerJourneyDb[(size_t) k].data(), kCyan.withAlpha (midAlpha), 1.0f);
+        strokeCurve (designerJourneyDb[0].data(), kCyan.withAlpha (0.45f), 1.0f);
+        strokeCurve (designerJourneyDb[4].data(), kCyan.withAlpha (0.45f), 1.0f);
+        if (designerLiveOk)
+            strokeCurve (designerLiveDb.data(), kCyan, 1.6f);
+    }
     {
         const float m = juce::jlimit (0.0f, 1.0f, paramValue (ParamID::morph));
         const float mx = inner.getX() + m * inner.getWidth();

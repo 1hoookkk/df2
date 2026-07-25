@@ -317,6 +317,11 @@ private:
     double designerLadderHz[128] {};                           // firmware freq-code ladder, decoded pole Hz
     std::array<std::array<float, kNumPlotPoints>, 5> designerJourneyDb {};
     std::array<std::array<std::array<float, kNumPlotPoints>, 6>, 2> designerStageDb {};   // [LO/HI][stage]
+    std::array<float, kNumPlotPoints> designerLiveDb {};       // the pose you are AT
+    float designerLiveMorph = -1.0f;
+    bool designerLiveOk = false;
+    void designerRefreshLive();
+    bool designerGestureActive() const { return dsWheelDrag || dsDragField >= 0 || dsEditField >= 0; }
     bool designerGhostValid = false;                           // A/B: the imported photograph
     std::array<juce::uint8, 240> designerGhostBytes {};
     std::array<std::array<float, kNumPlotPoints>, 5> designerGhostDb {};
