@@ -1,5 +1,4 @@
 #include "PluginProcessor.h"
-#include <complex>
 #include "PluginEditor.h"
 #include "TrenchBodyRoster.h"
 #include "dsp/SlamStage.h"
@@ -205,7 +204,6 @@ void PluginProcessor::processBlock (juce::AudioBuffer<float>& buffer, juce::Midi
         params.fiveD = 0.0f;
         params.bite = 0.0f;
         fixedRateIsland.process (buffer, dspBridge, params);
-        buffer.applyGain (juce::Decibels::decibelsToGain (bodyMakeupDb.load (std::memory_order_relaxed)));
         dspBridge.publishUiSnapshot();
         return;
     }
@@ -417,7 +415,6 @@ void PluginProcessor::processBlock (juce::AudioBuffer<float>& buffer, juce::Midi
         (int) apvts.getRawParameterValue (ParamID::keySnap)->load());
     punchBlend.captureDry (buffer.getArrayOfReadPointers(), buffer.getNumChannels(), buffer.getNumSamples());
     fixedRateIsland.process (buffer, dspBridge, params);
-    buffer.applyGain (juce::Decibels::decibelsToGain (bodyMakeupDb.load (std::memory_order_relaxed)));
     punchBlend.blend (buffer.getArrayOfWritePointers(), buffer.getNumChannels(), buffer.getNumSamples(), mixTarget);
     const float outDb = apvts.getRawParameterValue (ParamID::output)->load();
     outputGain.setTargetValue (juce::Decibels::decibelsToGain (outDb));
@@ -522,49 +519,6 @@ int PluginProcessor::copyScopeSamples (float* outL, float* outR, int count) cons
     }
     return count;
 }
-// GAIN BUDGET: level parity across bodies. Median |H| over a log grid at the
-// 4 corners + centre pose, averaged; makeup = -average, clamped +/-12 dB.
-// Computed from the packed runtime bytes at body-switch time (message thread).
-static float computeBodyMakeupDb (const juce::MemoryBlock& body)
-{
-    if (body.getSize() != 240)
-        return 0.0f;
-    constexpr double sr = 39062.5;
-    constexpr int nF = 64;
-    double sum = 0.0;
-    int poses = 0;
-    for (auto [m, q] : { std::pair { 0.0f, 0.0f }, { 1.0f, 0.0f }, { 0.0f, 1.0f },
-                         { 1.0f, 1.0f }, { 0.5f, 0.5f } })
-    {
-        float c[30] {};
-        float boost = 1.0f;
-        if (! TrenchDspBridge::probePackedBody (body.getData(), 240, m, q, c, boost))
-            continue;
-        std::array<double, nF> db {};
-        for (int i = 0; i < nF; ++i)
-        {
-            const double hz = 40.0 * std::pow (16000.0 / 40.0, (double) i / (nF - 1));
-            const double w = juce::MathConstants<double>::twoPi * hz / sr;
-            const std::complex<double> z1 (std::cos (-w), std::sin (-w));
-            const auto z2 = z1 * z1;
-            std::complex<double> h (1.0, 0.0);
-            for (int stage = 0; stage < 6; ++stage)
-            {
-                const auto* k = &c[stage * 5];
-                h *= ((double) k[0] + (double) k[1] * z1 + (double) k[2] * z2)
-                     / (1.0 + (double) k[3] * z1 + (double) k[4] * z2);
-            }
-            db[(size_t) i] = 20.0 * std::log10 (juce::jmax (1.0e-9, std::abs (h)));
-        }
-        std::sort (db.begin(), db.end());
-        sum += 0.5 * (db[nF / 2 - 1] + db[nF / 2]);
-        ++poses;
-    }
-    if (poses == 0)
-        return 0.0f;
-    return (float) juce::jlimit (-12.0, 12.0, -(sum / poses));
-}
-
 void PluginProcessor::parameterChanged (const juce::String& parameterID, float newValue)
 {
     if (parameterID == ParamID::body)
@@ -610,16 +564,13 @@ void PluginProcessor::handleAsyncUpdate()
     }
     if (trench::bodyIsAudition (want))
         auditionSlotMtime = trench::auditionSlotFile().getLastModificationTime();
-    // gain budget + the MIX law: every body arrives level-sane at 100% mix
-    bodyMakeupDb.store (ok ? computeBodyMakeupDb (currentBodyBytes) : 0.0f,
-                        std::memory_order_relaxed);
+    // MIX law: every body arrives at 100% mix
     if (ok)
         if (auto* amount = apvts.getParameter (ParamID::amount))
             amount->setValueNotifyingHost (1.0f);
     juce::Logger::writeToLog (juce::String ("body switch -> ")
                                + trench::bodyDisplayName (want)
-                               + (ok ? " ok" : " FAIL")
-                               + "  makeup " + juce::String (bodyMakeupDb.load (std::memory_order_relaxed), 1) + " dB");
+                               + (ok ? " ok" : " FAIL"));
 }
 void PluginProcessor::captureCurrentBodyBytes (const juce::String& cartridgeJson)
 {

@@ -184,7 +184,6 @@ private:
     float prevGestureSlam = 0.0f;
     bool gestureTrackPrimed = false;
     std::atomic<bool> workstationBodySolo { false };
-    std::atomic<float> bodyMakeupDb { 0.0f };   // per-body gain budget (level parity)
     bool lastWorkstationBodySolo = false;
     JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR (PluginProcessor)
 };
