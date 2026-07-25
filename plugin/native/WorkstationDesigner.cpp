@@ -176,6 +176,7 @@ void WorkstationEditor::designerApply (bool certifyNow)
     dirty = true;
     if (bodyName.isEmpty())
         bodyName = "DESIGNER";
+    designerFrameL10();            // you HEAR the framed level, always (L10 law)
     packAndInstall (certifyNow);   // the net; scrub ticks take the light path
     designerRefreshJourney();
     repaint();
@@ -784,8 +785,9 @@ void WorkstationEditor::drawDesigner (juce::Graphics& g)
             continue;
         g.setColour (kGridLabel);
         g.setFont (juce::FontOptions (9.0f));
-        g.drawText ("LO", (int) r.getX() + 148, (int) r.getY() + 11, 20, 14, juce::Justification::left);
-        g.drawText ("HI", (int) r.getX() + 148, (int) r.getY() + 39, 20, 14, juce::Justification::left);
+        // rows are the MORPH corner poses of this Q page: 2 pages x 2 rows = the P2K 4-corner grid
+        g.drawText ("M0", (int) r.getX() + 142, (int) r.getY() + 11, 28, 14, juce::Justification::left);
+        g.drawText ("M100", (int) r.getX() + 142, (int) r.getY() + 39, 28, 14, juce::Justification::left);
         const int fields = s.type == kDesignerTypeFree ? 5 : 2;
         const auto hzNorm = [] (double hz)
         {
