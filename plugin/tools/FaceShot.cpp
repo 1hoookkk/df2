@@ -83,6 +83,56 @@ int main()
     // JUCE_MODAL_LOOPS_PERMITTED=1 so the pump is available; the plugin does not.)
     juce::MessageManager::getInstance()->runDispatchLoopUntil (1400);
 
+    // RATE proof: the fixed-rate island resamples the host into the 39062.5 /
+    // 78125 Hz coefficient domain. Every host rate must come back finite, and
+    // the latency we REPORT must match the latency we actually add, or every
+    // user's parallel routing is smeared and nobody can hear why.
+    if (std::getenv ("TRENCH_RATE_ITER") != nullptr)
+    {
+        bool ratePass = true;
+        if (auto* body = processor.apvts.getParameter (ParamID::body))
+            body->setValueNotifyingHost (body->convertTo0to1 ((float) trench::kNoFilterIndex));
+        juce::MessageManager::getInstance()->runDispatchLoopUntil (120);
+        for (double rate : { 44100.0, 48000.0, 88200.0, 96000.0, 192000.0 })
+        {
+            constexpr int kBlock = 512;
+            processor.prepareToPlay (rate, kBlock);
+            const int reported = processor.getLatencySamples();
+            // Drive an impulse through and find where it lands.
+            const int total = juce::jmax (8 * kBlock, reported + 4 * kBlock);
+            juce::AudioBuffer<float> run (2, total);
+            run.clear();
+            const int impulseAt = kBlock / 2;
+            run.setSample (0, impulseAt, 1.0f);
+            run.setSample (1, impulseAt, 1.0f);
+            juce::MidiBuffer midi;
+            for (int off = 0; off + kBlock <= total; off += kBlock)
+            {
+                juce::AudioBuffer<float> blk (run.getArrayOfWritePointers(), 2, off, kBlock);
+                processor.processBlock (blk, midi);
+            }
+            int peakAt = -1;
+            float peak = 0.0f;
+            bool finite = true;
+            for (int i = 0; i < total; ++i)
+            {
+                const float v = run.getSample (0, i);
+                if (! std::isfinite (v)) { finite = false; break; }
+                if (std::abs (v) > peak) { peak = std::abs (v); peakAt = i; }
+            }
+            const int measured = peakAt - impulseAt;
+            const int err = std::abs (measured - reported);
+            // One block of slack: the island only emits on filled FIFO boundaries.
+            const bool ok = finite && peak > 1.0e-4f && err <= kBlock;
+            ratePass = ratePass && ok;
+            std::printf ("RATE %7.0f Hz  finite=%d  peak=%.4f  reported=%6d  measured=%6d  err=%5d  %s\n",
+                         rate, (int) finite, peak, reported, measured, err, ok ? "PASS" : "FAIL");
+        }
+        std::printf ("HOST RATES   finite + honest latency at 44.1/48/88.2/96/192  %s\n",
+                     ratePass ? "PASS" : "FAIL");
+        return ratePass ? 0 : 1;
+    }
+
     // TYPE proof: picking a body on the glass must load THAT body. The menu
     // item index and the host BODY parameter have to name the same thing.
     // TRENCH_TYPE_ITER=1 runs this alone (the slow blocks below are skipped).
