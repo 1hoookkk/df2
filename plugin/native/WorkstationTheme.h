@@ -79,13 +79,13 @@ struct DesignerMotif { const char* label; double oct; double zeroR; };
 // tooth n=164, trailing n=93, leading n=227, far rail n=238 (~3 oct measured),
 // true notch n=153. Starting points only — every field stays editable.
 const DesignerMotif kDesignerMotifs[5] = {
-    { "TOOTH        0 oct   r .95", 0.0, 0.95 },
-    { "TRAILING  -0.6 oct   r .97", -0.6, 0.97 },
-    { "LEADING   +0.9 oct   r .94", 0.9, 0.94 },
-    { "FAR RAIL    +3 oct   r .95", 3.0, 0.95 },
-    { "TRUE NOTCH +1.7 oct  r 1.0", 1.7, 1.0 },
+    { "PEAK", 0.0, 0.95 },     // tooth: zero rides the pole, tight boost (n=164)
+    { "FORMANT", -0.6, 0.97 }, // trailing zero: peak sings, octave under pre-scooped (n=93)
+    { "SWEEP", 0.9, 0.94 },    // leading zero: carries its own de-esser (n=227)
+    { "TILT", 3.0, 0.95 },     // far rail: broadband tilt skeleton (n=238)
+    { "NOTCH", 1.7, 1.0 },     // true notch: hard cancel, combs and vowels (n=153)
 };
-const char* kDesignerTypeNames[5] = { "OFF", "EQ", "LP", "HP", "FREE" };
+const char* kDesignerTypeNames[5] = { "OFF", "EQ", "LP", "HP", "P2K" };
 constexpr int kDesignerTypeFree = 4;
 // one MD ladder step = ~68.4 cents; FREE freq wheel travels this grid
 const double kDesignerLadderRatio = std::pow (2.0, 68.4 / 1200.0);

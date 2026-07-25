@@ -116,6 +116,7 @@ WorkstationEditor::WorkstationEditor (PluginProcessor& p)
         }
     }
 
+    binSearch.setVisible (! designerOpen);   // the Designer is the startup surface
     setSize (1280, 800);
     startTimerHz (30);
 }
@@ -1643,8 +1644,9 @@ void WorkstationEditor::runProofScript()
         }
         else if (action == "dtype")
         {
-            dsections[designerPage][juce::jlimit (0, 5, (int) obj->getProperty ("stage"))].type =
-                juce::jlimit (0, 4, (int) obj->getProperty ("type"));
+            auto& sec = dsections[designerPage][juce::jlimit (0, 5, (int) obj->getProperty ("stage"))];
+            sec.type = juce::jlimit (0, 4, (int) obj->getProperty ("type"));
+            sec.motif = -1;
             designerApply();
         }
         else if (action == "dset")       // fields: typed 0 FREQ 1 GAIN; FREE 0 pHz 1 pR 2 scale 3 zHz 4 zR
@@ -3187,13 +3189,13 @@ bool WorkstationEditor::keyPressed (const juce::KeyPress& key)
     }
     if (key == juce::KeyPress ('z', juce::ModifierKeys::ctrlModifier, 0))
     {
-        undo();
+        designerOpen ? designerUndo() : undo();
         return true;
     }
     if (key == juce::KeyPress ('y', juce::ModifierKeys::ctrlModifier, 0)
         || key == juce::KeyPress ('z', juce::ModifierKeys::ctrlModifier | juce::ModifierKeys::shiftModifier, 0))
     {
-        redo();
+        designerOpen ? designerRedo() : redo();
         return true;
     }
     // speedrun transport: space = play/stop, D = designer, I = stage detail
@@ -3245,6 +3247,7 @@ void WorkstationEditor::mouseWheelMove (const juce::MouseEvent& e, const juce::M
                 for (int field = 0; field < fields; ++field)
                     if (designerCellArea (stage, row, field).contains (pos))
                     {
+                        designerPushUndo();
                         const double v = designerFieldValue (stage, row, field);
                         double next = v;
                         if (s.type != kDesignerTypeFree)

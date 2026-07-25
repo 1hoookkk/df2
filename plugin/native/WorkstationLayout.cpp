@@ -176,7 +176,9 @@ juce::Point<float> WorkstationEditor::pzPointFor (double hz, double r) const
 void WorkstationEditor::resized()
 {
     binSearch.setBounds (binSearchArea());
-    nameField.setBounds (nameBoxArea());
+    nameField.setBounds (designerOpen
+        ? juce::Rectangle<int> (designerArea().getX() + 10, designerArea().getY() + 4, 240, 24)
+        : nameBoxArea());
 }
 
 juce::Rectangle<int> WorkstationEditor::mdqButtonArea() const

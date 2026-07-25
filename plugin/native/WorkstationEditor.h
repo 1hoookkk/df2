@@ -304,10 +304,11 @@ private:
     };
     struct DesignerSectionState
     {
-        int type = 0;                                          // 0 off, 1 EQ, 2 LP, 3 HP, 4 FREE
+        int type = 0;                                          // 0 off, 1 EQ, 2 LP, 3 HP, 4 pole+zero
+        int motif = -1;                                        // census shape for type 4 (-1 = imported P2K)
         DesignerRowState lo, hi;
     };
-    bool designerOpen = false;
+    bool designerOpen = true;                                  // the Designer IS the surface; Esc = assembly
     bool detailOpen = false;                                   // far-right STAGE DETAIL, hidden by default
     juce::Rectangle<int> detailButtonArea() const;
     int designerPage = 0;                                      // 0 = Q0 pose page, 1 = Q100 pose page
@@ -347,25 +348,30 @@ private:
     void designerSketchQ100();                                 // MD-Q bw x0.375 sketch -> FREE sections
     void designerImportWorking();                              // photograph -> editable FREE sections
     juce::Rectangle<int> designerImportArea() const;
+    // section-level undo: one snapshot per gesture (scrub, wheel run, menu, import)
+    struct DesignerSnapshot { DesignerSectionState sections[2][6]; int shift = 0; int page = 0; };
+    std::vector<DesignerSnapshot> dsUndoStack, dsRedoStack;
+    void designerPushUndo();
+    void designerUndo();
+    void designerRedo();
+    juce::Rectangle<int> designerUndoArea() const;
+    juce::Rectangle<int> designerRedoArea() const;
     int designerCodeForHz (double hz) const;                   // nearest firmware ladder code
     double designerFieldValue (int stage, int row, int field) const;
     void designerSetField (int stage, int row, int field, double value);
     void designerBeginEdit (int stage, int row, int field);
     void designerCommitEdit();
     void designerShowShapeMenu (int stage);
-    void designerShowMotifMenu (int stage);
     void designerShowTemplateMenu();
     juce::Rectangle<int> designerButtonArea() const;           // header toggle
     juce::Rectangle<int> designerArea() const;                 // the panel overlay
     juce::Rectangle<int> designerJourneyArea() const;
     juce::Rectangle<int> designerStageRowArea (int stage) const;
     juce::Rectangle<int> designerShapeArea (int stage) const;
-    juce::Rectangle<int> designerMotifArea (int stage) const;
     juce::Rectangle<int> designerCellArea (int stage, int row, int field) const;
     juce::Rectangle<int> designerPageArea (int page) const;
     juce::Rectangle<int> designerTemplateArea() const;
     juce::Rectangle<int> designerSketchArea() const;
-    juce::Rectangle<int> designerShiftArea() const;
     juce::Rectangle<int> designerCloseArea() const;
     void drawDesigner (juce::Graphics& g);
     bool designerMouseDown (juce::Point<int> pos);

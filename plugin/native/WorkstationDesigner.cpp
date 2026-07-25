@@ -10,51 +10,51 @@
 
 juce::Rectangle<int> WorkstationEditor::designerButtonArea() const { return { 906, 18, 100, 28 }; }
 juce::Rectangle<int> WorkstationEditor::detailButtonArea() const   { return { 666, 10, 64, 20 }; }
-juce::Rectangle<int> WorkstationEditor::designerArea() const      { return { 140, 70, 1000, 660 }; }
+juce::Rectangle<int> WorkstationEditor::designerArea() const      { return getLocalBounds().reduced (8); }
 juce::Rectangle<int> WorkstationEditor::designerCloseArea() const
 {
     const auto p = designerArea();
-    return { p.getRight() - 26, p.getY() + 4, 20, 18 };
+    return { p.getRight() - 26, p.getY() + 6, 20, 18 };
 }
 juce::Rectangle<int> WorkstationEditor::designerPageArea (int page) const
 {
     const auto p = designerArea();
-    return { p.getX() + 10 + page * 84, p.getY() + 28, 80, 20 };
+    return { p.getX() + 10 + page * 84, p.getY() + 32, 80, 20 };
 }
 juce::Rectangle<int> WorkstationEditor::designerTemplateArea() const
 {
     const auto p = designerArea();
-    return { p.getX() + 186, p.getY() + 28, 110, 20 };
+    return { p.getX() + 186, p.getY() + 32, 110, 20 };
 }
 juce::Rectangle<int> WorkstationEditor::designerSketchArea() const
 {
     const auto p = designerArea();
-    return { p.getX() + 302, p.getY() + 28, 150, 20 };
+    return { p.getX() + 302, p.getY() + 32, 110, 20 };
 }
-juce::Rectangle<int> WorkstationEditor::designerShiftArea() const
+juce::Rectangle<int> WorkstationEditor::designerUndoArea() const
 {
     const auto p = designerArea();
-    return { p.getX() + 458, p.getY() + 28, 90, 20 };
+    return { p.getX() + 418, p.getY() + 32, 64, 20 };
+}
+juce::Rectangle<int> WorkstationEditor::designerRedoArea() const
+{
+    const auto p = designerArea();
+    return { p.getX() + 486, p.getY() + 32, 64, 20 };
 }
 juce::Rectangle<int> WorkstationEditor::designerJourneyArea() const
 {
     const auto p = designerArea();
-    return { p.getX() + 10, p.getY() + 54, p.getWidth() - 20, 168 };
+    return { p.getX() + 10, p.getY() + 58, p.getWidth() - 20, 168 };
 }
 juce::Rectangle<int> WorkstationEditor::designerStageRowArea (int stage) const
 {
     const auto p = designerArea();
-    return { p.getX() + 10, p.getY() + 230 + stage * 66, p.getWidth() - 20, 64 };
+    return { p.getX() + 10, p.getY() + 234 + stage * 66, p.getWidth() - 20, 64 };
 }
 juce::Rectangle<int> WorkstationEditor::designerShapeArea (int stage) const
 {
     const auto r = designerStageRowArea (stage);
-    return { r.getX() + 26, r.getY() + 20, 56, 24 };
-}
-juce::Rectangle<int> WorkstationEditor::designerMotifArea (int stage) const
-{
-    const auto r = designerStageRowArea (stage);
-    return { r.getX() + 86, r.getY() + 20, 52, 24 };
+    return { r.getX() + 26, r.getY() + 20, 90, 24 };
 }
 juce::Rectangle<int> WorkstationEditor::designerCellArea (int stage, int row, int field) const
 {
@@ -117,6 +117,53 @@ void WorkstationEditor::designerSetField (int stage, int row, int field, double 
         case 3: rw.zeroHz = juce::jlimit (20.0, (double) kMaxHz, value); break;
         default: rw.zeroR = juce::jlimit (0.0, 1.0, value); break;
     }
+}
+
+// section-level undo: one snapshot per gesture, restored through a full apply
+void WorkstationEditor::designerPushUndo()
+{
+    DesignerSnapshot snap;
+    std::memcpy (snap.sections, dsections, sizeof snap.sections);
+    snap.shift = designerShift;
+    snap.page = designerPage;
+    dsUndoStack.push_back (snap);
+    if (dsUndoStack.size() > 64)
+        dsUndoStack.erase (dsUndoStack.begin());
+    dsRedoStack.clear();
+}
+
+void WorkstationEditor::designerUndo()
+{
+    if (dsUndoStack.empty())
+        return;
+    DesignerSnapshot cur;
+    std::memcpy (cur.sections, dsections, sizeof cur.sections);
+    cur.shift = designerShift;
+    cur.page = designerPage;
+    dsRedoStack.push_back (cur);
+    const auto snap = dsUndoStack.back();
+    dsUndoStack.pop_back();
+    std::memcpy (dsections, snap.sections, sizeof dsections);
+    designerShift = snap.shift;
+    designerPage = snap.page;
+    designerApply();
+}
+
+void WorkstationEditor::designerRedo()
+{
+    if (dsRedoStack.empty())
+        return;
+    DesignerSnapshot cur;
+    std::memcpy (cur.sections, dsections, sizeof cur.sections);
+    cur.shift = designerShift;
+    cur.page = designerPage;
+    dsUndoStack.push_back (cur);
+    const auto snap = dsRedoStack.back();
+    dsRedoStack.pop_back();
+    std::memcpy (dsections, snap.sections, sizeof dsections);
+    designerShift = snap.shift;
+    designerPage = snap.page;
+    designerApply();
 }
 
 void WorkstationEditor::toggleDesigner()
@@ -256,12 +303,12 @@ void WorkstationEditor::designerRefreshJourney()
 juce::Rectangle<int> WorkstationEditor::designerFamilyArea() const
 {
     const auto p = designerArea();
-    return { p.getX() + 554, p.getY() + 28, 100, 20 };
+    return { p.getX() + 556, p.getY() + 32, 100, 20 };
 }
 juce::Rectangle<int> WorkstationEditor::designerSaveArea() const
 {
     const auto p = designerArea();
-    return { p.getRight() - 130, p.getY() + 28, 120, 20 };
+    return { p.getRight() - 130, p.getY() + 32, 120, 20 };
 }
 
 bool WorkstationEditor::designerJourneyGate() const
@@ -363,7 +410,7 @@ void WorkstationEditor::designerSaveBody()
 juce::Rectangle<int> WorkstationEditor::designerImportArea() const
 {
     const auto p = designerArea();
-    return { p.getX() + 660, p.getY() + 28, 90, 20 };
+    return { p.getX() + 662, p.getY() + 32, 90, 20 };
 }
 
 // The photograph enters the Designer: the working body's four corners land as
@@ -371,6 +418,7 @@ juce::Rectangle<int> WorkstationEditor::designerImportArea() const
 // that don't decode to conjugate roots stay OFF and are named in the status.
 void WorkstationEditor::designerImportWorking()
 {
+    designerPushUndo();
     if (! hasBody)
     {
         statusLine = "IMPORT: load a body first (BIN), then open the Designer";
@@ -426,6 +474,7 @@ void WorkstationEditor::designerImportWorking()
 
 void WorkstationEditor::designerSketchQ100()
 {
+    designerPushUndo();
     // the measured MD-Q law (bw x0.375, zeros hold, ceiling r 0.998) applied
     // to the compiled Q0 pose, landed as hand-editable FREE sections. A
     // sketch, never the ship value.
@@ -488,18 +537,20 @@ void WorkstationEditor::designerApplyMotif (int stage, int motif)
     auto& s = dsections[designerPage][stage];
     if (s.type != kDesignerTypeFree || motif < 0 || motif >= 5)
         return;
+    s.motif = motif;
     const auto& m = kDesignerMotifs[motif];
     for (auto* rw : { &s.lo, &s.hi })
     {
         rw->zeroHz = juce::jlimit (20.0, (double) kMaxHz, rw->poleHz * std::pow (2.0, m.oct));
         rw->zeroR = m.zeroR;
     }
-    statusLine = juce::String ("S") + juce::String (stage + 1) + " zero motif: " + m.label;
+    statusLine = juce::String ("S") + juce::String (stage + 1) + " shape: " + m.label;
     designerApply();
 }
 
 void WorkstationEditor::designerSetTemplate (int index)
 {
+    designerPushUndo();
     for (auto& page : dsections)
         for (auto& s : page)
             s = DesignerSectionState {};
@@ -584,35 +635,38 @@ void WorkstationEditor::designerSetTemplate (int index)
     designerApply();
 }
 
+// SHAPE speaks P2K: firmware types plus the five census stage roles. Picking
+// a census shape is a pole+zero section with the measured zero relation
+// applied — every slider stays editable.
 void WorkstationEditor::designerShowShapeMenu (int stage)
 {
+    const auto& s = dsections[designerPage][stage];
     juce::PopupMenu menu;
-    for (int t = 0; t < 5; ++t)
-        menu.addItem (t + 1, kDesignerTypeNames[t], true, dsections[designerPage][stage].type == t);
+    for (int t = 0; t < 4; ++t)
+        menu.addItem (t + 1, kDesignerTypeNames[t], true, s.type == t);
+    menu.addSeparator();
+    for (int i = 0; i < 5; ++i)
+        menu.addItem (5 + i, kDesignerMotifs[i].label, true,
+                      s.type == kDesignerTypeFree && s.motif == i);
     menu.showMenuAsync (juce::PopupMenu::Options().withTargetScreenArea (
                             localAreaToGlobal (designerShapeArea (stage))),
                         [this, stage] (int result)
                         {
                             if (result <= 0)
                                 return;
-                            dsections[designerPage][stage].type = result - 1;
-                            designerApply();
-                        });
-}
-
-void WorkstationEditor::designerShowMotifMenu (int stage)
-{
-    if (dsections[designerPage][stage].type != kDesignerTypeFree)
-        return;
-    juce::PopupMenu menu;
-    for (int i = 0; i < 5; ++i)
-        menu.addItem (i + 1, kDesignerMotifs[i].label);
-    menu.showMenuAsync (juce::PopupMenu::Options().withTargetScreenArea (
-                            localAreaToGlobal (designerMotifArea (stage))),
-                        [this, stage] (int result)
-                        {
-                            if (result > 0)
-                                designerApplyMotif (stage, result - 1);
+                            designerPushUndo();
+                            auto& sec = dsections[designerPage][stage];
+                            if (result <= 4)
+                            {
+                                sec.type = result - 1;
+                                sec.motif = -1;
+                                designerApply();
+                            }
+                            else
+                            {
+                                sec.type = kDesignerTypeFree;
+                                designerApplyMotif (stage, result - 5);
+                            }
                         });
 }
 
@@ -658,6 +712,7 @@ void WorkstationEditor::designerCommitEdit()
     designerEditor.setVisible (false);
     if (stage >= 0 && field >= 0 && text.isNotEmpty())
     {
+        designerPushUndo();
         designerSetField (stage, row, field, text.getDoubleValue());
         designerApply();
     }
@@ -688,6 +743,16 @@ bool WorkstationEditor::designerMouseDown (juce::Point<int> pos)
         designerSketchQ100();
         return true;
     }
+    if (designerUndoArea().contains (pos))
+    {
+        designerUndo();
+        return true;
+    }
+    if (designerRedoArea().contains (pos))
+    {
+        designerRedo();
+        return true;
+    }
     if (designerImportArea().contains (pos))
     {
         designerImportWorking();
@@ -710,12 +775,6 @@ bool WorkstationEditor::designerMouseDown (juce::Point<int> pos)
         if (designerShapeArea (stage).contains (pos))
         {
             designerShowShapeMenu (stage);
-            return true;
-        }
-        if (dsections[designerPage][stage].type == kDesignerTypeFree
-            && designerMotifArea (stage).contains (pos))
-        {
-            designerShowMotifMenu (stage);
             return true;
         }
         const int fields = dsections[designerPage][stage].type == kDesignerTypeFree ? 5 : 2;
@@ -746,6 +805,8 @@ bool WorkstationEditor::designerMouseDrag (juce::Point<int> pos)
     const int dx = pos.x - dsDragStartX;
     if (! dsDragMoved && std::abs (dx) < kDragThreshold)
         return true;
+    if (! dsDragMoved)
+        designerPushUndo();
     dsDragMoved = true;
     const auto& s = dsections[designerPage][dsDragStage];
     double v = dsDragStartVal;
@@ -813,6 +874,8 @@ void WorkstationEditor::drawDesigner (juce::Graphics& g)
     drawFlatButton (g, designerPageArea (1), "Q100 POSE", designerPage == 1, true);
     drawFlatButton (g, designerTemplateArea(), "TEMPLATE", false, true);
     drawFlatButton (g, designerSketchArea(), "AUTO Q100", false, true);
+    drawFlatButton (g, designerUndoArea(), "UNDO", false, ! dsUndoStack.empty());
+    drawFlatButton (g, designerRedoArea(), "REDO", false, ! dsRedoStack.empty());
     drawFlatButton (g, designerImportArea(), "IMPORT", false, hasBody);
     drawFlatButton (g, designerFamilyArea(), designerFamily == 0 ? "FAM RIDE" : "FAM ARCH",
                     designerFamily == 1, true);
@@ -889,9 +952,10 @@ void WorkstationEditor::drawDesigner (juce::Graphics& g)
         g.drawText ("S" + juce::String (stage + 1), (int) r.getX() + 4, (int) r.getY() + 24, 20, 16,
                     juce::Justification::left);
         const auto& s = dsections[designerPage][stage];
-        drawFlatButton (g, designerShapeArea (stage), kDesignerTypeNames[s.type], s.type != 0, true);
-        if (s.type == kDesignerTypeFree)
-            drawFlatButton (g, designerMotifArea (stage), "MOTIF", false, true);
+        drawFlatButton (g, designerShapeArea (stage),
+                        s.type == kDesignerTypeFree && s.motif >= 0 ? kDesignerMotifs[s.motif].label
+                                                                    : kDesignerTypeNames[s.type],
+                        s.type != 0, true);
         if (s.type == 0)
             continue;
         g.setColour (kGridLabel);
