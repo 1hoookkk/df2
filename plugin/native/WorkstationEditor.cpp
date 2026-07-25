@@ -1662,6 +1662,22 @@ void WorkstationEditor::runProofScript()
                                 juce::jlimit (0, 4, (int) obj->getProperty ("motif")));
         else if (action == "dsketch")
             designerSketchQ100();
+        else if (action == "dimport")   // optional path: load a .body240 straight into sections
+        {
+            if (obj->hasProperty ("path"))
+            {
+                juce::MemoryBlock mb;
+                if (juce::File (obj->getProperty ("path").toString()).loadFileAsData (mb) && mb.getSize() == 240)
+                {
+                    std::array<juce::uint8, 240> bytes {};
+                    std::memcpy (bytes.data(), mb.getData(), 240);
+                    wordsFromBytes240 (bytes, words);
+                    hasBody = true;
+                    bodyName = juce::File (obj->getProperty ("path").toString()).getFileNameWithoutExtension();
+                }
+            }
+            designerImportWorking();
+        }
         else if (action == "dfamily")
         {
             designerFamily = juce::jlimit (0, 1, (int) obj->getProperty ("family"));

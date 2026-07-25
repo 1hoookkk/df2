@@ -336,6 +336,66 @@ void WorkstationEditor::designerSaveBody()
     repaint();
 }
 
+juce::Rectangle<int> WorkstationEditor::designerImportArea() const
+{
+    const auto p = designerArea();
+    return { p.getX() + 660, p.getY() + 28, 90, 20 };
+}
+
+// The photograph enters the Designer: the working body's four corners land as
+// hand-editable FREE sections (extract -> caricature -> frame -> ear). Rows
+// that don't decode to conjugate roots stay OFF and are named in the status.
+void WorkstationEditor::designerImportWorking()
+{
+    if (! hasBody)
+    {
+        statusLine = "IMPORT: load a body first (BIN), then open the Designer";
+        repaint();
+        return;
+    }
+    juce::String skipped;
+    for (int page = 0; page < 2; ++page)
+        for (int stage = 0; stage < 6; ++stage)
+        {
+            auto& sec = dsections[page][stage];
+            sec = DesignerSectionState {};
+            const int corners[2] = { page * 2, page * 2 + 1 };   // (M0,M100) of this Q page
+            bool ok = true;
+            DesignerRowState rows[2];
+            for (int r = 0; r < 2 && ok; ++r)
+            {
+                const auto* w = words[corners[r]][stage];
+                if (std::memcmp (w, identityWords, sizeof identityWords) == 0)
+                {
+                    ok = false;   // identity lane -> OFF
+                    break;
+                }
+                double roots[5] {};
+                if (trench_stage_roots_from_words (w, roots) != 0)
+                {
+                    ok = false;
+                    skipped += " S" + juce::String (stage + 1) + (page == 0 ? "Q0" : "Q100");
+                    break;
+                }
+                rows[r].poleHz = roots[0];
+                rows[r].poleR = roots[1];
+                rows[r].zeroHz = roots[2];
+                rows[r].zeroR = roots[3];
+                rows[r].scale = roots[4];
+            }
+            if (ok)
+            {
+                sec.type = kDesignerTypeFree;
+                sec.lo = rows[0];
+                sec.hi = rows[1];
+            }
+        }
+    designerTemplateName.clear();
+    statusLine = "IMPORT <- " + bodyName
+               + (skipped.isEmpty() ? "  (all stages editable)" : "  (kept OFF:" + skipped + ")");
+    designerApply();
+}
+
 void WorkstationEditor::designerSketchQ100()
 {
     // the measured MD-Q law (bw x0.375, zeros hold, ceiling r 0.998) applied
@@ -599,6 +659,11 @@ bool WorkstationEditor::designerMouseDown (juce::Point<int> pos)
         designerSketchQ100();
         return true;
     }
+    if (designerImportArea().contains (pos))
+    {
+        designerImportWorking();
+        return true;
+    }
     if (designerFamilyArea().contains (pos))
     {
         designerFamily = 1 - designerFamily;
@@ -719,6 +784,7 @@ void WorkstationEditor::drawDesigner (juce::Graphics& g)
     drawFlatButton (g, designerPageArea (1), "Q100 POSE", designerPage == 1, true);
     drawFlatButton (g, designerTemplateArea(), "TEMPLATE", false, true);
     drawFlatButton (g, designerSketchArea(), "AUTO Q100", false, true);
+    drawFlatButton (g, designerImportArea(), "IMPORT", false, hasBody);
     drawFlatButton (g, designerFamilyArea(), designerFamily == 0 ? "FAM RIDE" : "FAM ARCH",
                     designerFamily == 1, true);
     drawFlatButton (g, designerSaveArea(), "SAVE (L10)", false, hasBody);

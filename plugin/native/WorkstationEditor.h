@@ -342,6 +342,8 @@ private:
     void designerSetTemplate (int index);
     void designerApplyMotif (int stage, int motif);            // census zero motifs (FREE)
     void designerSketchQ100();                                 // MD-Q bw x0.375 sketch -> FREE sections
+    void designerImportWorking();                              // photograph -> editable FREE sections
+    juce::Rectangle<int> designerImportArea() const;
     int designerCodeForHz (double hz) const;                   // nearest firmware ladder code
     double designerFieldValue (int stage, int row, int field) const;
     void designerSetField (int stage, int row, int field, double value);
