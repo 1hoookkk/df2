@@ -4,27 +4,51 @@
 
 ## Why this exists
 
-A measured provenance audit of the 45 shipping presets against 137 known
+**Corrected 2026-07-25.** A first audit of this scored *response distance* and
+reported several presets as "byte-identical". That was wrong twice over: it
+compared only the two Q0 poses (so the Q corners were invisible), and it labelled
+a zero distance as byte identity. It produced a false headline in both
+directions. The scoring approach is abandoned. What follows uses byte-exact
+comparison of each authored 60-byte CORNER against every corner of 137 known
 E-mu-derived reference bodies (69 heritage Morph Designer XML compiles, 33
-P2K/ROM corpus bodies, 35 ROM-fitted archetypes) found:
+P2K/ROM corpus bodies, 35 ROM-fitted archetypes) - 529 distinct reference
+corners. No thresholds, no scoring, no judgement calls.
 
-| verdict | count |
+### Result
+
+| verbatim E-mu corners | presets |
 |---|---|
-| **byte-identical to an E-mu reference** | **9** |
-| close (1.7–4.0 dB response distance) | 6 |
-| unrelated to any reference | 30 |
+| 4 / 4 | 7 |
+| 3 / 4 | 2 |
+| 2 / 4 | 1 |
+| 1 / 4 | 1 |
+| 0 / 4 | 34 |
 
-Three of the five ear-approved signature presets are in the byte-identical set:
+**All five ear-approved signature presets contain verbatim E-mu corner data:**
 
-| ship preset | is | source |
+| ship preset | verbatim | detail |
 |---|---|---|
-| Fable | `P2k_003_millennium` | **ROM** |
-| Speaker Knockerz | `P2k_000_ace_of_bass` | **ROM** |
-| Low Pass Pressure | `Low Pass Pleasure` | E-mu factory XML |
-| Bass Time | 4.90 dB from `P2k_028_bass_o_matic` | borderline — review |
-| Bruh | 8.80 dB from anything | **genuinely original** |
+| Bruh | **4/4** | all four corners are `P2k_028_bass_o_matic`, with M100_Q0 and M0_Q100 **swapped** |
+| Fable | 3/4 | `P2k_003_millennium` x3, plus `P2k_001_megasweepz` M100_Q100 |
+| Low Pass Pressure | 3/4 | `Low Pass Pleasure` (heritage XML) |
+| Speaker Knockerz | 2/4 | `P2k_000_ace_of_bass` Q0 pair; Q100 corners not in the index |
+| Bass Time | 1/4 | `P2k_028_bass_o_matic` M0_Q100 |
 
-This breaks the notebook's locked rule that no ROM-derived bodies ship.
+Bruh is the instructive case: a corner permutation copies 100% of the data while
+moving the response far enough that a distance metric called it unrelated at
+8.8 dB. Similarity scoring cannot see this. Byte comparison can.
+
+The seven 4/4 presets are the heritage workhorses (Super Lo Pass, Steep 8 Pole,
+Complex BP 1, Twin Peaks, Rezzy LP 1, Voxxy LP 1) plus Bruh.
+
+This breaks the notebook's locked "no ROM-derived bodies ship" rule.
+
+### Limits of this method - read before relying on it
+
+Corner indexing detects **verbatim** corners only. A corner edited by even one
+word will not match, so **0/4 does not prove originality** - it proves no
+corner was copied unaltered. Detecting derived-then-modified corners is a
+different and harder problem, and it is not solved here.
 
 ## What "clean room" can and cannot mean here
 
@@ -42,10 +66,16 @@ the source is the "micro-shift IP dodge" this repo already deleted once. Author
 toward the *character*; verify the result sits far from the source in the data.
 
 **Acceptance gate for a replacement:**
-1. response distance from the source body **≥ 6 dB** (Bruh sits at 8.8 dB),
+1. **zero verbatim corners** against the reference index - the only criterion
+   here that is a fact rather than a judgement,
 2. certify PASS at 25×25, maxR < 0.9999,
-3. all four corners authored — Q must not be a dead axis,
+3. all four corners authored - Q must not be a dead axis,
 4. passes the ear on real material, level-matched.
+
+There is deliberately no distance threshold. A distance gate rewards perturbing
+a copied body until it scores far enough away, which is the micro-shift dodge
+with a number attached. Provenance is a fact about how a body was MADE, and the
+only honest record of that is the authoring recipe plus the corner check above.
 
 ## The briefs
 
@@ -105,4 +135,6 @@ Wah Wah 1/2, Lo Pass Slicer, Low Pass Pleasure, Steep Hi Pass) are all heritage
 XML compiles. Same treatment applies, but they are workhorses rather than ear
 picks — the roster decision (which survive, under what names) comes first.
 
-Bass Time at 4.90 dB deserves a closer look before it is called original.
+No preset in the ship set is currently both ear-approved and free of verbatim
+E-mu corners. The 34 presets with 0/4 verbatim corners have not passed the ear;
+the 5 that passed the ear all carry E-mu data. Closing that gap is the work.
