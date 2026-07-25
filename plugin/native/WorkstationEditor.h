@@ -308,6 +308,8 @@ private:
         DesignerRowState lo, hi;
     };
     bool designerOpen = false;
+    bool detailOpen = false;                                   // far-right STAGE DETAIL, hidden by default
+    juce::Rectangle<int> detailButtonArea() const;
     int designerPage = 0;                                      // 0 = Q0 pose page, 1 = Q100 pose page
     DesignerSectionState dsections[2][6];
     int designerShift = 0;                                     // heritage global shift (-32..31)

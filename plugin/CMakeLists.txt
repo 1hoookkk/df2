@@ -232,7 +232,10 @@ juce_add_gui_app(TRENCH_Workstation
 target_sources(TRENCH_Workstation PRIVATE
     native/WorkstationApplication.cpp
     native/WorkstationEditor.cpp
-    native/WorkstationEditor.h)
+    native/WorkstationEditor.h
+    native/WorkstationTheme.h
+    native/WorkstationLayout.cpp
+    native/WorkstationDesigner.cpp)
 target_include_directories(TRENCH_Workstation PRIVATE
     "${CMAKE_CURRENT_SOURCE_DIR}/source"
     "${CMAKE_CURRENT_SOURCE_DIR}/native")
