@@ -367,11 +367,6 @@ void WorkstationEditor::designerRefreshJourney()
         }
 }
 
-juce::Rectangle<int> WorkstationEditor::designerFamilyArea() const
-{
-    const auto p = designerArea();
-    return { p.getX() + 556, p.getY() + 32, 100, 20 };
-}
 juce::Rectangle<int> WorkstationEditor::designerSaveArea() const
 {
     const auto p = designerArea();
@@ -380,16 +375,13 @@ juce::Rectangle<int> WorkstationEditor::designerSaveArea() const
 
 bool WorkstationEditor::designerJourneyGate() const
 {
-    // family-aware: RIDE tolerates late-building crowns (the real 303 fails a
-    // naive mid-crest gate); ARCH is the journey law — middles out-crest ends.
+    // one silent floor, no declarations: the travel must not collapse
+    // mid-wheel (>3 dB under the lower endpoint - the real 303 passes this;
+    // arch-crest ambitions are the ear's business, not a toggle's).
     const float end = juce::jmin (designerJourneyCrown[0], designerJourneyCrown[4]);
-    const float midMax = juce::jmax (designerJourneyCrown[1], designerJourneyCrown[2],
-                                     designerJourneyCrown[3]);
-    if (designerFamily == 0)
-        return designerJourneyCrown[1] >= end - 3.0f
-            && designerJourneyCrown[2] >= end - 3.0f
-            && designerJourneyCrown[3] >= end - 3.0f;
-    return midMax > juce::jmax (designerJourneyCrown[0], designerJourneyCrown[4]);
+    return designerJourneyCrown[1] >= end - 3.0f
+        && designerJourneyCrown[2] >= end - 3.0f
+        && designerJourneyCrown[3] >= end - 3.0f;
 }
 
 void WorkstationEditor::designerFrameL10()
@@ -469,7 +461,7 @@ void WorkstationEditor::designerSaveBody()
     const auto f = processor.forgeSaveBody (name, true);
     statusLine = f.existsAsFile()
         ? (juce::String ("FRAMED+CERTIFIED -> ") + f.getFullPathName()
-           + (designerJourneyPass ? "" : "   [journey " + juce::String (designerFamily == 0 ? "RIDE" : "ARCH") + " FAIL - ear decides]"))
+           + (designerJourneyPass ? "" : "   [travel collapses mid-wheel - ear decides]"))
         : "save failed";
     if (f.existsAsFile())
     {
@@ -1056,13 +1048,6 @@ bool WorkstationEditor::designerMouseDown (juce::Point<int> pos)
         designerImportWorking();
         return true;
     }
-    if (designerFamilyArea().contains (pos))
-    {
-        designerFamily = 1 - designerFamily;
-        designerJourneyPass = designerJourneyGate();
-        repaint();
-        return true;
-    }
     if (designerSaveArea().contains (pos))
     {
         designerSaveBody();
@@ -1184,8 +1169,6 @@ void WorkstationEditor::drawDesigner (juce::Graphics& g)
     drawFlatButton (g, designerResetArea(), "RESET", false, true);
     drawFlatButton (g, designerRedoArea(), "REDO", false, ! dsRedoStack.empty());
     drawFlatButton (g, designerImportArea(), "IMPORT", false, hasBody);
-    drawFlatButton (g, designerFamilyArea(), designerFamily == 0 ? "FAM RIDE" : "FAM ARCH",
-                    designerFamily == 1, true);
     drawFlatButton (g, designerSaveArea(), "SAVE (L10)", false, hasBody);
 
     // JOURNEY strip: five packed-runtime curves M0..M100, fixed -60..+30 scale
@@ -1255,11 +1238,8 @@ void WorkstationEditor::drawDesigner (juce::Graphics& g)
     juce::String crowns = "JOURNEY  M0..M100 @ " + juce::String (designerPage == 1 ? "Q100" : "Q0") + "   crowns ";
     for (int k = 0; k < 5; ++k)
         crowns += juce::String (designerJourneyCrown[k], 1) + (k < 4 ? " / " : " dB");
-    if (designerJourneyOk)
-    {
-        crowns += juce::String ("   ") + (designerFamily == 0 ? "RIDE " : "ARCH ")
-                + (designerJourneyPass ? "PASS" : "FAIL");
-    }
+    if (designerJourneyOk && ! designerJourneyPass)
+        crowns += "   !! TRAVEL COLLAPSES MID-WHEEL";
     g.drawText (crowns, (int) j.getX() + 6, (int) j.getY() + 3, (int) j.getWidth() - 12, 12,
                 juce::Justification::left);
     g.drawText (lastCertifyPass ? "CERTIFIED maxR " + juce::String (lastCertifyMaxR, 4) : statusLine,

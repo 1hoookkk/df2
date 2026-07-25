@@ -1705,11 +1705,6 @@ void WorkstationEditor::runProofScript()
             }
             designerImportWorking();
         }
-        else if (action == "dfamily")
-        {
-            designerFamily = juce::jlimit (0, 1, (int) obj->getProperty ("family"));
-            designerJourneyPass = designerJourneyGate();
-        }
         else if (action == "ddump")   // proof: working bytes, pre-frame, byte-comparable
         {
             juce::File out (obj->getProperty ("path").toString());

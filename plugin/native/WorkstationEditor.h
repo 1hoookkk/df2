@@ -327,12 +327,10 @@ private:
     std::array<std::array<float, kNumPlotPoints>, 5> designerGhostDb {};
     float designerJourneyCrown[5] {};
     bool designerJourneyOk = false;
-    int designerFamily = 0;                                    // 0 RIDE (no-collapse), 1 ARCH (mid crest)
     bool designerJourneyPass = false;
     void designerFrameL10();                                   // active-row crowns +2/+8/+25/+27
     void designerSaveBody();                                   // frame -> re-certify -> candidates
     bool designerJourneyGate() const;
-    juce::Rectangle<int> designerFamilyArea() const;
     juce::Rectangle<int> designerSaveArea() const;
     juce::String designerTemplateName;
     juce::TextEditor designerEditor;                           // inline cell editor (double-click)
