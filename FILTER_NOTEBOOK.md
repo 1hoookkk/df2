@@ -270,11 +270,20 @@
   gain, LP/HP get Q" describes its WHEEL ROUTING, not bank content — THE
   MANUAL LIES about the banks. Centre moves are per-preset design (median ~0,
   huge spread), not law. ~25% of stages LOOSEN under Q (dominance direction).
-  Authoring model per the manual that DOES hold: author ONE morph pair per
-  stage (start/end); Q banks are DERIVED. Workstation verb: MD-Q (header
-  button / harness mdq) = bw x0.375, zeros hold, dominance direction,
-  identity+real-pair rows keep a flat Q axis, r ceiling 0.998, stability-gate
-  reverted on fail. [PROOF: STITCH_hedz_zoom_ear_mdq blooms at Q100, PASS.]
+  CORRECTED 2026-07-25 (Tyson's challenge, then measured on all 102 E-mu
+  bodies): "Q banks are DERIVED" is FALSE. Predicting Q100 from Q0 via MD-Q
+  (bw x0.375, centers/zeros held) misses the real Q100 cascades by median
+  max|err| 32 dB (shape-only, offset removed); 200/204 Q pairs off >6 dB.
+  Real Q poses move centers (median 0.19 oct, 75th pct 0.37) and 108/880
+  stages LOOSEN. E-mu's Q corners are a SECOND AUTHORED POSE per axis, same
+  as morph — the forge's 2 morph frames + 2 Q frames are all real data.
+  MD-Q (header button / harness mdq: bw x0.375, zeros hold, dominance
+  direction, identity+real-pair rows flat, r ceiling 0.998, stability-gate
+  reverted on fail) remains a usable DEFAULT verb when no measured/authored
+  Q pose exists — it is not ROM practice, and deriving Q is a candidate root
+  cause of the generic dead-Q feel.
+  [PROOF: STITCH_hedz_zoom_ear_mdq blooms at Q100, PASS — proves the verb
+  runs, not that derivation matches E-mu.]
 - MEASURED FACT 2026-07-25 (dominance test, 102 E-mu bodies —
   `dev/tmp/dominance_test/`, full write-up HYPOTHESIS_BRIEF.md §3): crown
   travel (median 5.39 oct) is carried by STAGE DOMINANCE HANDOFF in 67%

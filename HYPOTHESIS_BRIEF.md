@@ -1,7 +1,10 @@
 # Hypothesis Brief — what makes an E-mu body good, and how to make our own
 
 **Written:** 2026-07-25 · **Commit:** see `git log` for this file
-**Status:** hypothesis with one experiment awaiting Tyson's ear. Not a proven method.
+**Status:** VERDICT IN (2026-07-25): Tyson picked **B_FRAMED** on the pink-noise
+A/B ("last one is the choice"). Framing is confirmed as a real lever on a
+measured body. Sweep-length reservation not raised; watch for it on musical
+material. Dominance sub-hypothesis also measured and confirmed (§3).
 
 Read this before authoring bodies, judging bodies, or writing any similarity
 metric. It exists to stop the next session re-deriving what was measured here,
