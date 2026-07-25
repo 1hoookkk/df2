@@ -1,87 +1,127 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "https://trench/cartridge.schema.json",
-  "title": "TRENCH compiled-v1 cartridge",
-  "description": "Wire format for cartridges consumed by the JUCE plugin. Authoritative loader: trench-core/src/cartridge.rs::Cartridge::from_json. Validated by ./check.",
+  "title": "TRENCH packed cartridge",
+  "description": "Runtime wrapper for one exact 240-byte packed body. Source-session and proof metadata are separate artifacts.",
   "type": "object",
-  "required": ["format", "keyframes"],
-  "additionalProperties": true,
+  "additionalProperties": false,
+  "required": ["format", "name", "sampleRate", "keyframes"],
   "properties": {
-    "format": { "type": "string", "const": "compiled-v1" },
-    "name":   { "type": "string", "minLength": 1 },
+    "format": { "const": "compiled-v1" },
+    "name": { "type": "string", "minLength": 1 },
     "sampleRate": { "type": "number", "exclusiveMinimum": 0 },
     "keyframes": {
       "type": "array",
       "minItems": 4,
-      "items": { "$ref": "#/$defs/keyframe" },
-      "contains": { "properties": { "label": { "const": "M0_Q0"     } }, "required": ["label"] },
-      "allOf": [
-        { "contains": { "properties": { "label": { "const": "M0_Q100"   } }, "required": ["label"] } },
-        { "contains": { "properties": { "label": { "const": "M100_Q0"   } }, "required": ["label"] } },
-        { "contains": { "properties": { "label": { "const": "M100_Q100" } }, "required": ["label"] } }
-      ]
+      "maxItems": 4,
+      "prefixItems": [
+        { "$ref": "#/$defs/m0_q0" },
+        { "$ref": "#/$defs/m100_q0" },
+        { "$ref": "#/$defs/m0_q100" },
+        { "$ref": "#/$defs/m100_q100" }
+      ],
+      "items": false
     },
+    "drive": { "$ref": "#/$defs/drive" },
     "spatial_profile": { "$ref": "#/$defs/spatial_profile" }
   },
   "$defs": {
-    "keyframe": {
-      "type": "object",
-      "required": ["label", "stages"],
-      "properties": {
-        "label": { "type": "string", "enum": ["M0_Q0", "M0_Q100", "M100_Q0", "M100_Q100"] },
-        "morph": { "type": "number" },
-        "q":     { "type": "number" },
-        "boost": { "type": "number" },
-        "stages": {
-          "type": "array",
-          "minItems": 12,
-          "maxItems": 12,
-          "items": { "$ref": "#/$defs/stage" }
-        }
+    "packed_words": {
+      "type": "array",
+      "minItems": 6,
+      "maxItems": 6,
+      "items": {
+        "type": "array",
+        "minItems": 5,
+        "maxItems": 5,
+        "items": { "type": "integer", "minimum": 0, "maximum": 65535 }
       }
     },
-    "stage": {
+    "keyframe": {
       "type": "object",
-      "required": ["c0", "c1", "c2", "c3", "c4"],
+      "additionalProperties": false,
+      "required": ["label", "boost", "packedWords"],
       "properties": {
-        "c0": { "type": "number" },
-        "c1": { "type": "number" },
-        "c2": { "type": "number" },
-        "c3": { "type": "number" },
-        "c4": { "type": "number" }
+        "label": { "type": "string" },
+        "boost": { "type": "number" },
+        "packedWords": { "$ref": "#/$defs/packed_words" }
+      }
+    },
+    "m0_q0": {
+      "allOf": [
+        { "$ref": "#/$defs/keyframe" },
+        { "properties": { "label": { "const": "M0_Q0" } } }
+      ]
+    },
+    "m100_q0": {
+      "allOf": [
+        { "$ref": "#/$defs/keyframe" },
+        { "properties": { "label": { "const": "M100_Q0" } } }
+      ]
+    },
+    "m0_q100": {
+      "allOf": [
+        { "$ref": "#/$defs/keyframe" },
+        { "properties": { "label": { "const": "M0_Q100" } } }
+      ]
+    },
+    "m100_q100": {
+      "allOf": [
+        { "$ref": "#/$defs/keyframe" },
+        { "properties": { "label": { "const": "M100_Q100" } } }
+      ]
+    },
+    "drive": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["input_gain_dB", "model"],
+      "properties": {
+        "input_gain_dB": { "type": "number" },
+        "model": { "type": "string", "minLength": 1 }
       }
     },
     "spatial_profile": {
       "type": "object",
-      "description": "Typed QSound-style spatial profile. Feature orders for the coefficient arrays are documented in docs/archive/qsound_spatial.md §\"Canonical Recon Model\". Mirrored bit-for-bit by trench-core Rust and the JUCE C++ loader.",
-      "required": ["azimuth", "distance", "elevation", "itd_coeffs", "ild_coeffs", "band_coeffs"],
       "additionalProperties": false,
+      "required": ["azimuth", "distance", "elevation", "itd_coeffs", "ild_coeffs", "band_coeffs"],
       "properties": {
-        "azimuth":   { "type": "number" },
-        "distance":  { "type": "number" },
+        "azimuth": { "type": "number" },
+        "distance": { "type": "number" },
         "elevation": { "type": "number" },
-        "itd_coeffs": { "type": "array", "items": { "type": "number" }, "minItems": 6, "maxItems": 6 },
-        "ild_coeffs": { "type": "array", "items": { "type": "number" }, "minItems": 6, "maxItems": 6 },
+        "itd_coeffs": { "$ref": "#/$defs/law6" },
+        "ild_coeffs": { "$ref": "#/$defs/law6" },
         "band_coeffs": { "$ref": "#/$defs/band_coeffs" }
+      }
+    },
+    "law6": {
+      "type": "array",
+      "minItems": 6,
+      "maxItems": 6,
+      "items": { "type": "number" }
+    },
+    "band12": {
+      "type": "array",
+      "minItems": 12,
+      "maxItems": 12,
+      "items": { "type": "number" }
+    },
+    "band_channel": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["low", "mid", "high"],
+      "properties": {
+        "low": { "$ref": "#/$defs/band12" },
+        "mid": { "$ref": "#/$defs/band12" },
+        "high": { "$ref": "#/$defs/band12" }
       }
     },
     "band_coeffs": {
       "type": "object",
+      "additionalProperties": false,
       "required": ["l", "r"],
-      "additionalProperties": false,
       "properties": {
-        "l": { "$ref": "#/$defs/band_channel_coeffs" },
-        "r": { "$ref": "#/$defs/band_channel_coeffs" }
-      }
-    },
-    "band_channel_coeffs": {
-      "type": "object",
-      "required": ["low", "mid", "high"],
-      "additionalProperties": false,
-      "properties": {
-        "low":  { "type": "array", "items": { "type": "number" }, "minItems": 12, "maxItems": 12 },
-        "mid":  { "type": "array", "items": { "type": "number" }, "minItems": 12, "maxItems": 12 },
-        "high": { "type": "array", "items": { "type": "number" }, "minItems": 12, "maxItems": 12 }
+        "l": { "$ref": "#/$defs/band_channel" },
+        "r": { "$ref": "#/$defs/band_channel" }
       }
     }
   }

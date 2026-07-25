@@ -1,0 +1,58 @@
+{
+  "fixtures": [
+    {
+      "expectedBehavior": [
+        "every lane decodes to [1,0,0,0,0]"
+      ],
+      "name": "identity",
+      "path": "fixtures/identity.body240",
+      "purpose": "Exact identity in all 24 stored lanes.",
+      "sha256": "5d583a26fa15234740c29287fe47136dc58948be7541899ee51e47f197ea7bb5",
+      "size": 240
+    },
+    {
+      "expectedBehavior": [
+        "pole and zero are editable conjugate geometry"
+      ],
+      "name": "conjugate",
+      "path": "fixtures/conjugate.body240",
+      "purpose": "One stored conjugate pole/zero lane with linear SCALE.",
+      "sha256": "40f54c5650fdd19e87258e83b6ef03c37e44e5fe1cdf1ee72168cbb0d32c7c19",
+      "size": 240
+    },
+    {
+      "expectedBehavior": [
+        "conjugate editor must refuse the zero pair"
+      ],
+      "name": "real-root",
+      "path": "fixtures/real-root.body240",
+      "purpose": "One exact packed real-root numerator row.",
+      "sha256": "590ff16dd35946ef5c0ced0d88061fb77af2ddf0224f943d7a03e77bf8eb2b4c",
+      "size": 240
+    },
+    {
+      "expectedBehavior": [
+        "four canonical corners",
+        "six stage lanes in every corner"
+      ],
+      "name": "four-pose",
+      "path": "fixtures/four-pose.body240",
+      "purpose": "Complete synthetic four-pose body with six registered lanes per pose.",
+      "sha256": "198d947789c2a3cd1eb409d4a884065ff95eff4e67b9e8c78b3e34d1c7fe3db6",
+      "size": 240
+    },
+    {
+      "expectedBehavior": [
+        "identity/active state is stored per pose",
+        "Q100 is not derived"
+      ],
+      "name": "identity-active",
+      "path": "fixtures/identity-active.body240",
+      "purpose": "Identity at M0_Q0 and active lane 0 at M100_Q0.",
+      "sha256": "60bf10e0e41ec428cfa8f4727ac09ce6be0654b6c79776c64c53467d95f45cba",
+      "size": 240
+    }
+  ],
+  "format": "trench-workstation-fixtures-v1",
+  "provenance": "clean-room or synthetic only; no archaeological body bytes copied"
+}

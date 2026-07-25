@@ -1,0 +1,165 @@
+{
+  "decode": {
+    "codec": "minifloat-packed u16 (FUN_1802c3600)",
+    "sr": 48000,
+    "axes": "MORPH x RES (historical Q collapsed)",
+    "source": "df2/ref/x3_menu/runtime_blocks (study evidence, read-only)",
+    "oracle": "df2/ref/ghidra_extracts/morphdesigner_types.md",
+    "status": "codec fixed; suspect = unstable pole (r>=1)"
+  },
+  "filters": [
+    {
+      "name": "2 Pole Lowpass",
+      "stem": "2_pole_lowpass",
+      "family": "LPF",
+      "stages": 1,
+      "max_peak_db": 14.9,
+      "max_pole_r": 0.999,
+      "reads_true": true
+    },
+    {
+      "name": "4 Pole Lowpass",
+      "stem": "4_pole_lowpass",
+      "family": "LPF",
+      "stages": 2,
+      "max_peak_db": 29.9,
+      "max_pole_r": 0.999,
+      "reads_true": true
+    },
+    {
+      "name": "6 Pole Lowpass",
+      "stem": "6_pole_lowpass",
+      "family": "LPF",
+      "stages": 3,
+      "max_peak_db": 44.8,
+      "max_pole_r": 0.999,
+      "reads_true": true
+    },
+    {
+      "name": "2 Pole Highpass",
+      "stem": "2_pole_highpass",
+      "family": "HPF",
+      "stages": 1,
+      "max_peak_db": 11.6,
+      "max_pole_r": 0.999,
+      "reads_true": true
+    },
+    {
+      "name": "4 Pole Highpass",
+      "stem": "4_pole_highpass",
+      "family": "HPF",
+      "stages": 2,
+      "max_peak_db": 23.1,
+      "max_pole_r": 0.999,
+      "reads_true": true
+    },
+    {
+      "name": "2 Pole Bandpass",
+      "stem": "2_pole_bandpass",
+      "family": "BPF",
+      "stages": 1,
+      "max_peak_db": 13.5,
+      "max_pole_r": 1.0,
+      "reads_true": true
+    },
+    {
+      "name": "4 Pole Bandpass",
+      "stem": "4_pole_bandpass",
+      "family": "BPF",
+      "stages": 2,
+      "max_peak_db": 27.0,
+      "max_pole_r": 1.0,
+      "reads_true": true
+    },
+    {
+      "name": "Contrary Bandpass",
+      "stem": "contrary_bandpass",
+      "family": "BPF",
+      "stages": 1,
+      "max_peak_db": 44.1,
+      "max_pole_r": 1.0,
+      "reads_true": true
+    },
+    {
+      "name": "Swept EQ 1 Oct",
+      "stem": "swept_eq_1_octave",
+      "family": "EQ",
+      "stages": 1,
+      "max_peak_db": 23.0,
+      "max_pole_r": 0.999,
+      "reads_true": true
+    },
+    {
+      "name": "Swept EQ 2>1 Oct",
+      "stem": "swept_eq_2_1_octave",
+      "family": "EQ",
+      "stages": 1,
+      "max_peak_db": 23.0,
+      "max_pole_r": 0.998,
+      "reads_true": true
+    },
+    {
+      "name": "Swept EQ 3>1 Oct",
+      "stem": "swept_eq_3_1_octave",
+      "family": "EQ",
+      "stages": 1,
+      "max_peak_db": 23.0,
+      "max_pole_r": 0.995,
+      "reads_true": true
+    },
+    {
+      "name": "Phaser 1",
+      "stem": "phaser_1",
+      "family": "PHA",
+      "stages": 2,
+      "max_peak_db": 25.4,
+      "max_pole_r": 0.996,
+      "reads_true": true
+    },
+    {
+      "name": "Phaser 2",
+      "stem": "phaser_2",
+      "family": "PHA",
+      "stages": 2,
+      "max_peak_db": 31.6,
+      "max_pole_r": 0.996,
+      "reads_true": true
+    },
+    {
+      "name": "Bat Phaser",
+      "stem": "bat_phaser",
+      "family": "PHA",
+      "stages": 2,
+      "max_peak_db": 29.0,
+      "max_pole_r": 1.0,
+      "reads_true": true
+    },
+    {
+      "name": "Flanger Lite",
+      "stem": "flanger_lite",
+      "family": "FLG",
+      "stages": 3,
+      "max_peak_db": 22.8,
+      "max_pole_r": 0.999,
+      "reads_true": true
+    },
+    {
+      "name": "Vocal Ah-Ay-Ee",
+      "stem": "vocal_ah_ay_ee",
+      "family": "VOW",
+      "stages": 3,
+      "max_peak_db": 33.9,
+      "max_pole_r": 0.998,
+      "reads_true": true
+    },
+    {
+      "name": "Vocal Oo-Ah",
+      "stem": "vocal_oo_ah",
+      "family": "VOW",
+      "stages": 3,
+      "max_peak_db": 37.4,
+      "max_pole_r": 1.0,
+      "reads_true": true
+    }
+  ]
+}

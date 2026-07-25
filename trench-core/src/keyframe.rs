@@ -1,0 +1,288 @@
+use std::f64::consts::PI;
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[repr(u32)]
+pub enum LoopMode {
+    Pendulum = 0,
+    RiseHold = 1,
+    Saw = 2,
+    OneShot = 3,
+}
+impl LoopMode {
+    #[inline]
+    pub fn from_u32(v: u32) -> Self {
+        match v {
+            1 => LoopMode::RiseHold,
+            2 => LoopMode::Saw,
+            3 => LoopMode::OneShot,
+            _ => LoopMode::Pendulum,
+        }
+    }
+}
+#[inline]
+pub fn keyframe_loop_value_mode(
+    a: f32,
+    b: f32,
+    leg_bars: f32,
+    ppq: f64,
+    beats_per_bar: f64,
+    mode: LoopMode,
+) -> f32 {
+    let leg_beats = leg_bars as f64 * beats_per_bar.max(1.0);
+    if leg_beats <= 0.0 {
+        return a;
+    }
+    let lerp = |t: f64| (a as f64 + (b as f64 - a as f64) * t) as f32;
+    let ease = |t: f64| 0.5 - 0.5 * (PI * t.clamp(0.0, 1.0)).cos();
+    match mode {
+        LoopMode::Pendulum => {
+            let cycle = 2.0 * leg_beats;
+            let phase = (ppq / cycle).rem_euclid(1.0);
+            lerp(0.5 - 0.5 * (2.0 * PI * phase).cos())
+        }
+        LoopMode::RiseHold | LoopMode::OneShot => {
+            let t = (ppq / leg_beats).max(0.0);
+            lerp(ease(t.min(1.0)))
+        }
+        LoopMode::Saw => {
+            let t = (ppq / leg_beats).rem_euclid(1.0);
+            lerp(ease(t))
+        }
+    }
+}
+#[inline]
+pub fn keyframe_loop_value(a: f32, b: f32, leg_bars: f32, ppq: f64, beats_per_bar: f64) -> f32 {
+    keyframe_loop_value_mode(a, b, leg_bars, ppq, beats_per_bar, LoopMode::Pendulum)
+}
+#[cfg(test)]
+mod tests {
+    use super::*;
+    #[test]
+    fn lands_on_a_at_cycle_start() {
+        let v0 = keyframe_loop_value(0.2, 0.8, 2.0, 0.0, 4.0);
+        let vcycle = keyframe_loop_value(0.2, 0.8, 2.0, 16.0, 4.0);
+        assert!((v0 - 0.2).abs() < 1e-6, "start should be A, got {v0}");
+        assert!((vcycle - 0.2).abs() < 1e-5, "full cycle should return to A, got {vcycle}");
+    }
+    #[test]
+    fn reaches_b_at_half_cycle() {
+        let v = keyframe_loop_value(0.2, 0.8, 2.0, 8.0, 4.0);
+        assert!((v - 0.8).abs() < 1e-5, "half cycle should be B, got {v}");
+    }
+    #[test]
+    fn pendulum_is_symmetric() {
+        for d in [0.5f64, 1.0, 1.7, 3.3] {
+            let out = keyframe_loop_value(0.0, 1.0, 1.0, 4.0 - d, 4.0);
+            let back = keyframe_loop_value(0.0, 1.0, 1.0, 4.0 + d, 4.0);
+            assert!((out - back).abs() < 1e-5, "asymmetric at +/-{d}: {out} vs {back}");
+        }
+    }
+    #[test]
+    fn stays_within_the_endpoints() {
+        let (a, b) = (0.3f32, 0.9f32);
+        for i in 0..1000 {
+            let ppq = i as f64 * 0.031;
+            let v = keyframe_loop_value(a, b, 1.5, ppq, 4.0);
+            assert!(v >= a - 1e-6 && v <= b + 1e-6, "out of range at ppq {ppq}: {v}");
+        }
+    }
+    #[test]
+    fn zero_length_holds_a() {
+        assert_eq!(keyframe_loop_value(0.4, 0.9, 0.0, 12.0, 4.0), 0.4);
+    }
+    #[test]
+    fn negative_ppq_is_handled() {
+        let v = keyframe_loop_value(0.2, 0.8, 2.0, -3.0, 4.0);
+        assert!(v.is_finite() && (0.2..=0.8).contains(&v));
+    }
+    #[test]
+    fn rise_hold_reaches_b_and_stays() {
+        let m = LoopMode::RiseHold;
+        assert!((keyframe_loop_value_mode(0.2, 0.9, 4.0, 0.0, 4.0, m) - 0.2).abs() < 1e-6);
+        let at_b = keyframe_loop_value_mode(0.2, 0.9, 4.0, 16.0, 4.0, m);
+        assert!((at_b - 0.9).abs() < 1e-5, "should reach B, got {at_b}");
+        let held = keyframe_loop_value_mode(0.2, 0.9, 4.0, 999.0, 4.0, m);
+        assert!((held - 0.9).abs() < 1e-6, "should HOLD B, got {held}");
+    }
+    #[test]
+    fn saw_resets_to_a_each_cycle() {
+        let m = LoopMode::Saw;
+        let start = keyframe_loop_value_mode(0.1, 0.7, 2.0, 0.0, 4.0, m);
+        let after_cycle = keyframe_loop_value_mode(0.1, 0.7, 2.0, 8.0, 4.0, m);
+        assert!((start - 0.1).abs() < 1e-5);
+        assert!((after_cycle - 0.1).abs() < 1e-4, "saw should snap back to A, got {after_cycle}");
+    }
+    #[test]
+    fn every_mode_stays_in_range() {
+        for mv in [0u32, 1, 2, 3] {
+            let m = LoopMode::from_u32(mv);
+            for i in 0..500 {
+                let v = keyframe_loop_value_mode(0.25, 0.85, 3.0, i as f64 * 0.07, 4.0, m);
+                assert!(v >= 0.25 - 1e-5 && v <= 0.85 + 1e-5, "mode {mv} out of range: {v}");
+            }
+        }
+    }
+}
+#[cfg(test)]
+mod render {
+    use super::*;
+    use crate::cartridge::Cartridge;
+    use crate::engine::FilterEngine;
+    #[test]
+    #[ignore = "renders the keyframe-recorder demo wav"]
+    fn render_keyframe_demo() {
+        const SR: f64 = 39_062.5;
+        const OUT: u32 = 44_100;
+        const BPM: f64 = 120.0;
+        const BEATS_PER_BAR: f64 = 4.0;
+        const BARS_TOTAL: f64 = 8.0;
+        let body = std::fs::read("../filters/bodies/CAVL_mason_jar_to_stone_pipe.body240").unwrap();
+        let takes = [
+            ("texture_pendulum_0.2-0.8_2bar", 0.2f32, 0.8f32, 2.0f32, LoopMode::Pendulum),
+            ("RISER_0.0-1.0_8bar", 0.0, 1.0, 8.0, LoopMode::RiseHold),
+            ("build_saw_0.1-0.9_1bar", 0.1, 0.9, 1.0, LoopMode::Saw),
+        ];
+        let dir = "C:/Users/hooki/df2-workstation/out/keyframe_demo";
+        std::fs::create_dir_all(dir).unwrap();
+        println!("\n  keyframe recorder — {BPM} bpm, mason_jar_to_stone_pipe, Q100\n");
+        for (name, a, b, leg_bars, mode) in takes {
+            let mut eng = FilterEngine::new();
+            eng.prepare(SR);
+            eng.load_cartridge(Cartridge::from_body_bytes("d", &body, 1.0).unwrap());
+            let secs = BARS_TOTAL * BEATS_PER_BAR * 60.0 / BPM;
+            let n = (secs * SR) as usize;
+            const HB: usize = 128;
+            let mut rng = 0x2545_F491_4F6C_DD1Du64;
+            let mut pb = [0f64; 7];
+            let mut out: Vec<f32> = Vec::with_capacity(n);
+            let mut off = 0;
+            while off < n {
+                let len = HB.min(n - off);
+                let ppq = (off + len / 2) as f64 / SR * BPM / 60.0;
+                let morph = keyframe_loop_value_mode(a, b, leg_bars, ppq, BEATS_PER_BAR, mode);
+                let mut l: Vec<f32> = (0..len).map(|_| {
+                    rng = rng.wrapping_mul(6364136223846793005).wrapping_add(1442695040888963407);
+                    let w = ((rng >> 40) as f64 / (1u64 << 23) as f64) - 1.0;
+                    pb[0]=0.99886*pb[0]+w*0.0555179; pb[1]=0.99332*pb[1]+w*0.0750759;
+                    pb[2]=0.96900*pb[2]+w*0.1538520; pb[3]=0.86650*pb[3]+w*0.3104856;
+                    pb[4]=0.55000*pb[4]+w*0.5329522; pb[5]=-0.7616*pb[5]-w*0.0168980;
+                    let s=(pb[0]+pb[1]+pb[2]+pb[3]+pb[4]+pb[5]+pb[6]+w*0.5362)*0.11;
+                    pb[6]=w*0.115926;
+                    (s*0.6) as f32
+                }).collect();
+                let mut r = l.clone();
+                eng.process_block(&mut l, &mut r, morph as f64, 1.0);
+                out.extend_from_slice(&l);
+                off += len;
+            }
+            let ratio = SR / OUT as f64;
+            let on = (out.len() as f64 / ratio) as usize;
+            let mut v: Vec<f32> = (0..on).map(|i| {
+                let p = i as f64 * ratio; let i0 = p.floor() as usize;
+                let f = (p - i0 as f64) as f32;
+                let x = out.get(i0).copied().unwrap_or(0.0);
+                let y = out.get(i0 + 1).copied().unwrap_or(x);
+                x + (y - x) * f
+            }).collect();
+            let pk = v.iter().fold(0.0f32, |m, &x| m.max(x.abs())).max(1e-9);
+            let g = 0.5012 / pk;
+            for x in v.iter_mut() { *x *= g; }
+            let mut w = Vec::new();
+            let dl = (v.len() * 2) as u32;
+            w.extend_from_slice(b"RIFF"); w.extend_from_slice(&(36 + dl).to_le_bytes());
+            w.extend_from_slice(b"WAVEfmt "); w.extend_from_slice(&16u32.to_le_bytes());
+            w.extend_from_slice(&1u16.to_le_bytes()); w.extend_from_slice(&1u16.to_le_bytes());
+            w.extend_from_slice(&OUT.to_le_bytes()); w.extend_from_slice(&(OUT * 2).to_le_bytes());
+            w.extend_from_slice(&2u16.to_le_bytes()); w.extend_from_slice(&16u16.to_le_bytes());
+            w.extend_from_slice(b"data"); w.extend_from_slice(&dl.to_le_bytes());
+            for &x in &v { w.extend_from_slice(&((x.clamp(-1.0,1.0)*32767.0) as i16).to_le_bytes()); }
+            let p = format!("{dir}/{name}.wav");
+            std::fs::write(&p, w).unwrap();
+            println!("  {p}");
+        }
+    }
+}
+#[cfg(test)]
+mod strike_proto {
+    use crate::cartridge::Cartridge;
+    use crate::engine::FilterEngine;
+    #[test]
+    #[ignore = "renders the strike/excite prototype"]
+    fn render_strike_proto() {
+        const SR: f64 = 39_062.5;
+        const OUT: u32 = 44_100;
+        const BPM: f64 = 120.0;
+        const BARS: f64 = 4.0;
+        const HB: usize = 64;
+        let dir = "C:/Users/hooki/df2-workstation/out/strike_proto";
+        std::fs::create_dir_all(dir).unwrap();
+        println!("\n  STRIKE prototype — {BPM} bpm, impulse-excited resonator\n");
+        let takes = [
+            ("1_masonjar_quarters_FREE",  "CAVL_mason_jar_to_stone_pipe.body240", 1.0f64, 0.35f32, 0.35f32, 1.0f32, false),
+            ("2_masonjar_eighths_sweep",  "CAVL_mason_jar_to_stone_pipe.body240", 2.0,     0.0,     1.0,     1.0,     false),
+            ("3_beerbottle_quarters_FREE","CAVL_beer_bottle_to_bathtub.body240",  1.0,     0.4,     0.4,     1.0,     false),
+            ("4_masonjar_quarters_AGCon", "CAVL_mason_jar_to_stone_pipe.body240", 1.0,     0.35,    0.35,    1.0,     true),
+        ];
+        for (name, file, strikes_per_beat, ma, mb, q, agc_on) in takes {
+            let body = std::fs::read(format!("../filters/bodies/{file}")).unwrap();
+            let mut eng = FilterEngine::new();
+            eng.prepare(SR);
+            eng.load_cartridge(Cartridge::from_body_bytes("d", &body, 1.0).unwrap());
+            eng.debug.agc_enabled = agc_on;
+            eng.debug.saturation_enabled = agc_on;
+            let secs = BARS * 4.0 * 60.0 / BPM;
+            let n = (secs * SR) as usize;
+            let strike_period = SR * 60.0 / BPM / strikes_per_beat;
+            let burst_len = (SR * 0.0025) as usize;
+            let mut rng = 0x1234_5678_9abc_def0u64;
+            let burst: Vec<f32> = (0..burst_len).map(|i| {
+                rng = rng.wrapping_mul(6364136223846793005).wrapping_add(1442695040888963407);
+                let w = ((rng >> 40) as f64 / (1u64 << 23) as f64) - 1.0;
+                let env = (-(i as f64) / (burst_len as f64 * 0.35)).exp();
+                (w * env * 0.7) as f32
+            }).collect();
+            let mut out: Vec<f32> = Vec::with_capacity(n);
+            let mut off = 0;
+            let mut next_strike = 0.0f64;
+            let mut burst_pos = burst_len;
+            while off < n {
+                let len = HB.min(n - off);
+                let mut l = vec![0.0f32; len];
+                for i in 0..len {
+                    let s = (off + i) as f64;
+                    if s >= next_strike { burst_pos = 0; next_strike += strike_period; }
+                    if burst_pos < burst_len { l[i] = burst[burst_pos]; burst_pos += 1; }
+                }
+                let mut r = l.clone();
+                let t = (off + len / 2) as f64 / n as f64;
+                let morph = (ma as f64 + (mb as f64 - ma as f64) * t) as f64;
+                eng.process_block(&mut l, &mut r, morph, q as f64);
+                out.extend_from_slice(&l);
+                off += len;
+            }
+            let ratio = SR / OUT as f64;
+            let on = (out.len() as f64 / ratio) as usize;
+            let mut v: Vec<f32> = (0..on).map(|i| {
+                let p = i as f64 * ratio; let i0 = p.floor() as usize;
+                let f = (p - i0 as f64) as f32;
+                let x = out.get(i0).copied().unwrap_or(0.0);
+                let y = out.get(i0 + 1).copied().unwrap_or(x);
+                x + (y - x) * f
+            }).collect();
+            let pk = v.iter().fold(0.0f32, |m, &x| m.max(x.abs())).max(1e-9);
+            let g = 0.5012 / pk;
+            for x in v.iter_mut() { *x *= g; }
+            let mut w = Vec::new();
+            let dl = (v.len() * 2) as u32;
+            w.extend_from_slice(b"RIFF"); w.extend_from_slice(&(36 + dl).to_le_bytes());
+            w.extend_from_slice(b"WAVEfmt "); w.extend_from_slice(&16u32.to_le_bytes());
+            w.extend_from_slice(&1u16.to_le_bytes()); w.extend_from_slice(&1u16.to_le_bytes());
+            w.extend_from_slice(&OUT.to_le_bytes()); w.extend_from_slice(&(OUT * 2).to_le_bytes());
+            w.extend_from_slice(&2u16.to_le_bytes()); w.extend_from_slice(&16u16.to_le_bytes());
+            w.extend_from_slice(b"data"); w.extend_from_slice(&dl.to_le_bytes());
+            for &x in &v { w.extend_from_slice(&((x.clamp(-1.0,1.0)*32767.0) as i16).to_le_bytes()); }
+            let p = format!("{dir}/{name}.wav");
+            std::fs::write(&p, w).unwrap();
+            println!("  {p}");
+        }
+    }
+}

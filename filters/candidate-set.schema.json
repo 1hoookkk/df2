@@ -1,0 +1,143 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "trench/candidate-set.schema.json",
+  "title": "TRENCH per-corner candidate set",
+  "description": "Deterministic candidate features extracted from four TF measurements, one per corner, ready for MANUAL lane registration. A candidate set deliberately contains NO stage slots, NO lane ids, NO cross-corner correspondence, NO musical roles, and NO confidence guesses — those are authored later in the registered-lane IR. Candidates within a corner are an unordered collection.",
+  "type": "object",
+  "required": ["schema_version", "extractor", "name", "corner_order", "corners"],
+  "additionalProperties": false,
+  "properties": {
+    "schema_version": { "const": 1 },
+    "extractor": {
+      "type": "object",
+      "required": ["tool", "tool_version", "fitter"],
+      "additionalProperties": false,
+      "properties": {
+        "tool": { "type": "string", "minLength": 1 },
+        "tool_version": { "type": "integer", "minimum": 1 },
+        "fitter": { "type": "string", "minLength": 1 }
+      }
+    },
+    "name": { "type": "string", "minLength": 1 },
+    "corner_order": { "const": ["M0_Q0", "M100_Q0", "M0_Q100", "M100_Q100"] },
+    "corners": {
+      "type": "object",
+      "required": ["M0_Q0", "M100_Q0", "M0_Q100", "M100_Q100"],
+      "additionalProperties": false,
+      "properties": {
+        "M0_Q0": { "$ref": "#/$defs/corner" },
+        "M100_Q0": { "$ref": "#/$defs/corner" },
+        "M0_Q100": { "$ref": "#/$defs/corner" },
+        "M100_Q100": { "$ref": "#/$defs/corner" }
+      }
+    }
+  },
+  "$defs": {
+    "corner": {
+      "type": "object",
+      "required": ["source", "extraction", "fit", "candidates"],
+      "additionalProperties": false,
+      "properties": {
+        "source": {
+          "type": "object",
+          "required": ["path", "sha256"],
+          "additionalProperties": false,
+          "properties": {
+            "path": { "type": "string", "minLength": 1 },
+            "catalog_record": { "type": ["string", "null"] },
+            "sha256": { "type": "string", "pattern": "^[0-9a-f]{64}$" }
+          }
+        },
+        "extraction": {
+          "type": "object",
+          "required": ["runtime_sr_hz", "n_points"],
+          "additionalProperties": true,
+          "properties": {
+            "runtime_sr_hz": { "type": "number", "exclusiveMinimum": 0 },
+            "n_points": { "type": "integer", "minimum": 2 }
+          }
+        },
+        "fit": {
+          "type": "object",
+          "required": ["residual_rms_db", "residual_max_db", "computed_by"],
+          "additionalProperties": false,
+          "description": "Corner-level residual genuinely produced by the owned fitting path (trench-core response over the quantized packed words). There is deliberately no per-candidate metric — the fitter does not produce one.",
+          "properties": {
+            "residual_rms_db": { "type": "number" },
+            "residual_max_db": { "type": "number" },
+            "computed_by": { "type": "string", "minLength": 1 }
+          }
+        },
+        "candidates": {
+          "type": "array",
+          "description": "UNORDERED collection — array order carries no stage-slot meaning.",
+          "items": { "$ref": "#/$defs/candidate" }
+        }
+      }
+    },
+    "candidate": {
+      "type": "object",
+      "required": ["id", "topology", "state", "pole", "zero", "scale", "packed_words", "provenance"],
+      "additionalProperties": false,
+      "properties": {
+        "id": { "type": "string", "pattern": "^cand-[0-9a-f]{12}(-[0-9]+)?$" },
+        "topology": {
+          "type": "object",
+          "required": ["pole", "zero"],
+          "additionalProperties": false,
+          "properties": {
+            "pole": { "enum": ["conjugate", "real_pair", "degenerate"] },
+            "zero": { "enum": ["conjugate", "real_pair", "degenerate"] }
+          }
+        },
+        "state": { "enum": ["active", "identity"] },
+        "pole": { "$ref": "#/$defs/root_geometry" },
+        "zero": { "$ref": "#/$defs/root_geometry" },
+        "scale": { "type": "number", "minimum": 0, "maximum": 4.0 },
+        "packed_words": {
+          "type": "array",
+          "minItems": 5,
+          "maxItems": 5,
+          "items": { "type": "integer", "minimum": 0, "maximum": 65535 },
+          "description": "The exact five u16 words of this candidate as quantized by the owned encoder — the representation the runtime plays. Geometry above is the exact decode of these words; nothing is approximated."
+        },
+        "provenance": {
+          "type": "object",
+          "required": ["source", "source_sha256", "method"],
+          "additionalProperties": false,
+          "properties": {
+            "source": { "type": "string", "minLength": 1 },
+            "source_sha256": { "type": "string", "pattern": "^[0-9a-f]{64}$" },
+            "method": { "type": "string", "minLength": 1 }
+          }
+        }
+      }
+    },
+    "root_geometry": {
+      "oneOf": [
+        {
+          "type": "object",
+          "required": ["hz", "r"],
+          "additionalProperties": false,
+          "properties": {
+            "hz": { "type": "number", "minimum": 0 },
+            "r": { "type": "number", "minimum": 0 }
+          }
+        },
+        {
+          "type": "object",
+          "required": ["real_roots"],
+          "additionalProperties": false,
+          "properties": {
+            "real_roots": {
+              "type": "array",
+              "minItems": 2,
+              "maxItems": 2,
+              "items": { "type": "number" }
+            }
+          }
+        }
+      ]
+    }
+  }
+}

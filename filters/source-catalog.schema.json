@@ -1,0 +1,264 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "trench/source-catalog.schema.json",
+  "title": "Neutral source and evidence catalog",
+  "description": "A provenance-first catalog for measured sources, transfer-function evidence, authored geometry, generated artifacts, and study references. It contains no product-lore vocabulary and never makes a file eligible merely because of its extension.",
+  "type": "object",
+  "required": ["schema_version", "catalog_id", "roots", "records"],
+  "additionalProperties": false,
+  "properties": {
+    "schema_version": { "const": 1 },
+    "catalog_id": { "type": "string", "minLength": 1 },
+    "generated_at": { "type": "string", "format": "date-time" },
+    "roots": {
+      "type": "array",
+      "items": { "$ref": "#/$defs/root" }
+    },
+    "records": {
+      "type": "array",
+      "items": { "$ref": "#/$defs/record" }
+    }
+  },
+  "$defs": {
+    "root": {
+      "type": "object",
+      "required": ["id", "path", "role"],
+      "additionalProperties": false,
+      "properties": {
+        "id": { "type": "string", "pattern": "^[a-z0-9][a-z0-9._-]*$" },
+        "path": { "type": "string", "minLength": 1 },
+        "role": {
+          "type": "string",
+          "enum": ["workspace", "external_read_only", "source_library"]
+        },
+        "revision": { "type": "string" }
+      }
+    },
+    "location": {
+      "type": "object",
+      "required": ["root", "relative_path", "kind"],
+      "additionalProperties": false,
+      "properties": {
+        "root": { "type": "string", "pattern": "^[a-z0-9][a-z0-9._-]*$" },
+        "relative_path": { "type": "string", "minLength": 1 },
+        "kind": { "type": "string", "enum": ["file", "directory"] },
+        "size_bytes": { "type": "integer", "minimum": 0 },
+        "sha256": {
+          "type": "string",
+          "pattern": "^[0-9a-f]{64}$"
+        }
+      }
+    },
+    "representation": {
+      "type": "object",
+      "required": ["format"],
+      "additionalProperties": false,
+      "properties": {
+        "format": {
+          "type": "string",
+          "enum": [
+            "wav",
+            "sofa_hrir",
+            "tf_table",
+            "spectrum_csv",
+            "modal_table",
+            "geometry_json",
+            "cart_json",
+            "body240",
+            "proof_json",
+            "rendered_audio",
+            "plot",
+            "bundle",
+            "unknown"
+          ]
+        },
+        "sample_rate_hz": { "type": "number", "exclusiveMinimum": 0 },
+        "channels": { "type": "integer", "minimum": 1 },
+        "frequency_units": { "type": "string" },
+        "value_units": { "type": "string" },
+        "axis_count": { "type": "integer", "minimum": 0, "maximum": 2 },
+        "axis_names": {
+          "type": "array",
+          "maxItems": 2,
+          "items": { "type": "string", "minLength": 1 }
+        }
+      }
+    },
+    "conversion": {
+      "type": "object",
+      "required": ["to_tf", "fit_input"],
+      "additionalProperties": false,
+      "properties": {
+        "to_tf": {
+          "type": "string",
+          "enum": [
+            "already_tf",
+            "sofa_to_tf",
+            "fft_ir",
+            "deconvolve_sweep",
+            "modal_synthesis",
+            "adapter_required",
+            "not_applicable",
+            "unknown"
+          ]
+        },
+        "fit_input": {
+          "type": "string",
+          "enum": ["yes", "conditional", "no", "unknown"]
+        },
+        "adapter": { "type": "string" },
+        "next_action": {
+          "type": "string",
+          "enum": [
+            "inspect_metadata",
+            "convert_to_tf",
+            "select_axes",
+            "fit_geometry",
+            "pack_and_prove",
+            "listen_and_plot",
+            "retain_as_reference",
+            "quarantine",
+            "none"
+          ]
+        }
+      }
+    },
+    "eligibility": {
+      "type": "object",
+      "required": ["ir_source", "body_source", "ship_allowed", "reason"],
+      "additionalProperties": false,
+      "properties": {
+        "ir_source": {
+          "type": "string",
+          "enum": [
+            "direct",
+            "requires_fft",
+            "requires_deconvolution",
+            "not_ir",
+            "unknown"
+          ]
+        },
+        "body_source": {
+          "type": "string",
+          "enum": ["fit_input", "candidate", "proof_only", "no", "unknown"]
+        },
+        "ship_allowed": { "type": "boolean" },
+        "reason": { "type": "string", "minLength": 1 }
+      }
+    },
+    "provenance": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "source_revision": { "type": "string" },
+        "license": { "type": "string" },
+        "citation": { "type": "string" },
+        "method": { "type": "string" },
+        "derived_from": {
+          "type": "array",
+          "items": { "type": "string", "minLength": 1 }
+        }
+      }
+    },
+    "study_use": {
+      "type": "string",
+      "enum": ["behavior_only", "historical_context", "method_only", "license_record"]
+    },
+    "record": {
+      "type": "object",
+      "required": [
+        "id",
+        "record_type",
+        "state",
+        "origin",
+        "location",
+        "representation",
+        "conversion",
+        "eligibility"
+      ],
+      "additionalProperties": false,
+      "properties": {
+        "id": { "type": "string", "pattern": "^[a-z0-9][a-z0-9._-]*$" },
+        "label": { "type": "string" },
+        "record_type": {
+          "type": "string",
+          "enum": [
+            "measured_ir",
+            "measured_tf",
+            "simulated_tf",
+            "modal_evidence",
+            "authored_geometry",
+            "body_artifact",
+            "audio_render",
+            "proof_bundle",
+            "artifact_bundle",
+            "study_reference",
+            "unknown"
+          ]
+        },
+        "state": {
+          "type": "string",
+          "enum": [
+            "inbox",
+            "classified",
+            "prepared",
+            "fitted",
+            "proven",
+            "published",
+            "quarantined",
+            "rejected"
+          ]
+        },
+        "origin": {
+          "type": "string",
+          "enum": ["measurement", "dataset", "simulation", "authored", "derived", "reference", "unknown"]
+        },
+        "location": { "$ref": "#/$defs/location" },
+        "representation": { "$ref": "#/$defs/representation" },
+        "conversion": { "$ref": "#/$defs/conversion" },
+        "eligibility": { "$ref": "#/$defs/eligibility" },
+        "provenance": { "$ref": "#/$defs/provenance" },
+        "study_use": { "$ref": "#/$defs/study_use" },
+        "summary": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "file_count": { "type": "integer", "minimum": 0 },
+            "extension_counts": {
+              "type": "object",
+              "additionalProperties": { "type": "integer", "minimum": 0 }
+            },
+            "examples": {
+              "type": "array",
+              "items": { "type": "string" }
+            }
+          }
+        },
+        "tags": {
+          "type": "array",
+          "items": { "type": "string", "minLength": 1 }
+        },
+        "notes": {
+          "type": "array",
+          "items": { "type": "string" }
+        }
+      },
+      "allOf": [
+        {
+          "if": { "properties": { "record_type": { "const": "study_reference" } } },
+          "then": {
+            "required": ["study_use"],
+            "properties": {
+              "eligibility": {
+                "properties": {
+                  "ship_allowed": { "const": false },
+                  "body_source": { "const": "no" }
+                }
+              }
+            }
+          }
+        }
+      ]
+    }
+  }
+}

@@ -1,0 +1,74 @@
+{
+  "archetype": "flanger",
+  "name": "meaty_gizmo",
+  "corners": {
+    "M0_Q0": {
+      "comb_base_hz": 300,
+      "notch_r": 0.8,
+      "peak_r": 0.9,
+      "stages_used": 3,
+      "notches_hz": [
+        300,
+        600,
+        900
+      ],
+      "peaks_hz": [
+        150,
+        450,
+        750
+      ],
+      "gain": 1.0
+    },
+    "M100_Q0": {
+      "comb_base_hz": 1200,
+      "notch_r": 0.8,
+      "peak_r": 0.9,
+      "stages_used": 3,
+      "notches_hz": [
+        1200,
+        2400,
+        3600
+      ],
+      "peaks_hz": [
+        600,
+        1800,
+        3000
+      ],
+      "gain": 1.0
+    },
+    "M0_Q100": {
+      "comb_base_hz": 300,
+      "notch_r": 0.999,
+      "peak_r": 0.999,
+      "stages_used": 3,
+      "notches_hz": [
+        300,
+        600,
+        900
+      ],
+      "peaks_hz": [
+        150,
+        450,
+        750
+      ],
+      "gain": 1.0
+    },
+    "M100_Q100": {
+      "comb_base_hz": 1200,
+      "notch_r": 0.999,
+      "peak_r": 0.999,
+      "stages_used": 3,
+      "notches_hz": [
+        1200,
+        2400,
+        3600
+      ],
+      "peaks_hz": [
+        600,
+        1800,
+        3000
+      ],
+      "gain": 1.0
+    }
+  }
+}

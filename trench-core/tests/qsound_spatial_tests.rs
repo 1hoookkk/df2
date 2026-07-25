@@ -1,32 +1,41 @@
 //! Behavioural tests for `trench_core::qsound_spatial`.
 //!
-//! The test targets come from `docs/archive/qsound_spatial_addendum.md`
-//! §"Verification targets for Task 8 tests" — the parametric dataset is
-//! known-defective, so we probe structural invariants (bypass, symmetry,
-//! sign conventions, stability) rather than numeric coefficient values.
+//! We probe structural invariants (bypass, symmetry, sign conventions,
+//! stability) rather than matching a proprietary coefficient table.
+//!
+//! Capture provenance (2026-07-02): the ITD/ILD law coefficients in
+//! `canonical_profile` below are the values re-fit from a CLEAN 31-point
+//! pan-grid capture of the vendor `QMixer.dll` rendered offline by
+//! `Qcreator.exe`; the process was verified LINEAR. ITD law units are microseconds; the ILD
+//! law is dB; both use six azimuth harmonics `[sin(az)..sin(6az)]`. The
+//! `band_coeffs` here remain a constructed L/R-symmetric fixture (the real
+//! per-ear band law is L/R-independent and lives in the fit report) so the
+//! strict channel-mirror invariant stays exact.
 
 use trench_core::cartridge::{BandChannelCoeffs, BandCoeffs, SpatialProfile};
 use trench_core::qsound_spatial::QSoundSpatial;
 
 const SR: f32 = 48_000.0;
 
-/// Canonical recon coefficients from `docs/archive/qsound_spatial.md`.
-/// Trailing el-cross terms rounded to zero (they're < 1e-15 in the source).
+/// Measurement-fit test profile. Trailing elevation cross-terms round to zero.
 fn canonical_profile(az_rad: f32, distance_m: f32, el_rad: f32) -> SpatialProfile {
     SpatialProfile {
         azimuth: az_rad,
         distance: distance_m,
         elevation: el_rad,
+        // Fitted from the clean pan-grid re-capture (microseconds; six
+        // azimuth harmonics).
         itd_coeffs: [
-            3578.764_6, -99.113_0, -960.709_6, 631.036_1, -229.782_3, -173.118_7,
+            -714.271_2,
+            1275.442_3,
+            -1301.714_0,
+            891.666_7,
+            -462.902_1,
+            149.969_9,
         ],
+        // Fitted ILD law (dB; six azimuth harmonics), MAE 0.78 dB vs measured.
         ild_coeffs: [
-            6.819_731_5,
-            -2.500_813,
-            0.821_019_9,
-            -0.198_121,
-            0.021_401_3,
-            8.819_077e-5,
+            -712.840_3, 1080.508_8, -965.443_6, 597.945_7, -249.361_1, 53.300_0,
         ],
         band_coeffs: BandCoeffs {
             l: BandChannelCoeffs {
@@ -387,4 +396,67 @@ fn space_of_one_reduces_lr_correlation() {
         wet_corr < dry_corr - 0.05,
         "SPACE=1 should reduce L/R correlation by > 0.05; got dry={dry_corr:.4}, wet={wet_corr:.4}",
     );
+}
+
+#[test]
+fn fallback_space_zero_is_bit_identical_bypass() {
+    // The runtime 5D/Space toggle uses the profile-less fallback path. At
+    // SPACE=0 it must pass stereo input through untouched — the literal input
+    // samples — regardless of the fallback pan. Complements the profile-path
+    // bypass test above so both code paths are pinned.
+    let mut stage = QSoundSpatial::new(SR);
+    stage.set_fallback_pan(1.0);
+    stage.set_space(0.0);
+
+    let mut l: Vec<f32> = (0..777).map(|i| (i as f32 * 0.011).sin() * 0.8).collect();
+    let mut r: Vec<f32> = (0..777).map(|i| (i as f32 * 0.019).cos() * 0.8).collect();
+    let l_in = l.clone();
+    let r_in = r.clone();
+
+    stage.process_stereo(&mut l, &mut r);
+
+    for i in 0..l.len() {
+        assert_eq!(l[i], l_in[i], "fallback L sample {i} drifted at SPACE=0");
+        assert_eq!(r[i], r_in[i], "fallback R sample {i} drifted at SPACE=0");
+    }
+}
+
+#[test]
+fn output_is_finite_and_bounded_over_full_space_sweep() {
+    // Re-capture lock-in gate: with the fitted profile laws, output must stay
+    // finite and peak-bounded (<= 1.0 + small Lagrange/shelf overshoot) across
+    // the whole SPACE 0..1 range at an off-centre pose on a full-scale
+    // stimulus. This guards against the fitted coefficients (which are large,
+    // being the min-norm 6-harmonic solution) producing a level explosion or
+    // NaN anywhere on the dry->wet crossfade.
+    let input = noise(24_000);
+    let fs_peak = input.iter().map(|v| v.abs()).fold(0.0_f32, f32::max);
+    assert!((fs_peak - 1.0).abs() < 0.05, "stimulus must be ~full-scale");
+
+    for step in 0..=10 {
+        let space = step as f32 / 10.0;
+        let mut stage = QSoundSpatial::new(SR);
+        stage.set_profile(&canonical_profile(std::f32::consts::FRAC_PI_3, 1.0, 0.0));
+        stage.set_space(space);
+
+        let mut l = input.clone();
+        let mut r = input.clone();
+        stage.process_stereo(&mut l, &mut r);
+
+        let peak = l
+            .iter()
+            .chain(r.iter())
+            .fold(0.0_f32, |m, &v| m.max(v.abs()));
+        assert!(
+            peak.is_finite(),
+            "SPACE={space}: non-finite output (peak={peak})",
+        );
+        // Crossfade of a bounded dry (<=1) with a peak-guarded wet (<=1) can
+        // only stay within a hair of unity; allow the documented Lagrange +
+        // shelf-ripple overshoot headroom.
+        assert!(
+            peak <= 1.10,
+            "SPACE={space}: peak {peak:.5} exceeded crossfade bound",
+        );
+    }
 }

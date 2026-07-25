@@ -2,6 +2,13 @@
 members = ["trench-core"]
 resolver = "2"
 
-# Dependencies compile at full optimization; your crate stays debug-fast
+[profile.dev]
+opt-level = 1
+
 [profile.dev.package."*"]
+opt-level = 3
+
+# `package."*"` skips workspace members. Keep the packed runtime and audio
+# engine optimized in development builds.
+[profile.dev.package.trench-core]
 opt-level = 3

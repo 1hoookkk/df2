@@ -1,0 +1,46 @@
+{
+  "archetype": "violent_eq",
+  "name": "lucifers_q",
+  "corners": {
+    "M0_Q0": {
+      "peaks": [
+        {
+          "hz": 100,
+          "r": 0.5,
+          "motif": "none"
+        }
+      ],
+      "gain": 1.0
+    },
+    "M100_Q0": {
+      "peaks": [
+        {
+          "hz": 5000,
+          "r": 0.5,
+          "motif": "none"
+        }
+      ],
+      "gain": 1.0
+    },
+    "M0_Q100": {
+      "peaks": [
+        {
+          "hz": 100,
+          "r": 0.999,
+          "motif": "high_cliff"
+        }
+      ],
+      "gain": 1.0
+    },
+    "M100_Q100": {
+      "peaks": [
+        {
+          "hz": 5000,
+          "r": 0.999,
+          "motif": "high_cliff"
+        }
+      ],
+      "gain": 1.0
+    }
+  }
+}

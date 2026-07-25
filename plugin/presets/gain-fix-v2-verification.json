@@ -1,0 +1,2124 @@
+{
+  "format": "trench-preset-scale-gain-fix-verification-v1",
+  "bodyCount": 132,
+  "changedWordCount": 3080,
+  "nonScaleChangeCount": 0,
+  "sourceHashMismatchCount": 0,
+  "correctedHashMismatchCount": 0,
+  "sampledAuditFailureCount": 0,
+  "maximumRealizedCornerTrimSpreadDb": 0.0069411955855329666,
+  "bodies": [
+    {
+      "name": "CAVL_beer_bottle_to_bathtub",
+      "sourceSha256": "ec2dcee4662a9e98b30edec78b47293cd98a38330d328fb9826cb18f562c19b2",
+      "correctedSha256": "e8be1cc09fc6728447267bc6d03524c27ed2fe5f9c709261b0bfb5eea5267ab2",
+      "changedWordCount": 24,
+      "nonScaleChangeCount": 0,
+      "realizedCornerTrimDb": [
+        -62.88756612197826,
+        -62.8873633582544,
+        -62.886510615768074,
+        -62.88988439068811
+      ],
+      "realizedCornerTrimSpreadDb": 0.003373774920035544,
+      "sampledAuditPass": true,
+      "sampledCertifyPass": true
+    },
+    {
+      "name": "CAVL_beer_bottle_to_mason_jar",
+      "sourceSha256": "792f6273b04510f179385432f2c8ba6e431c8300df0cad23b4cff48e3130c107",
+      "correctedSha256": "255cac3b0377eaac0ff8adf786423892e98d0639ebcbd93e843e0339f3a088d2",
+      "changedWordCount": 24,
+      "nonScaleChangeCount": 0,
+      "realizedCornerTrimDb": [
+        -31.107860052202398,
+        -31.109653509625698,
+        -31.108263622648753,
+        -31.11150680736863
+      ],
+      "realizedCornerTrimSpreadDb": 0.003646755166233362,
+      "sampledAuditPass": true,
+      "sampledCertifyPass": true
+    },
+    {
+      "name": "CAVL_beer_bottle_to_plastic_jug",
+      "sourceSha256": "a174bd3f36e5ab24f632c7dfea390189f22dc161b843079a2233648fb959c057",
+      "correctedSha256": "c35452c3d3c0144474cb1b079077243458be3708c923c92681c58b1da2c02201",
+      "changedWordCount": 24,
+      "nonScaleChangeCount": 0,
+      "realizedCornerTrimDb": [
+        -51.44864454567312,
+        -51.45412432026082,
+        -51.45123006930363,
+        -51.45201151000449
+      ],
+      "realizedCornerTrimSpreadDb": 0.005479774587698216,
+      "sampledAuditPass": true,
+      "sampledCertifyPass": true
+    },
+    {
+      "name": "CAVL_beer_bottle_to_stone_pipe",
+      "sourceSha256": "211dd1eb4f7ab6d2fa4ab20d58b115125aaa2b6edcc14dad1c791a253d8ded02",
+      "correctedSha256": "5609f18e978a735e6fac3e67049739c19af8aa8ca50a1fff3bec3deebfce2df0",
+      "changedWordCount": 24,
+      "nonScaleChangeCount": 0,
+      "realizedCornerTrimDb": [
+        -44.63038232693532,
+        -44.63494868206729,
+        -44.63146581161551,
+        -44.63186033516641
+      ],
+      "realizedCornerTrimSpreadDb": 0.0045663551319705675,
+      "sampledAuditPass": true,
+      "sampledCertifyPass": true
+    },
+    {
+      "name": "CAVL_beer_bottle_to_tin_can",
+      "sourceSha256": "1d1996e05b001d62723a5bcb63465d55ba89c3ad7e50ee0b9d2cb263ef42d763",
+      "correctedSha256": "d093a66ac5aea1a47416b126e79b40427d0c8f87abe448b8d5be926a41f47913",
+      "changedWordCount": 24,
+      "nonScaleChangeCount": 0,
+      "realizedCornerTrimDb": [
+        -30.172732117558944,
+        -30.173098809109998,
+        -30.169848027610577,
+        -30.172040965691117
+      ],
+      "realizedCornerTrimSpreadDb": 0.0032507814994211515,
+      "sampledAuditPass": true,
+      "sampledCertifyPass": true
+    },
+    {
+      "name": "CAVL_mason_jar_to_bathtub",
+      "sourceSha256": "4d666d39b060a696dd7ee47c9ece1a6f2ddd54734a3b722e5373a0014575dd0b",
+      "correctedSha256": "9ad2ce8801322d5b22ce12cd575fd96a4684daaa988603e91ae35603b96adefe",
+      "changedWordCount": 24,
+      "nonScaleChangeCount": 0,
+      "realizedCornerTrimDb": [
+        -62.887602052591234,
+        -62.8873633582544,
+        -62.889543416713416,
+        -62.88988439068811
+      ],
+      "realizedCornerTrimSpreadDb": 0.002521032433712378,
+      "sampledAuditPass": true,
+      "sampledCertifyPass": true
+    },
+    {
+      "name": "CAVL_mason_jar_to_stone_pipe",
+      "sourceSha256": "9032c4c419909bb5cbe5fe98e7fd94c016d199f4667b2ee8f9bc52131f666641",
+      "correctedSha256": "5c89fe17984c007509da1da68dedcd047be4256a0ac7b46ce57ab744ead01abc",
+      "changedWordCount": 24,
+      "nonScaleChangeCount": 0,
+      "realizedCornerTrimDb": [
+        -44.63124252950472,
+        -44.63323023520481,
+        -44.6315573897962,
+        -44.63191869620801
+      ],
+      "realizedCornerTrimSpreadDb": 0.0019877057000954323,
+      "sampledAuditPass": true,
+      "sampledCertifyPass": true
+    },
+    {
+      "name": "CAVL_mason_jar_to_tin_can",
+      "sourceSha256": "3f1520be7b17d10ed8c79f559160d2d486d6a77325154c448f26ad61cee2531d",
+      "correctedSha256": "c9f57d71547f65a30283145c43c99f76b8a643ee424538da38f09c5ec76a3006",
+      "changedWordCount": 24,
+      "nonScaleChangeCount": 0,
+      "realizedCornerTrimDb": [
+        -30.169009317040064,
+        -30.169858435842848,
+        -30.166723581404668,
+        -30.17323877161428
+      ],
+      "realizedCornerTrimSpreadDb": 0.0065151902096118874,
+      "sampledAuditPass": true,
+      "sampledCertifyPass": true
+    },
+    {
+      "name": "CAVL_plastic_jug_to_bathtub",
+      "sourceSha256": "97bd814ab25f9bafbbf47bcb7c538607f111d60e2ff2b125442802567343335a",
+      "correctedSha256": "af8084cf7dc25f7cb64e25618483e09007cee2e7a8f250f1eb771473a36f9d9f",
+      "changedWordCount": 24,
+      "nonScaleChangeCount": 0,
+      "realizedCornerTrimDb": [
+        -62.88831545422937,
+        -62.8873633582544,
+        -62.88799526838681,
+        -62.88988439068811
+      ],
+      "realizedCornerTrimSpreadDb": 0.002521032433712378,
+      "sampledAuditPass": true,
+      "sampledCertifyPass": true
+    },
+    {
+      "name": "CAVL_plastic_jug_to_mason_jar",
+      "sourceSha256": "1e496e7185b9ef9d4022a58f83e66fcfd9038a6935fe3dc2253597ab8531bbd2",
+      "correctedSha256": "202c523e27ea947345c3df4506b0ec8716fb20fdb76ae8e10f5dbb5097f32421",
+      "changedWordCount": 24,
+      "nonScaleChangeCount": 0,
+      "realizedCornerTrimDb": [
+        -33.06979147155407,
+        -33.07164231332667,
+        -33.07209556411504,
+        -33.07118781195938
+      ],
+      "realizedCornerTrimSpreadDb": 0.0023040925609691953,
+      "sampledAuditPass": true,
+      "sampledCertifyPass": true
+    },
+    {
+      "name": "CAVL_plastic_jug_to_stone_pipe",
+      "sourceSha256": "db99b31225cec425ed2039336d94620387b673f4ba4fd0f33587639088de898d",
+      "correctedSha256": "d651fa2fcd21fd7f5fd7406f867fbf4733d8e94142084c365b579e6a647a707d",
+      "changedWordCount": 24,
+      "nonScaleChangeCount": 0,
+      "realizedCornerTrimDb": [
+        -44.63243179693127,
+        -44.63297439188079,
+        -44.629421993009196,
+        -44.632947090205434
+      ],
+      "realizedCornerTrimSpreadDb": 0.0035523988715979726,
+      "sampledAuditPass": true,
+      "sampledCertifyPass": true
+    },
+    {
+      "name": "CAVL_plastic_jug_to_tin_can",
+      "sourceSha256": "10904093f5e6197e54701618a276e01d3614630424a2c661aeaeb2ed875499b3",
+      "correctedSha256": "2db38577c4edeada5285f355aefe32b76054f94627a21c5fcd508848d6533399",
+      "changedWordCount": 24,
+      "nonScaleChangeCount": 0,
+      "realizedCornerTrimDb": [
+        -30.75907414478244,
+        -30.75562176764898,
+        -30.757158543807023,
+        -30.756788195451826
+      ],
+      "realizedCornerTrimSpreadDb": 0.0034523771334598052,
+      "sampledAuditPass": true,
+      "sampledCertifyPass": true
+    },
+    {
+      "name": "CAVL_stone_pipe_to_bathtub",
+      "sourceSha256": "5cbe97304e50d8caa207a78e10fb4aadae2d8459dadec03c55833d974ea3f58c",
+      "correctedSha256": "a641c0452c5f66ed264fdbc1eaacda2c4873f92a7864f0a7428aaf0e76c3e321",
+      "changedWordCount": 24,
+      "nonScaleChangeCount": 0,
+      "realizedCornerTrimDb": [
+        -62.88889557456337,
+        -62.8873633582544,
+        -62.887529697220614,
+        -62.88988439068811
+      ],
+      "realizedCornerTrimSpreadDb": 0.002521032433712378,
+      "sampledAuditPass": true,
+      "sampledCertifyPass": true
+    },
+    {
+      "name": "CAVL_tin_can_to_bathtub",
+      "sourceSha256": "e2746bd6f8969d66d4f13fd072c228a966a8d8f0abb76c87bb5fbad22630e865",
+      "correctedSha256": "060987f8f131700c5206800e7c5c460977863ec42c21543895d45a7d60d29ff3",
+      "changedWordCount": 24,
+      "nonScaleChangeCount": 0,
+      "realizedCornerTrimDb": [
+        -62.89003680750913,
+        -62.8873633582544,
+        -62.88941688935996,
+        -62.88988439068811
+      ],
+      "realizedCornerTrimSpreadDb": 0.002673449254729121,
+      "sampledAuditPass": true,
+      "sampledCertifyPass": true
+    },
+    {
+      "name": "CAVL_tin_can_to_stone_pipe",
+      "sourceSha256": "4f09eaf9fd33ab14cdac4189268e74358571773482a3633ec074ec915b546180",
+      "correctedSha256": "8c07eb78c41353dfa0dbfab1a801317b913f41b2932584a74ab03da5fcf83a6d",
+      "changedWordCount": 24,
+      "nonScaleChangeCount": 0,
+      "realizedCornerTrimDb": [
+        -44.63159098387425,
+        -44.6323325969736,
+        -44.63305592360763,
+        -44.633856861928
+      ],
+      "realizedCornerTrimSpreadDb": 0.0022658780537554435,
+      "sampledAuditPass": true,
+      "sampledCertifyPass": true
+    },
+    {
+      "name": "CAVL_wine_bottle_to_bathtub",
+      "sourceSha256": "f39141b33a4fef7d2936a539a95808849f871d95b4a25559f1a613c5d63c3105",
+      "correctedSha256": "572481dbe210483b1d398128b754e809dad196de0e8c7eb4796d029e39034c75",
+      "changedWordCount": 24,
+      "nonScaleChangeCount": 0,
+      "realizedCornerTrimDb": [
+        -62.88841808688033,
+        -62.8873633582544,
+        -62.8886184027302,
+        -62.88988439068811
+      ],
+      "realizedCornerTrimSpreadDb": 0.002521032433712378,
+      "sampledAuditPass": true,
+      "sampledCertifyPass": true
+    },
+    {
+      "name": "CAVL_wine_bottle_to_beer_bottle",
+      "sourceSha256": "6bab5429ac0ce33b6e8d83d5730f2a0b6913ab0b022f4f77eaff25e75c86444c",
+      "correctedSha256": "baa92379e619d08b3d7682c22d9989271089cc6efa214c28d5f8ad44b913e9ec",
+      "changedWordCount": 24,
+      "nonScaleChangeCount": 0,
+      "realizedCornerTrimDb": [
+        -45.725836627177245,
+        -45.725656963380395,
+        -45.72369766584221,
+        -45.724484188732305
+      ],
+      "realizedCornerTrimSpreadDb": 0.0021389613350351055,
+      "sampledAuditPass": true,
+      "sampledCertifyPass": true
+    },
+    {
+      "name": "CAVL_wine_bottle_to_mason_jar",
+      "sourceSha256": "f49fe81a13d4e730dbf7f8723d88232b367d9aee182c04e6f85d05f9c66918da",
+      "correctedSha256": "01cf0ac0dfd5ca52dfa5be9baa11bfd415b13e18f1987f4e00f654640a4a2a45",
+      "changedWordCount": 24,
+      "nonScaleChangeCount": 0,
+      "realizedCornerTrimDb": [
+        -30.891176265134476,
+        -30.893463261789314,
+        -30.892900824518925,
+        -30.893901642324874
+      ],
+      "realizedCornerTrimSpreadDb": 0.002725377190397893,
+      "sampledAuditPass": true,
+      "sampledCertifyPass": true
+    },
+    {
+      "name": "CAVL_wine_bottle_to_plastic_jug",
+      "sourceSha256": "22d4c51f495261928a197bac39487b1b0bbafe15b455cfec1b7572ad02bf6c93",
+      "correctedSha256": "a75e190f0fddc210964e570f0ae7308a316bb5e3d25e61d54d0501e3cc007a3f",
+      "changedWordCount": 24,
+      "nonScaleChangeCount": 0,
+      "realizedCornerTrimDb": [
+        -51.446324175671485,
+        -51.44811326986674,
+        -51.44959887537322,
+        -51.45326537125702
+      ],
+      "realizedCornerTrimSpreadDb": 0.0069411955855329666,
+      "sampledAuditPass": true,
+      "sampledCertifyPass": true
+    },
+    {
+      "name": "CAVL_wine_bottle_to_stone_pipe",
+      "sourceSha256": "49ca2996a55b769f8151033f20244bf6c2284826c1a7a41d22b8ed7ab0d2b6fa",
+      "correctedSha256": "2077aef2d04e3dbb3d435b0d5087a03286242506ca1058b54f34368846ace3e6",
+      "changedWordCount": 24,
+      "nonScaleChangeCount": 0,
+      "realizedCornerTrimDb": [
+        -44.631531256285626,
+        -44.634051043836074,
+        -44.630392242687066,
+        -44.63458551627625
+      ],
+      "realizedCornerTrimSpreadDb": 0.0041932735891876405,
+      "sampledAuditPass": true,
+      "sampledCertifyPass": true
+    },
+    {
+      "name": "CAVL_wine_bottle_to_tin_can",
+      "sourceSha256": "2ff2a1f1bc3ac0011677ffa98a9b8baafb040b004e7d26512f378508711eeebc",
+      "correctedSha256": "331b7c6b404ad9d01ffdd005ddc4d519fbb26b3f5a37dcc42c3d88a369704348",
+      "changedWordCount": 24,
+      "nonScaleChangeCount": 0,
+      "realizedCornerTrimDb": [
+        -30.171019339368236,
+        -30.168204724738036,
+        -30.167463782999405,
+        -30.16867671634618
+      ],
+      "realizedCornerTrimSpreadDb": 0.003555556368830537,
+      "sampledAuditPass": true,
+      "sampledCertifyPass": true
+    },
+    {
+      "name": "COMBL_delay_scale",
+      "sourceSha256": "06e21a500c84f7bb3904ab8873c9254970b8eee81085c2e299d639e72b663c31",
+      "correctedSha256": "7c85a071815db382b9f7734d786b3be34616b09e98d8c4aca7e805b89b355ab9",
+      "changedWordCount": 24,
+      "nonScaleChangeCount": 0,
+      "realizedCornerTrimDb": [
+        -29.83935170713017,
+        -29.83779027500047,
+        -29.838977470511292,
+        -29.841040625788718
+      ],
+      "realizedCornerTrimSpreadDb": 0.003250350788249534,
+      "sampledAuditPass": true,
+      "sampledCertifyPass": true
+    },
+    {
+      "name": "Chord",
+      "sourceSha256": "3e26472afb78713661a0bc53eda61594b266da6d78b56703ed2299627ce8fd7b",
+      "correctedSha256": "b1e486fb459b7e7593014a334476854dd4edffe000052ce79c346c191d5f7afc",
+      "changedWordCount": 24,
+      "nonScaleChangeCount": 0,
+      "realizedCornerTrimDb": [
+        -29.16180525153687,
+        -29.16276064360176,
+        -29.16213584344467,
+        -29.16316873940152
+      ],
+      "realizedCornerTrimSpreadDb": 0.001363487864651347,
+      "sampledAuditPass": true,
+      "sampledCertifyPass": true
+    },
+    {
+      "name": "Cul-De-Sac",
+      "sourceSha256": "d22e99d7add9bc3f110c7f823ef2ae019549ff86238a8d9daa2e85dc087df122",
+      "correctedSha256": "b5e9f10f7ad52239079d2d1b50f7b8f519530b45d2d440854c75097d4d5735fb",
+      "changedWordCount": 24,
+      "nonScaleChangeCount": 0,
+      "realizedCornerTrimDb": [
+        -7.3162390308601015,
+        -7.316299230584703,
+        -7.3162390308601015,
+        -7.316435405933147
+      ],
+      "realizedCornerTrimSpreadDb": 0.00019637507304537394,
+      "sampledAuditPass": true,
+      "sampledCertifyPass": true
+    },
+    {
+      "name": "FUZZ_A_STARVE",
+      "sourceSha256": "6956c8561f3217352b2b3612cde8ed9d3d1586d92cec32f1758dadde7be767e2",
+      "correctedSha256": "9f910e12f4725a9ed36589feb3ff5ebe2d6d82e86137feabacd8852ebaf0c32b",
+      "changedWordCount": 24,
+      "nonScaleChangeCount": 0,
+      "realizedCornerTrimDb": [
+        -26.078831002832715,
+        -26.079313810719114,
+        -26.078521155713812,
+        -26.079830184483193
+      ],
+      "realizedCornerTrimSpreadDb": 0.0013090287693806602,
+      "sampledAuditPass": true,
+      "sampledCertifyPass": true
+    },
+    {
+      "name": "FUZZ_B_RAZOR",
+      "sourceSha256": "1930be44c1163949f97a748931d23f15b425fd10e7fc5ae2ee0c0db0734f5bbe",
+      "correctedSha256": "f241372f1238cce0c5e72f3e4158fd386f6007ee201f677c1581b5a1219ecb89",
+      "changedWordCount": 24,
+      "nonScaleChangeCount": 0,
+      "realizedCornerTrimDb": [
+        -29.53431837318819,
+        -29.53351068971747,
+        -29.534725830328966,
+        -29.5353706278874
+      ],
+      "realizedCornerTrimSpreadDb": 0.0018599381699289097,
+      "sampledAuditPass": true,
+      "sampledCertifyPass": true
+    },
+    {
+      "name": "FUZZ_C_TONESTACK",
+      "sourceSha256": "9daf59783ce7e8def93ee6a1c2fbe9d3c83f0d86b5b7e34c753c0c62824e3401",
+      "correctedSha256": "9d7bdac9c63aecb2a10a2e9d2079948971745318cad8280692b5f5f5f8a078c4",
+      "changedWordCount": 24,
+      "nonScaleChangeCount": 0,
+      "realizedCornerTrimDb": [
+        -8.26056998599993,
+        -8.260095888209195,
+        -8.259746511635228,
+        -8.258941285991252
+      ],
+      "realizedCornerTrimSpreadDb": 0.0016287000086787629,
+      "sampledAuditPass": true,
+      "sampledCertifyPass": true
+    },
+    {
+      "name": "FUZZ_D_BATTERY",
+      "sourceSha256": "3e2743c16bcee05a76ad457621a27242c80dd1afc1a199413e685eb2b63cf2cb",
+      "correctedSha256": "74aa200d79cdcd276f6907d4bf2719d83a849f0e5e1e8caa6ed5f33b0f8fb6e5",
+      "changedWordCount": 24,
+      "nonScaleChangeCount": 0,
+      "realizedCornerTrimDb": [
+        -15.627306310772738,
+        -15.626295683039277,
+        -15.622675095627656,
+        -15.622894754888176
+      ],
+      "realizedCornerTrimSpreadDb": 0.004631215145082024,
+      "sampledAuditPass": true,
+      "sampledCertifyPass": true
+    },
+    {
+      "name": "FUZZ_E_SCREAMER",
+      "sourceSha256": "abc2b87db44e96ee1f015baf634250ebe3a78ea412cbdb796949ad586f501a86",
+      "correctedSha256": "516dc085f0d7d000037046c17a72b2a1ff12406b70000fadb16b1d83b814c8c9",
+      "changedWordCount": 24,
+      "nonScaleChangeCount": 0,
+      "realizedCornerTrimDb": [
+        -43.12665531731159,
+        -43.12742100263762,
+        -43.12877907292976,
+        -43.12829472167679
+      ],
+      "realizedCornerTrimSpreadDb": 0.0021237556181716855,
+      "sampledAuditPass": true,
+      "sampledCertifyPass": true
+    },
+    {
+      "name": "FUZZ_F_STARVED",
+      "sourceSha256": "50f5485d454abe9afb95eb849a0a7d67868ff9d2df61175eb318861546ff2f86",
+      "correctedSha256": "4fc7b8622e35e750ebb860655d29a7d22ce4161deeb6c51af4a5b2986e15dba1",
+      "changedWordCount": 24,
+      "nonScaleChangeCount": 0,
+      "realizedCornerTrimDb": [
+        -23.733095143235307,
+        -23.730198627253472,
+        -23.73014067156418,
+        -23.733785518143875
+      ],
+      "realizedCornerTrimSpreadDb": 0.003644846579696548,
+      "sampledAuditPass": true,
+      "sampledCertifyPass": true
+    },
+    {
+      "name": "M0_BELL_PIN_TO_PLATE_SPRAY",
+      "sourceSha256": "ecddd06f84016262533fdb85cb073049edce18f2d45b32b04a533750c75fb31e",
+      "correctedSha256": "e8a76d0c6e54c78dc2320fea1197147b9b9e78dea5b5681f366e544480fd8c1f",
+      "changedWordCount": 24,
+      "nonScaleChangeCount": 0,
+      "realizedCornerTrimDb": [
+        -17.02412219971496,
+        -17.020782411129577,
+        -17.020089760018344,
+        -17.023031144240484
+      ],
+      "realizedCornerTrimSpreadDb": 0.004032439696615597,
+      "sampledAuditPass": true,
+      "sampledCertifyPass": true
+    },
+    {
+      "name": "M0_BOTTLE_TO_TIN_BODY",
+      "sourceSha256": "0daa40e1d5f17cd7b1cd6e9fb4ad9c5286168b8f556a33b100c1a7248805ce9a",
+      "correctedSha256": "7d0b6f4d6113941ca8d531a8105e58b7841af29062bd3546aaa13a0870389422",
+      "changedWordCount": 24,
+      "nonScaleChangeCount": 0,
+      "realizedCornerTrimDb": [
+        -17.851437415106556,
+        -17.85425746418708,
+        -17.850407398714367,
+        -17.854612521331024
+      ],
+      "realizedCornerTrimSpreadDb": 0.004205122616657064,
+      "sampledAuditPass": true,
+      "sampledCertifyPass": true
+    },
+    {
+      "name": "M0_NOTCH_TO_PHONONIC_SPLIT",
+      "sourceSha256": "6ea88c9aecc6e1afa03888e863324925fd97e2cf9deae2a948d5b5f5222f2ad5",
+      "correctedSha256": "67c7f772d8f3369bda58510e2892ccd46596246b86739a20270ab9e0073a7049",
+      "changedWordCount": 24,
+      "nonScaleChangeCount": 0,
+      "realizedCornerTrimDb": [
+        -8.936128733521175,
+        -8.934414747310743,
+        -8.934401233949814,
+        -8.936727275935265
+      ],
+      "realizedCornerTrimSpreadDb": 0.00232604198545161,
+      "sampledAuditPass": true,
+      "sampledCertifyPass": true
+    },
+    {
+      "name": "M0_SEED_TO_IY_STACK",
+      "sourceSha256": "5b800e7e2176d8a1dd29d6fdf750292b18d264578f877970d9fcc3ff053ba416",
+      "correctedSha256": "dbdaa9b8f9ec68cc45f98f09433415e92fc7f988075ab0e70b60a9a6a24f4ced",
+      "changedWordCount": 24,
+      "nonScaleChangeCount": 0,
+      "realizedCornerTrimDb": [
+        -36.22558024913489,
+        -36.22595481292166,
+        -36.23017988010469,
+        -36.228603902298154
+      ],
+      "realizedCornerTrimSpreadDb": 0.004599630969799762,
+      "sampledAuditPass": true,
+      "sampledCertifyPass": true
+    },
+    {
+      "name": "METALL_bell",
+      "sourceSha256": "910168fdfd4591b9fdbf94e62abf75734d92e295200bfca53965a27ce07d2805",
+      "correctedSha256": "1b96fd6c16fc39b3ac4cdf95a5429c14b41f03ba2971d9ef5a28cb729950c981",
+      "changedWordCount": 24,
+      "nonScaleChangeCount": 0,
+      "realizedCornerTrimDb": [
+        -30.436129725243276,
+        -30.435920579479912,
+        -30.435721684380802,
+        -30.435512538617434
+      ],
+      "realizedCornerTrimSpreadDb": 0.0006171866258419811,
+      "sampledAuditPass": true,
+      "sampledCertifyPass": true
+    },
+    {
+      "name": "METALL_clamped_bar",
+      "sourceSha256": "f2cd96a3da43cd5ede094b2afb3b44e3dee3a99490ee0a2f5efe4bd734102d79",
+      "correctedSha256": "8c1673eeb65546c480ae0a62602053fbb2be42e1eb94f2d1e85e4a525b0f813c",
+      "changedWordCount": 20,
+      "nonScaleChangeCount": 0,
+      "realizedCornerTrimDb": [
+        -30.84656458365448,
+        -30.847544731328234,
+        -30.846243149118,
+        -30.847223296791753
+      ],
+      "realizedCornerTrimSpreadDb": 0.0013015822102353525,
+      "sampledAuditPass": true,
+      "sampledCertifyPass": true
+    },
+    {
+      "name": "METALL_free_bar",
+      "sourceSha256": "6c4086df3d2a94c3beeeca7e512eeebf4bbd1d9c2f46f69ab4575ed0a182fcfe",
+      "correctedSha256": "a289287573827345273bdf09693fba7a47598a754ca6bcb3bf36a7e30e57cc84",
+      "changedWordCount": 24,
+      "nonScaleChangeCount": 0,
+      "realizedCornerTrimDb": [
+        -25.80582297459836,
+        -25.806616523530145,
+        -25.807753453215025,
+        -25.808465046666548
+      ],
+      "realizedCornerTrimSpreadDb": 0.002642072068187673,
+      "sampledAuditPass": true,
+      "sampledCertifyPass": true
+    },
+    {
+      "name": "METALL_free_plate",
+      "sourceSha256": "9a26fe956971b5b39bb2b9c2b3f2d19bb9b2446e5362468c8652da09dd9402dc",
+      "correctedSha256": "d98370438f60d7edb71689639cfe6a792f53ee5795c40b2759e946a0a915c581",
+      "changedWordCount": 24,
+      "nonScaleChangeCount": 0,
+      "realizedCornerTrimDb": [
+        -29.228236297562297,
+        -29.227117718019883,
+        -29.227821107501665,
+        -29.22745964256547
+      ],
+      "realizedCornerTrimSpreadDb": 0.001118579542414011,
+      "sampledAuditPass": true,
+      "sampledCertifyPass": true
+    },
+    {
+      "name": "METALL_gong",
+      "sourceSha256": "26bfdb93609772d1031c066a4a65b2dd46ce40f1b0128a7518e8d71d5039a348",
+      "correctedSha256": "53c3fdb4d101e4f398896d493183f13da3a756c1a575a2aea4e9ca9ce47b8a50",
+      "changedWordCount": 24,
+      "nonScaleChangeCount": 0,
+      "realizedCornerTrimDb": [
+        -32.68108947349768,
+        -32.68127955435493,
+        -32.683348930199514,
+        -32.68500681784252
+      ],
+      "realizedCornerTrimSpreadDb": 0.003917344344841922,
+      "sampledAuditPass": true,
+      "sampledCertifyPass": true
+    },
+    {
+      "name": "PHON_SPLITTER",
+      "sourceSha256": "5a3f4bb33afbfc0f8870eb3a4741976942de01bd0c95eda21d70962f16a29126",
+      "correctedSha256": "c79ff48c4581bf0bc2965fd9ca72a7338613259764c7215c327d5b5da53f7a24",
+      "changedWordCount": 24,
+      "nonScaleChangeCount": 0,
+      "realizedCornerTrimDb": [
+        -17.362658930452824,
+        -17.363889654563554,
+        -17.36181271051945,
+        -17.36399010296032
+      ],
+      "realizedCornerTrimSpreadDb": 0.0021773924408670098,
+      "sampledAuditPass": true,
+      "sampledCertifyPass": true
+    },
+    {
+      "name": "RISERL_broad_cut_to_mid_fracture",
+      "sourceSha256": "8e5b2acac510c590d91cfbfaffa74d30d6748f99d2d3fd39a62d1867b35099a0",
+      "correctedSha256": "5a5dd39e2526848c06344cc956676e626cea057dc7e99dfee01e6e9009ad9c73",
+      "changedWordCount": 20,
+      "nonScaleChangeCount": 0,
+      "realizedCornerTrimDb": [
+        -34.032663499752026,
+        -34.03318828940265,
+        -34.032917848716025,
+        -34.03131656015256
+      ],
+      "realizedCornerTrimSpreadDb": 0.0018717292500909366,
+      "sampledAuditPass": true,
+      "sampledCertifyPass": true
+    },
+    {
+      "name": "RISERL_high_razor_to_broad_cut",
+      "sourceSha256": "0933f5e348295661e3f292699ea3f2e05b839cac7b689e3b411ca9532745eea5",
+      "correctedSha256": "9333b1bc6d7cdb3e2bc3d3af6897be7189423c2752281d2df5d33a4a473bbfb5",
+      "changedWordCount": 20,
+      "nonScaleChangeCount": 0,
+      "realizedCornerTrimDb": [
+        -37.1541062600368,
+        -37.15262039091284,
+        -37.15496536302721,
+        -37.154618754443824
+      ],
+      "realizedCornerTrimSpreadDb": 0.0023449721143720126,
+      "sampledAuditPass": true,
+      "sampledCertifyPass": true
+    },
+    {
+      "name": "RISERL_high_razor_to_mid_fracture",
+      "sourceSha256": "acc785e382f44d983caf834688958e6757dc6f286cebaf7b767b11d3f5944b72",
+      "correctedSha256": "e2767119e53e180f2638387220258e053c0ac24cf94bcacfb8b247a68d3294c5",
+      "changedWordCount": 20,
+      "nonScaleChangeCount": 0,
+      "realizedCornerTrimDb": [
+        -34.56847131242116,
+        -34.5669388964762,
+        -34.56680292067047,
+        -34.56676289975451
+      ],
+      "realizedCornerTrimSpreadDb": 0.0017084126666517818,
+      "sampledAuditPass": true,
+      "sampledCertifyPass": true
+    },
+    {
+      "name": "RISERL_high_razor_to_twin_tear",
+      "sourceSha256": "6065ca5fbd3cefed23cca325cb73f45cfc07eb3c6aadfa951bf5d669d5f65d49",
+      "correctedSha256": "e20f6f5fc21cabcee68b572d7418e83308c4cc6e9ba8860e81f5fe1b3bc88885",
+      "changedWordCount": 20,
+      "nonScaleChangeCount": 0,
+      "realizedCornerTrimDb": [
+        -33.535947986283574,
+        -33.53485140107564,
+        -33.53610949358047,
+        -33.53554285900712
+      ],
+      "realizedCornerTrimSpreadDb": 0.001258092504826891,
+      "sampledAuditPass": true,
+      "sampledCertifyPass": true
+    },
+    {
+      "name": "RISERL_low_carve_to_broad_cut",
+      "sourceSha256": "f61ffab839e6fa2dd06a4433cce1351035770ba2b0ae0b40380e94ff3af3e4b1",
+      "correctedSha256": "8df8ff720a000a18cf391ccfba94d17365ed9fc77bc8a705bba79a919b1a36e7",
+      "changedWordCount": 20,
+      "nonScaleChangeCount": 0,
+      "realizedCornerTrimDb": [
+        -33.58458000767983,
+        -33.58648478565064,
+        -33.58366934923984,
+        -33.58486261967184
+      ],
+      "realizedCornerTrimSpreadDb": 0.002815436410799066,
+      "sampledAuditPass": true,
+      "sampledCertifyPass": true
+    },
+    {
+      "name": "RISERL_low_carve_to_high_razor",
+      "sourceSha256": "f5011f0431ea87b56035ec8398cf8f8f3ee4f5fd45cfb0f9d55c5b58670f7e77",
+      "correctedSha256": "8c8c30cc949193caf9c9a4fd25579ce7edecd366bdfec64f5a4c7bef7f41114c",
+      "changedWordCount": 20,
+      "nonScaleChangeCount": 0,
+      "realizedCornerTrimDb": [
+        -36.19870639172038,
+        -36.19705233767801,
+        -36.19785782364752,
+        -36.19818391529954
+      ],
+      "realizedCornerTrimSpreadDb": 0.0016540540423690686,
+      "sampledAuditPass": true,
+      "sampledCertifyPass": true
+    },
+    {
+      "name": "RISERL_low_carve_to_mid_fracture",
+      "sourceSha256": "e258588595e843e7ef251d242637fb4b42324ac0ea38480b5c7f152f799cce0b",
+      "correctedSha256": "9a3cd290529f5d1a88887e8a3fdcf9bd62b77391c4dddf506c132e27d0a90f37",
+      "changedWordCount": 20,
+      "nonScaleChangeCount": 0,
+      "realizedCornerTrimDb": [
+        -33.93693134829889,
+        -33.93617689634937,
+        -33.93325517231454,
+        -33.93392360473983
+      ],
+      "realizedCornerTrimSpreadDb": 0.0036761759843528807,
+      "sampledAuditPass": true,
+      "sampledCertifyPass": true
+    },
+    {
+      "name": "RISERL_low_carve_to_twin_tear",
+      "sourceSha256": "dea49643021a9ed59352f13ea6ad96c6a37877fe43c9469d91c53d7f0886331e",
+      "correctedSha256": "d5d45769a2ecb7e36aab79ba8aa3925955176e6d57173d2b385c786e4f7a4df7",
+      "changedWordCount": 20,
+      "nonScaleChangeCount": 0,
+      "realizedCornerTrimDb": [
+        -33.53836023684618,
+        -33.53599888633235,
+        -33.53592975145402,
+        -33.53669034426383
+      ],
+      "realizedCornerTrimSpreadDb": 0.0024304853921606195,
+      "sampledAuditPass": true,
+      "sampledCertifyPass": true
+    },
+    {
+      "name": "RISERL_multi_fracture_to_broad_cut",
+      "sourceSha256": "db1879f78bb7abb606ec0576aaf930c565a0dc1231a3a82bd72a21da0f2dee77",
+      "correctedSha256": "add9a7eafaf561490dffc27caae6addfecfe067f5c9a02e53f94086efa153a53",
+      "changedWordCount": 20,
+      "nonScaleChangeCount": 0,
+      "realizedCornerTrimDb": [
+        -33.5864425299435,
+        -33.58689896136477,
+        -33.5887108773612,
+        -33.5888546199653
+      ],
+      "realizedCornerTrimSpreadDb": 0.0024120900218065344,
+      "sampledAuditPass": true,
+      "sampledCertifyPass": true
+    },
+    {
+      "name": "RISERL_multi_fracture_to_high_razor",
+      "sourceSha256": "079f315b79646ca16fab4d5e89387430ae4af83f500230ffe8265ca786f2556d",
+      "correctedSha256": "09664458d0590a5670b44fd47128666da3cdbd31d031e16d575377b8e80f3fa0",
+      "changedWordCount": 20,
+      "nonScaleChangeCount": 0,
+      "realizedCornerTrimDb": [
+        -37.57445208625733,
+        -37.57245843904756,
+        -37.57512371397916,
+        -37.5729086381902
+      ],
+      "realizedCornerTrimSpreadDb": 0.0026652749316014024,
+      "sampledAuditPass": true,
+      "sampledCertifyPass": true
+    },
+    {
+      "name": "RISERL_multi_fracture_to_low_carve",
+      "sourceSha256": "1f21e290cd114791ce0c310022500c94cfc3f11f4dff16cf2f57a405f93d32f3",
+      "correctedSha256": "95a15c5565b77d160c3c997079e649d447e37079a0037f4677ef9b5618d02e19",
+      "changedWordCount": 20,
+      "nonScaleChangeCount": 0,
+      "realizedCornerTrimDb": [
+        -32.94655474253723,
+        -32.94694773864102,
+        -32.947753665109204,
+        -32.944529820995704
+      ],
+      "realizedCornerTrimSpreadDb": 0.0032238441134992968,
+      "sampledAuditPass": true,
+      "sampledCertifyPass": true
+    },
+    {
+      "name": "RISERL_multi_fracture_to_mid_fracture",
+      "sourceSha256": "fab2bd8b741992fb1a9a8edbe852429759ae50cd2c359739b15424966b36f3c4",
+      "correctedSha256": "7b4c1b310ff7ec77de6c6ec1e9c6aa9d0822c24ee1f5573be090a3b70e0c69bb",
+      "changedWordCount": 20,
+      "nonScaleChangeCount": 0,
+      "realizedCornerTrimDb": [
+        -33.93461845976596,
+        -33.93617689634937,
+        -33.93253136187543,
+        -33.93544251523388
+      ],
+      "realizedCornerTrimSpreadDb": 0.0036455344739465545,
+      "sampledAuditPass": true,
+      "sampledCertifyPass": true
+    },
+    {
+      "name": "RISERL_multi_fracture_to_twin_tear",
+      "sourceSha256": "89a3fa74b26d28161dd31e8fdcb54ce14da653da11da360bcd8a482dde1a9b5e",
+      "correctedSha256": "cfac9e160cfc8703b9c3710f685ff208bfc776ecbb9259d3ac9ead77a2573524",
+      "changedWordCount": 20,
+      "nonScaleChangeCount": 0,
+      "realizedCornerTrimDb": [
+        -33.534554587352815,
+        -33.53484238681156,
+        -33.5322415538423,
+        -33.53467060477373
+      ],
+      "realizedCornerTrimSpreadDb": 0.0026008329692643883,
+      "sampledAuditPass": true,
+      "sampledCertifyPass": true
+    },
+    {
+      "name": "RISERL_single_tear_to_broad_cut",
+      "sourceSha256": "ee56aca1b49ef64775973ae685a43b463814735ad3d2ef5b852b3ee1f1d4121a",
+      "correctedSha256": "1371907705e130082d34e411458f70a7150950cf2a51b8b78ca82db1eec70171",
+      "changedWordCount": 20,
+      "nonScaleChangeCount": 0,
+      "realizedCornerTrimDb": [
+        -33.6251310126889,
+        -33.62449365731278,
+        -33.62375725789938,
+        -33.62338190303453
+      ],
+      "realizedCornerTrimSpreadDb": 0.001749109654369363,
+      "sampledAuditPass": true,
+      "sampledCertifyPass": true
+    },
+    {
+      "name": "RISERL_single_tear_to_high_razor",
+      "sourceSha256": "0f7e88f38629a6819dec9623bd84cdbf040373b6704b1de0e9215df48d0ad5a6",
+      "correctedSha256": "95229b145c9c0dd35f5b0dfc4ed817780cb5935626b551fff93e4cdc8b1644fc",
+      "changedWordCount": 20,
+      "nonScaleChangeCount": 0,
+      "realizedCornerTrimDb": [
+        -35.52997236569388,
+        -35.53358209217531,
+        -35.52975775353947,
+        -35.53009050775613
+      ],
+      "realizedCornerTrimSpreadDb": 0.003824338635837421,
+      "sampledAuditPass": true,
+      "sampledCertifyPass": true
+    },
+    {
+      "name": "RISERL_single_tear_to_low_carve",
+      "sourceSha256": "0441f2cbfc0110f085b55c9107353dcdd2437421f1ed9c694b21d051d519d175",
+      "correctedSha256": "19168fb2535e413d16132147fc90f4d6811f76c2559d464f7c4bb3250641c7e3",
+      "changedWordCount": 20,
+      "nonScaleChangeCount": 0,
+      "realizedCornerTrimDb": [
+        -32.94391848394166,
+        -32.94469090873807,
+        -32.94265901314464,
+        -32.94513454470072
+      ],
+      "realizedCornerTrimSpreadDb": 0.002475531556079602,
+      "sampledAuditPass": true,
+      "sampledCertifyPass": true
+    },
+    {
+      "name": "RISERL_single_tear_to_mid_fracture",
+      "sourceSha256": "046242952acf48d775aef3ce3fff9d97ab05a34837c0622125af7c0cf21923f6",
+      "correctedSha256": "843d1a3d5f74d38970fbb05b6813e4144c82072f07cba1f375087f48edb60eed",
+      "changedWordCount": 20,
+      "nonScaleChangeCount": 0,
+      "realizedCornerTrimDb": [
+        -33.93579641740227,
+        -33.93617689634937,
+        -33.935378090954764,
+        -33.935126719865806
+      ],
+      "realizedCornerTrimSpreadDb": 0.001050176483566645,
+      "sampledAuditPass": true,
+      "sampledCertifyPass": true
+    },
+    {
+      "name": "RISERL_single_tear_to_multi_fracture",
+      "sourceSha256": "d5628f907355701b85589932587959f0e94c75704d1dedafd4219d41e0de7c59",
+      "correctedSha256": "2951c917e8a0aeffad253f2bd92a38a9334c6b1310f7be0cf820159e3a702aab",
+      "changedWordCount": 20,
+      "nonScaleChangeCount": 0,
+      "realizedCornerTrimDb": [
+        -35.28461968268115,
+        -35.28509826488218,
+        -35.28478732028175,
+        -35.28701499739788
+      ],
+      "realizedCornerTrimSpreadDb": 0.002395314716736152,
+      "sampledAuditPass": true,
+      "sampledCertifyPass": true
+    },
+    {
+      "name": "RISERL_single_tear_to_twin_tear",
+      "sourceSha256": "e6d145fb8552c39b7fbcd99ecf97db2b7033dfddd72d7e2b00b4e2b6f555b83f",
+      "correctedSha256": "49fe53d20d485018d67d6f7ce4804ce49856404a5e994f66bb163fb3e6edfe93",
+      "changedWordCount": 20,
+      "nonScaleChangeCount": 0,
+      "realizedCornerTrimDb": [
+        -33.53188300518626,
+        -33.533694901554846,
+        -33.53161174858117,
+        -33.53554285900712
+      ],
+      "realizedCornerTrimSpreadDb": 0.003931110425952511,
+      "sampledAuditPass": true,
+      "sampledCertifyPass": true
+    },
+    {
+      "name": "RISERL_twin_tear_to_broad_cut",
+      "sourceSha256": "976196cc7137935429ef62e05ea417ba4dd180968e3d6345b6010f915dafed31",
+      "correctedSha256": "ec94a7ee04e2e21355d96aa5bca37d81c77bb3a9f612d86d8a49945a82d23b74",
+      "changedWordCount": 20,
+      "nonScaleChangeCount": 0,
+      "realizedCornerTrimDb": [
+        -33.608475291280826,
+        -33.60998430861963,
+        -33.60886262457281,
+        -33.60997391078295
+      ],
+      "realizedCornerTrimSpreadDb": 0.0015090173388045969,
+      "sampledAuditPass": true,
+      "sampledCertifyPass": true
+    },
+    {
+      "name": "RISERL_twin_tear_to_mid_fracture",
+      "sourceSha256": "b3a86ef60533ef7f9d88aab17c3c3146d832e4aea43b84195302bb0527e71275",
+      "correctedSha256": "dcfaa75bf2e0abeec73df55cf88a7e22de9be0f2c9820d67bce89be8cb77e98b",
+      "changedWordCount": 20,
+      "nonScaleChangeCount": 0,
+      "realizedCornerTrimDb": [
+        -33.936214291893684,
+        -33.93733943260729,
+        -33.93573731251623,
+        -33.93837640442915
+      ],
+      "realizedCornerTrimSpreadDb": 0.0026390919129184454,
+      "sampledAuditPass": true,
+      "sampledCertifyPass": true
+    },
+    {
+      "name": "Scream",
+      "sourceSha256": "2ed7b49280c88b3ba65dffdfe83c79a5b183c07ed166f86ea55a1ed0badc69ee",
+      "correctedSha256": "897e21a8cd44d4886c2fbeaf482a58d4476ee4993b8642130e92851962ae1f06",
+      "changedWordCount": 24,
+      "nonScaleChangeCount": 0,
+      "realizedCornerTrimDb": [
+        -13.06917054309153,
+        -13.06917054309153,
+        -13.06917054309153,
+        -13.06917054309153
+      ],
+      "realizedCornerTrimSpreadDb": 0.0,
+      "sampledAuditPass": true,
+      "sampledCertifyPass": true
+    },
+    {
+      "name": "Speaker Knockerz",
+      "sourceSha256": "8fa654085802747a7f44cef243ee6d8ebe9fe1d3a8d0492ab94f0dcd42791aac",
+      "correctedSha256": "294d552849496bad3009ce38e03b608572944c925d41ac4acf515a511c47d664",
+      "changedWordCount": 24,
+      "nonScaleChangeCount": 0,
+      "realizedCornerTrimDb": [
+        -16.02570888687777,
+        -16.025087423723747,
+        -16.025078390396033,
+        -16.02585269841759
+      ],
+      "realizedCornerTrimSpreadDb": 0.000774308021558312,
+      "sampledAuditPass": true,
+      "sampledCertifyPass": true
+    },
+    {
+      "name": "Sweep",
+      "sourceSha256": "4dbe526e0a89bc182dda9bfc5c28615475c298ccc9c7ca48a0769ec380f600a4",
+      "correctedSha256": "286d04d89d5c3e948dee7fce985adf0c99287171dc5f8bb6f1734ac3b1b243bb",
+      "changedWordCount": 24,
+      "nonScaleChangeCount": 0,
+      "realizedCornerTrimDb": [
+        -10.003001549355101,
+        -10.002797441358563,
+        -10.003001549355101,
+        -10.002797441358563
+      ],
+      "realizedCornerTrimSpreadDb": 0.0002041079965380277,
+      "sampledAuditPass": true,
+      "sampledCertifyPass": true
+    },
+    {
+      "name": "Talker",
+      "sourceSha256": "01c512ccaccd638bcbfc78bdc89bafe00d11fc490c89d29ebc62e2888f15075e",
+      "correctedSha256": "01df0d9f364d496fe7e8bfef24f606ec0ac1cf884a5de2e07332cf17f4edd008",
+      "changedWordCount": 24,
+      "nonScaleChangeCount": 0,
+      "realizedCornerTrimDb": [
+        -10.819259440491715,
+        -10.820099485254975,
+        -10.820042197445218,
+        -10.820261223123799
+      ],
+      "realizedCornerTrimSpreadDb": 0.0010017826320840584,
+      "sampledAuditPass": true,
+      "sampledCertifyPass": true
+    },
+    {
+      "name": "VOWL_aa_to_ao",
+      "sourceSha256": "b9d0a8bf682f04288b934506e3a96e8e15b3eaf4cbabd4d1b2c78e385254a1cb",
+      "correctedSha256": "d6133c61b5b42c9f81229011796259634e752c8e78c76370021ad89236b77b2c",
+      "changedWordCount": 24,
+      "nonScaleChangeCount": 0,
+      "realizedCornerTrimDb": [
+        -32.274317351943324,
+        -32.27150015828486,
+        -32.272282672835665,
+        -32.27045833697757
+      ],
+      "realizedCornerTrimSpreadDb": 0.0038590149657551365,
+      "sampledAuditPass": true,
+      "sampledCertifyPass": true
+    },
+    {
+      "name": "VOWL_aa_to_er",
+      "sourceSha256": "3f155bb614a2282b9f9b02b65b988c77b124465106e3687cbba95b26fc0bd6ad",
+      "correctedSha256": "c0da4cc38988df650dce3bf591ee2409a24b460a7b2133daa90825f7be8746d5",
+      "changedWordCount": 24,
+      "nonScaleChangeCount": 0,
+      "realizedCornerTrimDb": [
+        -32.274317351943324,
+        -32.273266129950606,
+        -32.272282672835665,
+        -32.27299210239326
+      ],
+      "realizedCornerTrimSpreadDb": 0.0020346791076590875,
+      "sampledAuditPass": true,
+      "sampledCertifyPass": true
+    },
+    {
+      "name": "VOWL_aa_to_uh",
+      "sourceSha256": "f8be3f14f1b554d84039bc6b3802c9ccb134e414300d608fec2f68220ee1863f",
+      "correctedSha256": "06db3899e462668de93b1924119dfdd49120a50e67b315e0e5405043974e4cd7",
+      "changedWordCount": 24,
+      "nonScaleChangeCount": 0,
+      "realizedCornerTrimDb": [
+        -32.274317351943324,
+        -32.272917383348315,
+        -32.272282672835665,
+        -32.27380693275523
+      ],
+      "realizedCornerTrimSpreadDb": 0.0020346791076590875,
+      "sampledAuditPass": true,
+      "sampledCertifyPass": true
+    },
+    {
+      "name": "VOWL_aa_to_uu",
+      "sourceSha256": "a91cc73a81a9c0d5238d2b382c9e43383efadb911e961efb9e3718094f85c18f",
+      "correctedSha256": "6008e86accd7df1533a29468ba151106508984f11e88629ffe54637a874a3446",
+      "changedWordCount": 24,
+      "nonScaleChangeCount": 0,
+      "realizedCornerTrimDb": [
+        -32.274317351943324,
+        -32.27384883300004,
+        -32.272282672835665,
+        -32.27253411383776
+      ],
+      "realizedCornerTrimSpreadDb": 0.0020346791076590875,
+      "sampledAuditPass": true,
+      "sampledCertifyPass": true
+    },
+    {
+      "name": "VOWL_aa_to_uw",
+      "sourceSha256": "49c189412b9c1eb5f10b9a2114c58ab392a7a6f3cb78c98e1f953c9946cf9cfc",
+      "correctedSha256": "d158a6f70f3b4ee4167ca1c8b0b2ad85163ef5ae713aee01c7a1f9d2ea3b163f",
+      "changedWordCount": 24,
+      "nonScaleChangeCount": 0,
+      "realizedCornerTrimDb": [
+        -32.274317351943324,
+        -32.273811222789156,
+        -32.272282672835665,
+        -32.27256677609108
+      ],
+      "realizedCornerTrimSpreadDb": 0.0020346791076590875,
+      "sampledAuditPass": true,
+      "sampledCertifyPass": true
+    },
+    {
+      "name": "VOWL_ae_to_aa",
+      "sourceSha256": "97e7bc6deb17050ef6b8555a4fe1fce3b23a4510109245cac1982a8b17210331",
+      "correctedSha256": "96b8e9126268c1bd174aa64763dc949e9f1d9e1d9e09fe294d969aa564fd893c",
+      "changedWordCount": 24,
+      "nonScaleChangeCount": 0,
+      "realizedCornerTrimDb": [
+        -22.401396005035465,
+        -22.4013795221474,
+        -22.39945536404441,
+        -22.401533492427298
+      ],
+      "realizedCornerTrimSpreadDb": 0.0020781283828874564,
+      "sampledAuditPass": true,
+      "sampledCertifyPass": true
+    },
+    {
+      "name": "VOWL_ae_to_ao",
+      "sourceSha256": "2235d7e2527acac6471a46de1fb9b5077c9004ed57d3d4537414f62fe148f357",
+      "correctedSha256": "3d8b9c633cbade18ee19b657b29f33ee98e96e959600abd6f9727972ed60c28e",
+      "changedWordCount": 24,
+      "nonScaleChangeCount": 0,
+      "realizedCornerTrimDb": [
+        -22.401396005035465,
+        -22.399467995565495,
+        -22.39945536404441,
+        -22.4000508043739
+      ],
+      "realizedCornerTrimSpreadDb": 0.0019406409910551758,
+      "sampledAuditPass": true,
+      "sampledCertifyPass": true
+    },
+    {
+      "name": "VOWL_ae_to_er",
+      "sourceSha256": "a944172dd7a5ce01967ba5fdd7666a49ae734f2600047cc3298467273f73e1be",
+      "correctedSha256": "6cf2f175a13f28351c4c7b7ad9b4d6fcd281bc38ad6776569746a65eda298f85",
+      "changedWordCount": 24,
+      "nonScaleChangeCount": 0,
+      "realizedCornerTrimDb": [
+        -23.13697097917074,
+        -23.140172498930784,
+        -23.13721436103713,
+        -23.140579333745283
+      ],
+      "realizedCornerTrimSpreadDb": 0.0036083545745420054,
+      "sampledAuditPass": true,
+      "sampledCertifyPass": true
+    },
+    {
+      "name": "VOWL_ae_to_uh",
+      "sourceSha256": "23a1210a03ea26c3352e61938826a8510623f6afc5a054c1919f599c0b63464b",
+      "correctedSha256": "128178d3dc3fa5dbec59638af4d276a15be3c13178390f055980d7d0db09cb27",
+      "changedWordCount": 24,
+      "nonScaleChangeCount": 0,
+      "realizedCornerTrimDb": [
+        -22.401396005035465,
+        -22.401414263228144,
+        -22.39945536404441,
+        -22.400594784085698
+      ],
+      "realizedCornerTrimSpreadDb": 0.00195889918373382,
+      "sampledAuditPass": true,
+      "sampledCertifyPass": true
+    },
+    {
+      "name": "VOWL_ae_to_uu",
+      "sourceSha256": "fda91a035f9192cbe96351309a22400ab911d728e4c050cd921707ef2e5e96ee",
+      "correctedSha256": "01377aec3494b69a86a6f00cbaf23cae823f5ac8cbe07e58b7c1ced8396db2f6",
+      "changedWordCount": 24,
+      "nonScaleChangeCount": 0,
+      "realizedCornerTrimDb": [
+        -22.401396005035465,
+        -22.40134792905632,
+        -22.39945536404441,
+        -22.399504839144267
+      ],
+      "realizedCornerTrimSpreadDb": 0.0019406409910551758,
+      "sampledAuditPass": true,
+      "sampledCertifyPass": true
+    },
+    {
+      "name": "VOWL_ae_to_uw",
+      "sourceSha256": "9b0d08a9aecbac5ec6535fa3dc64523b5526ab3824db1307bd31d653c036b3ba",
+      "correctedSha256": "4e146354294a75d4008825860242f512efa213281d2f9906ea6a2ae56fd0543f",
+      "changedWordCount": 24,
+      "nonScaleChangeCount": 0,
+      "realizedCornerTrimDb": [
+        -22.401396005035465,
+        -22.399052291542475,
+        -22.39945536404441,
+        -22.399818276138173
+      ],
+      "realizedCornerTrimSpreadDb": 0.0023437134929906733,
+      "sampledAuditPass": true,
+      "sampledCertifyPass": true
+    },
+    {
+      "name": "VOWL_ao_to_er",
+      "sourceSha256": "93bda556e20808d030719d29ca4fabd880172c934c9546bb8870e5beb53cb94e",
+      "correctedSha256": "892a72ed7941e99b46c65feec6b86002e2172a6d7cadb055eea387db9a830b21",
+      "changedWordCount": 24,
+      "nonScaleChangeCount": 0,
+      "realizedCornerTrimDb": [
+        -27.588832814536342,
+        -27.589273638074374,
+        -27.58919464523721,
+        -27.58773091860779
+      ],
+      "realizedCornerTrimSpreadDb": 0.0015427194665846855,
+      "sampledAuditPass": true,
+      "sampledCertifyPass": true
+    },
+    {
+      "name": "VOWL_ao_to_uh",
+      "sourceSha256": "420ea607d87cbf320f7be383236ae227c9fec36e526deaa0ff03941efd0fcf74",
+      "correctedSha256": "d65d51150fd513a349f83fb07b8d0113aa4234ab078beaa6b4f26c44b373b62d",
+      "changedWordCount": 24,
+      "nonScaleChangeCount": 0,
+      "realizedCornerTrimDb": [
+        -27.588832814536342,
+        -27.590693039704227,
+        -27.58919464523721,
+        -27.58875215157161
+      ],
+      "realizedCornerTrimSpreadDb": 0.0019408881326157257,
+      "sampledAuditPass": true,
+      "sampledCertifyPass": true
+    },
+    {
+      "name": "VOWL_ao_to_uu",
+      "sourceSha256": "d3b3ac6343c4b371703c7817c1c83403c85552dfcad4c2216cbe923e7a00680f",
+      "correctedSha256": "12324b4389ce1ca2ce9582786fd8a4eec02bba8c77e8038fe506e2b71bc7b366",
+      "changedWordCount": 24,
+      "nonScaleChangeCount": 0,
+      "realizedCornerTrimDb": [
+        -27.588832814536342,
+        -27.58989990512064,
+        -27.58919464523721,
+        -27.590421346428535
+      ],
+      "realizedCornerTrimSpreadDb": 0.0015885318921924352,
+      "sampledAuditPass": true,
+      "sampledCertifyPass": true
+    },
+    {
+      "name": "VOWL_ao_to_uw",
+      "sourceSha256": "1a178b4a49b6a73333118a3cf380327e57ee8ad49ceb8b368b10414a0289c81d",
+      "correctedSha256": "7d014a307f7fa73463d17e6bc763d4f12f2223e957fec34f86575d7bfa83f552",
+      "changedWordCount": 24,
+      "nonScaleChangeCount": 0,
+      "realizedCornerTrimDb": [
+        -27.588832814536342,
+        -27.589100700722252,
+        -27.58919464523721,
+        -27.590492395025624
+      ],
+      "realizedCornerTrimSpreadDb": 0.001659580489281609,
+      "sampledAuditPass": true,
+      "sampledCertifyPass": true
+    },
+    {
+      "name": "VOWL_eh_to_aa",
+      "sourceSha256": "0210a6fb47368c6b08b89a4c67311040f5b2db3e26991f8ff5d4047e9ef3d339",
+      "correctedSha256": "2d0d44d02f98d68beac8a262fc2bb82e89c03f3932f7e0bc97d757d7b5c2b00a",
+      "changedWordCount": 24,
+      "nonScaleChangeCount": 0,
+      "realizedCornerTrimDb": [
+        -21.519153040930977,
+        -21.521218463728687,
+        -21.51908787324401,
+        -21.519930072407746
+      ],
+      "realizedCornerTrimSpreadDb": 0.0021305904846755652,
+      "sampledAuditPass": true,
+      "sampledCertifyPass": true
+    },
+    {
+      "name": "VOWL_eh_to_ae",
+      "sourceSha256": "6531e9696c903628bd318a65e64c92817da2f19f9bc588ed20d7eff953ffbd7e",
+      "correctedSha256": "06910f63bbb2342264653b717a9d6afb27c41dc80984e42511dcde2d5de295aa",
+      "changedWordCount": 24,
+      "nonScaleChangeCount": 0,
+      "realizedCornerTrimDb": [
+        -21.642468761246416,
+        -21.640608486680712,
+        -21.641264633934696,
+        -21.639494613367766
+      ],
+      "realizedCornerTrimSpreadDb": 0.002974147878649802,
+      "sampledAuditPass": true,
+      "sampledCertifyPass": true
+    },
+    {
+      "name": "VOWL_eh_to_ao",
+      "sourceSha256": "7dffa9b9d276e1f8953d979f768c3bb3649f1893fef1dccaad22f7b1320c4729",
+      "correctedSha256": "e74f1a02ec799b3d487aafb2942938ce35ca9f8e179dc2466d22dd2a9dfa69fe",
+      "changedWordCount": 24,
+      "nonScaleChangeCount": 0,
+      "realizedCornerTrimDb": [
+        -20.603731341240724,
+        -20.604499303603475,
+        -20.603951945952833,
+        -20.603514623528
+      ],
+      "realizedCornerTrimSpreadDb": 0.0009846800754758078,
+      "sampledAuditPass": true,
+      "sampledCertifyPass": true
+    },
+    {
+      "name": "VOWL_eh_to_er",
+      "sourceSha256": "01eda0489b44c78ad26dd00b1692afed1508735e530a421beb5c0bcbd9af9b0b",
+      "correctedSha256": "0d6a77f796ad10dc1d0e2ffd50872ae85db57014c600f91ec9169d74eb405b6b",
+      "changedWordCount": 24,
+      "nonScaleChangeCount": 0,
+      "realizedCornerTrimDb": [
+        -23.139961807511273,
+        -23.140172498930784,
+        -23.139329847006422,
+        -23.140579333745283
+      ],
+      "realizedCornerTrimSpreadDb": 0.0012494867388603836,
+      "sampledAuditPass": true,
+      "sampledCertifyPass": true
+    },
+    {
+      "name": "VOWL_eh_to_uh",
+      "sourceSha256": "20d27f2dd40fd3b63b25e5ed4d1fcdbce72a0b2429457ab5c3d45f5256f9d540",
+      "correctedSha256": "1beafb32f8e3163c5613a72b0d3723fb62511dc536c610865fa1d776c47649ef",
+      "changedWordCount": 24,
+      "nonScaleChangeCount": 0,
+      "realizedCornerTrimDb": [
+        -21.345030717195222,
+        -21.34733575295713,
+        -21.345711028528676,
+        -21.34565120103222
+      ],
+      "realizedCornerTrimSpreadDb": 0.0023050357619069928,
+      "sampledAuditPass": true,
+      "sampledCertifyPass": true
+    },
+    {
+      "name": "VOWL_eh_to_uu",
+      "sourceSha256": "5d2a76365748dea15c505ffa6db4dbd78e764ce750059b3e4628f050b7e9942c",
+      "correctedSha256": "483d822e4865843be4b9903e5811150a5a2f9fc67db12f5d78f11da2b24cf4ee",
+      "changedWordCount": 24,
+      "nonScaleChangeCount": 0,
+      "realizedCornerTrimDb": [
+        -20.391722717110223,
+        -20.393570587864524,
+        -20.394791578262165,
+        -20.392565058052483
+      ],
+      "realizedCornerTrimSpreadDb": 0.0030688611519416042,
+      "sampledAuditPass": true,
+      "sampledCertifyPass": true
+    },
+    {
+      "name": "VOWL_eh_to_uw",
+      "sourceSha256": "90a51d38ba604372a81017d3167edf10ced46a5712be74718e070312bd9da3cb",
+      "correctedSha256": "a1a6cdd927dd244519da66f8c395ceab383d086b975cc030ccd03a9ce4513131",
+      "changedWordCount": 24,
+      "nonScaleChangeCount": 0,
+      "realizedCornerTrimDb": [
+        -19.52299456471708,
+        -19.523344237577632,
+        -19.522218306346463,
+        -19.52130000505423
+      ],
+      "realizedCornerTrimSpreadDb": 0.0020442325234029113,
+      "sampledAuditPass": true,
+      "sampledCertifyPass": true
+    },
+    {
+      "name": "VOWL_ih_to_aa",
+      "sourceSha256": "d4570d656b34b9b71790ba06f405f36d2fb6aa790fee713c89547f3f6c8436fb",
+      "correctedSha256": "5810ed6f5b4063da0f1dd3438a6b78bcd28ddcda875620ae08d09b92462ce22e",
+      "changedWordCount": 24,
+      "nonScaleChangeCount": 0,
+      "realizedCornerTrimDb": [
+        -21.520463223101856,
+        -21.521218463728687,
+        -21.52216135125584,
+        -21.518780004264645
+      ],
+      "realizedCornerTrimSpreadDb": 0.0033813469911940786,
+      "sampledAuditPass": true,
+      "sampledCertifyPass": true
+    },
+    {
+      "name": "VOWL_ih_to_ae",
+      "sourceSha256": "01e0abf7c31fe9c981c9c84c9af1bf7124ca59670d5b70a9469d9e50ee674bf0",
+      "correctedSha256": "408b70eaa019d04851c747b874a7af1a806bf2fbfc37311346baddbb460f763a",
+      "changedWordCount": 24,
+      "nonScaleChangeCount": 0,
+      "realizedCornerTrimDb": [
+        -21.636465882716152,
+        -21.6383596252901,
+        -21.636944300550333,
+        -21.639615205907184
+      ],
+      "realizedCornerTrimSpreadDb": 0.003149323191031783,
+      "sampledAuditPass": true,
+      "sampledCertifyPass": true
+    },
+    {
+      "name": "VOWL_ih_to_ao",
+      "sourceSha256": "3c2366f52c43a813778cd99402a06015d8b73b7fa2c38b023db0206003bb19fc",
+      "correctedSha256": "8bc5e50cf00be8e35218b3d5205d85dc0136ae21ec396615705906b55150a243",
+      "changedWordCount": 24,
+      "nonScaleChangeCount": 0,
+      "realizedCornerTrimDb": [
+        -20.604899499584548,
+        -20.604499303603475,
+        -20.603916187368462,
+        -20.606187026851263
+      ],
+      "realizedCornerTrimSpreadDb": 0.002270839482800824,
+      "sampledAuditPass": true,
+      "sampledCertifyPass": true
+    },
+    {
+      "name": "VOWL_ih_to_eh",
+      "sourceSha256": "a86e2a62bb9b7cc68469ff60a665e41e9f254c47d2a4bbcb3bc70765563cc387",
+      "correctedSha256": "80e962009b8d9f509e3f936819142d947aaa8caccbe2f47d96a02fdc8fb965e4",
+      "changedWordCount": 24,
+      "nonScaleChangeCount": 0,
+      "realizedCornerTrimDb": [
+        -21.03931266743829,
+        -21.041283461271576,
+        -21.04145932219611,
+        -21.03995085002168
+      ],
+      "realizedCornerTrimSpreadDb": 0.00214665475782283,
+      "sampledAuditPass": true,
+      "sampledCertifyPass": true
+    },
+    {
+      "name": "VOWL_ih_to_er",
+      "sourceSha256": "cdae9077b1dbe621db124a2f4246ad82959cf764f50dbca5ba86de13c4e46e78",
+      "correctedSha256": "3ce59587771e3f2cb924003716225607b81d294fe472af5a39c34f684a18f9e8",
+      "changedWordCount": 24,
+      "nonScaleChangeCount": 0,
+      "realizedCornerTrimDb": [
+        -23.13844086588945,
+        -23.140172498930784,
+        -23.13970858792087,
+        -23.141057676627106
+      ],
+      "realizedCornerTrimSpreadDb": 0.0026168107376562944,
+      "sampledAuditPass": true,
+      "sampledCertifyPass": true
+    },
+    {
+      "name": "VOWL_ih_to_uh",
+      "sourceSha256": "9877a488bec433e80bb5d650397bd9a93e5c08338e95c98834eefbb125f0c98e",
+      "correctedSha256": "739c9315e25a1a61350ae3e549f3e20167167303bccd789d0a57a4d47b893977",
+      "changedWordCount": 24,
+      "nonScaleChangeCount": 0,
+      "realizedCornerTrimDb": [
+        -21.34682030084539,
+        -21.348541373007382,
+        -21.348701284785964,
+        -21.348440658210755
+      ],
+      "realizedCornerTrimSpreadDb": 0.0018809839405733442,
+      "sampledAuditPass": true,
+      "sampledCertifyPass": true
+    },
+    {
+      "name": "VOWL_ih_to_uu",
+      "sourceSha256": "b172ea2ac5d6ff1e81af5329ba64bfe2a90e9f174392eeb1fd27ad4429c3adba",
+      "correctedSha256": "344b13608ba0ac829de380c98fedfe8c5679505c11325e3ea71f8030d0b40498",
+      "changedWordCount": 24,
+      "nonScaleChangeCount": 0,
+      "realizedCornerTrimDb": [
+        -20.390510194164126,
+        -20.392435055843762,
+        -20.392246556669747,
+        -20.3929697461053
+      ],
+      "realizedCornerTrimSpreadDb": 0.0024595519411754196,
+      "sampledAuditPass": true,
+      "sampledCertifyPass": true
+    },
+    {
+      "name": "VOWL_ih_to_uw",
+      "sourceSha256": "a6ffebb0f093c9ee528fe2d3db3c9627314de6806c439a10d25575c92c32c74a",
+      "correctedSha256": "031312b8ada3281dd992c9f861a4a1d9d2fa6b1b9588dfd1e9c37e6531ce6c35",
+      "changedWordCount": 24,
+      "nonScaleChangeCount": 0,
+      "realizedCornerTrimDb": [
+        -19.519695136325165,
+        -19.520612183663342,
+        -19.521247952578445,
+        -19.518269765221238
+      ],
+      "realizedCornerTrimSpreadDb": 0.0029781873572076734,
+      "sampledAuditPass": true,
+      "sampledCertifyPass": true
+    },
+    {
+      "name": "VOWL_iy_to_aa",
+      "sourceSha256": "e31f892a9cc9c7efda6a1321dd1f28d0f29e2bd27f93b0153285dfcfdb78356c",
+      "correctedSha256": "faab8779d1181befc8b6d42517329b99c952f7c481b4d00fbd2ee4e6c86219cd",
+      "changedWordCount": 24,
+      "nonScaleChangeCount": 0,
+      "realizedCornerTrimDb": [
+        -21.51799748812834,
+        -21.520118357383346,
+        -21.51926517041149,
+        -21.519930072407746
+      ],
+      "realizedCornerTrimSpreadDb": 0.002120869255005431,
+      "sampledAuditPass": true,
+      "sampledCertifyPass": true
+    },
+    {
+      "name": "VOWL_iy_to_ae",
+      "sourceSha256": "eb5b270d1071b64910a4726b3895daa8a82fe9ce828316c7f7949de1cd407edf",
+      "correctedSha256": "87c1a91349c538d7ef58d0cfb0670053a2fd6f5d73ca31d583c3dca7ccbbce44",
+      "changedWordCount": 24,
+      "nonScaleChangeCount": 0,
+      "realizedCornerTrimDb": [
+        -21.639953757358704,
+        -21.640608486680712,
+        -21.642420265931666,
+        -21.64122117607688
+      ],
+      "realizedCornerTrimSpreadDb": 0.002466508572961601,
+      "sampledAuditPass": true,
+      "sampledCertifyPass": true
+    },
+    {
+      "name": "VOWL_iy_to_ao",
+      "sourceSha256": "2fab10a588c5619fd4e5de72483b674d5cf43dc722968dc753d29a325d69a036",
+      "correctedSha256": "fb95e394b4549430de7e603e8862043bc5790b2010c4b11ff063ad538df0d8d9",
+      "changedWordCount": 24,
+      "nonScaleChangeCount": 0,
+      "realizedCornerTrimDb": [
+        -20.602583791885035,
+        -20.604499303603475,
+        -20.604887852728694,
+        -20.604355613923268
+      ],
+      "realizedCornerTrimSpreadDb": 0.002304060843659528,
+      "sampledAuditPass": true,
+      "sampledCertifyPass": true
+    },
+    {
+      "name": "VOWL_iy_to_eh",
+      "sourceSha256": "0f24a7e773394c358b2da6c3736202c4f5ac28de9c12ea33938cd2c75520fd59",
+      "correctedSha256": "0f15376f047cf8536d2383bf5168a38d5017665c9bc1a30a43ab3ecf9476ebc9",
+      "changedWordCount": 24,
+      "nonScaleChangeCount": 0,
+      "realizedCornerTrimDb": [
+        -21.035905511094533,
+        -21.04125671237094,
+        -21.03939434083443,
+        -21.041595749115324
+      ],
+      "realizedCornerTrimSpreadDb": 0.0056902380207901615,
+      "sampledAuditPass": true,
+      "sampledCertifyPass": true
+    },
+    {
+      "name": "VOWL_iy_to_er",
+      "sourceSha256": "748f527030ab435bbcc531d43c8768d065b1744b1360f3e64cdb3ff1a1434a10",
+      "correctedSha256": "81db8ef26939898b0c86afe6053a5c1944902af43158f8615320dc34b546aa4f",
+      "changedWordCount": 24,
+      "nonScaleChangeCount": 0,
+      "realizedCornerTrimDb": [
+        -23.14014457768242,
+        -23.140172498930784,
+        -23.141742594730168,
+        -23.142316337978265
+      ],
+      "realizedCornerTrimSpreadDb": 0.002171760295844649,
+      "sampledAuditPass": true,
+      "sampledCertifyPass": true
+    },
+    {
+      "name": "VOWL_iy_to_ih",
+      "sourceSha256": "8d09e7e23e2673f1bc31c5790da73a19515a932e25d2827682cdc480fbfae25c",
+      "correctedSha256": "8d327507df18b10fac0b499d6d8c901758de2c8945aaeea5a66f4f8b49e28c46",
+      "changedWordCount": 24,
+      "nonScaleChangeCount": 0,
+      "realizedCornerTrimDb": [
+        -19.729500478841814,
+        -19.729503046454504,
+        -19.73489367024427,
+        -19.729563897326656
+      ],
+      "realizedCornerTrimSpreadDb": 0.0053931914024545335,
+      "sampledAuditPass": true,
+      "sampledCertifyPass": true
+    },
+    {
+      "name": "VOWL_iy_to_uh",
+      "sourceSha256": "c01c5681c4187fbf571093b55daa010848b2047e8ab5cd6e54c5cc71c6f2f3af",
+      "correctedSha256": "e139f8f5f9b803be60b4db94511eb2061035e8aadeeecd1a473e7111dcac5fa1",
+      "changedWordCount": 24,
+      "nonScaleChangeCount": 0,
+      "realizedCornerTrimDb": [
+        -21.344649993242296,
+        -21.344584820662348,
+        -21.348176392585877,
+        -21.346920418487247
+      ],
+      "realizedCornerTrimSpreadDb": 0.003591571923529102,
+      "sampledAuditPass": true,
+      "sampledCertifyPass": true
+    },
+    {
+      "name": "VOWL_iy_to_uu",
+      "sourceSha256": "8c3a93a61f3a291c20ae1d86732b62dba1d765ee27b2125f8d436555676dc12d",
+      "correctedSha256": "dce8d4f9e9b9feab7fda43d0d75e89507af2fc3631bbd71a080e3311b6ed70b1",
+      "changedWordCount": 24,
+      "nonScaleChangeCount": 0,
+      "realizedCornerTrimDb": [
+        -20.391885621757254,
+        -20.39290278318836,
+        -20.393377793616644,
+        -20.39138967889936
+      ],
+      "realizedCornerTrimSpreadDb": 0.0019881147172853275,
+      "sampledAuditPass": true,
+      "sampledCertifyPass": true
+    },
+    {
+      "name": "VOWL_iy_to_uw",
+      "sourceSha256": "456be70c5ff55b61d3863fa232e2c7a1fc0815c779024b757a422dc66f41745f",
+      "correctedSha256": "3c21e5fc3b170d86dda01ca741dd94f79228e267e2471062c292dcab5fc8e185",
+      "changedWordCount": 24,
+      "nonScaleChangeCount": 0,
+      "realizedCornerTrimDb": [
+        -19.521594632923748,
+        -19.52215428568924,
+        -19.525468345185455,
+        -19.52284210708013
+      ],
+      "realizedCornerTrimSpreadDb": 0.003873712261707851,
+      "sampledAuditPass": true,
+      "sampledCertifyPass": true
+    },
+    {
+      "name": "VOWL_uh_to_er",
+      "sourceSha256": "a3594272c686d106e126bd72e2182eebbcab41f1afb9dec74fddb5e119ecb8d6",
+      "correctedSha256": "e3405a9fe3967cff108203bfc71ce34edbc1999d09c50bf862100339f47ad86a",
+      "changedWordCount": 24,
+      "nonScaleChangeCount": 0,
+      "realizedCornerTrimDb": [
+        -25.89623143109803,
+        -25.89412969317059,
+        -25.895592197056608,
+        -25.894946140661933
+      ],
+      "realizedCornerTrimSpreadDb": 0.0021017379274397285,
+      "sampledAuditPass": true,
+      "sampledCertifyPass": true
+    },
+    {
+      "name": "VOWL_uh_to_uu",
+      "sourceSha256": "e1d14c9cd387beb8dd3d692c5829b525438e39b7c7f19fccc4a6d673e6f5c4fd",
+      "correctedSha256": "6b6a9169e7c685dee7b030eff95784d9ccd664ac170e89d02f0afacd8d461aaf",
+      "changedWordCount": 24,
+      "nonScaleChangeCount": 0,
+      "realizedCornerTrimDb": [
+        -25.89623143109803,
+        -25.894964682926513,
+        -25.895592197056608,
+        -25.894850490120117
+      ],
+      "realizedCornerTrimSpreadDb": 0.001380940977913525,
+      "sampledAuditPass": true,
+      "sampledCertifyPass": true
+    },
+    {
+      "name": "VOWL_uh_to_uw",
+      "sourceSha256": "d596ca3b310954dde9beb82080bc86f7241dee16e233fd8303786d3e5321affe",
+      "correctedSha256": "9a41e0ccd4d8dadbbbd862889af7255fd647d0932283b1a807c8b5d64c64ede7",
+      "changedWordCount": 24,
+      "nonScaleChangeCount": 0,
+      "realizedCornerTrimDb": [
+        -25.89623143109803,
+        -25.895095009903226,
+        -25.895592197056608,
+        -25.895507378330148
+      ],
+      "realizedCornerTrimSpreadDb": 0.0011364211948041714,
+      "sampledAuditPass": true,
+      "sampledCertifyPass": true
+    },
+    {
+      "name": "VOWL_uu_to_er",
+      "sourceSha256": "2a1b6a5d74d3c30bc2071a3bf5d42aa5d000e0b7055a08ca2b4439a57f804828",
+      "correctedSha256": "01a435489232d4378bc54d1f22bb036b108314aec8d798bccc3465f1afb411d6",
+      "changedWordCount": 24,
+      "nonScaleChangeCount": 0,
+      "realizedCornerTrimDb": [
+        -23.138831120988613,
+        -23.14163047453439,
+        -23.139340443142995,
+        -23.141057676627106
+      ],
+      "realizedCornerTrimSpreadDb": 0.002799353545778871,
+      "sampledAuditPass": true,
+      "sampledCertifyPass": true
+    },
+    {
+      "name": "VOWL_uw_to_er",
+      "sourceSha256": "d2da592658d5cde7e80fb6e8d59147e561b2d84e51bd4587d8a68c507fd578da",
+      "correctedSha256": "52fcfad304a4ed132e549481203b11de2fec43cb627fdf21a31c842e233d3561",
+      "changedWordCount": 24,
+      "nonScaleChangeCount": 0,
+      "realizedCornerTrimDb": [
+        -23.141758414579286,
+        -23.143693207675412,
+        -23.141306239170323,
+        -23.142316337978265
+      ],
+      "realizedCornerTrimSpreadDb": 0.0023869685050890155,
+      "sampledAuditPass": true,
+      "sampledCertifyPass": true
+    },
+    {
+      "name": "VOWL_uw_to_uu",
+      "sourceSha256": "5f306fd729505a6150e811252d3de1a8e4a6b122cccaf529ea8a4799247e9533",
+      "correctedSha256": "1506788d0bdc2a2859d6a6856a570ea3d996268ebf527edaef008fb8c6e718e6",
+      "changedWordCount": 24,
+      "nonScaleChangeCount": 0,
+      "realizedCornerTrimDb": [
+        -20.392604914558547,
+        -20.392466197493842,
+        -20.394212930441782,
+        -20.39290458583624
+      ],
+      "realizedCornerTrimSpreadDb": 0.0017467329479394778,
+      "sampledAuditPass": true,
+      "sampledCertifyPass": true
+    },
+    {
+      "name": "X_cavity_tin_can__to__metal_free_bar",
+      "sourceSha256": "e7b878210db740b2e58416a34e1139fc6fa08adc582f8beae5ab44f328dd2425",
+      "correctedSha256": "c3db695a03760c923dd558954a645c418eea7156662f77e76f8f5889dc24abb8",
+      "changedWordCount": 24,
+      "nonScaleChangeCount": 0,
+      "realizedCornerTrimDb": [
+        -30.70623919762889,
+        -30.70209680130619,
+        -30.705729215145983,
+        -30.70471822918078
+      ],
+      "realizedCornerTrimSpreadDb": 0.004142396322698971,
+      "sampledAuditPass": true,
+      "sampledCertifyPass": true
+    },
+    {
+      "name": "X_comb_953__to__vowel_iy",
+      "sourceSha256": "313d11a939a7de73616580398b1f6d9b6e23a4a647e9ba05fce6c00944ecf548",
+      "correctedSha256": "427a14ac0e3626fdef7a600eefa0df74d3ef13108e35b78f277d560872692d18",
+      "changedWordCount": 24,
+      "nonScaleChangeCount": 0,
+      "realizedCornerTrimDb": [
+        -23.533137194952722,
+        -23.534908316609155,
+        -23.53839251085869,
+        -23.53352551677974
+      ],
+      "realizedCornerTrimSpreadDb": 0.005255315905966285,
+      "sampledAuditPass": true,
+      "sampledCertifyPass": true
+    },
+    {
+      "name": "X_metal_gong__to__cavity_wine_bottle",
+      "sourceSha256": "2e651b660f958e58a7e189e35d230dbd4232053569336bac7ef83a6da429e2d8",
+      "correctedSha256": "fbb1ee6ce32d606bce846332c0f9b60bd8e51b4fe4af27aade9702791843eff0",
+      "changedWordCount": 24,
+      "nonScaleChangeCount": 0,
+      "realizedCornerTrimDb": [
+        -31.594209181117627,
+        -31.594121070916813,
+        -31.596968851702126,
+        -31.594231417730654
+      ],
+      "realizedCornerTrimSpreadDb": 0.0028477807853128922,
+      "sampledAuditPass": true,
+      "sampledCertifyPass": true
+    },
+    {
+      "name": "X_tube_oo_18cm__to__tube_co_18cm",
+      "sourceSha256": "909a9f761453b0e52e3bd42ed6a000289b1891db34d2f194ac7dee5927301582",
+      "correctedSha256": "13023973d6188efc98a6d30df8d40f1d65dcfef1617286404acb0bb2584d39c3",
+      "changedWordCount": 24,
+      "nonScaleChangeCount": 0,
+      "realizedCornerTrimDb": [
+        -14.159899785490143,
+        -14.157662153112645,
+        -14.1596773162052,
+        -14.158180886825562
+      ],
+      "realizedCornerTrimSpreadDb": 0.002237632377498855,
+      "sampledAuditPass": true,
+      "sampledCertifyPass": true
+    },
+    {
+      "name": "X_tube_oo_25cm__to__tube_co_25cm",
+      "sourceSha256": "9b6e08eb7058ee0bb9c7b8bc636ca6dd5a4908b4a92cd0e228c5d3bfc126e130",
+      "correctedSha256": "6270e3fd2c1efa4be829d8f178c053521a1e2c63f7614cf4c5e7990790f30747",
+      "changedWordCount": 24,
+      "nonScaleChangeCount": 0,
+      "realizedCornerTrimDb": [
+        -14.932463588727284,
+        -14.935166032055932,
+        -14.931073831148172,
+        -14.932285725344192
+      ],
+      "realizedCornerTrimSpreadDb": 0.0040922009077597465,
+      "sampledAuditPass": true,
+      "sampledCertifyPass": true
+    },
+    {
+      "name": "X_tube_oo_50cm__to__tube_co_50cm",
+      "sourceSha256": "2f27e991ee0d4e66b5ac08af1c20bab9ff91232205b569048ec4c2a3a55b7d99",
+      "correctedSha256": "5b70475d0a07012507ee8b2200017bafeaf3863f7f544cf2e6ac0f6d5f02ddca",
+      "changedWordCount": 24,
+      "nonScaleChangeCount": 0,
+      "realizedCornerTrimDb": [
+        -17.051884569479544,
+        -17.053155523833308,
+        -17.05386863988775,
+        -17.054511625944283
+      ],
+      "realizedCornerTrimSpreadDb": 0.0026270564647390415,
+      "sampledAuditPass": true,
+      "sampledCertifyPass": true
+    },
+    {
+      "name": "X_tube_oo_50cm__to__vowel_er",
+      "sourceSha256": "ffa4fdaa2cf777132110cfa19643453f4df9c7744bc6f230707d61049ff66565",
+      "correctedSha256": "ce54a9befac6b9d9fd828b3bd1eead0153d3c016e576492f63e1551f1406703d",
+      "changedWordCount": 24,
+      "nonScaleChangeCount": 0,
+      "realizedCornerTrimDb": [
+        -15.589801420470863,
+        -15.588194410975365,
+        -15.590373255317747,
+        -15.590796477017314
+      ],
+      "realizedCornerTrimSpreadDb": 0.0026020660419483477,
+      "sampledAuditPass": true,
+      "sampledCertifyPass": true
+    },
+    {
+      "name": "X_vowel_aa__to__metal_bell",
+      "sourceSha256": "f231dd85b822c1fbee5bc2e4e81023d84d51ef7aafe59e628c549f6ecf2df1f6",
+      "correctedSha256": "9753095665b95502b5d88ed4bca1f9274e55fc50ec8aea8f85ca28adc83c5e35",
+      "changedWordCount": 24,
+      "nonScaleChangeCount": 0,
+      "realizedCornerTrimDb": [
+        -25.560784779459237,
+        -25.560104413885355,
+        -25.56050610230998,
+        -25.559844597328834
+      ],
+      "realizedCornerTrimSpreadDb": 0.0009401821304031444,
+      "sampledAuditPass": true,
+      "sampledCertifyPass": true
+    },
+    {
+      "name": "X_vowel_ae__to__metal_gong",
+      "sourceSha256": "e1af87f5657c490b667aa3a137309ff7de1a33dbce3350c7312543f3bbc4d219",
+      "correctedSha256": "e9fdac394f3950c4c81994026298c701ec2e01ce7c4070c811db7c8e39934ec0",
+      "changedWordCount": 24,
+      "nonScaleChangeCount": 0,
+      "realizedCornerTrimDb": [
+        -22.484958289604435,
+        -22.48544282373277,
+        -22.488004108550903,
+        -22.487528108910695
+      ],
+      "realizedCornerTrimSpreadDb": 0.0030458189464681595,
+      "sampledAuditPass": true,
+      "sampledCertifyPass": true
+    },
+    {
+      "name": "X_vowel_iy__to__tube_co_25cm",
+      "sourceSha256": "01cdd4ed08d29fcc0b206ab26cc4e4a56c1549dda1442689246e18846eafc090",
+      "correctedSha256": "0e5630afb7a9db0a13586ccdbb435e515cf39218e0e4c9dff4efadc1ca37a6b2",
+      "changedWordCount": 24,
+      "nonScaleChangeCount": 0,
+      "realizedCornerTrimDb": [
+        -14.788615047024916,
+        -14.789390415301112,
+        -14.789151400918339,
+        -14.790421621635314
+      ],
+      "realizedCornerTrimSpreadDb": 0.0018065746103985703,
+      "sampledAuditPass": true,
+      "sampledCertifyPass": true
+    },
+    {
+      "name": "X_vowel_uw__to__comb_343",
+      "sourceSha256": "c2bf710dee523ed640280993b84d57856424464c28cea8ba8aff5bfaa411555e",
+      "correctedSha256": "af5a1b7b345e70d573bd6e595e9bced49cd1afa910eac3da443981b2b6f35318",
+      "changedWordCount": 24,
+      "nonScaleChangeCount": 0,
+      "realizedCornerTrimDb": [
+        -17.04185276834473,
+        -17.040137331681994,
+        -17.043204321433468,
+        -17.04300730978531
+      ],
+      "realizedCornerTrimSpreadDb": 0.003066989751474125,
+      "sampledAuditPass": true,
+      "sampledCertifyPass": true
+    },
+    {
+      "name": "three_layer_family_cavity_wine_bottle_to_tin_can",
+      "sourceSha256": "dcba38d98e1da2a271ac69dfb8109b2220e69b2cfe6af4e1ce33b12e7e98d884",
+      "correctedSha256": "161a09ce0a58b7d5ab66e7e960d24cd142c66ac9621bd4b4d51bfce5e7f92a7b",
+      "changedWordCount": 24,
+      "nonScaleChangeCount": 0,
+      "realizedCornerTrimDb": [
+        -16.26712279580723,
+        -16.267767164475472,
+        -16.26712279580723,
+        -16.267767164475472
+      ],
+      "realizedCornerTrimSpreadDb": 0.0006443686682437999,
+      "sampledAuditPass": true,
+      "sampledCertifyPass": true
+    },
+    {
+      "name": "three_layer_family_comb_chambered_phaser_to_phasing_sweep",
+      "sourceSha256": "12f29be7e35a31abed28116c3a8df0314b950d5ebd0b2a82656c3e92e250206e",
+      "correctedSha256": "5740f8ca3ce409b108c5fe879293d59a35c3573b27a4e6087f50310a0453194e",
+      "changedWordCount": 24,
+      "nonScaleChangeCount": 0,
+      "realizedCornerTrimDb": [
+        -12.856542726955464,
+        -12.856906939307384,
+        -12.856542726955464,
+        -12.856906939307384
+      ],
+      "realizedCornerTrimSpreadDb": 0.0003642123519203011,
+      "sampledAuditPass": true,
+      "sampledCertifyPass": true
+    },
+    {
+      "name": "three_layer_metal_bell_to_free_plate",
+      "sourceSha256": "0346695cc9e0a4965a7e21452c62fd5742aafccf0118980f29a057b07b08e387",
+      "correctedSha256": "3462630281bb9774469a6f9da9c5dccd2b74dc8872b94529a0eb6c50a0f7e039",
+      "changedWordCount": 24,
+      "nonScaleChangeCount": 0,
+      "realizedCornerTrimDb": [
+        -17.102924359336726,
+        -17.103806794335533,
+        -17.102924359336726,
+        -17.103806794335533
+      ],
+      "realizedCornerTrimSpreadDb": 0.0008824349988074687,
+      "sampledAuditPass": true,
+      "sampledCertifyPass": true
+    },
+    {
+      "name": "three_layer_tube_oo_50cm_to_oo_10cm",
+      "sourceSha256": "e20039e30b3352423354d2203b95cd563ec81be88edff2936dcb72f9c4d1a1b0",
+      "correctedSha256": "d52b8d071232d82765abfc7826d18a2c946cc7a2e6f4c470b68c99e9ad3b9069",
+      "changedWordCount": 24,
+      "nonScaleChangeCount": 0,
+      "realizedCornerTrimDb": [
+        -17.126051588861205,
+        -17.12547012544408,
+        -17.126051588861205,
+        -17.12547012544408
+      ],
+      "realizedCornerTrimSpreadDb": 0.0005814634171237287,
+      "sampledAuditPass": true,
+      "sampledCertifyPass": true
+    },
+    {
+      "name": "three_layer_v1_industrial_voice_to_plate",
+      "sourceSha256": "82496d029807ddfbae2ec2a7744369f3c9bd0164bace1ab057a4b4a612fd2572",
+      "correctedSha256": "d878255399326b08bacf8629c4b1b80ff89c74667223f78e044dca19baf1ee35",
+      "changedWordCount": 24,
+      "nonScaleChangeCount": 0,
+      "realizedCornerTrimDb": [
+        -8.310369207361068,
+        -8.310390014242309,
+        -8.310369207361068,
+        -8.310390014242309
+      ],
+      "realizedCornerTrimSpreadDb": 0.000020806881240176267,
+      "sampledAuditPass": true,
+      "sampledCertifyPass": true
+    },
+    {
+      "name": "three_layer_v1_subterranean_tube_to_bottle",
+      "sourceSha256": "ae3270402c9c357cb7b08354d9d3b2d4a2b5be9292e1cb002a8e743cec13eada",
+      "correctedSha256": "8bd9074b97e57c090ecba7493d18eec88d94eba2b2e17df6d254826fa4236ba0",
+      "changedWordCount": 24,
+      "nonScaleChangeCount": 0,
+      "realizedCornerTrimDb": [
+        -11.79133340652353,
+        -11.790706077060813,
+        -11.79133340652353,
+        -11.790706077060813
+      ],
+      "realizedCornerTrimSpreadDb": 0.000627329462716375,
+      "sampledAuditPass": true,
+      "sampledCertifyPass": true
+    },
+    {
+      "name": "three_layer_vocal_uw_to_iy_male",
+      "sourceSha256": "149a9d48d954d1d19e2e7e53c19b6b434752037e30c6321f6ec90add349d7d4a",
+      "correctedSha256": "0514e582c78050c0593dbd60070fcc013c71b8793dd165fbed083db4394dac01",
+      "changedWordCount": 24,
+      "nonScaleChangeCount": 0,
+      "realizedCornerTrimDb": [
+        -6.717843513350587,
+        -6.719146158341668,
+        -6.717843513350587,
+        -6.719146158341668
+      ],
+      "realizedCornerTrimSpreadDb": 0.0013026449910809035,
+      "sampledAuditPass": true,
+      "sampledCertifyPass": true
+    },
+    {
+      "name": "three_layer_vocal_uw_to_iy_male_f0_shelf",
+      "sourceSha256": "78991325c5008b386c4cea85331a22748f198c29909985c8e3449cd6d275d218",
+      "correctedSha256": "8d1a4dd20898810328573d2244d722e13a933f43d8e5e4a205ecd22dfd2156b1",
+      "changedWordCount": 24,
+      "nonScaleChangeCount": 0,
+      "realizedCornerTrimDb": [
+        -7.376775829819619,
+        -7.378544842592275,
+        -7.376775829819619,
+        -7.378544842592275
+      ],
+      "realizedCornerTrimSpreadDb": 0.0017690127726561755,
+      "sampledAuditPass": true,
+      "sampledCertifyPass": true
+    },
+    {
+      "name": "three_layer_vocal_uw_to_iy_male_low_shelf",
+      "sourceSha256": "78991325c5008b386c4cea85331a22748f198c29909985c8e3449cd6d275d218",
+      "correctedSha256": "8d1a4dd20898810328573d2244d722e13a933f43d8e5e4a205ecd22dfd2156b1",
+      "changedWordCount": 24,
+      "nonScaleChangeCount": 0,
+      "realizedCornerTrimDb": [
+        -7.376775829819619,
+        -7.378544842592275,
+        -7.376775829819619,
+        -7.378544842592275
+      ],
+      "realizedCornerTrimSpreadDb": 0.0017690127726561755,
+      "sampledAuditPass": true,
+      "sampledCertifyPass": true
+    },
+    {
+      "name": "three_layer_vocal_uw_to_iy_male_peak_shelf",
+      "sourceSha256": "6070930fc870422f2ab164a8f97ddf90551b5283f31ba4861dbb30b8e28b300a",
+      "correctedSha256": "936b6829db92a433570ff8c6913e8c3960c692502d416585d43b849f898706cc",
+      "changedWordCount": 24,
+      "nonScaleChangeCount": 0,
+      "realizedCornerTrimDb": [
+        -10.533617274485156,
+        -10.53314089642095,
+        -10.533617274485156,
+        -10.53314089642095
+      ],
+      "realizedCornerTrimSpreadDb": 0.0004763780642065285,
+      "sampledAuditPass": true,
+      "sampledCertifyPass": true
+    },
+    {
+      "name": "tube_open_to_closed",
+      "sourceSha256": "ca91fc6d0f6af0bdddaf4d2d17d8029418b9242ff808b4fd8d5932aa5557cb34",
+      "correctedSha256": "c330d8008a37b0513dc3bec97f841a8e7bff82f22c816f7ac2e678220fd7ef81",
+      "changedWordCount": 24,
+      "nonScaleChangeCount": 0,
+      "realizedCornerTrimDb": [
+        -28.619310208912477,
+        -28.61921669105378,
+        -28.620089997142827,
+        -28.619273816088565
+      ],
+      "realizedCornerTrimSpreadDb": 0.0008733060890477873,
+      "sampledAuditPass": true,
+      "sampledCertifyPass": true
+    }
+  ]
+}

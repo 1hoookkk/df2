@@ -1,0 +1,78 @@
+{
+  "archetype": "flanger",
+  "name": "ear_bender",
+  "corners": {
+    "M0_Q0": {
+      "notches_hz": [
+        100,
+        300,
+        500,
+        700
+      ],
+      "peaks_hz": [
+        200,
+        400,
+        600,
+        800
+      ],
+      "notch_r": 0.7,
+      "peak_r": 0.7,
+      "stages_used": 4,
+      "gain": 1.0
+    },
+    "M100_Q0": {
+      "notches_hz": [
+        1000,
+        1500,
+        2000,
+        2500
+      ],
+      "peaks_hz": [
+        1250,
+        1750,
+        2250,
+        2750
+      ],
+      "notch_r": 0.7,
+      "peak_r": 0.7,
+      "stages_used": 4,
+      "gain": 1.0
+    },
+    "M0_Q100": {
+      "notches_hz": [
+        50,
+        400,
+        750,
+        1100
+      ],
+      "peaks_hz": [
+        225,
+        575,
+        925,
+        1275
+      ],
+      "notch_r": 0.99,
+      "peak_r": 0.99,
+      "stages_used": 4,
+      "gain": 1.0
+    },
+    "M100_Q100": {
+      "notches_hz": [
+        500,
+        2000,
+        3500,
+        5000
+      ],
+      "peaks_hz": [
+        1250,
+        2750,
+        4250,
+        5750
+      ],
+      "notch_r": 0.99,
+      "peak_r": 0.99,
+      "stages_used": 4,
+      "gain": 1.0
+    }
+  }
+}

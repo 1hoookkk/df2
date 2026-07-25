@@ -1,0 +1,48 @@
+{
+  "format": "trench-profile-stage-plan-v1",
+  "name": "ship_iron_mouth",
+  "intent": "Register five residual vowel regions shared by both measured DVTD endpoints; slot 0 owns only the macro contour.",
+  "source_evidence": {
+    "M0_Q0": "trench-filters/data/vocal/dvtd/subject-1/s1-01-bahn-tense-a/s1-01-bahn-tense-a-vvtf-measured.txt",
+    "M100_Q0": "trench-filters/data/vocal/dvtd/subject-2/s2-03-tiere-tense-i/s2-03-tiere-tense-i-vvtf-measured.txt",
+    "method": "bands authored from smoothed local peaks and valleys present in both raw measured curves"
+  },
+  "stage_plan": [
+    {
+      "slot": 0,
+      "lane_id": "macro_vocal_tract",
+      "role": "macro vocal-tract contour",
+      "analysis": {"source": "macro_body", "pole_band_hz": [55, 700], "zero_band_hz": [55, 1800], "pole_radius": [0.0, 0.98], "zero_radius": [0.0, 0.98]}
+    },
+    {
+      "slot": 1,
+      "lane_id": "lower_mid_formant",
+      "role": "lower-mid formant; the low vowel resonance belongs to the macro lane",
+      "analysis": {"source": "residual", "pole_band_hz": [1000, 2700], "zero_band_hz": [700, 1300], "pole_radius": [0.65, 0.995], "zero_radius": [0.02, 0.98]}
+    },
+    {
+      "slot": 2,
+      "lane_id": "upper_mid_formant",
+      "role": "upper-mid formant cluster",
+      "analysis": {"source": "residual", "pole_band_hz": [3000, 4500], "zero_band_hz": [1700, 3100], "pole_radius": [0.60, 0.995], "zero_radius": [0.02, 0.98]}
+    },
+    {
+      "slot": 3,
+      "lane_id": "presence_formant",
+      "role": "presence ridge",
+      "analysis": {"source": "residual", "pole_band_hz": [4800, 6900], "zero_band_hz": [3700, 4700], "pole_radius": [0.50, 0.995], "zero_radius": [0.02, 0.98]}
+    },
+    {
+      "slot": 4,
+      "lane_id": "air_ridge",
+      "role": "lower air ridge and deep presence basin",
+      "analysis": {"source": "residual", "pole_band_hz": [7600, 8800], "zero_band_hz": [5400, 7200], "pole_radius": [0.45, 0.99], "zero_radius": [0.02, 0.98]}
+    },
+    {
+      "slot": 5,
+      "lane_id": "air_ceiling",
+      "role": "upper air ridge and basin",
+      "analysis": {"source": "residual", "pole_band_hz": [8900, 10000], "zero_band_hz": [7600, 9300], "pole_radius": [0.40, 0.99], "zero_radius": [0.02, 0.98]}
+    }
+  ]
+}

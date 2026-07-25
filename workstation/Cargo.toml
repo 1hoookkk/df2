@@ -1,0 +1,71 @@
+[package]
+name = "trench-workstation"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+eframe = { version = "0.29.1", default-features = false, features = ["default_fonts", "glow"] }
+rfd = "0.15.4"
+rodio = "0.19.0"
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+trench-core = { path = "../trench-core" }
+
+[lib]
+name = "trench_workstation"
+path = "src/lib.rs"
+crate-type = ["rlib", "staticlib"]
+
+[[bin]]
+name = "proof-slice"
+path = "src/bin/proof_slice.rs"
+
+[[bin]]
+name = "recipe-proof"
+path = "src/bin/recipe_proof.rs"
+
+[[bin]]
+name = "build-bank"
+path = "src/bin/build_bank.rs"
+
+[[bin]]
+name = "compose"
+path = "src/bin/compose.rs"
+
+[[bin]]
+name = "forge-all"
+path = "src/bin/forge_all.rs"
+
+[[bin]]
+name = "audition"
+path = "src/bin/audition.rs"
+
+[[bin]]
+name = "forge-usable"
+path = "src/bin/forge_usable.rs"
+
+[[bin]]
+name = "dtypes"
+path = "src/bin/dtypes.rs"
+
+[[bin]]
+name = "forge-xml"
+path = "src/bin/forge_xml.rs"
+
+[[bin]]
+name = "trench-studio"
+path = "src/bin/trench_studio.rs"
+
+[[bin]]
+name = "candidates"
+path = "src/bin/candidates.rs"
+
+[[bin]]
+name = "dump-curves"
+path = "src/bin/dump_curves.rs"
+
+[[bin]]
+name = "ref-ab"
+path = "src/bin/ref_ab.rs"
+
+[workspace]
