@@ -366,6 +366,13 @@ private:
     void designerPushUndo();
     void designerUndo();
     void designerRedo();
+    // RESET = back to the last anchor: template / import / wrap / save
+    DesignerSnapshot designerAnchor;
+    bool designerAnchorValid = false;
+    juce::String designerAnchorName;
+    void designerSetAnchor (const juce::String& what);
+    void designerReset();
+    juce::Rectangle<int> designerResetArea() const;
     juce::Rectangle<int> designerUndoArea() const;
     juce::Rectangle<int> designerRedoArea() const;
     int designerCodeForHz (double hz) const;                   // nearest firmware ladder code

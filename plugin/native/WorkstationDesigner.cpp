@@ -166,6 +166,41 @@ void WorkstationEditor::designerRedo()
     designerApply();
 }
 
+juce::Rectangle<int> WorkstationEditor::designerResetArea() const
+{
+    const auto p = designerArea();
+    return { p.getX() + 758, p.getY() + 32, 64, 20 };
+}
+
+void WorkstationEditor::designerSetAnchor (const juce::String& what)
+{
+    std::memcpy (designerAnchor.sections, dsections, sizeof designerAnchor.sections);
+    designerAnchor.shift = designerShift;
+    designerAnchor.page = designerPage;
+    designerAnchorValid = true;
+    designerAnchorName = what;
+}
+
+void WorkstationEditor::designerReset()
+{
+    designerPushUndo();   // reset is itself one undo step
+    if (designerAnchorValid)
+    {
+        std::memcpy (dsections, designerAnchor.sections, sizeof dsections);
+        designerShift = designerAnchor.shift;
+        designerPage = designerAnchor.page;
+        statusLine = "RESET -> " + designerAnchorName;
+    }
+    else
+    {
+        for (auto& page : dsections)
+            for (auto& s : page)
+                s = DesignerSectionState {};
+        statusLine = "RESET -> blank slate";
+    }
+    designerApply();
+}
+
 void WorkstationEditor::toggleDesigner()
 {
     designerOpen = ! designerOpen;
@@ -439,6 +474,7 @@ void WorkstationEditor::designerSaveBody()
     if (f.existsAsFile())
     {
         dirty = false;
+        designerSetAnchor ("SAVED " + name);
         scanBin();
     }
     repaint();
@@ -505,6 +541,7 @@ void WorkstationEditor::designerImportWorking()
     designerApply();
     designerGhostBytes = workingBytes;   // the photograph, kept as the A/B ghost
     designerGhostValid = true;
+    designerSetAnchor ("IMPORT " + bodyName);
     designerRefreshJourney();
     repaint();
 }
@@ -608,6 +645,7 @@ void WorkstationEditor::designerWrapWav (const juce::File& file)
     designerSketchQ100();   // pushes its own undo step; hand-edit from here
     statusLine = "WRAP <- " + file.getFileName() + "  (" + juce::String ((int) nv)
                + " measured voices + hedz frame; re-tune and SAVE)";
+    designerSetAnchor ("WRAP " + bodyName);
     repaint();
 }
 
@@ -713,6 +751,7 @@ void WorkstationEditor::designerSetTemplate (int index)
         designerTemplateName = name;
         statusLine = juce::String (name) + "  <- voice " + juce::String (voiceStem)
                    + " / frame " + juce::String (frameStem) + " (real rails; re-tune)";
+        designerSetAnchor (name);
     };
     switch (index)
     {
@@ -894,6 +933,7 @@ void WorkstationEditor::designerApplyRomTemplate (int idx, int part)
     designerTemplateName = romTemplates[(size_t) idx].name + " " + partNames[juce::jlimit (0, 2, part)];
     statusLine = "REAL RAIL <- " + designerTemplateName;
     designerApply();
+    designerSetAnchor (designerTemplateName);
 }
 
 void WorkstationEditor::designerShowTemplateMenu()
@@ -994,6 +1034,11 @@ bool WorkstationEditor::designerMouseDown (juce::Point<int> pos)
     if (designerSketchArea().contains (pos))
     {
         designerSketchQ100();
+        return true;
+    }
+    if (designerResetArea().contains (pos))
+    {
+        designerReset();
         return true;
     }
     if (designerUndoArea().contains (pos))
@@ -1136,6 +1181,7 @@ void WorkstationEditor::drawDesigner (juce::Graphics& g)
     drawFlatButton (g, designerTemplateArea(), "TEMPLATE", false, true);
     drawFlatButton (g, designerSketchArea(), "AUTO Q100", false, true);
     drawFlatButton (g, designerUndoArea(), "UNDO", false, ! dsUndoStack.empty());
+    drawFlatButton (g, designerResetArea(), "RESET", false, true);
     drawFlatButton (g, designerRedoArea(), "REDO", false, ! dsRedoStack.empty());
     drawFlatButton (g, designerImportArea(), "IMPORT", false, hasBody);
     drawFlatButton (g, designerFamilyArea(), designerFamily == 0 ? "FAM RIDE" : "FAM ARCH",

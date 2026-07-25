@@ -1683,6 +1683,8 @@ void WorkstationEditor::runProofScript()
         else if (action == "dmotif")
             designerApplyMotif (juce::jlimit (0, 5, (int) obj->getProperty ("stage")),
                                 juce::jlimit (0, 4, (int) obj->getProperty ("motif")));
+        else if (action == "dreset")
+            designerReset();
         else if (action == "dsketch")
             designerSketchQ100();
         else if (action == "dwrap")     // wav -> fitted voice + P2K frame
