@@ -662,65 +662,35 @@ void WorkstationEditor::designerSetTemplate (int index)
         for (auto& s : page)
             s = DesignerSectionState {};
     designerShift = 0;
-    // P2K stages: pole on the census rail, radius by the measured
-    // radius-vs-frequency law (tight low ~.99, mids ~.983, loose high ~.968),
-    // zero from the census shape. 72% of ROM lanes ride independent zero
-    // rails - a template without zeros is MD, not P2K.
-    auto railR = [] (double hz)
+    // The lined-out journey presets, built from REAL rails: voice from the
+    // ROM preset that owns the movement, frame from a complementary one.
+    // Compositions start rude - the sliders are for re-tuning.
+    auto romIdx = [this] (const char* stem) -> int
     {
-        return hz < 800.0 ? 0.990 : (hz < 8000.0 ? 0.983 : 0.968);
+        designerScanRomTemplates();
+        for (int i = 0; i < (int) romTemplates.size(); ++i)
+            if (romTemplates[(size_t) i].file.getFileName().containsIgnoreCase (stem))
+                return i;
+        return -1;
     };
-    auto p2k = [this, railR] (int stage, int motif, double loHz, double hiHz,
-                              double loR = -1.0, double hiR = -1.0)
+    auto compose = [this, romIdx] (const char* name, const char* voiceStem, const char* frameStem)
     {
-        auto& s = dsections[0][stage];
-        s.type = kDesignerTypeFree;
-        s.motif = motif;
-        const auto& m = kDesignerMotifs[motif];
-        DesignerRowState* rows[2] = { &s.lo, &s.hi };
-        const double hz[2] = { loHz, hiHz };
-        const double rr[2] = { loR, hiR };
-        for (int r = 0; r < 2; ++r)
-        {
-            rows[r]->poleHz = hz[r];
-            rows[r]->poleR = rr[r] > 0.0 ? rr[r] : railR (hz[r]);
-            rows[r]->zeroHz = juce::jlimit (20.0, (double) kMaxHz, hz[r] * std::pow (2.0, m.oct));
-            rows[r]->zeroR = m.zeroR;
-            rows[r]->scale = 1.0;
-        }
+        const int v = romIdx (voiceStem), f = romIdx (frameStem);
+        if (f >= 0) designerApplyRomTemplate (f, 0);   // FRAME S1+S6
+        if (v >= 0) designerApplyRomTemplate (v, 1);   // VOICE S2-S5
+        designerTemplateName = name;
+        statusLine = juce::String (name) + "  <- voice " + juce::String (voiceStem)
+                   + " / frame " + juce::String (frameStem) + " (real rails; re-tune)";
     };
     switch (index)
     {
-        case 0: designerTemplateName = "BASS RIDE 110-330";
-            p2k (0, 0, 110.0, 330.0, 0.993, 0.991);   // PEAK carries the ride
-            p2k (1, 2, 110.0, 330.0);                 // SWEEP de-esses it
-            p2k (2, 3, 220.0, 660.0);                 // TILT skeleton above
-            break;
-        case 1: designerTemplateName = "SUB>GROWL RISER 30-1000";
-            p2k (0, 2, 30.0, 1000.0, 0.994, 0.988);   // SWEEP does the climb
-            p2k (1, 1, 60.0, 2000.0);                 // FORMANT sings on top
-            break;
-        case 2: designerTemplateName = "MID-CLIMAX ARCH 30-2200-300";
-            p2k (0, 2, 30.0, 2200.0, 0.992, 0.985);   // rising SWEEP
-            p2k (1, 2, 2200.0, 300.0, 0.985, 0.990);  // falling SWEEP - crest mid
-            break;
-        case 3: designerTemplateName = "PARKED SQUELCH 370-400";
-            p2k (0, 0, 370.0, 400.0, 0.995, 0.995);   // PEAK parked hot
-            p2k (1, 1, 370.0, 400.0);                 // FORMANT under it
-            break;
-        case 4: designerTemplateName = "HF DROPPER 9700-100";
-            p2k (0, 2, 9700.0, 100.0, 0.968, 0.992);  // SWEEP falls 6+ oct
-            p2k (1, 3, 9700.0, 100.0);                // TILT rail follows
-            break;
-        case 5: designerTemplateName = "MID DESCENDER 4000-1500";
-            p2k (0, 2, 4000.0, 1500.0);               // SWEEP descends
-            p2k (1, 3, 4000.0, 1500.0);               // TILT body
-            break;
-        case 6: designerTemplateName = "VOWEL ARCH OUT-AND-HOME";
-            p2k (0, 2, 500.0, 2200.0);                // out...
-            p2k (1, 1, 2200.0, 500.0);                // ...and home, singing
-            p2k (2, 0, 300.0, 300.0, 0.990, 0.990);   // parked PEAK anchor
-            break;
+        case 0: compose ("BASS RIDE", "ace_of_bass", "boland_bass"); break;
+        case 1: compose ("RISER", "early_rizer", "bass_tracer"); break;
+        case 2: compose ("ARCH", "zoom_peaks", "dream_weava"); break;
+        case 3: compose ("SQUELCH", "tb_or_not_tb", "bassbox_303"); break;
+        case 4: compose ("DROPPER", "razor_blades", "dj_alkaline"); break;
+        case 5: compose ("DESCENDER", "freak_shifta", "rogue_hertz"); break;
+        case 6: compose ("VOWEL ARCH", "ooh_to_eee", "ubu_orator"); break;
         case 7:
         {
             designerTemplateName = "ATTIC-STACK 303";
@@ -831,6 +801,29 @@ void WorkstationEditor::designerApplyRomTemplate (int idx, int part)
         return;
     }
     designerPushUndo();
+    // frame is an ANATOMY, not a slot: a lane whose zero rides the far rail
+    // (>= 1.5 oct off its pole, census law) or is a true notch. Classify each
+    // lane from its decoded M0_Q0 row - never assume S1/S6.
+    bool isFrame[6] = {};
+    bool isActive[6] = {};
+    if (const auto* kf0 = (*keyframes)[0].getDynamicObject())
+        if (const auto* stages0 = kf0->getProperty ("packedWords").getArray())
+            for (int stage = 0; stage < 6 && stage < stages0->size(); ++stage)
+                if (const auto* row = (*stages0)[stage].getArray(); row != nullptr && row->size() >= 5)
+                {
+                    juce::uint16 w[5];
+                    for (int k = 0; k < 5; ++k)
+                        w[k] = (juce::uint16) (int) (*row)[k];
+                    double roots[5] {};
+                    if (trench_stage_roots_from_words (w, roots) != 0)
+                        continue;
+                    isActive[stage] = roots[1] > 0.01;   // identity poles sit at r 0
+                    if (! isActive[stage])
+                        continue;
+                    const double octOff = std::abs (std::log2 (juce::jmax (20.0, roots[2])
+                                                               / juce::jmax (20.0, roots[0])));
+                    isFrame[stage] = octOff >= 1.5 || roots[3] >= 0.995;
+                }
     for (int corner = 0; corner < 4; ++corner)
     {
         const auto* kf = (*keyframes)[corner].getDynamicObject();
@@ -841,8 +834,8 @@ void WorkstationEditor::designerApplyRomTemplate (int idx, int part)
         const bool hiRow = (corner % 2) != 0;
         for (int stage = 0; stage < 6 && stage < stages->size(); ++stage)
         {
-            const bool inPart = part == 2 || (part == 0 ? (stage == 0 || stage == 5)
-                                                        : (stage >= 1 && stage <= 4));
+            const bool inPart = isActive[stage]
+                              && (part == 2 || (part == 0 ? isFrame[stage] : ! isFrame[stage]));
             if (! inPart)
                 continue;
             const auto* row = (*stages)[stage].getArray();
@@ -865,7 +858,7 @@ void WorkstationEditor::designerApplyRomTemplate (int idx, int part)
             rw.scale = juce::jlimit (0.0, 4.0, roots[4]);
         }
     }
-    static const char* partNames[3] = { "FRAME (S1+S6)", "VOICE (S2-S5)", "ALL" };
+    static const char* partNames[3] = { "FRAME", "VOICE", "ALL" };
     designerTemplateName = romTemplates[(size_t) idx].name + " " + partNames[juce::jlimit (0, 2, part)];
     statusLine = "REAL RAIL <- " + designerTemplateName;
     designerApply();
@@ -879,21 +872,22 @@ void WorkstationEditor::designerShowTemplateMenu()
     for (int i = 0; i < (int) romTemplates.size(); ++i)
     {
         juce::PopupMenu roles;
-        roles.addItem (100 + i * 4 + 0, "FRAME  (S1+S6)");
-        roles.addItem (100 + i * 4 + 1, "VOICE  (S2-S5)");
+        roles.addItem (100 + i * 4 + 0, "FRAME  (far rails + notches)");
+        roles.addItem (100 + i * 4 + 1, "VOICE  (near-pole lanes)");
         roles.addItem (100 + i * 4 + 2, "ALL");
         menu.addSubMenu (romTemplates[(size_t) i].name, roles);
     }
     menu.addSeparator();
-    menu.addItem (8, "ATTIC-STACK 303 (ours)");
-    juce::PopupMenu sketches;
-    const char* names[7] = { "BASS RIDE 110-330", "SUB>GROWL RISER 30-1000",
-                             "MID-CLIMAX ARCH 30-2200-300", "PARKED SQUELCH 370-400",
-                             "HF DROPPER 9700-100", "MID DESCENDER 4000-1500",
-                             "VOWEL ARCH OUT-AND-HOME" };
+    // the lined-out journey presets, composed from real ROM anatomy
+    juce::PopupMenu journeys;
+    const char* names[7] = { "BASS RIDE  (ace of bass / boland)", "RISER  (early rizer / tracer)",
+                             "ARCH  (zoom peaks / dream weava)", "SQUELCH  (tb / 303)",
+                             "DROPPER  (razor blades / alkaline)", "DESCENDER  (freak shifta / rogue)",
+                             "VOWEL ARCH  (ooh to eee / orator)" };
     for (int i = 0; i < 7; ++i)
-        sketches.addItem (i + 1, names[i]);
-    menu.addSubMenu ("SKETCH RAILS (census)", sketches);
+        journeys.addItem (i + 1, names[i]);
+    menu.addSubMenu ("JOURNEYS (composed from real rails)", journeys);
+    menu.addItem (8, "ATTIC-STACK 303 (ours)");
     menu.showMenuAsync (juce::PopupMenu::Options().withTargetScreenArea (
                             localAreaToGlobal (designerTemplateArea())),
                         [this] (int result)
