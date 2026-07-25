@@ -41,3 +41,4 @@ plugin/libs/
 
 # exhaust quarantine (2026-07-19): dev/tmp is scratch, never authority
 /dev/tmp/
+recipes/

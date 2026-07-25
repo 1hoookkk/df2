@@ -667,8 +667,8 @@ juce::File PluginProcessor::forgeSaveBody (const juce::String& name)
 {
     if (currentBodyBytes.getSize() != 240)
         return {};
-    auto dir = juce::File::getSpecialLocation (juce::File::userDocumentsDirectory)
-                   .getChildFile ("TRENCH").getChildFile ("bodies");
+    // canonical body home = repo bodies/candidates ("no documents", 2026-07-25)
+    auto dir = juce::File ("C:/Users/hooki/df2-workstation/bodies/candidates");
     dir.createDirectory();
     auto base = name.retainCharacters ("abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789_- ")
                     .trim().replaceCharacter (' ', '_');

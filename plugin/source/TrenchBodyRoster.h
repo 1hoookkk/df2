@@ -126,9 +126,8 @@ inline void buildRosterStore (RosterStore& store)
             store.bases.emplace_back (baked[index].base);
             store.categories.emplace_back (baked[index].category);
         }
-        const auto dir = juce::File::getSpecialLocation (juce::File::userDocumentsDirectory)
-                             .getChildFile ("TRENCH")
-                             .getChildFile ("bodies");
+        // canonical body home = repo bodies/candidates ("no documents", 2026-07-25)
+        const auto dir = juce::File ("C:/Users/hooki/df2-workstation/bodies/candidates");
         if (dir.isDirectory())
         {
             auto files = dir.findChildFiles (juce::File::findFiles, true, "*.body240;*.cart.json;*.json");
