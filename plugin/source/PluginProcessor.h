@@ -185,5 +185,6 @@ private:
     bool gestureTrackPrimed = false;
     std::atomic<bool> workstationBodySolo { false };
     bool lastWorkstationBodySolo = false;
+    bool hdModeApplied = true;      // mirrors the HD param's last APPLIED state
     JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR (PluginProcessor)
 };

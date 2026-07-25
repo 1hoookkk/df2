@@ -92,11 +92,6 @@ juce::AudioProcessorValueTreeState::ParameterLayout createParameterLayout()
         "Mod Depth",
         juce::NormalisableRange<float> { 0.0f, 1.0f, 0.001f },
         0.5f, pctAttribs()));
-    layout.add (std::make_unique<juce::AudioParameterFloat> (
-        juce::ParameterID { ParamID::modQDepth, 1 },
-        "Mod Q Depth",
-        juce::NormalisableRange<float> { 0.0f, 1.0f, 0.001f },
-        0.0f, pctAttribs()));
     layout.add (std::make_unique<juce::AudioParameterBool> (
         juce::ParameterID { ParamID::keyTrack, 1 },
         "Key Track",

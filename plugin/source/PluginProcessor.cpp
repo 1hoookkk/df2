@@ -60,6 +60,7 @@ PluginProcessor::PluginProcessor()
         juce::Logger::writeToLog (juce::String ("key model -> ") + (modelReady ? "ready" : "FAILED"));
     }
     apvts.addParameterListener (ParamID::body, this);
+    apvts.addParameterListener (ParamID::hdMode, this);
     morphParamForGesture = apvts.getParameter (ParamID::morph);
     slamParamForGesture  = apvts.getParameter (ParamID::slamDrive);
     startTimer (400);
@@ -68,6 +69,7 @@ PluginProcessor::~PluginProcessor()
 {
     stopTimer();
     apvts.removeParameterListener (ParamID::body, this);
+    apvts.removeParameterListener (ParamID::hdMode, this);
     cancelPendingUpdate();
 }
 const juce::String PluginProcessor::getName() const { return JucePlugin_Name; }
@@ -127,6 +129,7 @@ void PluginProcessor::storeLoadedBodyBehavior (int bodyIndex, const juce::String
 void PluginProcessor::prepareToPlay (double sampleRate, int samplesPerBlock)
 {
     const bool hd = apvts.getRawParameterValue (ParamID::hdMode)->load() > 0.5f;
+    hdModeApplied = hd;
     fixedRateIsland.prepare (sampleRate, samplesPerBlock, dspBridge,
                              hd ? TrenchRates::emuInternalRateHd : TrenchRates::emuInternalRate);
     setLatencySamples (fixedRateIsland.getLatencySamples());
@@ -313,7 +316,7 @@ void PluginProcessor::processBlock (juce::AudioBuffer<float>& buffer, juce::Midi
         (trench::ModFeel) juce::jlimit (0, 2, (int) apvts.getRawParameterValue (ParamID::modFeel)->load()),
         apvts.getRawParameterValue (ParamID::modRate)->load(),
         apvts.getRawParameterValue (ParamID::modDepth)->load(),
-        0.0f,   // modulation is MORPH ONLY (Tyson 2026-07-25); modQDepth is ignored
+        0.0f,   // modulation is MORPH ONLY (Tyson 2026-07-25) - no Q depth exists
         motionInputEnv, bpm, ppq, playing, qnPerBar,
         smoothedMorph, smoothedQ, buffer.getNumSamples());
     modPhaseForUi.store (morphMod.uiPhase(), std::memory_order_relaxed);
@@ -530,6 +533,25 @@ void PluginProcessor::parameterChanged (const juce::String& parameterID, float n
         const int wanted = (raw >= 0 && raw < trench::bodyCount()) ? raw : trench::kNoFilterIndex;
         pendingBodyIndex.store (wanted, std::memory_order_relaxed);
         triggerAsyncUpdate();
+    }
+    else if (parameterID == ParamID::hdMode)
+    {
+        // HD picks the island's internal rate, which is only read in
+        // prepareToPlay - so flipping it did nothing until the host happened to
+        // re-prepare. Re-prepare the island ourselves, with audio suspended.
+        const bool hd = newValue > 0.5f;
+        if (hd == hdModeApplied)
+            return;
+        const double sr = getSampleRate();
+        if (sr <= 0.0)
+            return;                 // not prepared yet; prepareToPlay will read it
+        juce::ScopedLock audioLock (getCallbackLock());
+        fixedRateIsland.prepare (sr, getBlockSize(), dspBridge,
+                                 hd ? TrenchRates::emuInternalRateHd : TrenchRates::emuInternalRate);
+        setLatencySamples (fixedRateIsland.getLatencySamples());
+        punchBlend.prepare (sr, fixedRateIsland.getLatencySamples(), getBlockSize());
+        punchBlend.setLatency (fixedRateIsland.getLatencySamples());
+        hdModeApplied = hd;
     }
 }
 void PluginProcessor::handleAsyncUpdate()
@@ -1102,7 +1124,6 @@ void PluginProcessor::forceCleanAudioUiState()
     setParameterDenormalized (ParamID::fiveD, 0.0f);
     setParameterDenormalized (ParamID::modOn, 0.0f);
     setParameterDenormalized (ParamID::modDepth, 0.0f);
-    setParameterDenormalized (ParamID::modQDepth, 0.0f);
 }
 juce::AudioProcessor* JUCE_CALLTYPE createPluginFilter()
 {

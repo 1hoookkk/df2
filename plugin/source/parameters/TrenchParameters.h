@@ -25,7 +25,6 @@ namespace ParamID
     inline constexpr auto modSync    = "modSync";    // choice: Sync,Free
     inline constexpr auto modRate    = "modRate";    // 0.05..20 Hz, free mode
     inline constexpr auto modDepth   = "modDepth";   // 0..1 morph travel
-    inline constexpr auto modQDepth  = "modQDepth";  // 0..1 Q travel
 }
 namespace TrenchParameters
 {

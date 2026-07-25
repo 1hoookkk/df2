@@ -72,6 +72,9 @@ impl Default for DebugToggles {
 }
 pub const WIDTH_GUARD_LO_HZ: f64 = 2_000.0;
 pub const WIDTH_GUARD_HI_HZ: f64 = 18_980.0;
+/// Dry-copy capacity reserved for the width guard, so the audio thread never
+/// allocates. Comfortably above any real host block size.
+const WIDTH_GUARD_MAX_BLOCK: usize = 8192;
 #[derive(Debug, Clone, Copy, Default)]
 struct GuardBiquad {
     b0: f32, b1: f32, b2: f32, a1: f32, a2: f32, w1: f32, w2: f32,
@@ -289,6 +292,13 @@ impl FilterEngine {
     pub fn prepare(&mut self, sample_rate: f64) {
         self.sample_rate = sample_rate;
         self.control_phase = 0;
+        // The width guard copies the dry block into these on the AUDIO thread.
+        // Reserve here or the first block with SPACE > 0 allocates under the
+        // real-time deadline. clear() keeps capacity, so after this they never
+        // grow again; an oversized block guards only what fits rather than
+        // allocating (apply_width_guard already clamps to the shorter length).
+        self.width_dry_l.reserve(WIDTH_GUARD_MAX_BLOCK);
+        self.width_dry_r.reserve(WIDTH_GUARD_MAX_BLOCK);
         self.coeff_ramp_samples =
             ((COEFF_RAMP_SECONDS * sample_rate).round() as usize).max(BLOCK_SIZE);
         self.cascade_l.reset();
@@ -545,10 +555,11 @@ impl FilterEngine {
             }
         }
         if self.debug.spatial_enabled && self.spatial_mode != SpatialMode::Off {
+            let guarded = left.len().min(right.len()).min(self.width_dry_l.capacity());
             self.width_dry_l.clear();
             self.width_dry_r.clear();
-            self.width_dry_l.extend_from_slice(left);
-            self.width_dry_r.extend_from_slice(right);
+            self.width_dry_l.extend_from_slice(&left[..guarded]);
+            self.width_dry_r.extend_from_slice(&right[..guarded]);
             match self.spatial_mode {
                 SpatialMode::QSound => {
                     self.spatial.set_space(self.space);
