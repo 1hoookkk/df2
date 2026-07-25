@@ -275,6 +275,15 @@
   button / harness mdq) = bw x0.375, zeros hold, dominance direction,
   identity+real-pair rows keep a flat Q axis, r ceiling 0.998, stability-gate
   reverted on fail. [PROOF: STITCH_hedz_zoom_ear_mdq blooms at Q100, PASS.]
+- MEASURED FACT 2026-07-25 (dominance test, 102 E-mu bodies —
+  `dev/tmp/dominance_test/`, full write-up HYPOTHESIS_BRIEF.md §3): crown
+  travel (median 5.39 oct) is carried by STAGE DOMINANCE HANDOFF in 67%
+  overall and 85% of the 33 P2K ship presets — a different stage wins the
+  crown at the low- vs high-crown corner (median 2 distinct dominants across
+  the 4 corners). The non-handoff third are the classic full-range sweeps
+  (Super_Lo_Pass etc.) whose pole stacks genuinely slide 3.3+ oct and go
+  REAL/open at a corner. Authoring travel = choose which stage wins at each
+  corner (characters) or slide the whole stack (sweeps).
 - MEASURED FACT 2026-07-24: all 51 P2K skins use ALL SIX stages at every
   corner (zero identity rows; 46/51 have no effectively-flat stage at M0Q0,
   5/51 exactly one <0.75 dB span). The "2-3 active sections" guidance was an

@@ -67,16 +67,33 @@ All measured through the shipping runtime (`trench_packed_probe`), medians.
 > on top. Our bodies fail because they are a tall static peak with a dead Q
 > axis and no rest position — a tone control, not a voice.
 
-### Sub-hypothesis, inferred but NOT tested — flagged because it matters
+### Sub-hypothesis — TESTED 2026-07-25, confirmed as the majority mechanism
 
-Crown travel is **5.3 octaves** while individual pole frequencies travel only
-**1.4 octaves**. Those cannot both be one resonance sliding. The likely
-mechanism is that **different stages dominate at different corners** —
-dominance cross-fades between poles parked at different frequencies, rather
-than one pole sweeping. If true, authoring "travel" means designing which
-stage wins at each corner (contrary/opposing motion), not sliding a filter.
-This would explain the "Contrary" family names. **Untested. Test it before
-building on it.**
+Measured across all 102 E-mu bodies (`dev/tmp/dominance_test/`, decode via
+`pyruntime.packed_interp`, median crown travel reproduced at 5.39 oct):
+per corner, decode all six stages, find the cascade crown, and identify the
+stage carrying it. Compare the corners holding the lowest vs highest crown
+frequency.
+
+- **Handoff (a different stage dominates at each end): 67/102 overall — and
+  85% of the 33 P2K ship presets**, the musical corpus. Median 2 distinct
+  dominant stages across the four corners. `ContrarySweeps`: 8.0 oct travel,
+  dominant stage 3 → 0 → 0 → 5.
+- **Pole slide is real too, in a distinct archetype:** the ~1/3 non-handoff
+  bodies are the classic full-range sweeps (`Super_Lo_Pass`, `Steep_8_Pole`,
+  `Six_Pole_Exteme_Q`…). There the poles genuinely travel the range — e.g.
+  `Super_Lo_Pass` stacks five poles 57–603 Hz at M0, fully REAL/open at
+  M100_Q0, all five at ~9.28 kHz at M100_Q100. The population "1.4 oct pole
+  travel" median hid this: slide bodies move their poles 3.3+ oct.
+- **Corroborated by E-mu's own tutorial** (X3 `Adv Apps Guide.pdf` §11): their
+  taught recipe starts stage 1 with frequency and gain all the way down (rest
+  pose), Q rising with frequency (bloom coupled to travel), and stage 2 flat
+  at Morph=0, appearing as a second peak at Morph=100 — dominance entry,
+  described as the intended authoring style.
+
+So "travel" is authored two ways, matching the preset's job: **voices/characters
+hand off dominance between parked stages; sweeps slide the whole stack.**
+Authoring a character body means designing which stage wins at each corner.
 
 ## 4. The experiment run (awaiting verdict)
 
@@ -216,10 +233,10 @@ with units. Be suspicious of anything you had to name.
 1. **Get the verdict on `B_FRAMED`.** Everything below depends on it.
 2. **Apply framing to the existing 21 CAVL bodies** — the geometry is already
    right (§4b); they need only the floor. Cheapest possible win if step 1 lands.
-3. **Test the dominance sub-hypothesis** (§3): is E-mu's 5.3-octave crown
-   travel produced by pole movement or by stage dominance cross-fading?
-   Measure which stage carries the peak at each corner across the 102 bodies.
-   This decides how "travel" gets authored.
+3. ~~Test the dominance sub-hypothesis~~ **DONE 2026-07-25** — handoff
+   confirmed as the majority mechanism (85% of P2K); see §3 and
+   `dev/tmp/dominance_test/`. Travel is authored by choosing which stage wins
+   at each corner (characters) or sliding the whole stack (sweeps).
 4. **Run the intent generator on the other 6 families** (knock, resonant, cut,
    comb, violence, vocal) with framing applied from the start. `knock` is the
    Speaker Knockerz family and the obvious first target for Tyson's language.
