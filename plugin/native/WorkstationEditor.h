@@ -316,6 +316,9 @@ private:
     double designerLadderHz[128] {};                           // firmware freq-code ladder, decoded pole Hz
     std::array<std::array<float, kNumPlotPoints>, 5> designerJourneyDb {};
     std::array<std::array<std::array<float, kNumPlotPoints>, 6>, 2> designerStageDb {};   // [LO/HI][stage]
+    bool designerGhostValid = false;                           // A/B: the imported photograph
+    std::array<juce::uint8, 240> designerGhostBytes {};
+    std::array<std::array<float, kNumPlotPoints>, 5> designerGhostDb {};
     float designerJourneyCrown[5] {};
     bool designerJourneyOk = false;
     int designerFamily = 0;                                    // 0 RIDE (no-collapse), 1 ARCH (mid crest)

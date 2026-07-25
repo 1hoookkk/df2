@@ -101,12 +101,17 @@ WorkstationEditor::WorkstationEditor (PluginProcessor& p)
             : juce::File ("C:/Users/hooki/df2-workstation/ws_live.json");
         if (liveScriptFile.existsAsFile())
         {
+            // arm only: a stale live file must NOT replay on relaunch (it may
+            // hold saves). Only an explicit env script runs at startup.
             liveScriptMtime = liveScriptFile.getLastModificationTime();
-            proofActions = juce::JSON::parse (liveScriptFile);
-            if (proofActions.isArray())
+            if (scriptPath.isNotEmpty())
             {
-                proofPending = true;
-                proofDelayTicks = 45; // ~1.5 s after startup
+                proofActions = juce::JSON::parse (liveScriptFile);
+                if (proofActions.isArray())
+                {
+                    proofPending = true;
+                    proofDelayTicks = 45; // ~1.5 s after startup
+                }
             }
         }
     }

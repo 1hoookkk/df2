@@ -227,6 +227,30 @@ void WorkstationEditor::designerRefreshJourney()
         designerJourneyCrown[k] = crown;
     }
     designerJourneyPass = designerJourneyGate();
+    if (designerGhostValid)
+        for (int k = 0; k < 5; ++k)
+        {
+            double biquad[30] {};
+            double maxR = 0.0;
+            juce::uint32 unstable = 0, nonfinite = 0;
+            if (trench_packed_probe (designerGhostBytes.data(), 240, k / 4.0, q,
+                                     biquad, &maxR, &unstable, &nonfinite) != 0)
+                break;
+            float coeffs[30];
+            for (int i = 0; i < 30; ++i)
+                coeffs[i] = (float) biquad[i];
+            for (int i = 0; i < kNumPlotPoints; ++i)
+            {
+                const double hz = kMinHz * std::pow (kMaxHz / kMinHz, (double) i / (kNumPlotPoints - 1));
+                const double w = juce::MathConstants<double>::twoPi * hz / kEvalSampleRate;
+                float sum = 0.0f;
+                for (int s = 0; s < 6; ++s)
+                    if ((nonfinite & (1u << s)) == 0)
+                        sum += stageMagDb (&coeffs[s * 5], std::cos (w), std::sin (w),
+                                           std::cos (2.0 * w), std::sin (2.0 * w));
+                designerGhostDb[(size_t) k][(size_t) i] = sum;
+            }
+        }
 }
 
 juce::Rectangle<int> WorkstationEditor::designerFamilyArea() const
@@ -394,6 +418,10 @@ void WorkstationEditor::designerImportWorking()
     statusLine = "IMPORT <- " + bodyName
                + (skipped.isEmpty() ? "  (all stages editable)" : "  (kept OFF:" + skipped + ")");
     designerApply();
+    designerGhostBytes = workingBytes;   // the photograph, kept as the A/B ghost
+    designerGhostValid = true;
+    designerRefreshJourney();
+    repaint();
 }
 
 void WorkstationEditor::designerSketchQ100()
@@ -551,6 +579,7 @@ void WorkstationEditor::designerSetTemplate (int index)
         default: return;
     }
     designerPage = 0;
+    designerGhostValid = false;
     statusLine = "TEMPLATE " + designerTemplateName + " (re-tune from here)";
     designerApply();
 }
@@ -797,6 +826,22 @@ void WorkstationEditor::drawDesigner (juce::Graphics& g)
     const float zeroY = inner.getY() + inner.getHeight() * (1.0f - (0.0f - kMinDb) / (kMaxDb - kMinDb));
     g.setColour (juce::Colour (0x30ffffff));
     g.drawHorizontalLine (juce::roundToInt (zeroY), inner.getX(), inner.getRight());
+    if (designerJourneyOk && designerGhostValid)   // the photograph, behind the caricature
+        for (int k = 0; k < 5; ++k)
+        {
+            juce::Path path;
+            for (int i = 0; i < kNumPlotPoints; i += 2)
+            {
+                const float x = inner.getX() + ((float) i / (kNumPlotPoints - 1)) * inner.getWidth();
+                const float norm = (std::clamp (designerGhostDb[(size_t) k][(size_t) i], kMinDb, kMaxDb) - kMinDb)
+                                 / (kMaxDb - kMinDb);
+                const float y = inner.getY() + inner.getHeight() * (1.0f - norm);
+                if (i == 0) path.startNewSubPath (x, y);
+                else path.lineTo (x, y);
+            }
+            g.setColour (juce::Colour (0x40aab4be));
+            g.strokePath (path, juce::PathStrokeType (1.0f));
+        }
     if (designerJourneyOk)
         for (int k = 0; k < 5; ++k)
         {
