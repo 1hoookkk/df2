@@ -1663,7 +1663,21 @@ void WorkstationEditor::runProofScript()
             designerApply();
         }
         else if (action == "dtemplate")
-            designerSetTemplate (juce::jlimit (0, 7, (int) obj->getProperty ("index")));
+        {
+            if (obj->hasProperty ("rom"))   // real rail: {"rom":"TALKING HEDZ","part":0|1|2}
+            {
+                designerScanRomTemplates();
+                const auto want = obj->getProperty ("rom").toString().toUpperCase();
+                for (int i = 0; i < (int) romTemplates.size(); ++i)
+                    if (romTemplates[(size_t) i].name.contains (want))
+                    {
+                        designerApplyRomTemplate (i, juce::jlimit (0, 2, (int) obj->getProperty ("part")));
+                        break;
+                    }
+            }
+            else
+                designerSetTemplate (juce::jlimit (0, 7, (int) obj->getProperty ("index")));
+        }
         else if (action == "dmotif")
             designerApplyMotif (juce::jlimit (0, 5, (int) obj->getProperty ("stage")),
                                 juce::jlimit (0, 4, (int) obj->getProperty ("motif")));

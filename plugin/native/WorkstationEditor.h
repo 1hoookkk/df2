@@ -350,6 +350,11 @@ private:
     void designerImportWorking();                              // photograph -> editable FREE sections
     juce::Rectangle<int> designerImportArea() const;
     void designerWrapWav (const juce::File& file);             // drop a wav -> fitted voice + P2K frame
+    // REAL RAILS: the 33 decoded ROM bodies, served by role (frame/voice/all)
+    struct RomTemplate { juce::String name; juce::File file; };
+    std::vector<RomTemplate> romTemplates;
+    void designerScanRomTemplates();
+    void designerApplyRomTemplate (int idx, int part);         // 0 FRAME S1+S6, 1 VOICE S2-S5, 2 ALL
     // section-level undo: one snapshot per gesture (scrub, wheel run, menu, import)
     struct DesignerSnapshot { DesignerSectionState sections[2][6]; int shift = 0; int page = 0; };
     std::vector<DesignerSnapshot> dsUndoStack, dsRedoStack;
