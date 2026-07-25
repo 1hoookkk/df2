@@ -391,9 +391,14 @@ void WorkstationEditor::designerSaveBody()
         return;
     }
     designerRefreshJourney();
-    auto name = nameField.getText().trim();
-    if (name.isEmpty())
-        name = "DESIGNER";
+    const auto name = nameField.getText().trim();
+    if (name.isEmpty() || name.equalsIgnoreCase ("DESIGNER"))
+    {
+        statusLine = "NAME IT first (top-left) - unnamed saves would clobber each other";
+        nameField.grabKeyboardFocus();
+        repaint();
+        return;
+    }
     const auto f = processor.forgeSaveBody (name, true);
     statusLine = f.existsAsFile()
         ? (juce::String ("FRAMED+CERTIFIED -> ") + f.getFullPathName()
@@ -831,10 +836,20 @@ bool WorkstationEditor::designerMouseDown (juce::Point<int> pos)
         if (designerPageArea (page).contains (pos))
         {
             designerPage = page;
+            setParamValue (ParamID::q, page == 1 ? 1.0f : 0.0f);   // hear the page you edit
             designerRefreshJourney();
             repaint();
             return true;
         }
+    if (designerJourneyArea().contains (pos))
+    {
+        // the strip IS the wheel: drag rides morph while you design
+        dsWheelDrag = true;
+        const auto j = designerJourneyArea().toFloat().reduced (2.0f);
+        setParamValue (ParamID::morph, (float) (pos.x - j.getX()) / juce::jmax (1.0f, j.getWidth()));
+        repaint();
+        return true;
+    }
     if (designerTemplateArea().contains (pos))
     {
         designerShowTemplateMenu();
@@ -902,6 +917,13 @@ bool WorkstationEditor::designerMouseDrag (juce::Point<int> pos)
 {
     if (! designerOpen)
         return false;
+    if (dsWheelDrag)
+    {
+        const auto j = designerJourneyArea().toFloat().reduced (2.0f);
+        setParamValue (ParamID::morph, (float) (pos.x - j.getX()) / juce::jmax (1.0f, j.getWidth()));
+        repaint();
+        return true;
+    }
     if (dsDragField < 0)
         return true;
     const int dx = pos.x - dsDragStartX;
@@ -929,6 +951,7 @@ bool WorkstationEditor::designerMouseUp()
 {
     if (! designerOpen)
         return false;
+    dsWheelDrag = false;
     if (dsDragField >= 0 && dsDragMoved)
         designerApply();   // gesture done: certify + undo step
     dsDragField = -1;
@@ -1023,6 +1046,16 @@ void WorkstationEditor::drawDesigner (juce::Graphics& g)
             g.setColour (kCyan.withAlpha (0.25f + 0.1875f * (float) k));
             g.strokePath (path, juce::PathStrokeType (k == 4 ? 1.4f : 1.0f));
         }
+    {
+        const float m = juce::jlimit (0.0f, 1.0f, paramValue (ParamID::morph));
+        const float mx = inner.getX() + m * inner.getWidth();
+        g.setColour (kAmber.withAlpha (0.9f));
+        g.drawVerticalLine (juce::roundToInt (mx), inner.getY(), inner.getBottom());
+        g.setFont (juce::FontOptions (9.0f).withStyle ("Bold"));
+        g.drawText ("M" + juce::String (juce::roundToInt (m * 100.0f)),
+                    juce::roundToInt (mx) - 16, (int) inner.getBottom() - 13, 32, 12,
+                    juce::Justification::centred);
+    }
     g.setColour (kBorder);
     g.drawRect (j, 1.0f);
     g.setColour (kTextDim);

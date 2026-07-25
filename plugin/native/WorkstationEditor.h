@@ -333,6 +333,7 @@ private:
     juce::TextEditor designerEditor;                           // inline cell editor (double-click)
     int dsEditStage = -1, dsEditRow = 0, dsEditField = -1;     // active inline edit target
     int dsDragStage = -1, dsDragRow = 0, dsDragField = -1;     // scrub-drag target
+    bool dsWheelDrag = false;                                  // journey strip = the wheel
     double dsDragStartVal = 0.0;
     int dsDragStartX = 0;
     bool dsDragMoved = false;
