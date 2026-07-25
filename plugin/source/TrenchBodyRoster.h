@@ -44,6 +44,12 @@ inline constexpr int kNoFilterIndex = 0;
 inline constexpr int kDefaultBodyIndex = kNoFilterIndex;
 inline constexpr const char* kNoFilterName = "NO FILTER";
 inline constexpr int kUserSlotPool = 128;
+// The BODY parameter's range is FROZEN. If it tracked bodyCount() the range
+// would differ per machine (the roster appends the user's bodies folder), and a
+// host automation lane - normalised 0..1 on the wire - would resolve to a
+// different filter on someone else's system. Widen only if the roster outgrows
+// it, and never narrow it: the range is part of the saved-project contract.
+inline constexpr int kBodyParamMaxIndex = 511;
 inline const BodyEntry* bakedRoster (int& countOut) noexcept;
 inline juce::File auditionSlotFile() noexcept
 {
@@ -269,6 +275,27 @@ inline juce::String bodyDisplayName (int index) noexcept
     int count = 0;
     const auto* roster = bodyRoster (count);
     return count > 0 ? roster[wrapBodyIndex (index)].displayName : juce::String();
+}
+// Stable identity for save/recall: the baked resource stem, or the file path for
+// a user body. An index alone means nothing across machines or roster versions.
+inline juce::String bodyBaseForIndex (int index) noexcept
+{
+    int count = 0;
+    const auto* roster = bodyRoster (count);
+    if (count <= 0 || index < 0 || index >= count)
+        return {};
+    return roster[index].base;
+}
+inline int bodyIndexForBase (const juce::String& base) noexcept
+{
+    if (base.isEmpty())
+        return -1;
+    int count = 0;
+    const auto* roster = bodyRoster (count);
+    for (int index = 0; index < count; ++index)
+        if (base == roster[index].base)
+            return index;
+    return -1;
 }
 inline TypeBehavior bodyTypeBehavior (int index) noexcept
 {

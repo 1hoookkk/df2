@@ -30,8 +30,28 @@ public:
             selector.setColour (colourId, juce::Colours::transparentBlack);
         selector.setTextWhenNothingSelected ({});
         populate();
-        attachment = std::make_unique<juce::AudioProcessorValueTreeState::ComboBoxAttachment> (
-            apvts, ParamID::body, selector);
+        // NOT a ComboBoxAttachment: that maps item <-> parameter by NORMALISED
+        // position across the item count, so it only agrees with the roster
+        // index while the parameter's range ends at numItems-1. The range is
+        // frozen and the roster grows with the user's bodies folder, so the two
+        // drift apart and the glass loads a different body than it names. Drive
+        // the integer index directly instead.
+        if (auto* bodyParam = apvts.getParameter (ParamID::body))
+        {
+            attachment = std::make_unique<juce::ParameterAttachment> (
+                *bodyParam,
+                [this] (float value)
+                {
+                    const int index = juce::roundToInt (value);
+                    if (index < 0 || index >= selector.getNumItems()
+                        || index == selector.getSelectedItemIndex())
+                        return;
+                    const juce::ScopedValueSetter<bool> guard (writingParameter, true);
+                    selector.setSelectedItemIndex (index, juce::sendNotificationSync);
+                },
+                apvts.undoManager);
+            attachment->sendInitialUpdate();
+        }
         selector.addListener (this);
         addAndMakeVisible (selector);
     }
@@ -53,11 +73,18 @@ public:
     }
     void refreshFromDisk()
     {
-        const int keep = selector.getSelectedId();
+        // Keep the selected BODY, not the selected slot: a new file in the
+        // user's bodies folder sorts in and shifts every index after it. If the
+        // body moved, write the new index through so the parameter and the glass
+        // still name the same thing.
+        const int before = selector.getSelectedItemIndex();
+        const auto keepBase = trench::bodyBaseForIndex (before);
         trench::rescanBodyRoster();
         populate();
-        if (keep > 0)
-            selector.setSelectedId (keep, juce::dontSendNotification);
+        const int now = keepBase.isNotEmpty() ? trench::bodyIndexForBase (keepBase) : before;
+        if (now >= 0 && now < selector.getNumItems())
+            selector.setSelectedItemIndex (now, now == before ? juce::dontSendNotification
+                                                             : juce::sendNotificationSync);
     }
     class AuditionItem : public juce::PopupMenu::CustomComponent
     {
@@ -300,6 +327,8 @@ private:
     }
     void comboBoxChanged (juce::ComboBox*) override
     {
+        if (! writingParameter && attachment != nullptr)
+            attachment->setValueAsCompleteGesture ((float) selector.getSelectedItemIndex());
         if (onAnnounce)
             onAnnounce (selector.getText());
         repaint();
@@ -327,6 +356,7 @@ private:
     Theme t;
     MenuLookAndFeel menuLookAndFeel;
     juce::ComboBox selector;
-    std::unique_ptr<juce::AudioProcessorValueTreeState::ComboBoxAttachment> attachment;
+    std::unique_ptr<juce::ParameterAttachment> attachment;
+    bool writingParameter = false;
 };
 }

@@ -4,6 +4,7 @@
 #include "PluginProcessor.h"
 #include "PluginEditor.h"
 #include "TrenchBodyRoster.h"
+#include "ui/TypeSelectorView.h"
 
 #include <juce_gui_basics/juce_gui_basics.h>
 
@@ -81,6 +82,89 @@ int main()
     // Let the layout settle and one frame of live data land. (This target sets
     // JUCE_MODAL_LOOPS_PERMITTED=1 so the pump is available; the plugin does not.)
     juce::MessageManager::getInstance()->runDispatchLoopUntil (1400);
+
+    // TYPE proof: picking a body on the glass must load THAT body. The menu
+    // item index and the host BODY parameter have to name the same thing.
+    // TRENCH_TYPE_ITER=1 runs this alone (the slow blocks below are skipped).
+    if (std::getenv ("TRENCH_TYPE_ITER") != nullptr)
+    {
+        bool selectPass = true;
+        if (auto* type = findChildOfType<trench::ui::TypeSelectorView> (*editor))
+        {
+            int rosterN = 0;
+            trench::bodyRoster (rosterN);
+            for (int wanted : { 1, rosterN / 3, rosterN / 2, rosterN - 1 })
+            {
+                if (wanted <= 0 || wanted >= rosterN)
+                    continue;
+                type->previewBody (wanted);
+                juce::MessageManager::getInstance()->runDispatchLoopUntil (80);
+                const int loaded = processor.getLoadedBodyIndex();
+                if (loaded != wanted)
+                {
+                    selectPass = false;
+                    std::printf ("TYPE  picked %d \"%s\"  ->  loaded %d \"%s\"\n",
+                                 wanted, trench::bodyDisplayName (wanted).toRawUTF8(),
+                                 loaded,  trench::bodyDisplayName (loaded).toRawUTF8());
+                }
+            }
+        }
+        else
+        {
+            selectPass = false;
+            std::printf ("TYPE  selector not found in the editor\n");
+        }
+        std::printf ("TYPE SELECT  picked body == loaded body  %s\n", selectPass ? "PASS" : "FAIL");
+
+        // RANGE proof: the BODY parameter's range must not depend on how many
+        // bodies this machine has, or a normalised automation lane means a
+        // different filter on someone else's system.
+        bool rangePass = false;
+        if (auto* body = processor.apvts.getParameter (ParamID::body))
+        {
+            const auto range = body->getNormalisableRange();
+            rangePass = juce::approximatelyEqual (range.end, (float) trench::kBodyParamMaxIndex);
+            std::printf ("RANGE  body param 0..%g  roster %d\n", range.end, trench::bodyCount());
+        }
+        std::printf ("BODY RANGE   frozen, roster-independent  %s\n", rangePass ? "PASS" : "FAIL");
+
+        // RECALL proof: a saved state must restore the body it named. The saved
+        // INDEX is deliberately corrupted first - if recall still lands on the
+        // right body, the id is doing the work, not the index.
+        bool recallPass = false;
+        {
+            int rosterN = 0;
+            trench::bodyRoster (rosterN);
+            const int saved = juce::jlimit (1, rosterN - 1, rosterN / 2);
+            const auto savedBase = trench::bodyBaseForIndex (saved);
+            if (auto* body = processor.apvts.getParameter (ParamID::body))
+                body->setValueNotifyingHost (body->convertTo0to1 ((float) saved));
+            juce::MessageManager::getInstance()->runDispatchLoopUntil (80);
+
+            juce::MemoryBlock blob;
+            processor.getStateInformation (blob);
+            if (auto xml = std::unique_ptr<juce::XmlElement> (
+                    juce::AudioProcessor::getXmlFromBinary (blob.getData(), (int) blob.getSize())))
+            {
+                // point the stored index at a different body, keep the id
+                for (auto* child : xml->getChildIterator())
+                    if (child->getStringAttribute ("id") == ParamID::body)
+                        child->setAttribute ("value", (double) ((saved + 7) % rosterN));
+                juce::MemoryBlock tampered;
+                juce::AudioProcessor::copyXmlToBinary (*xml, tampered);
+                processor.setStateInformation (tampered.getData(), (int) tampered.getSize());
+                juce::MessageManager::getInstance()->runDispatchLoopUntil (80);
+            }
+            const auto recalledBase = trench::bodyBaseForIndex (processor.getLoadedBodyIndex());
+            recallPass = savedBase.isNotEmpty() && recalledBase == savedBase;
+            std::printf ("RECALL  saved \"%s\"  ->  restored \"%s\"\n",
+                         trench::bodyDisplayName (saved).toRawUTF8(),
+                         trench::bodyDisplayName (processor.getLoadedBodyIndex()).toRawUTF8());
+        }
+        std::printf ("BODY RECALL  state restores the named body  %s\n", recallPass ? "PASS" : "FAIL");
+
+        return (selectPass && rangePass && recallPass) ? 0 : 1;
+    }
 
     // Load-bearing iteration path: render ONLY the modulation surface, fast.
     // TRENCH_MOD_ITER=1 skips every KEY/SLAM/gif/mix proof (the slow blocks) so

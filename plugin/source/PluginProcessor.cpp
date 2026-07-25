@@ -570,7 +570,11 @@ void PluginProcessor::parameterChanged (const juce::String& parameterID, float n
     if (parameterID == ParamID::body)
     {
         const int raw = juce::roundToInt (newValue);
-        pendingBodyIndex.store (trench::wrapBodyIndex (raw), std::memory_order_relaxed);
+        // An out-of-range index must never resolve to a DIFFERENT preset. The
+        // old modulo wrap silently loaded some other body when a saved project
+        // named a slot this roster no longer has; land on NO FILTER instead.
+        const int wanted = (raw >= 0 && raw < trench::bodyCount()) ? raw : trench::kNoFilterIndex;
+        pendingBodyIndex.store (wanted, std::memory_order_relaxed);
         triggerAsyncUpdate();
     }
 }
@@ -1085,6 +1089,13 @@ juce::AudioProcessorEditor* PluginProcessor::createEditor()
 void PluginProcessor::getStateInformation (juce::MemoryBlock& destData)
 {
     auto state = apvts.copyState();
+    // BODY travels by stable id, never by index alone: the roster appends the
+    // user's bodies folder, so slot N names a different filter on another
+    // machine or after any roster edit.
+    state.setProperty ("bodyId",
+                       trench::bodyBaseForIndex (
+                           juce::roundToInt (apvts.getRawParameterValue (ParamID::body)->load())),
+                       nullptr);
 #ifdef TRENCH_PLAYER_EXTRAS
     state.setProperty ("clean_audio_enabled",
                        juce::var (trench::clean_audio::kEnabled()),
@@ -1099,11 +1110,25 @@ void PluginProcessor::setStateInformation (const void* data, int sizeInBytes)
     if (xmlState != nullptr && xmlState->hasTagName (apvts.state.getType()))
     {
         auto tree = juce::ValueTree::fromXml (*xmlState);
+        const auto bodyId = tree.getProperty ("bodyId").toString();
 #ifdef TRENCH_PLAYER_EXTRAS
         if (tree.hasProperty ("clean_audio_enabled"))
             trench::clean_audio::setEnabled (static_cast<bool> (tree.getProperty ("clean_audio_enabled")));
 #endif
         apvts.replaceState (std::move (tree));
+        if (bodyId.isNotEmpty())
+        {
+            int index = trench::bodyIndexForBase (bodyId);
+            if (index < 0)
+            {
+                trench::rescanBodyRoster();     // the saved body may be a user file
+                index = trench::bodyIndexForBase (bodyId);
+            }
+            // A body this machine does not have lands on NO FILTER - never on
+            // whatever else happens to occupy the saved index.
+            setParameterDenormalized (ParamID::body,
+                                      (float) (index >= 0 ? index : trench::kNoFilterIndex));
+        }
     }
     if (trench::clean_audio::kEnabled())
         forceCleanAudioUiState();
