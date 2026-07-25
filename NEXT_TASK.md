@@ -20,8 +20,8 @@ All four steps landed and proven on the real path:
 
 ## Open, gated on Tyson
 
-- VST3 install (ship-vst3) — explicit go required.
-- In-place reload of the currently loaded body in the plugin (today: reopen
-  TYPE menu).
+- VST3 install (ship-vst3) — explicit go required. The build now includes
+  in-place hot-reload of the loaded body (done 2026-07-26): the DAW plugin
+  follows Workstation saves the moment it is installed.
 - Ear pass over `bodies/candidates/` (5 functional TRENCH_*, TRENCH_303,
   7 XSTUDY_* study-only, 21 CAVL) — author bodies in the Designer now.
