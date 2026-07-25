@@ -1,20 +1,12 @@
-# Next session — one focused task
+# Next session
 
-**Build the measured-object body factory as a real tool, and use it to make
-the first SIMPLE-EFFECTIVE presets.**
+Build the measured-object body factory, use it for the first SIMPLE-EFFECTIVE
+presets.
 
-Ear-gate first: Tyson's verdict on `WOODMETAL_violin_to_storm_E` (render +
-plot delivered 2026-07-25). Direction was approved at variant C ("Hey there
-we go"); E adds the measured low shelf + flat-off-resonance sections.
-
-## The task
-
-**Tyson's diagnosis of variant E (verbatim ground truth): "The gap is that
-they are just peaks. Nothing else."** A body is not peaks on a flat line —
-every E-mu row carries a pole AND an independent zero (L6: they disagree by
-1.75 oct on average). The extraction must deliver the FULL anatomy: poles,
-antiresonances/notches, tilt — the violin IR's deep notches are measured and
-were thrown away.
+Tyson on variant E (verbatim, the spec): **"The gap is that they are just
+peaks. Nothing else."** Extraction must deliver the full anatomy — poles AND
+independent zeros/notches AND tilt (L6: pole/zero disagree 1.75 oct on
+average). The violin IR's deep notches are measured and were thrown away.
 
 1. **Time-domain modal ID for poles** (matrix pencil / Prony on the IR) AND
    **zero recovery** (phase-aware rational fit — the DVTD
