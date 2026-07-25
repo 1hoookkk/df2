@@ -348,6 +348,7 @@ private:
     void designerSketchQ100();                                 // MD-Q bw x0.375 sketch -> FREE sections
     void designerImportWorking();                              // photograph -> editable FREE sections
     juce::Rectangle<int> designerImportArea() const;
+    void designerWrapWav (const juce::File& file);             // drop a wav -> fitted voice + P2K frame
     // section-level undo: one snapshot per gesture (scrub, wheel run, menu, import)
     struct DesignerSnapshot { DesignerSectionState sections[2][6]; int shift = 0; int page = 0; };
     std::vector<DesignerSnapshot> dsUndoStack, dsRedoStack;

@@ -29,6 +29,8 @@ extern "C"
                              double* outBiquad, double* outMaxPoleRadius,
                              uint32_t* outUnstableMask, uint32_t* outNonfiniteMask);
     int trench_pack_body_from_corner_words (const unsigned short* words, size_t n, unsigned char* outBody);
+    int trench_fit_corner_arma (const double* samples, size_t n, double srIn, double runtimeSr,
+                                double* outCoeffs30);
     double trench_packed_decode (unsigned short word);
     unsigned short trench_packed_encode (double value);
     int trench_stage_roots_from_words (const unsigned short* words, double* outRoots);

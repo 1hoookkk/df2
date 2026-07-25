@@ -1669,6 +1669,8 @@ void WorkstationEditor::runProofScript()
                                 juce::jlimit (0, 4, (int) obj->getProperty ("motif")));
         else if (action == "dsketch")
             designerSketchQ100();
+        else if (action == "dwrap")     // wav -> fitted voice + P2K frame
+            designerWrapWav (juce::File (obj->getProperty ("path").toString()));
         else if (action == "dimport")   // optional path: load a .body240 straight into sections
         {
             if (obj->hasProperty ("path"))
@@ -3290,6 +3292,8 @@ void WorkstationEditor::filesDropped (const juce::StringArray& files, int, int)
     {
         gWorkstationLoop->setPlaying (true);
         statusLine = "LOOP <- " + gWorkstationLoop->loopName() + "  (looping through the working body)";
+        if (designerOpen)
+            designerWrapWav (juce::File (files[0]));   // the cheat: it plays through itself
     }
     else
     {

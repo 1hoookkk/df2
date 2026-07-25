@@ -472,6 +472,108 @@ void WorkstationEditor::designerImportWorking()
     repaint();
 }
 
+// The cheat: drop a wav, hear it through its own framed body seconds later.
+// Voice = ARMA fit of two poses of the file (early -> M0, late -> M100),
+// strongest in-band resonances on S2..S5. Frame = the measured hedz frame:
+// S1 TILT rail + S6 traveling NOTCH. Everything lands editable.
+void WorkstationEditor::designerWrapWav (const juce::File& file)
+{
+    juce::AudioFormatManager fm;
+    fm.registerBasicFormats();
+    std::unique_ptr<juce::AudioFormatReader> reader (fm.createReaderFor (file));
+    if (reader == nullptr || reader->lengthInSamples < 256)
+    {
+        statusLine = "WRAP: could not read " + file.getFileName();
+        repaint();
+        return;
+    }
+    const int total = (int) juce::jmin<juce::int64> (reader->lengthInSamples, 8 * 65536);
+    juce::AudioBuffer<float> buf (1, total);
+    reader->read (&buf, 0, total, 0, true, false);
+
+    struct Fitted { double poleHz, poleR, zeroHz, zeroR, scale; };
+    const auto fitPose = [&] (int start, int len) -> std::vector<Fitted>
+    {
+        std::vector<double> mono ((size_t) len);
+        const float* s = buf.getReadPointer (0) + start;
+        for (int i = 0; i < len; ++i)
+            mono[(size_t) i] = (double) s[i];
+        double coeffs[30] {};
+        std::vector<Fitted> out;
+        if (trench_fit_corner_arma (mono.data(), mono.size(), reader->sampleRate, kEvalSampleRate, coeffs) != 0)
+            return out;
+        for (int st = 0; st < 6; ++st)
+        {
+            const double* c = &coeffs[st * 5];
+            const juce::uint16 w[5] = {
+                trench_packed_encode ((c[0] - c[1]) / 4.0), trench_packed_encode (c[1]),
+                trench_packed_encode ((c[2] - c[3]) / 4.0), trench_packed_encode (c[3]),
+                trench_packed_encode (c[4] / 4.0) };
+            double roots[5] {};
+            if (trench_stage_roots_from_words (w, roots) != 0)
+                continue;   // real-pair rows don't join the voice
+            if (roots[0] < 60.0 || roots[0] > 16000.0 || roots[1] <= 0.0)
+                continue;
+            out.push_back ({ roots[0], juce::jmin (roots[1], 0.9990),
+                             juce::jlimit (20.0, (double) kMaxHz, roots[2]),
+                             juce::jlimit (0.0, 1.0, roots[3]),
+                             juce::jlimit (0.0, 4.0, roots[4]) });
+        }
+        std::sort (out.begin(), out.end(), [] (const Fitted& a, const Fitted& b) { return a.poleR > b.poleR; });
+        if (out.size() > 4)
+            out.resize (4);
+        std::sort (out.begin(), out.end(), [] (const Fitted& a, const Fitted& b) { return a.poleHz < b.poleHz; });
+        return out;
+    };
+    const auto m0 = fitPose (0, total / 2);
+    const auto m100 = fitPose (total / 2, total - total / 2);
+    if (m0.empty() || m100.empty())
+    {
+        statusLine = "WRAP: fit found no usable resonances in " + file.getFileName();
+        repaint();
+        return;
+    }
+
+    designerPushUndo();
+    for (auto& page : dsections)
+        for (auto& s : page)
+            s = DesignerSectionState {};
+    // frame: the measured hedz skeleton (P2k_013 decode) — re-tune from here
+    auto frame = [this] (int stage, int motif, double p0, double r0, double z0, double d0,
+                         double p1, double r1, double z1, double d1)
+    {
+        auto& s = dsections[0][stage];
+        s.type = kDesignerTypeFree;
+        s.motif = motif;
+        s.lo = { 64, 64, p0, r0, z0, d0, 1.0 };
+        s.hi = { 64, 64, p1, r1, z1, d1, 1.0 };
+    };
+    frame (0, 3, 9320.9, 0.9753, 346.7, 0.935, 8376.0, 0.9622, 1710.7, 0.944);   // TILT rail
+    frame (5, 4, 199.4, 0.9912, 6396.3, 1.0, 1789.2, 0.9966, 17313.0, 1.0);      // traveling NOTCH
+    // voice: measured resonances, early pose -> M0, late pose -> M100
+    const size_t nv = juce::jmin (m0.size(), m100.size(), (size_t) 4);
+    for (size_t v = 0; v < nv; ++v)
+    {
+        auto& s = dsections[0][1 + (int) v];
+        s.type = kDesignerTypeFree;
+        s.motif = -1;
+        const auto& a = m0[v];
+        const auto& b = m100[v];
+        s.lo = { 64, 64, a.poleHz, a.poleR, a.zeroHz, a.zeroR, 1.0 };
+        s.hi = { 64, 64, b.poleHz, b.poleR, b.zeroHz, b.zeroR, 1.0 };
+    }
+    designerGhostValid = false;
+    designerTemplateName = "WRAP " + file.getFileNameWithoutExtension();
+    bodyName = file.getFileNameWithoutExtension();
+    nameField.setText (bodyName, juce::dontSendNotification);
+    designerPage = 0;
+    designerApply();
+    designerSketchQ100();   // pushes its own undo step; hand-edit from here
+    statusLine = "WRAP <- " + file.getFileName() + "  (" + juce::String ((int) nv)
+               + " measured voices + hedz frame; re-tune and SAVE)";
+    repaint();
+}
+
 void WorkstationEditor::designerSketchQ100()
 {
     designerPushUndo();
