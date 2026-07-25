@@ -1,5 +1,6 @@
 use crate::cartridge::{Cartridge, BODY_BYTES};
 use crate::cascade::{NUM_COEFFS, NUM_STAGES};
+use crate::designer::{self, DesignerSection};
 use crate::dsp::BASE_AGC_TABLE;
 use crate::engine::{
     install_pending, CartridgeMailbox, EngineHandle, FilterEngine, InputMode, SpatialMode,
@@ -444,6 +445,66 @@ pub unsafe extern "C" fn trench_stage_words_from_roots(
         });
         let out = unsafe { std::slice::from_raw_parts_mut(out_words, NUM_COEFFS) };
         out.copy_from_slice(&words);
+        0
+    })
+}
+/// `sections`: array of `n` DesignerSection (repr(C)), n <= 6. Writes 30 words.
+#[no_mangle]
+pub unsafe extern "C" fn trench_designer_compile_corner(
+    sections: *const DesignerSection,
+    n: usize,
+    morph: f64,
+    shift: i32,
+    out_words: *mut u16,
+) -> i32 {
+    ffi_guard(FFI_PANIC, || {
+        if (sections.is_null() && n != 0) || out_words.is_null() || !morph.is_finite() {
+            return -1;
+        }
+        let secs: &[DesignerSection] = if n == 0 {
+            &[]
+        } else {
+            unsafe { std::slice::from_raw_parts(sections, n) }
+        };
+        let words = match designer::compile_corner(secs, morph, shift) {
+            Ok(w) => w,
+            Err(_) => return -2,
+        };
+        let out = unsafe { std::slice::from_raw_parts_mut(out_words, designer::WORDS_PER_CORNER) };
+        out.copy_from_slice(&words);
+        0
+    })
+}
+/// `q0`/`q100`: the two Q-page section sets (pass the same pointer twice for
+/// heritage Q-collapsed bodies). Writes 240 bytes.
+#[no_mangle]
+pub unsafe extern "C" fn trench_designer_body(
+    q0: *const DesignerSection,
+    q100: *const DesignerSection,
+    n: usize,
+    shift: i32,
+    out_body: *mut u8,
+) -> i32 {
+    ffi_guard(FFI_PANIC, || {
+        if ((q0.is_null() || q100.is_null()) && n != 0) || out_body.is_null() {
+            return -1;
+        }
+        let (a, b): (&[DesignerSection], &[DesignerSection]) = if n == 0 {
+            (&[], &[])
+        } else {
+            unsafe {
+                (
+                    std::slice::from_raw_parts(q0, n),
+                    std::slice::from_raw_parts(q100, n),
+                )
+            }
+        };
+        let bytes = match designer::body_bytes(a, b, shift) {
+            Ok(b) => b,
+            Err(_) => return -2,
+        };
+        let out = unsafe { std::slice::from_raw_parts_mut(out_body, BODY_BYTES) };
+        out.copy_from_slice(&bytes);
         0
     })
 }

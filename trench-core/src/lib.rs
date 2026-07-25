@@ -5,6 +5,7 @@ pub mod cartridge;
 pub mod cascade;
 pub mod compiler;
 pub mod cvsd_input;
+pub mod designer;
 pub mod desk_drive;
 pub mod dsp;
 pub mod engine;

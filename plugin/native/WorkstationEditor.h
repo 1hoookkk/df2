@@ -293,6 +293,68 @@ private:
     double lastCertifyMaxR = 0.0;
     bool lastCertifyPass = false;
 
+    // THE TRENCH DESIGNER: parameter-space authoring over the firmware word
+    // recipe (trench-core designer.rs). Sections are the truth while the panel
+    // is open; every edit recompiles -> certify -> install (the gate net).
+    struct DesignerRowState
+    {
+        int freq = 64, gain = 64;                              // types 1..3
+        double poleHz = 500.0, poleR = 0.95;                   // TYPE FREE
+        double zeroHz = 1000.0, zeroR = 0.5, scale = 1.0;
+    };
+    struct DesignerSectionState
+    {
+        int type = 0;                                          // 0 off, 1 EQ, 2 LP, 3 HP, 4 FREE
+        DesignerRowState lo, hi;
+    };
+    bool designerOpen = false;
+    int designerPage = 0;                                      // 0 = Q0 pose page, 1 = Q100 pose page
+    DesignerSectionState dsections[2][6];
+    int designerShift = 0;                                     // heritage global shift (-32..31)
+    double designerLadderHz[128] {};                           // firmware freq-code ladder, decoded pole Hz
+    std::array<std::array<float, kNumPlotPoints>, 5> designerJourneyDb {};
+    float designerJourneyCrown[5] {};
+    bool designerJourneyOk = false;
+    int designerFamily = 0;                                    // 0 RIDE (no-collapse), 1 ARCH (mid crest)
+    bool designerJourneyPass = false;
+    void designerFrameL10();                                   // active-row crowns +2/+8/+25/+27
+    void designerSaveBody();                                   // frame -> re-certify -> candidates
+    bool designerJourneyGate() const;
+    juce::Rectangle<int> designerFamilyArea() const;
+    juce::Rectangle<int> designerSaveArea() const;
+    juce::String designerTemplateName;
+    juce::TextEditor designerEditor;                           // inline cell editor
+    int dsEditStage = -1, dsEditRow = 0, dsEditField = -1;     // active inline edit target
+
+    void toggleDesigner();
+    void designerApply();                                      // sections -> body -> certify -> install
+    void designerRefreshJourney();
+    void designerSetTemplate (int index);
+    void designerApplyMotif (int stage, int motif);            // census zero motifs (FREE)
+    void designerSketchQ100();                                 // MD-Q bw x0.375 sketch -> FREE sections
+    int designerCodeForHz (double hz) const;                   // nearest firmware ladder code
+    double designerFieldValue (int stage, int row, int field) const;
+    void designerSetField (int stage, int row, int field, double value);
+    void designerBeginEdit (int stage, int row, int field);
+    void designerCommitEdit();
+    void designerShowShapeMenu (int stage);
+    void designerShowMotifMenu (int stage);
+    void designerShowTemplateMenu();
+    juce::Rectangle<int> designerButtonArea() const;           // header toggle
+    juce::Rectangle<int> designerArea() const;                 // the panel overlay
+    juce::Rectangle<int> designerJourneyArea() const;
+    juce::Rectangle<int> designerStageRowArea (int stage) const;
+    juce::Rectangle<int> designerShapeArea (int stage) const;
+    juce::Rectangle<int> designerMotifArea (int stage) const;
+    juce::Rectangle<int> designerCellArea (int stage, int row, int field) const;
+    juce::Rectangle<int> designerPageArea (int page) const;
+    juce::Rectangle<int> designerTemplateArea() const;
+    juce::Rectangle<int> designerSketchArea() const;
+    juce::Rectangle<int> designerShiftArea() const;
+    juce::Rectangle<int> designerCloseArea() const;
+    void drawDesigner (juce::Graphics& g);
+    bool designerMouseDown (juce::Point<int> pos);
+
     // proof harness: TRENCH_WS_SCRIPT env var -> JSON action list, run once after startup
     void runProofScript();
     int findNodeByStem (const juce::String& stem) const;

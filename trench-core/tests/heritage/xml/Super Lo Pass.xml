@@ -1,0 +1,95 @@
+<?xml version="1.0" ?>
+<template module="Filter" name="SuperLoPass" >
+<filter >
+<frequency type="float" >
+0</frequency>
+<gain type="float" >
+0</gain>
+<morph-param index="3" type="long" >
+0</morph-param>
+<morph-param index="4" type="long" >
+0</morph-param>
+<morph-param index="5" type="long" >
+0</morph-param>
+<morph-param index="6" type="long" >
+0</morph-param>
+<morph-param index="7" type="long" >
+0</morph-param>
+<morph-param index="8" type="long" >
+0</morph-param>
+<designer-section index="1" >
+<low-gain type="long" >
+0</low-gain>
+<low-freq type="long" >
+63</low-freq>
+<high-gain type="long" >
+63</high-gain>
+<high-freq type="long" >
+127</high-freq>
+<type type="long" >
+2</type>
+</designer-section>
+<designer-section index="2" >
+<low-gain type="long" >
+0</low-gain>
+<low-freq type="long" >
+55</low-freq>
+<high-gain type="long" >
+62</high-gain>
+<high-freq type="long" >
+127</high-freq>
+<type type="long" >
+2</type>
+</designer-section>
+<designer-section index="3" >
+<low-gain type="long" >
+0</low-gain>
+<low-freq type="long" >
+44</low-freq>
+<high-gain type="long" >
+63</high-gain>
+<high-freq type="long" >
+127</high-freq>
+<type type="long" >
+2</type>
+</designer-section>
+<designer-section index="4" >
+<low-gain type="long" >
+0</low-gain>
+<low-freq type="long" >
+26</low-freq>
+<high-gain type="long" >
+61</high-gain>
+<high-freq type="long" >
+127</high-freq>
+<type type="long" >
+2</type>
+</designer-section>
+<designer-section index="5" >
+<low-gain type="long" >
+0</low-gain>
+<low-freq type="long" >
+0</low-freq>
+<high-gain type="long" >
+63</high-gain>
+<high-freq type="long" >
+127</high-freq>
+<type type="long" >
+2</type>
+</designer-section>
+<designer-section index="6" >
+<low-gain type="long" >
+0</low-gain>
+<low-freq type="long" >
+0</low-freq>
+<high-gain type="long" >
+0</high-gain>
+<high-freq type="long" >
+0</high-freq>
+<type type="long" >
+0</type>
+</designer-section>
+<type-absolute type="long" >
+108</type-absolute>
+</filter>
+</template>

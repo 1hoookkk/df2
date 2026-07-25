@@ -29,12 +29,29 @@ extern "C"
                              double* outBiquad, double* outMaxPoleRadius,
                              uint32_t* outUnstableMask, uint32_t* outNonfiniteMask);
     int trench_pack_body_from_corner_words (const unsigned short* words, size_t n, unsigned char* outBody);
+    double trench_packed_decode (unsigned short word);
+    unsigned short trench_packed_encode (double value);
     int trench_stage_roots_from_words (const unsigned short* words, double* outRoots);
     int trench_stage_words_from_roots (const double* roots, unsigned short* outWords);
     int trench_certify_body (const unsigned char* bytes, size_t len, unsigned int res, double rMax,
                              int* outPass, double* outMaxRadius, double* outFailMorph, double* outFailQ);
     int trench_seed_body (const unsigned char* inBody, size_t len, unsigned long long seed, double amt,
                           unsigned int res, double rMax, unsigned char* outBody);
+    // native Designer: parameter-space sections -> firmware words (trench-core designer.rs)
+    struct TrenchDesignerRow
+    {
+        int32_t freq, gain;                          // firmware types 1..3 (0..127)
+        double pole_hz, pole_r, zero_hz, zero_r, scale;   // TYPE FREE (4)
+    };
+    struct TrenchDesignerSection
+    {
+        int32_t type_id;                             // 0 off, 1 EQ, 2 LP, 3 HP, 4 FREE
+        TrenchDesignerRow low, high;                 // LO / HI morph rows
+    };
+    int trench_designer_compile_corner (const TrenchDesignerSection* sections, size_t n,
+                                        double morph, int32_t shift, unsigned short* outWords30);
+    int trench_designer_body (const TrenchDesignerSection* q0, const TrenchDesignerSection* q100,
+                              size_t n, int32_t shift, unsigned char* outBody240);
     int trench_cartridge_json_to_body (const char* json, unsigned char* outBody);
     int trench_compile_body_typed (const double* cards, size_t nValues, unsigned char* outBody);
     float trench_keyframe_value (float a, float b, float legBars, double ppq,
