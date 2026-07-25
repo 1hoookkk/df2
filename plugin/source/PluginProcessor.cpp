@@ -663,7 +663,7 @@ void PluginProcessor::forgeAuditionTyped (const std::vector<double>& cards)
         juce::Logger::writeToLog ("FORGE -> typed body compiled + auditioned");
     }
 }
-juce::File PluginProcessor::forgeSaveBody (const juce::String& name)
+juce::File PluginProcessor::forgeSaveBody (const juce::String& name, bool overwrite)
 {
     if (currentBodyBytes.getSize() != 240)
         return {};
@@ -675,7 +675,9 @@ juce::File PluginProcessor::forgeSaveBody (const juce::String& name)
     if (base.isEmpty())
         base = "forge";
     auto f = dir.getChildFile (base + ".body240");
-    for (int i = 1; f.existsAsFile() && i < 10000; ++i)
+    // designer saves own their name: overwrite in place so the loaded plugin
+    // hot-follows the same file. Classic saves keep suffixing.
+    for (int i = 1; ! overwrite && f.existsAsFile() && i < 10000; ++i)
         f = dir.getChildFile (base + "_" + juce::String (i).paddedLeft ('0', 2) + ".body240");
     if (f.replaceWithData (currentBodyBytes.getData(), currentBodyBytes.getSize()))
     {
@@ -1029,6 +1031,37 @@ void PluginProcessor::timerCallback()
             keyProbabilitySum.fill (0.0f);
             keyProbabilityWindows = 0;
         }
+    }
+    // user bodies hot-reload in place: the Workstation saves, the plugin
+    // follows - no TYPE menu round trip. Only disk-loaded .body240 bodies.
+    {
+        const auto base = trench::bodyBaseForIndex (loadedBodyIndex.load (std::memory_order_relaxed));
+        if (juce::File::isAbsolutePath (base) && base.endsWithIgnoreCase (".body240"))
+        {
+            const juce::File f (base);
+            const auto t = f.existsAsFile() ? f.getLastModificationTime() : juce::Time();
+            if (base != watchedBodyPath)
+            {
+                watchedBodyPath = base;   // new selection: arm, don't reload
+                watchedBodyMtime = t;
+            }
+            else if (t != watchedBodyMtime)
+            {
+                watchedBodyMtime = t;
+                juce::MemoryBlock raw;
+                if (f.loadFileAsData (raw) && raw.getSize() == 240
+                    && dspBridge.loadCartridgeBytes (raw))
+                {
+                    currentBodyBytes = raw;
+                    rosterBodyBytes = currentBodyBytes;
+                    controlSmoothersPrimed = false;
+                    lastLoadOk.store (true, std::memory_order_release);
+                    juce::Logger::writeToLog ("body hot-reload <- " + f.getFullPathName());
+                }
+            }
+        }
+        else if (watchedBodyPath.isNotEmpty())
+            watchedBodyPath.clear();
     }
 #ifndef TRENCH_PLAYER_DIAGNOSTICS
     return;

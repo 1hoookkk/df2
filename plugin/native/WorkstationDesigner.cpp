@@ -394,7 +394,7 @@ void WorkstationEditor::designerSaveBody()
     auto name = nameField.getText().trim();
     if (name.isEmpty())
         name = "DESIGNER";
-    const auto f = processor.forgeSaveBody (name);
+    const auto f = processor.forgeSaveBody (name, true);
     statusLine = f.existsAsFile()
         ? (juce::String ("FRAMED+CERTIFIED -> ") + f.getFullPathName()
            + (designerJourneyPass ? "" : "   [journey " + juce::String (designerFamily == 0 ? "RIDE" : "ARCH") + " FAIL - ear decides]"))

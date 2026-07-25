@@ -67,7 +67,7 @@ public:
     bool seedCurrentBody();
     void exportCurrentBody();
     void forgeAuditionTyped (const std::vector<double>& cards);
-    juce::File forgeSaveBody (const juce::String& name);
+    juce::File forgeSaveBody (const juce::String& name, bool overwrite = false);
     enum Axis { AxisFamily = 0, AxisMorph, AxisQ, AxisQSound, AxisSlam };
     static constexpr int kTakeWaveN = 56;
     struct VariantPreview
@@ -124,6 +124,8 @@ private:
     std::atomic<int>  loadedMorphTaper { 0 };
     std::atomic<bool> lastLoadOk { true };
     juce::Time        auditionSlotMtime;
+    juce::String      watchedBodyPath;      // in-place reload of a disk-loaded body
+    juce::Time        watchedBodyMtime;
     juce::LinearSmoothedValue<float> outputGain { 1.0f };
     float smoothedMorph = 0.0f;
     float smoothedQ = 0.0f;
