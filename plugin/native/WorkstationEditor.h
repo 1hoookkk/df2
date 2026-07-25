@@ -315,6 +315,7 @@ private:
     int designerShift = 0;                                     // heritage global shift (-32..31)
     double designerLadderHz[128] {};                           // firmware freq-code ladder, decoded pole Hz
     std::array<std::array<float, kNumPlotPoints>, 5> designerJourneyDb {};
+    std::array<std::array<std::array<float, kNumPlotPoints>, 6>, 2> designerStageDb {};   // [LO/HI][stage]
     float designerJourneyCrown[5] {};
     bool designerJourneyOk = false;
     int designerFamily = 0;                                    // 0 RIDE (no-collapse), 1 ARCH (mid crest)
@@ -325,11 +326,18 @@ private:
     juce::Rectangle<int> designerFamilyArea() const;
     juce::Rectangle<int> designerSaveArea() const;
     juce::String designerTemplateName;
-    juce::TextEditor designerEditor;                           // inline cell editor
+    juce::TextEditor designerEditor;                           // inline cell editor (double-click)
     int dsEditStage = -1, dsEditRow = 0, dsEditField = -1;     // active inline edit target
+    int dsDragStage = -1, dsDragRow = 0, dsDragField = -1;     // scrub-drag target
+    double dsDragStartVal = 0.0;
+    int dsDragStartX = 0;
+    bool dsDragMoved = false;
 
     void toggleDesigner();
-    void designerApply();                                      // sections -> body -> certify -> install
+    void designerApply (bool certifyNow = true);               // sections -> body -> certify -> install
+    bool designerMouseDrag (juce::Point<int> pos);             // scrub sliders
+    bool designerMouseUp();
+    bool designerMouseDoubleClick (juce::Point<int> pos);
     void designerRefreshJourney();
     void designerSetTemplate (int index);
     void designerApplyMotif (int stage, int motif);            // census zero motifs (FREE)
@@ -363,6 +371,9 @@ private:
     juce::var proofActions;
     int proofDelayTicks = 0;
     bool proofPending = false;
+    juce::File liveScriptFile;                 // hot: rewritten file = new actions
+    juce::Time liveScriptMtime;
+    int liveScriptPollTicks = 0;
 
     JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR (WorkstationEditor)
 };

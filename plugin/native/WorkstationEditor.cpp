@@ -92,14 +92,22 @@ WorkstationEditor::WorkstationEditor (PluginProcessor& p)
 
     scanBin();
 
-    if (const auto scriptPath = juce::SystemStats::getEnvironmentVariable ("TRENCH_WS_SCRIPT", {});
-        scriptPath.isNotEmpty())
+    // script channel: TRENCH_WS_SCRIPT (or ws_live.json in the repo root) is
+    // watched WHILE RUNNING — rewrite the file and the actions execute live.
     {
-        proofActions = juce::JSON::parse (juce::File (scriptPath));
-        if (proofActions.isArray())
+        const auto scriptPath = juce::SystemStats::getEnvironmentVariable ("TRENCH_WS_SCRIPT", {});
+        liveScriptFile = scriptPath.isNotEmpty()
+            ? juce::File (scriptPath)
+            : juce::File ("C:/Users/hooki/df2-workstation/ws_live.json");
+        if (liveScriptFile.existsAsFile())
         {
-            proofPending = true;
-            proofDelayTicks = 45; // ~1.5 s after startup
+            liveScriptMtime = liveScriptFile.getLastModificationTime();
+            proofActions = juce::JSON::parse (liveScriptFile);
+            if (proofActions.isArray())
+            {
+                proofPending = true;
+                proofDelayTicks = 45; // ~1.5 s after startup
+            }
         }
     }
 
@@ -1465,6 +1473,21 @@ void WorkstationEditor::timerCallback()
     {
         proofPending = false;
         runProofScript();
+    }
+    if (! proofPending && ++liveScriptPollTicks >= 10)   // ~3x/s: the live drive channel
+    {
+        liveScriptPollTicks = 0;
+        if (liveScriptFile.existsAsFile())
+        {
+            const auto m = liveScriptFile.getLastModificationTime();
+            if (m != liveScriptMtime)
+            {
+                liveScriptMtime = m;
+                proofActions = juce::JSON::parse (liveScriptFile);
+                if (proofActions.isArray())
+                    runProofScript();
+            }
+        }
     }
     if (railFitting && ! railFitProcess.isRunning())
         finishRailFit();
@@ -2920,6 +2943,11 @@ void WorkstationEditor::mouseDown (const juce::MouseEvent& e)
 
 void WorkstationEditor::mouseDrag (const juce::MouseEvent& e)
 {
+    if (designerOpen)
+    {
+        designerMouseDrag (e.getPosition());
+        return;
+    }
     if (dragKind == DragKind::None)
         return;
     dragPos = e.getPosition();
@@ -3017,6 +3045,11 @@ void WorkstationEditor::mouseDrag (const juce::MouseEvent& e)
 
 void WorkstationEditor::mouseUp (const juce::MouseEvent& e)
 {
+    if (designerOpen)
+    {
+        designerMouseUp();
+        return;
+    }
     if (dragKind == DragKind::XY)
     {
         if (! dragActive && dragIndex >= 0)
@@ -3100,6 +3133,11 @@ void WorkstationEditor::mouseUp (const juce::MouseEvent& e)
 
 void WorkstationEditor::mouseDoubleClick (const juce::MouseEvent& e)
 {
+    if (designerOpen)
+    {
+        designerMouseDoubleClick (e.getPosition());
+        return;
+    }
     if (! binListArea().contains (e.getPosition()))
         return;
     const int visible = (e.getPosition().y - (binListArea().getY() + 1)) / kBinRowH;
@@ -3176,12 +3214,6 @@ void WorkstationEditor::mouseWheelMove (const juce::MouseEvent& e, const juce::M
     {
         const auto pos = e.getPosition();
         const int dir = wheel.deltaY > 0.0f ? 1 : -1;
-        if (designerShiftArea().contains (pos))
-        {
-            designerShift = juce::jlimit (-32, 31, designerShift + dir);
-            designerApply();
-            return;
-        }
         for (int stage = 0; stage < 6; ++stage)
         {
             const auto& s = dsections[designerPage][stage];

@@ -137,7 +137,7 @@ void WorkstationEditor::toggleDesigner()
     repaint();
 }
 
-void WorkstationEditor::designerApply()
+void WorkstationEditor::designerApply (bool certifyNow)
 {
     if (! designerOpen)
         return;
@@ -168,15 +168,15 @@ void WorkstationEditor::designerApply()
         repaint();
         return;
     }
-    if (hasBody)
-        pushUndo();
+    if (hasBody && certifyNow)
+        pushUndo();   // one undo step per gesture, not per scrub tick
     wordsFromBytes240 (bytes, words);
     std::fill (std::begin (muteBackupValid), std::end (muteBackupValid), false);
     hasBody = true;
     dirty = true;
     if (bodyName.isEmpty())
         bodyName = "DESIGNER";
-    packAndInstall();   // certify + install: the net runs on every edit
+    packAndInstall (certifyNow);   // the net; scrub ticks take the light path
     designerRefreshJourney();
     repaint();
 }
@@ -210,8 +210,16 @@ void WorkstationEditor::designerRefreshJourney()
             const double cos2w = std::cos (2.0 * w), sin2w = std::sin (2.0 * w);
             float sum = 0.0f;
             for (int s = 0; s < 6; ++s)
-                if ((nonfinite & (1u << s)) == 0)
-                    sum += stageMagDb (&coeffs[s * 5], cosw, sinw, cos2w, sin2w);
+            {
+                if ((nonfinite & (1u << s)) != 0)
+                    continue;
+                const float db = stageMagDb (&coeffs[s * 5], cosw, sinw, cos2w, sin2w);
+                sum += db;
+                if (k == 0)
+                    designerStageDb[0][(size_t) s][(size_t) i] = db;   // LO end
+                else if (k == 4)
+                    designerStageDb[1][(size_t) s][(size_t) i] = db;   // HI end
+            }
             designerJourneyDb[(size_t) k][(size_t) i] = sum;
             crown = juce::jmax (crown, sum);
         }
@@ -621,11 +629,74 @@ bool WorkstationEditor::designerMouseDown (juce::Point<int> pos)
                 for (int field = 0; field < fields; ++field)
                     if (designerCellArea (stage, row, field).contains (pos))
                     {
-                        designerBeginEdit (stage, row, field);
+                        // scrub slider: drag adjusts, double-click types
+                        dsDragStage = stage;
+                        dsDragRow = row;
+                        dsDragField = field;
+                        dsDragStartVal = designerFieldValue (stage, row, field);
+                        dsDragStartX = pos.x;
+                        dsDragMoved = false;
                         return true;
                     }
     }
     return true;   // modal: swallow clicks inside the panel
+}
+
+bool WorkstationEditor::designerMouseDrag (juce::Point<int> pos)
+{
+    if (! designerOpen)
+        return false;
+    if (dsDragField < 0)
+        return true;
+    const int dx = pos.x - dsDragStartX;
+    if (! dsDragMoved && std::abs (dx) < kDragThreshold)
+        return true;
+    dsDragMoved = true;
+    const auto& s = dsections[designerPage][dsDragStage];
+    double v = dsDragStartVal;
+    if (s.type != kDesignerTypeFree)
+        v = dsDragStartVal + dx / (dsDragField == 0 ? 6.0 : 4.0);   // ladder steps / gain ticks
+    else if (dsDragField == 0 || dsDragField == 3)
+        v = dsDragStartVal * std::pow (kDesignerLadderRatio, dx / 8.0);   // ~68.4 c per 8 px
+    else if (dsDragField == 2)
+        v = dsDragStartVal + dx * 0.01;
+    else
+        v = dsDragStartVal + dx * 0.0005;   // radius: fine
+    designerSetField (dsDragStage, dsDragRow, dsDragField, v);
+    designerApply (false);   // light while scrubbing; full certify on release
+    return true;
+}
+
+bool WorkstationEditor::designerMouseUp()
+{
+    if (! designerOpen)
+        return false;
+    if (dsDragField >= 0 && dsDragMoved)
+        designerApply();   // gesture done: certify + undo step
+    dsDragField = -1;
+    dsDragMoved = false;
+    return true;
+}
+
+bool WorkstationEditor::designerMouseDoubleClick (juce::Point<int> pos)
+{
+    if (! designerOpen)
+        return false;
+    for (int stage = 0; stage < 6; ++stage)
+    {
+        const auto& s = dsections[designerPage][stage];
+        if (s.type == 0)
+            continue;
+        const int fields = s.type == kDesignerTypeFree ? 5 : 2;
+        for (int row = 0; row < 2; ++row)
+            for (int field = 0; field < fields; ++field)
+                if (designerCellArea (stage, row, field).contains (pos))
+                {
+                    designerBeginEdit (stage, row, field);
+                    return true;
+                }
+    }
+    return true;
 }
 
 void WorkstationEditor::drawDesigner (juce::Graphics& g)
@@ -646,8 +717,7 @@ void WorkstationEditor::drawDesigner (juce::Graphics& g)
     drawFlatButton (g, designerPageArea (0), "Q0 POSE", designerPage == 0, true);
     drawFlatButton (g, designerPageArea (1), "Q100 POSE", designerPage == 1, true);
     drawFlatButton (g, designerTemplateArea(), "TEMPLATE", false, true);
-    drawFlatButton (g, designerSketchArea(), "SKETCH Q100 x0.375", false, true);
-    drawFlatButton (g, designerShiftArea(), "SHIFT " + juce::String (designerShift), false, true);
+    drawFlatButton (g, designerSketchArea(), "AUTO Q100", false, true);
     drawFlatButton (g, designerFamilyArea(), designerFamily == 0 ? "FAM RIDE" : "FAM ARCH",
                     designerFamily == 1, true);
     drawFlatButton (g, designerSaveArea(), "SAVE (L10)", false, hasBody);
@@ -717,33 +787,96 @@ void WorkstationEditor::drawDesigner (juce::Graphics& g)
         g.drawText ("LO", (int) r.getX() + 148, (int) r.getY() + 11, 20, 14, juce::Justification::left);
         g.drawText ("HI", (int) r.getX() + 148, (int) r.getY() + 39, 20, 14, juce::Justification::left);
         const int fields = s.type == kDesignerTypeFree ? 5 : 2;
+        const auto hzNorm = [] (double hz)
+        {
+            return (float) juce::jlimit (0.0, 1.0, std::log (juce::jmax (hz, 20.0) / 20.0)
+                                                   / std::log ((double) kMaxHz / 20.0));
+        };
         for (int row = 0; row < 2; ++row)
             for (int field = 0; field < fields; ++field)
             {
                 const auto cell = designerCellArea (stage, row, field);
-                g.setColour (kBg);
-                g.fillRect (cell);
-                g.setColour (kBorder);
-                g.drawRect (cell, 1);
                 const auto& rw = row == 0 ? s.lo : s.hi;
-                juce::String text;
+                // slider cell: label + value + fill bar (drag scrubs, dbl-click types)
+                juce::String label, value;
+                float norm = 0.0f;
                 if (s.type != kDesignerTypeFree)
-                    text = field == 0
-                         ? "F " + juce::String (rw.freq) + "  " + juce::String (designerLadderHz[juce::jlimit (0, 127, rw.freq)], 0) + " Hz"
-                         : "G " + juce::String (rw.gain);
+                {
+                    if (field == 0)
+                    {
+                        label = "FREQ";
+                        value = juce::String (designerLadderHz[juce::jlimit (0, 127, rw.freq)], 0) + " Hz";
+                        norm = (float) rw.freq / 127.0f;
+                    }
+                    else
+                    {
+                        label = "GAIN";
+                        value = juce::String (rw.gain);
+                        norm = (float) rw.gain / 127.0f;
+                    }
+                }
                 else
                     switch (field)
                     {
-                        case 0: text = "P " + juce::String (rw.poleHz, 1) + " Hz"; break;
-                        case 1: text = "r " + juce::String (rw.poleR, 4); break;
-                        case 2: text = "s " + juce::String (rw.scale, 2); break;
-                        case 3: text = "Z " + juce::String (rw.zeroHz, 1) + " Hz"; break;
-                        default: text = "zr " + juce::String (rw.zeroR, 3); break;
+                        case 0: label = "FREQ";  value = juce::String (rw.poleHz, 0) + " Hz";
+                                norm = hzNorm (rw.poleHz); break;
+                        case 1: label = "RES";   value = juce::String (rw.poleR, 3);
+                                norm = (float) juce::jlimit (0.0, 1.0, (rw.poleR - 0.7) / 0.3); break;
+                        case 2: label = "LEVEL"; value = juce::String (rw.scale, 2);
+                                norm = (float) juce::jlimit (0.0, 1.0, rw.scale / 2.0); break;
+                        case 3: label = "ZERO";  value = juce::String (rw.zeroHz, 0) + " Hz";
+                                norm = hzNorm (rw.zeroHz); break;
+                        default: label = "DEPTH"; value = juce::String (rw.zeroR, 3);
+                                 norm = (float) juce::jlimit (0.0, 1.0, rw.zeroR); break;
                     }
+                g.setColour (kBg);
+                g.fillRect (cell);
+                g.setColour (kCyan.withAlpha (0.14f));
+                g.fillRect (cell.getX() + 1, cell.getY() + 1,
+                            juce::roundToInt (norm * (float) (cell.getWidth() - 2)), cell.getHeight() - 2);
+                g.setColour (kBorder);
+                g.drawRect (cell, 1);
+                g.setColour (kGridLabel);
+                g.setFont (juce::FontOptions (8.0f));
+                g.drawText (label, cell.reduced (4, 0), juce::Justification::left);
                 g.setColour (kText);
                 g.setFont (juce::FontOptions (10.0f));
-                g.drawText (text, cell.reduced (4, 0), juce::Justification::left);
+                g.drawText (value, cell.reduced (4, 0), juce::Justification::right);
             }
+
+        // stage anatomy: LO end dim, HI end in the stage colour — the travel
+        if (designerJourneyOk)
+        {
+            const auto cellsRight = designerCellArea (stage, 0, 4).getRight();
+            juce::Rectangle<float> mini ((float) cellsRight + 10.0f, r.getY() + 4.0f,
+                                         r.getRight() - (float) cellsRight - 16.0f, r.getHeight() - 8.0f);
+            if (mini.getWidth() > 40.0f)
+            {
+                g.setColour (kPanelDeep);
+                g.fillRect (mini);
+                const auto inner = mini.reduced (2.0f);
+                const float zy = inner.getY() + inner.getHeight() * (1.0f - (0.0f - kMinDb) / (kMaxDb - kMinDb));
+                g.setColour (juce::Colour (0x28ffffff));
+                g.drawHorizontalLine (juce::roundToInt (zy), inner.getX(), inner.getRight());
+                for (int end = 0; end < 2; ++end)
+                {
+                    juce::Path path;
+                    for (int i = 0; i < kNumPlotPoints; i += 4)
+                    {
+                        const float x = inner.getX() + ((float) i / (kNumPlotPoints - 1)) * inner.getWidth();
+                        const float nv = (std::clamp (designerStageDb[(size_t) end][(size_t) stage][(size_t) i],
+                                                      kMinDb, kMaxDb) - kMinDb) / (kMaxDb - kMinDb);
+                        const float y = inner.getY() + inner.getHeight() * (1.0f - nv);
+                        if (i == 0) path.startNewSubPath (x, y);
+                        else path.lineTo (x, y);
+                    }
+                    g.setColour (end == 0 ? kLaneColours[stage].withAlpha (0.35f) : kLaneColours[stage]);
+                    g.strokePath (path, juce::PathStrokeType (end == 0 ? 1.0f : 1.3f));
+                }
+                g.setColour (kBorder);
+                g.drawRect (mini, 1.0f);
+            }
+        }
     }
 }
 
