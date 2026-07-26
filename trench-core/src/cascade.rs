@@ -5,6 +5,16 @@ pub const PASSTHROUGH_COEFFS: [f64; NUM_COEFFS] = [1.0, 0.0, 0.0, 0.0, 0.0];
 pub const BLOCK_SIZE: usize = 32;
 /// Full-scale reference for pole-radius distortion (patent's |V_p|).
 const V_PEAK: f64 = 1.0;
+/// Which per-section nonlinear topology CHEW runs. A/B hook only - the shipped
+/// default is and stays `PoleRadius`.
+#[derive(Clone, Copy, PartialEq, Eq, Debug)]
+pub enum ChewTopology {
+    /// Shipped path: DF2T biquad with dynamic pole-radius push.
+    PoleRadius,
+    /// US 10,514,883 Max Mathews phasor section: complex pole state, saturation
+    /// applied to the complex phasor itself (plus the same radius push).
+    Phasor,
+}
 #[derive(Clone)]
 struct BiquadState {
     coeffs: [f64; NUM_COEFFS],
@@ -14,6 +24,12 @@ struct BiquadState {
     /// Previous real output of this section. The pole-radius distortion detector
     /// reads the n-1 sample of the section it controls (US 10,514,883).
     y_prev: f64,
+    /// Phasor path only: complex pole state z[n]. Unused by the DF2T paths.
+    zr: f64,
+    zi: f64,
+    /// False when `zr/zi` do not correspond to the current `w1/w2` history
+    /// (after reset, or after a degenerate-pole sample fell back to DF2).
+    z_synced: bool,
 }
 impl BiquadState {
     fn new() -> Self {
@@ -23,6 +39,9 @@ impl BiquadState {
             w1: 0.0,
             w2: 0.0,
             y_prev: 0.0,
+            zr: 0.0,
+            zi: 0.0,
+            z_synced: false,
         }
     }
     fn set_target(&mut self, target: &[f64; NUM_COEFFS], ramp_samples: usize) {
@@ -98,6 +117,99 @@ impl BiquadState {
         }
         (y, unstable)
     }
+    /// US 10,514,883 alternate topology: the Max Mathews phasor section.
+    ///
+    /// The two-pole denominator is realised as ONE complex one-pole
+    ///     z[n] = p*z[n-1] + x[n],   p = R*e^(j*theta)
+    /// (the input joins the REAL part, per the patent), and the real all-pole
+    /// signal is recovered as
+    ///     w[n] = Re(z[n]) + cot(theta)*Im(z[n]).
+    /// That identity is exact: z = X*(1 - conj(p)/z)/D, so Re(z) = w - R*cos*w[n-1]
+    /// and Im(z) = R*sin*w[n-1]. The zeros then apply as the ordinary direct-form
+    /// feed-forward on the same w history, so with saturation off this section is
+    /// mathematically the DF2T biquad.
+    ///
+    /// The nonlinearity the patent adds here is on the COMPLEX state, not the real
+    /// output: the phasor is magnitude-limited before it is stored, so the clip
+    /// feeds back into the resonator's own rotation. The dynamic pole-radius push
+    /// stays composed on top of it - the patent has both.
+    ///
+    /// Degenerate poles (real poles, theta -> 0 or pi) have no usable cot(theta);
+    /// those samples fall back to the plain direct-form recursion on w1/w2, which
+    /// is the same state the phasor path maintains, so no state is lost.
+    ///
+    /// NOTE: on this path `w1/w2` are the ALL-POLE (direct form II) history, not
+    /// the DF2T accumulators. Topology is fixed for the lifetime of a reset.
+    #[inline(always)]
+    fn process_sample_phasor(&mut self, x: f64, vt: f64) -> (f64, bool) {
+        self.coeffs[0] += self.deltas[0];
+        self.coeffs[1] += self.deltas[1];
+        self.coeffs[2] += self.deltas[2];
+        self.coeffs[3] += self.deltas[3];
+        self.coeffs[4] += self.deltas[4];
+
+        let (mut a1, mut a2) = (self.coeffs[3], self.coeffs[4]);
+        let (b0, b1, b2) = (self.coeffs[0], self.coeffs[1], self.coeffs[2]);
+        // Identical detector, formula and asymptotic brake as the shipped path.
+        let vg = self.y_prev.abs();
+        if vg > vt && a2 > 1.0e-9 {
+            let r = a2.sqrt();
+            if r > 1.0e-6 && r < 1.0 {
+                let cos_theta = -a1 / (2.0 * r);
+                if cos_theta.abs() <= 1.0 {
+                    let ratio = ((vg - vt) / V_PEAK).clamp(0.0, 4.0);
+                    let r_new = (r + r * (1.0 - r) * ratio).clamp(0.0, 0.999_9);
+                    a1 = -2.0 * r_new * cos_theta;
+                    a2 = r_new * r_new;
+                }
+            }
+        }
+
+        let r = if a2 > 0.0 { a2.sqrt() } else { 0.0 };
+        let cos_theta = if r > 1.0e-9 { -a1 / (2.0 * r) } else { 2.0 };
+        let w = if cos_theta.abs() <= 1.0 - 1.0e-6 {
+            let sin_theta = (1.0 - cos_theta * cos_theta).sqrt();
+            if !self.z_synced {
+                // z[n-1] = w[n-1] - conj(p)*w[n-2]
+                self.zr = self.w1 - r * cos_theta * self.w2;
+                self.zi = r * sin_theta * self.w2;
+                self.z_synced = true;
+            }
+            let mut zr = r * (cos_theta * self.zr - sin_theta * self.zi) + x;
+            let mut zi = r * (sin_theta * self.zr + cos_theta * self.zi);
+            // Complex-state saturation. The patent names a threshold but not a
+            // curve; this is a magnitude-only soft limit that is C1-continuous at
+            // the knee and asymptotes to 2*vt, so the phasor's ANGLE is untouched
+            // and only its length is confiscated.
+            let m = (zr * zr + zi * zi).sqrt();
+            if m > vt && vt > 0.0 {
+                let g = (vt + vt * ((m - vt) / vt).tanh()) / m;
+                zr *= g;
+                zi *= g;
+            }
+            self.zr = zr;
+            self.zi = zi;
+            zr + (cos_theta / sin_theta) * zi
+        } else {
+            self.z_synced = false;
+            x - a1 * self.w1 - a2 * self.w2
+        };
+        let y = b0 * w + b1 * self.w1 + b2 * self.w2;
+        if !w.is_finite() || !y.is_finite() {
+            self.w1 = 0.0;
+            self.w2 = 0.0;
+            self.zr = 0.0;
+            self.zi = 0.0;
+            self.z_synced = false;
+            self.y_prev = 0.0;
+            self.deltas = [0.0; NUM_COEFFS];
+            return (0.0, true);
+        }
+        self.w2 = self.w1;
+        self.w1 = w;
+        self.y_prev = y;
+        (y, false)
+    }
     #[inline(always)]
     fn process_sample(&mut self, x: f64) -> (f64, bool) {
         self.coeffs[0] += self.deltas[0];
@@ -135,6 +247,7 @@ pub struct Cascade {
     /// 0 = off. Higher lowers the distortion threshold Vt, so more sections tip in.
     pole_distort: f32,
     pole_delta: f32,
+    chew_topology: ChewTopology,
     instability_detected: bool,
 }
 impl Cascade {
@@ -147,6 +260,7 @@ impl Cascade {
             interstage_delta: 0.0,
             pole_distort: 0.0,
             pole_delta: 0.0,
+            chew_topology: ChewTopology::PoleRadius,
             instability_detected: false,
         }
     }
@@ -158,6 +272,9 @@ impl Cascade {
         }
         for stage in &mut self.stages {
             stage.y_prev = 0.0;
+            stage.zr = 0.0;
+            stage.zi = 0.0;
+            stage.z_synced = false;
         }
         self.boost_delta = 0.0;
         self.interstage_delta = 0.0;
@@ -177,6 +294,13 @@ impl Cascade {
     pub fn set_pole_distortion(&mut self, target: f32, ramp_samples: usize) {
         let target = target.clamp(0.0, 1.0);
         self.pole_delta = (target - self.pole_distort) / ramp_samples.max(1) as f32;
+    }
+    /// Engine-side A/B hook: swaps the CHEW section topology. Default unchanged.
+    pub fn set_chew_topology(&mut self, topology: ChewTopology) {
+        if topology != self.chew_topology {
+            self.chew_topology = topology;
+            self.reset();
+        }
     }
     pub fn snap_targets(&mut self, interpolated: &CornerData) {
         for (stage, coeffs) in self.stages.iter_mut().zip(interpolated.iter()) {
@@ -200,8 +324,13 @@ impl Cascade {
             //   0.40 -> 0.08  hard     1.00 -> 0.02  always biting
             let amt = self.pole_distort as f64;
             let vt = 1.48 * (-8.0 * amt).exp() + 0.02;
+            let phasor = self.chew_topology == ChewTopology::Phasor;
             for stage in &mut self.stages {
-                let (next, unstable) = stage.process_sample_pole_distort(v, vt);
+                let (next, unstable) = if phasor {
+                    stage.process_sample_phasor(v, vt)
+                } else {
+                    stage.process_sample_pole_distort(v, vt)
+                };
                 if unstable {
                     self.instability_detected = true;
                     return 0.0;
@@ -286,6 +415,87 @@ mod tests {
             y1 = y0;
         }
         out
+    }
+    /// Three genuinely high-Q coefficient rows DECODED from a shipping body by the
+    /// crate's own packed interpolator - never hand-typed. One per morph pose, each
+    /// the section with the tightest pole radius at that pose.
+    fn high_q_rows_from_ship_body() -> Vec<[f64; NUM_COEFFS]> {
+        const BODY: &[u8; 240] =
+            include_bytes!("../../presets_ship_v1/bodies/shipv2_303_cavity_acid.body240");
+        let cart = crate::cartridge::Cartridge::from_body_bytes("acid", BODY, 1.0).unwrap();
+        [0.0, 0.5, 1.0]
+            .iter()
+            .map(|&m| {
+                let corner = cart.interpolate(m, 1.0);
+                *corner
+                    .iter()
+                    .max_by(|a, b| a[4].partial_cmp(&b[4]).unwrap())
+                    .unwrap()
+            })
+            .collect()
+    }
+    #[test]
+    fn phasor_section_is_the_biquad_when_saturation_is_off() {
+        let mut cases: Vec<[f64; NUM_COEFFS]> = vec![
+            [0.72, -0.31, 0.18, -1.112, 0.716],
+            [1.0, 0.0, 0.0, -0.842, 0.303],
+            [0.19, 0.27, 0.19, -1.438, 0.522],
+        ];
+        cases.extend(high_q_rows_from_ship_body());
+        let input: Vec<f64> = (0..4096)
+            .map(|i| ((i as f64 * 0.7919).sin() * 0.6 + (i as f64 * 0.1013).sin() * 0.4))
+            .collect();
+        let mut worst = 0.0f64;
+        for coeffs in cases {
+            let expected = rossum_reference(&coeffs, &input);
+            let mut stage = BiquadState::new();
+            stage.coeffs = coeffs;
+            for (i, (&x, &want)) in input.iter().zip(expected.iter()).enumerate() {
+                // vt = +inf: no radius push, no phasor saturation - pure topology.
+                let (got, unstable) = stage.process_sample_phasor(x, f64::INFINITY);
+                assert!(!unstable, "case {coeffs:?} went unstable at sample {i}");
+                worst = worst.max((got - want).abs());
+                assert!(
+                    (got - want).abs() <= 1e-9,
+                    "sample {i}: phasor {got:.15e} != Rossum {want:.15e} for {coeffs:?}"
+                );
+            }
+        }
+        println!("phasor vs Rossum max abs error = {worst:.3e}");
+    }
+    #[test]
+    fn phasor_survives_the_full_morph_q_grid_with_saturation_hard() {
+        const BODY: &[u8; 240] =
+            include_bytes!("../../presets_ship_v1/bodies/shipv2_303_cavity_acid.body240");
+        let cart = crate::cartridge::Cartridge::from_body_bytes("acid", BODY, 1.0).unwrap();
+        let mut cascade = Cascade::new();
+        cascade.set_chew_topology(ChewTopology::Phasor);
+        // Hardest setting the mapping allows: vt = 0.02, every section always biting.
+        cascade.set_pole_distortion(1.0, 1);
+        let mut seed = 0x2f6e_2b1u64;
+        let mut noise = || {
+            seed = seed.wrapping_mul(6364136223846793005).wrapping_add(1442695040888963407);
+            ((seed >> 33) as f64 / (1u64 << 31) as f64 * 2.0 - 1.0) * 4.0
+        };
+        let mut peak = 0.0f64;
+        for mi in 0..=20 {
+            for qi in 0..=20 {
+                let (m, q) = (mi as f64 / 20.0, qi as f64 / 20.0);
+                let corner = cart.interpolate(m, q);
+                // Ramped, not snapped: the per-sample coefficient ramp must hold up.
+                cascade.set_targets(&corner, 512);
+                for _ in 0..512 {
+                    let y = cascade.tick(noise() as f32);
+                    assert!(y.is_finite(), "non-finite output at morph {m} q {q}");
+                    peak = peak.max(y.abs() as f64);
+                }
+                assert!(
+                    !cascade.take_instability_flag(),
+                    "instability latched at morph {m} q {q}"
+                );
+            }
+        }
+        println!("phasor grid sweep 441 points OK, peak |y| = {peak:.4}");
     }
     #[test]
     fn passthrough_is_identity() {
