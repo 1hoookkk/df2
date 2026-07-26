@@ -1,16 +1,20 @@
-# NEXT TASK — stress test every function. delete delete delete.
+# NEXT TASK — stress test every function BY REASON. delete delete delete.
 
 Doctrine (Tyson, closing 2026-07-27): **absolute elegance only.** The plate has
 FIVE wells — screen, two wheels, two readouts — and that is the feature budget.
-A function without a milled home is a candidate, not a feature. The session's
-juggling was architectural: ~15 functions renting 5 holes.
+The stress test is MENTAL, not mechanical: we are not hunting bugs, we are
+arguing each function's reason to exist against the use case. We have a full
+stack of sauce — the question is which of it belongs on the plate.
 
-## The work: one function at a time, stress test → verdict → keep lean or delete
+Use case, one sentence: an FL producer puts a drum loop through it and plays
+the wheel until the loop becomes something they grin at, then drags it out.
 
-For EACH function below: use it hard on a real loop, try to break it, then rule
-— does it earn its home? Anything that doesn't: delete it whole (code, params,
-assets, docs). No demotions to "hidden but kept". The TakeButton/clip/SeedButton
-deletions are the template.
+## The work: one function at a time → reason → verdict → keep lean or delete
+
+For EACH function: state what it does FOR THE USE CASE in one sentence. If the
+sentence needs "also" or "unless", it's two functions and one probably dies.
+If no sentence exists, delete it whole (code, params, assets, docs) — the
+TakeButton/clip/SeedButton deletions are the template. No "hidden but kept".
 
 Order (performance core first, tenants last):
 
