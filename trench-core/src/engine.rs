@@ -375,6 +375,13 @@ impl FilterEngine {
         self.cascade_l.set_chew_topology(topology);
         self.cascade_r.set_chew_topology(topology);
     }
+    /// Phasor-path calibration: the complex-state magnitude limit uses
+    /// `scale * Vt` while the radius push keeps `Vt`. No effect on PoleRadius.
+    pub fn set_phasor_vt_scale(&mut self, scale: f32) {
+        let scale = if scale.is_finite() && scale > 0.0 { scale as f64 } else { 1.0 };
+        self.cascade_l.set_phasor_vt_scale(scale);
+        self.cascade_r.set_phasor_vt_scale(scale);
+    }
     pub fn set_interstage_drive(&mut self, drive: f32) {
         self.target_interstage_drive = if drive.is_finite() { drive.clamp(0.0, 1.0) } else { 0.0 };
     }

@@ -130,8 +130,10 @@ impl BiquadState {
     /// mathematically the DF2T biquad.
     ///
     /// The nonlinearity the patent adds here is on the COMPLEX state, not the real
-    /// output: the phasor is magnitude-limited before it is stored, so the clip
-    /// feeds back into the resonator's own rotation. The dynamic pole-radius push
+    /// output: the phasor is magnitude-limited at `vt_z` before it is stored, so the
+    /// clip feeds back into the resonator's own rotation. `vt_z` is separate from the
+    /// radius-push threshold `vt` because the phasor magnitude is the resonator's
+    /// internal state, not its output, and it sits far above `vt` at the same CHEW. The dynamic pole-radius push
     /// stays composed on top of it - the patent has both.
     ///
     /// Degenerate poles (real poles, theta -> 0 or pi) have no usable cot(theta);
@@ -141,7 +143,7 @@ impl BiquadState {
     /// NOTE: on this path `w1/w2` are the ALL-POLE (direct form II) history, not
     /// the DF2T accumulators. Topology is fixed for the lifetime of a reset.
     #[inline(always)]
-    fn process_sample_phasor(&mut self, x: f64, vt: f64) -> (f64, bool) {
+    fn process_sample_phasor(&mut self, x: f64, vt: f64, vt_z: f64) -> (f64, bool) {
         self.coeffs[0] += self.deltas[0];
         self.coeffs[1] += self.deltas[1];
         self.coeffs[2] += self.deltas[2];
@@ -182,8 +184,8 @@ impl BiquadState {
             // the knee and asymptotes to 2*vt, so the phasor's ANGLE is untouched
             // and only its length is confiscated.
             let m = (zr * zr + zi * zi).sqrt();
-            if m > vt && vt > 0.0 {
-                let g = (vt + vt * ((m - vt) / vt).tanh()) / m;
+            if m > vt_z && vt_z > 0.0 {
+                let g = (vt_z + vt_z * ((m - vt_z) / vt_z).tanh()) / m;
                 zr *= g;
                 zi *= g;
             }
@@ -248,6 +250,8 @@ pub struct Cascade {
     pole_distort: f32,
     pole_delta: f32,
     chew_topology: ChewTopology,
+    /// Phasor path only: the magnitude limit uses `phasor_vt_scale * vt`.
+    phasor_vt_scale: f64,
     instability_detected: bool,
 }
 impl Cascade {
@@ -261,6 +265,7 @@ impl Cascade {
             pole_distort: 0.0,
             pole_delta: 0.0,
             chew_topology: ChewTopology::PoleRadius,
+            phasor_vt_scale: 1.0,
             instability_detected: false,
         }
     }
@@ -302,6 +307,13 @@ impl Cascade {
             self.reset();
         }
     }
+    /// Phasor-path calibration: scales ONLY the complex-state magnitude limit.
+    /// The radius push keeps the shipped `vt`.
+    pub fn set_phasor_vt_scale(&mut self, scale: f64) {
+        if scale.is_finite() && scale > 0.0 {
+            self.phasor_vt_scale = scale;
+        }
+    }
     pub fn snap_targets(&mut self, interpolated: &CornerData) {
         for (stage, coeffs) in self.stages.iter_mut().zip(interpolated.iter()) {
             stage.coeffs = *coeffs;
@@ -327,7 +339,7 @@ impl Cascade {
             let phasor = self.chew_topology == ChewTopology::Phasor;
             for stage in &mut self.stages {
                 let (next, unstable) = if phasor {
-                    stage.process_sample_phasor(v, vt)
+                    stage.process_sample_phasor(v, vt, vt * self.phasor_vt_scale)
                 } else {
                     stage.process_sample_pole_distort(v, vt)
                 };
@@ -452,7 +464,8 @@ mod tests {
             stage.coeffs = coeffs;
             for (i, (&x, &want)) in input.iter().zip(expected.iter()).enumerate() {
                 // vt = +inf: no radius push, no phasor saturation - pure topology.
-                let (got, unstable) = stage.process_sample_phasor(x, f64::INFINITY);
+                let (got, unstable) =
+                    stage.process_sample_phasor(x, f64::INFINITY, f64::INFINITY);
                 assert!(!unstable, "case {coeffs:?} went unstable at sample {i}");
                 worst = worst.max((got - want).abs());
                 assert!(

@@ -711,6 +711,15 @@ pub unsafe extern "C" fn trench_engine_set_chew_topology(engine: *mut c_void, to
 }
 
 #[no_mangle]
+pub unsafe extern "C" fn trench_engine_set_phasor_vt_scale(engine: *mut c_void, scale: f32) {
+    ffi_guard((), || {
+        if let Some(eng) = unsafe { engine_mut(engine) } {
+            eng.set_phasor_vt_scale(scale);
+        }
+    })
+}
+
+#[no_mangle]
 pub unsafe extern "C" fn trench_engine_set_interstage_drive(engine: *mut c_void, drive: f32) {
     ffi_guard((), || {
         if let Some(eng) = unsafe { engine_mut(engine) } {
