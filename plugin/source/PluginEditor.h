@@ -8,12 +8,11 @@
 #include "ui/MoveChip.h"
 #include "ui/KeySnapBox.h"
 #include "ui/TakeView.h"
+#include "ui/Onboarding.h"
 #include "ui/MoveView.h"
 #include "ui/WheelControl.h"
 #include "ui/ValueReadout.h"
 #include "ui/ThinWheel.h"
-#include "ui/SeedButton.h"
-#include "ui/TakeButton.h"
 #include "ui/FiveDButton.h"
 #include "ui/TypeSelectorView.h"
 #include "ui/LabelsLayer.h"
@@ -29,6 +28,8 @@ public:
     explicit PluginEditor (PluginProcessor&);
     ~PluginEditor() override;
     void resized() override;
+    /// FaceShot hook: force the tour visible at a given step for judging.
+    void showOnboardingStep (int step);
 private:
     void timerCallback() override;
     void reloadLayoutFromDisk();
@@ -57,8 +58,9 @@ private:
     std::unique_ptr<trench::ui::ValueReadout>     morphReadout;
     std::unique_ptr<trench::ui::ValueReadout>     secondaryReadout;
     std::unique_ptr<trench::ui::ThinWheel>        amountWheel;
-    std::unique_ptr<trench::ui::SeedButton>       seedButton;
-    std::unique_ptr<trench::ui::TakeButton>       takeButton;
+    std::unique_ptr<trench::ui::Onboarding>       onboarding;
+    trench::ui::Onboarding::ReplayHotspot         onboardingReplayHotspot;
+    float onboardingDemoStart = -1.0f;
     std::unique_ptr<trench::ui::FiveDButton>      fiveDButton;
     std::unique_ptr<trench::ui::LabelsLayer>      labels;
 #if TRENCH_TABLE_STITCH_PANEL

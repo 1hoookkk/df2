@@ -1,6 +1,6 @@
 use crate::agc::{active_agc_table, agc_step_stereo};
 use crate::cartridge::{Cartridge, CornerData};
-use crate::cascade::{Cascade, BLOCK_SIZE, NUM_COEFFS, PASSTHROUGH_COEFFS};
+use crate::cascade::{Cascade, BLOCK_SIZE, NUM_COEFFS};
 use crate::cvsd_input::CvsdInput;
 use crate::desk_drive::{DeskDrive, SUPPORTED_MODEL as DESK_SLAM_MODEL};
 use crate::qsound_spatial::QSoundSpatial;
@@ -208,6 +208,7 @@ pub struct FilterEngine {
     target_slam_drive: f32,
     delta_slam_drive: f32,
     target_interstage_drive: f32,
+    target_pole_distortion: f32,
     input_mode: InputMode,
     desk_drive_configured: bool,
     desk_drive_l: DeskDrive,
@@ -258,6 +259,7 @@ impl FilterEngine {
             target_slam_drive: 0.0,
             delta_slam_drive: 0.0,
             target_interstage_drive: 0.0,
+            target_pole_distortion: 0.0,
             input_mode: InputMode::None,
             desk_drive_configured: false,
             desk_drive_l: DeskDrive::new(),
@@ -318,6 +320,7 @@ impl FilterEngine {
         self.target_slam_drive = 0.0;
         self.delta_slam_drive = 0.0;
         self.target_interstage_drive = 0.0;
+        self.target_pole_distortion = 0.0;
         self.input_mode = InputMode::None;
         self.desk_drive_configured = false;
         self.desk_drive_l.prepare(sample_rate as f32);
@@ -354,6 +357,12 @@ impl FilterEngine {
     }
     pub fn set_slam_drive(&mut self, drive: f32) {
         self.target_slam_drive = drive.clamp(0.0, 1.0);
+    }
+    /// Authentic E-MU pole-radius distortion (US 10,514,883). Sets the THRESHOLD at
+    /// which each section's own resonance starts pushing its pole toward the unit
+    /// circle. Distinct from interstage drive, which is a modern saturator.
+    pub fn set_pole_distortion(&mut self, amount: f32) {
+        self.target_pole_distortion = if amount.is_finite() { amount.clamp(0.0, 1.0) } else { 0.0 };
     }
     pub fn set_interstage_drive(&mut self, drive: f32) {
         self.target_interstage_drive = if drive.is_finite() { drive.clamp(0.0, 1.0) } else { 0.0 };
@@ -447,6 +456,8 @@ impl FilterEngine {
         self.delta_slam_drive = (self.target_slam_drive - self.slam_drive) / ramp as f32;
         self.cascade_l.set_interstage_drive(self.target_interstage_drive, ramp);
         self.cascade_r.set_interstage_drive(self.target_interstage_drive, ramp);
+        self.cascade_l.set_pole_distortion(self.target_pole_distortion, ramp);
+        self.cascade_r.set_pole_distortion(self.target_pole_distortion, ramp);
     }
     #[inline]
     fn process_input_stage(&mut self, l: f32, r: f32) -> (f32, f32) {
@@ -520,15 +531,6 @@ impl FilterEngine {
             sr = saturate(sr);
         }
         (sl, sr)
-    }
-    fn snap_to_target(&mut self) {
-        self.output_gain = self.target_output_gain;
-        self.delta_output_gain = 0.0;
-        self.slam_drive = self.target_slam_drive;
-        self.delta_slam_drive = 0.0;
-        if self.input_mode == InputMode::MackieDeskSlam {
-            self.configure_desk_drive();
-        }
     }
     pub fn process_block(&mut self, left: &mut [f32], right: &mut [f32], morph: f64, q: f64) {
         if self.cartridge.is_none() {
@@ -717,6 +719,7 @@ fn compute_cascade_peak(corner: &CornerData, sample_rate: f64) -> f32 {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::cascade::PASSTHROUGH_COEFFS;
     fn conjugate_coefficients(hz: f64, radius: f64, sample_rate: f64) -> (f64, f64) {
         let angle = core::f64::consts::TAU * hz / sample_rate;
         (-2.0 * radius * angle.cos(), radius * radius)

@@ -13,7 +13,6 @@ namespace ParamID
     inline constexpr auto keyTrack    = "keyTrack";
     inline constexpr auto keySnap     = "keySnap";
     inline constexpr auto bite        = "bite";
-    inline constexpr auto clip        = "clip";
     inline constexpr auto hdMode      = "hdMode";
     // MOD — the one modulation engine (trench::MorphMod). Produces an
     // additive morph/Q offset around the wheel positions each block.

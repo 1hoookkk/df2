@@ -693,6 +693,15 @@ pub unsafe extern "C" fn trench_engine_set_coeff_ramp_scale(engine: *mut c_void,
     })
 }
 #[no_mangle]
+pub unsafe extern "C" fn trench_engine_set_pole_distortion(engine: *mut c_void, drive: f32) {
+    ffi_guard((), || {
+        if let Some(eng) = unsafe { engine_mut(engine) } {
+            eng.set_pole_distortion(drive);
+        }
+    })
+}
+
+#[no_mangle]
 pub unsafe extern "C" fn trench_engine_set_interstage_drive(engine: *mut c_void, drive: f32) {
     ffi_guard((), || {
         if let Some(eng) = unsafe { engine_mut(engine) } {

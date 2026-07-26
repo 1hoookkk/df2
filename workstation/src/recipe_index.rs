@@ -191,10 +191,15 @@ pub struct RecipeApplication {
 
 impl RecipeIndex {
     pub fn load(repo_root: impl AsRef<Path>) -> Result<(Self, Vec<u8>), WorkstationError> {
-        let path = repo_root
-            .as_ref()
+        let repo_root = repo_root.as_ref();
+        let primary = repo_root
             .join("recipe-index")
             .join("recipe_index_v1.json");
+        let path = if primary.exists() {
+            primary
+        } else {
+            repo_root.join("recipes").join("recipe_index_v1.json")
+        };
         let bytes = fs::read(&path)?;
         let index: Self = serde_json::from_slice(&bytes)?;
         index.validate_top_level()?;

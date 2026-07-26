@@ -1,6 +1,8 @@
 #pragma once
 #include "SelectorLookAndFeel.h"
 #include "Theme.h"
+#include "../dsp/FuncGenPatterns.h"
+#include "../dsp/MorphMod.h"
 #include "../parameters/TrenchParameters.h"
 #include <juce_audio_processors/juce_audio_processors.h>
 #include <memory>
@@ -31,6 +33,7 @@ public:
         modNoteParam    = apvts.getParameter (ParamID::modNote);
         modSyncParam    = apvts.getParameter (ParamID::modSync);
         modFeelParam    = apvts.getParameter (ParamID::modFeel);
+        modShapeParam   = apvts.getParameter (ParamID::modShape);
         auto repaintOnChange = [this] (float) { repaint(); };
         for (auto* p : { modOnParam, modTriggerParam, modNoteParam, modFeelParam })
             if (p != nullptr)
@@ -68,6 +71,23 @@ public:
         for (int i = 0; i < (int) std::size (kTimes); ++i)
             m.addItem (kIdTimeBase + i, kTimes[(size_t) i].label, true,
                        syncActive() && kTimes[(size_t) i].noteIdx == paramChoice (modNoteParam, 7));
+        m.addSeparator();
+        {
+            // The E-MU factory function-generator phrases. Picking one arms
+            // SYNC at the current rate; the rate list above still sets speed
+            // (one pattern STEP per note). WAVE returns to the plain shapes.
+            juce::PopupMenu phrases;
+            const int shape = paramChoice (modShapeParam,
+                                           kNumBaseShapes + kNumFuncGenPatterns - 1);
+            phrases.addItem (kIdWave, "WAVE", true, shape < kNumBaseShapes);
+            phrases.addSeparator();
+            for (int i = 0; i < kNumFuncGenPatterns; ++i)
+                phrases.addItem (kIdPhraseBase + i,
+                                 juce::String (kFuncGenPatterns[i].name).toUpperCase(),
+                                 true, syncActive() && shape == kNumBaseShapes + i);
+            m.addSubMenu ("PHRASE", phrases, true, nullptr,
+                          syncActive() && shape >= kNumBaseShapes, 0);
+        }
         m.addSeparator();
         m.addItem (kIdRise, "RISE", true, riserActive());
         m.addItem (kIdOff, "OFF", true, ! paramBool (modOnParam));
@@ -107,17 +127,24 @@ public:
         if (showingSibling)
         {
             g.setColour (ink.withAlpha (0.85f));
-            g.drawText ("Modulation  SIBLING", area.toNearestInt(),
+            g.drawText ("MODULATION  SIBLING", area.toNearestInt(),
                         juce::Justification::centredLeft, false);
             return;
         }
         // "Modulation" in ink; the STATE word carries the on/off truth —
         // lamp-teal when armed, an explicit dim OFF when not.
-        const juce::String label ("Modulation");
+        // All-caps: every other label on the face is engraved caps. Mixed case
+        // here read as a debug string rather than part of the instrument.
+        const juce::String label ("MODULATION");
         g.setColour (ink.withAlpha (hover ? 0.80f : (on ? 0.58f : 0.42f)));
         g.drawText (label, area.toNearestInt(), juce::Justification::centredLeft, false);
         const float lw = juce::GlyphArrangement::getStringWidth (font, label) + 8.0f;
-        const juce::String state = on ? (syncActive() ? liveTimeLabel()
+        const int shape = paramChoice (modShapeParam,
+                                       kNumBaseShapes + kNumFuncGenPatterns - 1);
+        const juce::String state = on ? (syncActive()
+                                            ? (shape >= kNumBaseShapes
+                                                   ? juce::String (kFuncGenPatterns[shape - kNumBaseShapes].name).toUpperCase()
+                                                   : liveTimeLabel())
                                        : riserActive() ? "RISE " + liveTimeLabel()
                                        : "AUTO")
                                       : juce::String ("OFF");
@@ -126,7 +153,8 @@ public:
                     juce::Justification::centredLeft, false);
     }
 private:
-    static constexpr int kIdOff = 1, kIdAuto = 2, kIdRise = 3, kIdTimeBase = 100;
+    static constexpr int kIdOff = 1, kIdAuto = 2, kIdRise = 3, kIdWave = 4,
+                         kIdTimeBase = 100, kIdPhraseBase = 300;
     static bool paramBool (const juce::RangedAudioParameter* p) noexcept
     {
         return p != nullptr && p->getValue() > 0.5f;
@@ -165,12 +193,23 @@ private:
             write (modOnParam, 1.0f);
             write (modTriggerParam, 2.0f);   // RISER
         }
+        else if (id == kIdWave)
+        {
+            write (modShapeParam, 0.0f);     // back to SINE
+        }
         else if (id >= kIdTimeBase && id < kIdTimeBase + (int) std::size (kTimes))
         {
             write (modOnParam, 1.0f);
             write (modTriggerParam, 1.0f);   // SYNC
             write (modSyncParam, 0.0f);      // host-locked
             write (modNoteParam, (float) kTimes[(size_t) (id - kIdTimeBase)].noteIdx);
+        }
+        else if (id >= kIdPhraseBase && id < kIdPhraseBase + kNumFuncGenPatterns)
+        {
+            write (modOnParam, 1.0f);
+            write (modTriggerParam, 1.0f);   // SYNC
+            write (modSyncParam, 0.0f);      // host-locked
+            write (modShapeParam, (float) (kNumBaseShapes + (id - kIdPhraseBase)));
         }
         repaint();
     }
@@ -199,6 +238,10 @@ private:
         if (id == kIdRise) return "RISE " + liveTimeLabel();
         if (id >= kIdTimeBase && id < kIdTimeBase + (int) std::size (kTimes))
             return "MODULATION " + liveTimeLabel();
+        if (id == kIdWave)
+            return "WAVE";
+        if (id >= kIdPhraseBase && id < kIdPhraseBase + kNumFuncGenPatterns)
+            return juce::String (kFuncGenPatterns[id - kIdPhraseBase].name).toUpperCase();
         return {};
     }
     void timerCallback() override
@@ -224,6 +267,7 @@ private:
     juce::RangedAudioParameter* modNoteParam = nullptr;
     juce::RangedAudioParameter* modSyncParam = nullptr;
     juce::RangedAudioParameter* modFeelParam = nullptr;
+    juce::RangedAudioParameter* modShapeParam = nullptr;
     std::vector<std::unique_ptr<juce::ParameterAttachment>> atts;
     bool hover = false;
     bool showingSibling = false;

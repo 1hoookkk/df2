@@ -12,6 +12,10 @@ crate-type = ["cdylib", "staticlib", "rlib"]
 # response / certify) — no second kernel. Only serde/std, so it builds without
 # the workstation GUI stack.
 [[bin]]
+name = "pole_proof"
+path = "src/bin/pole_proof.rs"
+
+[[bin]]
 name = "hd-ab"
 path = "src/bin/hd_ab.rs"
 

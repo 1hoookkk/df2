@@ -1,5 +1,6 @@
 #include "parameters/TrenchParameters.h"
 #include "TrenchBodyRoster.h"
+#include "dsp/FuncGenPatterns.h"
 namespace TrenchParameters
 {
 juce::AudioProcessorValueTreeState::ParameterLayout createParameterLayout()
@@ -61,10 +62,13 @@ juce::AudioProcessorValueTreeState::ParameterLayout createParameterLayout()
         "Mod Trigger",
         juce::StringArray { "ENV", "SYNC", "RISER" },
         0));
+    juce::StringArray shapeNames { "SINE", "TRI", "RAMP", "STAIR", "SQUARE", "RANDOM" };
+    for (int i = 0; i < trench::kNumFuncGenPatterns; ++i)
+        shapeNames.add (trench::kFuncGenPatterns[i].name);
     layout.add (std::make_unique<juce::AudioParameterChoice> (
         juce::ParameterID { ParamID::modShape, 1 },
         "Mod Shape",
-        juce::StringArray { "SINE", "TRI", "RAMP", "STAIR", "SQUARE", "RANDOM" },
+        shapeNames,
         0));
     layout.add (std::make_unique<juce::AudioParameterChoice> (
         juce::ParameterID { ParamID::modNote, 1 },
@@ -112,15 +116,10 @@ juce::AudioProcessorValueTreeState::ParameterLayout createParameterLayout()
         "HD",
         true));
     layout.add (std::make_unique<juce::AudioParameterFloat> (
-        juce::ParameterID { ParamID::clip, 1 },
-        "Clip",
-        juce::NormalisableRange<float> { 0.0f, 1.0f, 0.001f },
-        0.0f, pctAttribs()));
-    layout.add (std::make_unique<juce::AudioParameterFloat> (
         juce::ParameterID { ParamID::bite, 1 },
-        "Bite",
+        "Chew",
         juce::NormalisableRange<float> { 0.0f, 1.0f, 0.001f },
-        0.0f, pctAttribs()));   // 2026-07-25: no baked bite - SLAM brings it in, attenuated
+        0.0f, pctAttribs()));   // CHEW: interstage clipping, driven by Q (see PluginProcessor)
     return layout;
 }
 }

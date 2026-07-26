@@ -116,7 +116,7 @@ public:
                 g.setColour (juce::Colour (0xffcfe8de).withAlpha (0.10f));
                 g.fillRect (r.reduced (2.0f, 1.0f));
                 auto rail = r.reduced (2.0f, 1.0f); rail.setWidth (2.0f);
-                g.setColour (juce::Colour (0xff2bd8c3).withAlpha (0.85f));
+                g.setColour (juce::Colour (0xffd8c9f1).withAlpha (0.85f));
                 g.fillRect (rail);
             }
             if (isTicked)

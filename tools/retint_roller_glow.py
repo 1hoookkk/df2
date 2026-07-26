@@ -22,8 +22,10 @@ glow = (
 if not np.any(glow):
     raise RuntimeError("The established cyan glow mask is empty")
 
-# The bright emission teal sampled from the roller illumination token (#2bd8c3 / #4dfff9).
-target = np.array((0x2B, 0xD8, 0xC3), dtype=np.float32)
+# Coral #c96a54, the locked signal colour, applied to the ACCEPTED shipping body.
+# A Blender-rebuilt body was tried on 2026-07-25 and rejected in the plugin: it
+# came out light and chunky and lost the dark drum the glow needs to sit against.
+target = np.array((0xC9, 0x6A, 0x54), dtype=np.float32)
 # Normalize glow brightness so center core hits bright emission peak
 value = source[..., :3].max(axis=2, keepdims=True).astype(np.float32)
 max_val = np.max(value[glow]) if np.any(glow) else 255.0
@@ -33,4 +35,4 @@ result[..., :3][glow] = np.rint(target * norm_val[glow]).astype(np.uint8)
 pending = assets / "trench_roller_strip.next.png"
 Image.fromarray(result, "RGBA").save(pending)
 pending.replace(assets / "trench_roller_strip.png")
-print(f"retinted {int(glow.sum())} glow pixels to bright emission teal #2bd8c3")
+print(f"retinted {int(glow.sum())} glow pixels to coral #c96a54")

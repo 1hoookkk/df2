@@ -1,51 +1,47 @@
-# State — THE TRENCH DESIGNER IS THE SURFACE (2026-07-26)
+# NEXT TASK — stress test every function. delete delete delete.
 
-The Workstation opens INTO the Designer (full window; Esc = classic assembly
-bench). Everything below is committed on ui/five-point-cleanup and pushed.
+Doctrine (Tyson, closing 2026-07-27): **absolute elegance only.** The plate has
+FIVE wells — screen, two wheels, two readouts — and that is the feature budget.
+A function without a milled home is a candidate, not a feature. The session's
+juggling was architectural: ~15 functions renting 5 holes.
 
-## What the Designer is now
+## The work: one function at a time, stress test → verdict → keep lean or delete
 
-- Engine: `trench-core/src/designer.rs` + FFI. Parity 69/69 heritage XMLs
-  byte-equal (`cargo test --test heritage_parity`, fixtures vendored).
-- Surface: 6 stage rows, scrub-drag sliders (dbl-click types, wheel steps),
-  plain names FREQ/RES/LEVEL/ZERO/DEPTH, per-stage LO/HI anatomy minis,
-  live 5-curve JOURNEY strip, section-level UNDO/REDO (one step/gesture).
-- SHAPE dropdown speaks P2K: OFF/EQ/LP/HP + census roles PEAK / FORMANT /
-  SWEEP / TILT / NOTCH (measured zero relations; imported rows read "P2K").
-- Q pages: Q0/Q100 poses x M0/M100 rows = the 4-corner grid. AUTO Q100 =
-  MD-Q bw x0.375 sketch.
-- IMPORT: any loaded body (ROM preset, candidate, rail fit) lands as
-  editable sections; the photograph stays as a grey A/B ghost. Proven on
-  P2k_013 Talking Hedz incl. the S1 far-rail and S6 traveling-notch frame.
-- WRAP (the cheat): drop a wav -> ARMA fit of early/late halves -> 4
-  measured voices on S2..S5 + hedz TILT/NOTCH frame + AUTO Q100, playing
-  through itself immediately. `dwrap` headless.
-- Gates on every edit: certify 9x9, L10 active-row framing (you always hear
-  the framed level), family gate RIDE/ARCH (advisory — ear judges). SAVE
-  overwrites its own name in `bodies/candidates/`.
-- Live drive: rewrite `ws_live.json` (or TRENCH_WS_SCRIPT path) while the
-  app runs -> actions execute. Startup never replays a stale file.
-  Actions: designer dpage dtype dset dshift dtemplate dmotif dsketch
-  dfamily dsave dimport dwrap ddump + classic set.
-- Plugin: in-place hot-reload — the processor watches the loaded body's
-  .body240; Workstation SAVE updates the DAW plugin in <0.5 s (code in
-  shared processor; reaches the DAW at next install).
+For EACH function below: use it hard on a real loop, try to break it, then rule
+— does it earn its home? Anything that doesn't: delete it whole (code, params,
+assets, docs). No demotions to "hidden but kept". The TakeButton/clip/SeedButton
+deletions are the template.
 
-## Repo
+Order (performance core first, tenants last):
 
-master = minimal load-bearing tree (56641dac lineage), pushed. Dev branch
-pushed. Uncommitted stragglers: roller-glow files (trench_roller_strip.png,
-UiLayout.h, SelectorLookAndFeel.h, TypeSelectorView.h, retint_roller_glow.py)
-— commit or discard, Tyson's call. Stale branches still to cull.
+1. **MORPH wheel** — the instrument. Stress: fast rides, automation, modulation fights.
+2. **Q wheel + CHEW** — record the 55% ceiling verdict and the morph-unevenness
+   verdict (character or inconsistency?) while stressing.
+3. **BODY switch** — cycling under audio; is post-persistence switching still jarring?
+4. **THE SCREEN gestures** — SLAM drag, TAKE drag-off, MIX readout. Three
+   tenants; do all three survive a hand that's just playing?
+5. **MODULATION + 56 phrases** — cull hard. Target: single digits ship.
+6. **MIX** — screen-only readout discoverable?
+7. **KEY** — no well, no story. Define its job in one sentence or delete it whole.
+8. **OUTPUT** — does it earn existence vs host gain?
+9. **fiveD/QSound** — real thing, no home. In (needs a well and Tyson's art) or out.
+10. **Onboarding** — five steps at true scale, live; trim anything that doesn't teach.
 
-## Open, gated on Tyson
+## Standing rules
 
-- VST3 install (ship-vst3) — the built plugin includes hot-reload; explicit
-  go required, then prove the bench->DAW loop live.
-- Ear pass over candidates: TRENCH_HEDZ (hedz caricature: wider S1 ride,
-  notch from 4.2k), VOWL_bahn_to_tiere (raw measured DVTD vowel journey —
-  "its correct"), plus the earlier 5 functional TRENCH_*, TRENCH_303,
-  7 XSTUDY_* (study-only), 21 CAVL.
-- Wants noted, not built: 2x2 simultaneous corner view if pages feel
-  blind; rail fitters (LPC/magnitude) folded into trench-core so zero
-  Python remains in the loop.
+- One live function at a time; verdicts recorded HERE the moment they're spoken.
+- Deletions: surgical, whole-path (UI + param + DSP + docs), proven by build+test.
+- No new features during this pass. The empty lower-third of the plate is the
+  ONLY expansion slot and it opens only with baked art.
+
+## Carry-over facts (proven, don't re-litigate)
+
+MIX0 bit-dry incl SLAM (−300 dB) · identity −240 dB · SLAM 0 hard bypass ·
+settings persist across body switch · take drag doesn't drift SLAM ·
+AGC −24 dB null at full scale on NO FILTER (open: too heavy?).
+
+## References
+
+PLUGIN_VIEW.md (surface map + state-line convention) · spec artifact:
+https://claude.ai/code/artifact/68f8c688-9df6-41e0-bfe9-f67b8443711c ·
+proofs: TRENCH_FaceShot ONBOARD/MIX/RATE/TYPE iter · pole_proof <body>.

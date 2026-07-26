@@ -261,7 +261,7 @@ public:
         // baked back into the constants.
         const int dw = tune().w;
         const int dh = tune().height();
-        const int dx = (getWidth()  - dw) / 2 + tune().dx + 1;
+        const int dx = (getWidth()  - dw) / 2 + tune().dx;
         const int dy = (getHeight() - dh) / 2 + tune().dy;
         g.setOpacity (1.0f);
         g.setImageResamplingQuality (juce::Graphics::highResamplingQuality);

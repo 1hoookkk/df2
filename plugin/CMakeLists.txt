@@ -91,7 +91,6 @@ set(TRENCH_PLUGIN_SOURCES
     source/parameters/TrenchParameters.h
     source/parameters/TrenchParameters.cpp
     presets/PresetRoster.inc
-    source/dsp/BiteStage.h
     source/dsp/CapturePlan.h
     source/dsp/CaptureRing.h
     source/dsp/FixedRateTrenchIsland.h
@@ -113,10 +112,9 @@ set(TRENCH_PLUGIN_SOURCES
     source/ui/MoveView.h
     source/ui/ParamInteraction.h
     source/ui/ResponseCurve.h
-    source/ui/SeedButton.h
     source/ui/SelectorLookAndFeel.h
     source/ui/SlotPad.h
-    source/ui/TakeButton.h
+    source/ui/Onboarding.h
     source/ui/TakeView.h
     source/ui/Theme.h
     source/ui/TypeSelectorView.h

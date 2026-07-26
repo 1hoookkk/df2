@@ -46,7 +46,7 @@ The runtime interpolates words, then decodes.
 
 - **AGC leveller** owns output level.
 - **SLAM** — final output saturation stage — sits at the end of the chain.
-- There is **no drive stage inside the filter path**.
+- Inside the cascade there are two Q-driven distortions, both in `trench-core/src/cascade.rs`: **BITE** (interstage saturator) and **CHEW** (E-MU dynamic pole-radius distortion). There is no user-facing drive knob in the filter path.
 
 Constants: `trench-core/src/engine.rs` (AGC, SLAM) and `trench-core/src/desk_drive.rs`.
 

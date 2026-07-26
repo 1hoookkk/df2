@@ -45,11 +45,13 @@ public:
             const float bfs = t.fontSize ("brandLabel", 16.5f);
             if (br.getWidth() >= 1.0f && bfs >= 0.5f)
             {
+                // Original engraved treatment, just set tighter (X3 logos sit almost
+                // touching) with a slightly deeper catch for polish.
                 g.setFont (juce::Font (juce::FontOptions ("Arial", bfs, juce::Font::bold))
-                               .withExtraKerningFactor (0.035f));
+                               .withExtraKerningFactor (-0.012f));
                 drawEngravedText (g, t.text ("brandLabel", ""), br.toNearestInt(),
                                   juce::Justification::centredLeft,
-                                  t.textColour ("brandLabel", t.labelInk()), 0.65f);
+                                  t.textColour ("brandLabel", t.labelInk()), 0.72f);
             }
             const auto sr = t.rect ("brandSub");
             const float sfs = t.fontSize ("brandSub", 9.0f);

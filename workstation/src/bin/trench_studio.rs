@@ -1965,6 +1965,14 @@ fn collect_actor_wavs(repo_root: &Path) -> Vec<PathBuf> {
             .join("measured_objects"),
         &mut wavs,
     );
+    if wavs.is_empty() {
+        let _ = collect_wavs(
+            &repo_root
+                .join("recipes")
+                .join("measured_objects"),
+            &mut wavs,
+        );
+    }
     wavs.sort();
     wavs
 }

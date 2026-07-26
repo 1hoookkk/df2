@@ -13,7 +13,7 @@ public:
     juce::Font getPopupMenuFont() override { return displayFont (itemFontSize, false); }
     static constexpr juce::uint32 kGlassTop = 0xff10201d, kGlassBot = 0xff0b1715;
     static constexpr juce::uint32 kInk = 0xffcfe8de, kInkDim = 0xff4e6a63;
-    static constexpr juce::uint32 kLamp = 0xff2bd8c3;
+    static constexpr juce::uint32 kLamp = 0xffd8c9f1;
     void drawPopupMenuBackground (juce::Graphics& g, int width, int height) override
     {
         const auto area = juce::Rectangle<float> (0.0f, 0.0f, (float) width, (float) height);

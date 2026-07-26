@@ -80,15 +80,67 @@ PluginEditor::PluginEditor (PluginProcessor& p)
     amountWheel = std::make_unique<ThinWheel> (processor.apvts, ParamID::amount);
     amountWheel->onValueGesture = [this] (float v) { graph->showAmountCue (v); };
     moveChip->onAnnounce = [this] (const juce::String& s) { graph->announce (s); };
-    seedButton   = std::make_unique<SeedButton> (theme);
-    seedButton->onSeed = runSeed;
-    takeButton   = std::make_unique<TakeButton> (theme);
-    takeButton->onDragTake = [this] (juce::Component* source)
+    graph->onDragTake = [this] (juce::Component* source)
     {
         const auto f = processor.captureSmartTake();
         if (f.existsAsFile())
             juce::DragAndDropContainer::performExternalDragDropOfFiles (
                 { f.getFullPathName() }, false, source, nullptr);
+    };
+    onboarding = std::make_unique<Onboarding> (theme);
+    // The tour teaches over a REAL curve: it loads a demo body while it is up
+    // (NO FILTER is the default and shows nothing), then lands on NO FILTER.
+    const auto setBodyIndex = [this] (int idx)
+    {
+        if (auto* b = processor.apvts.getParameter (ParamID::body))
+            b->setValueNotifyingHost (b->convertTo0to1 ((float) idx));
+    };
+    const auto loadTourDemoBody = [setBodyIndex]
+    {
+        int n = 0;
+        trench::bodyRoster (n);
+        for (int i = 0; i < n; ++i)
+            if (trench::bodyDisplayName (i) == "Morph LP X")
+                return setBodyIndex (i);
+        setBodyIndex (juce::jmin (1, n - 1));
+    };
+    onboarding->onDismiss = [this, setBodyIndex]
+    {
+        onboarding->setVisible (false);
+        setBodyIndex (trench::kNoFilterIndex);
+    };
+    // MORPH demo step: the tour sweeps the wheel to the far pose and back so the
+    // travel is SEEN. The editor owns the gesture and restores the pose after.
+    onboarding->onDemoMorph = [this] (float phase)
+    {
+        auto* p = processor.apvts.getParameter (ParamID::morph);
+        if (p == nullptr)
+            return;
+        if (onboardingDemoStart < 0.0f)
+        {
+            onboardingDemoStart = p->getValue();
+            p->beginChangeGesture();
+        }
+        const float far = onboardingDemoStart < 0.5f ? 1.0f : 0.0f;
+        const float v = onboardingDemoStart
+                      + (far - onboardingDemoStart)
+                            * std::sin (juce::MathConstants<float>::pi * phase);
+        p->setValueNotifyingHost (juce::jlimit (0.0f, 1.0f, v));
+    };
+    onboarding->onDemoEnd = [this]
+    {
+        if (auto* p = processor.apvts.getParameter (ParamID::morph);
+            p != nullptr && onboardingDemoStart >= 0.0f)
+        {
+            p->setValueNotifyingHost (onboardingDemoStart);
+            p->endChangeGesture();
+        }
+        onboardingDemoStart = -1.0f;
+    };
+    onboardingReplayHotspot.onClick = [this, loadTourDemoBody]
+    {
+        loadTourDemoBody();
+        onboarding->replay();
     };
     fiveDButton  = std::make_unique<FiveDButton> (processor.apvts, theme);
     labels       = std::make_unique<LabelsLayer> (theme);
@@ -107,11 +159,19 @@ PluginEditor::PluginEditor (PluginProcessor& p)
     addAndMakeVisible (*morphReadout);
     addAndMakeVisible (*secondaryReadout);
     addAndMakeVisible (*amountWheel);
-    addChildComponent (*seedButton);
-    addChildComponent (*takeButton);
+    addChildComponent (*onboarding);
+    // First-run teach: shown for the first few openings, or until clicked away.
+    if (trench::ui::Onboarding::shouldShow())
+    {
+        loadTourDemoBody();
+        onboarding->setVisible (true);
+        onboarding->toFront (false);
+    }
     addChildComponent (*fiveDButton);
     addAndMakeVisible (*labels);
     addAndMakeVisible (*decalsLayer);
+    // Click the TRENCH badge to replay the tour. No new faceplate furniture.
+    addAndMakeVisible (onboardingReplayHotspot);
 #if TRENCH_TABLE_STITCH_PANEL
     tableStitchButton = std::make_unique<juce::TextButton> ("TABLES");
     tableStitchButton->setTooltip ("Open the external raw-table stitcher");
@@ -139,6 +199,10 @@ PluginEditor::PluginEditor (PluginProcessor& p)
     };
     resized();
    #endif
+}
+void PluginEditor::showOnboardingStep (int step)
+{
+    onboarding->replay (step);
 }
 PluginEditor::~PluginEditor()
 {
@@ -255,8 +319,8 @@ void PluginEditor::layoutComponents()
     morphReadout->setBounds (rectOf ("morphReadout"));
     secondaryReadout->setBounds (rectOf ("qReadout"));
     amountWheel->setBounds (rectOf ("amountWheel"));
-    seedButton->setBounds ({});
-    takeButton->setBounds ({});
+    onboarding->setBounds (base);   // full face: the tour spotlights each control
+    onboardingReplayHotspot.setBounds (rectOf ("brandLabel"));
     fiveDButton->setBounds ({});
     decalsLayer->setBounds (base);
    #ifdef TRENCH_PLAYER_DIAGNOSTICS

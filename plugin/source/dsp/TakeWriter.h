@@ -1,5 +1,6 @@
 #pragma once
 #include <juce_audio_formats/juce_audio_formats.h>
+#include <cmath>
 namespace trench
 {
 struct TakeTags
@@ -36,6 +37,27 @@ inline bool writeTakeWav (const juce::File& file,
     std::unique_ptr<juce::FileOutputStream> os (file.createOutputStream());
     if (os == nullptr)
         return false;
+    // 20-BIT RESAMPLE (E-MU Ultra workflow). The sampler offers 20-bit for internal
+    // resampling specifically to keep the bounce pristine - the grit is meant to come
+    // later, from the desk, not from the capture. WAV has no 20-bit format, so we
+    // quantise to 20 bits of real resolution and store it in a 24-bit container.
+    // TPDF dither at 1 LSB so the truncation floor is noise, not distortion.
+    juce::AudioBuffer<float> bounce;
+    bounce.makeCopyOf (take);
+    {
+        constexpr double kSteps = 524288.0;          // 2^19, i.e. 20-bit signed
+        juce::Random rnd (0x7727);
+        for (int ch = 0; ch < bounce.getNumChannels(); ++ch)
+        {
+            auto* d = bounce.getWritePointer (ch);
+            for (int i = 0; i < bounce.getNumSamples(); ++i)
+            {
+                const double dither = (rnd.nextDouble() - rnd.nextDouble()) / kSteps;
+                const double q = std::round (((double) d[i] + dither) * kSteps) / kSteps;
+                d[i] = (float) juce::jlimit (-1.0, 1.0, q);
+            }
+        }
+    }
     juce::WavAudioFormat wav;
     std::unique_ptr<juce::AudioFormatWriter> writer (
         wav.createWriterFor (os.get(), sampleRate,
@@ -43,7 +65,7 @@ inline bool writeTakeWav (const juce::File& file,
     if (writer == nullptr)
         return false;
     os.release();
-    const bool ok = writer->writeFromAudioSampleBuffer (take, 0, take.getNumSamples());
+    const bool ok = writer->writeFromAudioSampleBuffer (bounce, 0, bounce.getNumSamples());
     writer.reset();
     return ok;
 }

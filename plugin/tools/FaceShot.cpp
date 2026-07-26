@@ -83,6 +83,72 @@ int main()
     // JUCE_MODAL_LOOPS_PERMITTED=1 so the pump is available; the plugin does not.)
     juce::MessageManager::getInstance()->runDispatchLoopUntil (1400);
 
+    // ONBOARD iteration: force the first-run tour visible at each step and shoot
+    // it, so the scrim / card / copy can be judged at true scale without
+    // deleting the user's done-file. Step 1 is shot mid-demo-sweep on purpose.
+    if (std::getenv ("TRENCH_ONBOARD_ITER") != nullptr)
+    {
+        const auto save = [] (const juce::Image& img, const juce::String& name)
+        {
+            auto f = juce::File::getCurrentWorkingDirectory().getChildFile (name);
+            f.deleteFile();
+            juce::FileOutputStream os (f);
+            juce::PNGImageFormat().writeImageToStream (img, os);
+            os.flush();
+            std::printf ("ONBOARD wrote %s\n", f.getFullPathName().toRawUTF8());
+        };
+        for (int step = 0; step < 5; ++step)
+        {
+            static_cast<PluginEditor*> (editor)->showOnboardingStep (step);
+            juce::MessageManager::getInstance()->runDispatchLoopUntil (step == 1 ? 900 : 150);
+            save (holder.createComponentSnapshot (holder.getLocalBounds()),
+                  juce::String ("trench_onboard_step") + juce::String (step) + ".png");
+        }
+        return 0;
+    }
+
+    // MIX proof: MIX 0 must return the untouched signal even with SLAM at
+    // full - SLAM is part of the WET voice and must not escape the blend.
+    if (std::getenv ("TRENCH_MIX_ITER") != nullptr)
+    {
+        if (auto* mix = processor.apvts.getParameter (ParamID::amount))
+            mix->setValueNotifyingHost (0.0f);
+        if (auto* slam = processor.apvts.getParameter (ParamID::slamDrive))
+            slam->setValueNotifyingHost (1.0f);
+        juce::MessageManager::getInstance()->runDispatchLoopUntil (120);
+        constexpr int kBlock = 512;
+        processor.prepareToPlay (44100.0, kBlock);
+        const int reported = processor.getLatencySamples();
+        const int total = juce::jmax (16 * kBlock, reported + 8 * kBlock);
+        juce::AudioBuffer<float> in (2, total), run (2, total);
+        juce::Random rng (7);
+        for (int i = 0; i < total; ++i)
+        {
+            const float v = rng.nextFloat() * 1.6f - 0.8f;
+            in.setSample (0, i, v); in.setSample (1, i, v);
+        }
+        run.makeCopyOf (in);
+        juce::MidiBuffer midi;
+        for (int off = 0; off + kBlock <= total; off += kBlock)
+        {
+            juce::AudioBuffer<float> blk (run.getArrayOfWritePointers(), 2, off, kBlock);
+            processor.processBlock (blk, midi);
+        }
+        // Compare output against input delayed by the REPORTED latency, after
+        // the mix smoother has settled (skip the first quarter).
+        double num = 0.0, den = 0.0;
+        for (int i = total / 4; i < total - reported; ++i)
+        {
+            const double d = run.getSample (0, i + reported) - in.getSample (0, i);
+            num += d * d;
+            den += (double) in.getSample (0, i) * in.getSample (0, i);
+        }
+        const double nullDb = 10.0 * std::log10 (juce::jmax (1.0e-30, num / juce::jmax (1.0e-30, den)));
+        std::printf ("MIX0+SLAM100 null vs dry: %.1f dBFS  %s\n", nullDb,
+                     nullDb < -100.0 ? "PASS" : "FAIL");
+        return nullDb < -100.0 ? 0 : 1;
+    }
+
     // RATE proof: the fixed-rate island resamples the host into the 39062.5 /
     // 78125 Hz coefficient domain. Every host rate must come back finite, and
     // the latency we REPORT must match the latency we actually add, or every
@@ -749,6 +815,46 @@ int main()
     juce::FileOutputStream os (f);
     juce::PNGImageFormat().writeImageToStream (img, os);
     os.flush();
+
+    // Q SWEEP: CHEW is quadratic in Q, so a sweep is the only way to see it arrive.
+    // Frames assemble into a GIF for judging the pole shake and the readout in motion.
+    {
+        for (int i = 0; i <= 24; ++i)
+        {
+            const float qv = (float) i / 24.0f;
+            if (auto* q = processor.apvts.getParameter (ParamID::q))
+                q->setValueNotifyingHost (qv);
+            juce::MessageManager::getInstance()->runDispatchLoopUntil (120);
+            const auto im = holder.createComponentSnapshot (holder.getLocalBounds());
+            auto f = juce::File::getCurrentWorkingDirectory()
+                         .getChildFile ("qsweep_" + juce::String (i).paddedLeft ('0', 2) + ".png");
+            f.deleteFile();
+            juce::FileOutputStream o (f);
+            juce::PNGImageFormat().writeImageToStream (im, o);
+            o.flush();
+        }
+        if (auto* q = processor.apvts.getParameter (ParamID::q))
+            q->setValueNotifyingHost (0.30f);
+        juce::MessageManager::getInstance()->runDispatchLoopUntil (250);
+    }
+
+    // Q at 100%: the only pose where BITE is meaningfully engaged (the law is
+    // quadratic, so Q 0.30 gives ~2% and shows nothing). This is the shot to judge
+    // pole shake / aliasing on.
+    {
+        if (auto* q = processor.apvts.getParameter (ParamID::q))
+            q->setValueNotifyingHost (1.0f);
+        juce::MessageManager::getInstance()->runDispatchLoopUntil (450);
+        const auto imgQ = holder.createComponentSnapshot (holder.getLocalBounds());
+        auto fq = juce::File::getCurrentWorkingDirectory().getChildFile ("trench_face_q100.png");
+        fq.deleteFile();
+        juce::FileOutputStream oq (fq);
+        juce::PNGImageFormat().writeImageToStream (imgQ, oq);
+        oq.flush();
+        if (auto* q = processor.apvts.getParameter (ParamID::q))
+            q->setValueNotifyingHost (0.30f);
+        juce::MessageManager::getInstance()->runDispatchLoopUntil (250);
+    }
 
     // The same face at 150% — what an FL user on a 1.5x-DPI monitor actually sees.
     {

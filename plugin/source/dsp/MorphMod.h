@@ -1,4 +1,5 @@
 #pragma once
+#include "FuncGenPatterns.h"
 #include <cmath>
 #include <cstdint>
 
@@ -22,6 +23,10 @@ enum class ModTrigger { Sync, Env, Riser };
 // Smooth (Sine/Tri/Ramp) + rhythmic (Stair arp, Square call/response, Random S&H).
 // Rhythmic shapes are what turn a drum loop into a melody as MORPH steps.
 enum class ModShape   { Sine, Tri, Ramp, Stair, Square, Random };
+// Shape indices >= kNumBaseShapes select an E-MU factory Function Generator
+// pattern (FuncGenPatterns.h): shapeIdx - kNumBaseShapes = pattern id.
+// SPEED clocks one pattern STEP (the X3 law), not the whole table.
+inline constexpr int kNumBaseShapes = 6;
 enum class ModFeel    { Straight, Triplet, Dotted };
 // ponytail: 8-step arp; a user-editable pattern table is the upgrade path once
 // Tyson's ear picks the rhythms worth shipping.
@@ -96,6 +101,7 @@ public:
         held = 0.0f;
         smMorph = smQ = 0.0f;
         primed = false;
+        patAnchor = 0; patCycle = -1; patPos = patNext = 0; patInit = false;
     }
 
     // The next apply() re-anchors the cycle so phase starts at 0 (e.g. after
@@ -105,7 +111,7 @@ public:
 
     // centerMorph/centerQ are the current (smoothed) knob positions.
     // env is the input follower in [0,1]. depth/qDepth in [0,1].
-    MorphModResult apply (bool on, ModTrigger trig, ModShape shape,
+    MorphModResult apply (bool on, ModTrigger trig, int shapeIdx,
                           bool synced, int noteIdx, ModFeel feel, float rateHz,
                           float depth, float qDepth, float env,
                           double bpm, double ppq, bool playing, double quarterNotesPerBar,
@@ -156,6 +162,8 @@ public:
                 phaseOffset = phase;          // this instant becomes phase 0
                 riserDone = false;
                 riserStartCycle = cycle;
+                patAnchor = cycle;            // pattern restarts at step 0
+                patInit = false;
             }
             phase -= phaseOffset;
             if (phase < 0.0) phase += 1.0;
@@ -179,9 +187,13 @@ public:
                     if (freePhase < 1.0e-6 && unipolar > 0.5f) { riserDone = true; unipolar = 1.0f; }
                 }
             }
-            else // Sync LFO
+            else // Sync LFO or E-MU function-generator pattern
             {
-                bipolar = shapeValue (shape, (float) phase, cycle);
+                const int pat = shapeIdx - kNumBaseShapes;
+                if (pat >= 0 && pat < kNumFuncGenPatterns)
+                    bipolar = patternValue (kFuncGenPatterns[pat], (float) phase, cycle);
+                else
+                    bipolar = shapeValue ((ModShape) shapeIdx, (float) phase, cycle);
             }
         }
 
@@ -232,6 +244,76 @@ private:
         return 0.0f;
     }
 
+    // One E-MU function-generator step per SPEED cycle. Direction, length and
+    // smooth are the AUTHORED template values; DEPTH scales the travel.
+    float patternValue (const FuncGenPattern& p, float phase, std::int64_t cycle) noexcept
+    {
+        const std::int64_t rel = cycle - patAnchor;
+        if (! patInit || cycle != patCycle)
+        {
+            if (! patInit)
+            {
+                patInit = true;
+                patPos = positionFor (p, rel);
+                patNext = nextPosition (p, patPos, rel + 1);
+            }
+            else
+            {
+                // Advance one step per cycle tick (handles block-rate skips too).
+                for (std::int64_t c = patCycle; c < cycle; ++c)
+                {
+                    patPos = patNext;
+                    patNext = nextPosition (p, patPos, (c + 1 - patAnchor) + 1);
+                }
+            }
+            patCycle = cycle;
+        }
+        const float cur = p.values[patPos];
+        if (! p.smooth)
+            return cur;
+        return cur + (p.values[patNext] - cur) * phase;
+    }
+    // Deterministic directions map a step counter to a table position.
+    int positionFor (const FuncGenPattern& p, std::int64_t rel) const noexcept
+    {
+        const int n = p.steps;
+        if (n <= 1) return 0;
+        const std::int64_t m = rel < 0 ? 0 : rel;
+        switch (p.direction)
+        {
+            default:
+            case 0: return (int) (m % n);                       // forward
+            case 1: return n - 1 - (int) (m % n);               // reverse
+            case 2:                                             // pendulum
+            {
+                const int period = 2 * n - 2;
+                const int q = (int) (m % period);
+                return q < n ? q : period - q;
+            }
+            case 5: return (int) (m < n ? m : n - 1);           // one-shot: hold end
+            case 3: case 4: return (int) (m % n);               // random/brownian seed
+        }
+    }
+    int nextPosition (const FuncGenPattern& p, int pos, std::int64_t relNext) noexcept
+    {
+        const int n = p.steps;
+        if (n <= 1) return 0;
+        switch (p.direction)
+        {
+            case 3: // random: any step
+                return (int) ((whiteBip() * 0.5f + 0.5f) * (float) n) % n;
+            case 4: // brownian: adjacent step, bounce off the ends
+            {
+                const bool up = whiteBip() >= 0.0f;
+                if (pos <= 0) return 1;
+                if (pos >= n - 1) return n - 2;
+                return up ? pos + 1 : pos - 1;
+            }
+            default:
+                return positionFor (p, relNext);
+        }
+    }
+
     float whiteBip() noexcept
     {
         rngState = rngState * 1664525u + 1013904223u;
@@ -250,6 +332,9 @@ private:
     bool prevPlaying = false;
     float smMorph = 0.0f, smQ = 0.0f;
     bool primed = false;
+    std::int64_t patAnchor = 0, patCycle = -1;
+    int patPos = 0, patNext = 0;
+    bool patInit = false;
     std::uint32_t rngState = 0x1234567u;
 };
 

@@ -1,6 +1,5 @@
 #pragma once
 #include <juce_audio_processors/juce_audio_processors.h>
-#include "BiteStage.h"
 #include <atomic>
 #include <cstdint>
 #include <cstring>
@@ -22,7 +21,7 @@ extern "C"
     void trench_engine_set_coeff_ramp_scale (void* engine, float scale);
     void trench_engine_set_pitch_ratio (void* engine, float ratio);
     void trench_engine_set_key_snap (void* engine, int choice);
-    void trench_engine_set_interstage_drive (void* engine, float drive);
+    void trench_engine_set_pole_distortion (void* engine, float amount);
     void trench_engine_process_block (void* engine, float* left, float* right, int numSamples, double morph, double q);
     void trench_engine_get_coeffs (void* engine, float* outCoeffs, float* outBoost);
     int trench_packed_probe (const unsigned char* bytes, size_t len, double morph, double q,
@@ -72,11 +71,10 @@ struct TrenchParams
     float slamDrive = 0.0f;
     float fiveD = 0.0f;
     float amount = 1.0f;
-    float bite = 0.0f;
     float rampScale = 0.164f;
     float pitchRatio = 1.0f;
     int keySnap = 0;
-    float interstageDrive = 0.0f;
+    float poleDistortion  = 0.0f;   // E-MU dynamic pole radius (US 10,514,883)
 };
 class TrenchDspBridge
 {
@@ -199,10 +197,10 @@ public:
             trench_engine_set_key_snap (engine, params.keySnap);
             lastKeySnapSent = params.keySnap;
         }
-        if (! juce::approximatelyEqual (params.interstageDrive, lastInterstageDriveSent))
+        if (! juce::approximatelyEqual (params.poleDistortion, lastPoleDistortionSent))
         {
-            trench_engine_set_interstage_drive (engine, params.interstageDrive);
-            lastInterstageDriveSent = params.interstageDrive;
+            trench_engine_set_pole_distortion (engine, params.poleDistortion);
+            lastPoleDistortionSent = params.poleDistortion;
         }
         trench_engine_process_block (engine,
                                      buffer.getWritePointer (0),
@@ -210,9 +208,6 @@ public:
                                      n,
                                      params.morph,
                                      params.q);
-        const float biteNorm = juce::jlimit (0.0f, 1.0f, params.bite);
-        trench::biteDriveBlock (buffer.getWritePointer (0), n, biteNorm);
-        trench::biteDriveBlock (buffer.getWritePointer (1), n, biteNorm);
     }
     void reclaim()
     {
@@ -295,7 +290,7 @@ private:
     float lastRampScaleSent = -1.0f;
     float lastPitchRatioSent = -1.0f;
     int lastKeySnapSent = -1;
-    float lastInterstageDriveSent = -1.0f;
+    float lastPoleDistortionSent = -1.0f;
     struct UiCoeffSnapshot
     {
         std::atomic<uint32_t> seq { 0 };

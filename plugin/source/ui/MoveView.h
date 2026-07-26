@@ -19,7 +19,7 @@ public:
     }
     void refresh()
     {
-        shapeIdx = juce::jlimit (0, 5, (int) get (ParamID::modShape));
+        shapeIdx = juce::jlimit (0, kChoices - 1, (int) get (ParamID::modShape));
         on = get (ParamID::modOn) > 0.5f;
         phase = juce::jlimit (0.0f, 1.0f, processor.getModPhaseForUi());
         repaint();
@@ -28,11 +28,36 @@ public:
     {
         if (! shapeRow().contains (e.position))
             return;
-        const int n = 6; // Sine,Tri,Ramp,Stair,Square,Random
-        const int idx = juce::jlimit (0, n - 1,
-                                      (int) ((e.position.x - shapeRow().getX()) /
-                                             (shapeRow().getWidth() / (float) n)));
-        setChoice (ParamID::modShape, idx, n);
+        const int cell = juce::jlimit (0, kCells - 1,
+                                       (int) ((e.position.x - shapeRow().getX()) /
+                                              (shapeRow().getWidth() / (float) kCells)));
+        int idx;
+        if (cell < trench::kNumBaseShapes)
+            idx = cell;
+        else if (shapeIdx < trench::kNumBaseShapes)
+            idx = trench::kNumBaseShapes + lastPattern;   // enter PHRASE mode
+        else
+        {   // already in PHRASE mode: click steps to the next pattern
+            const int pat = (shapeIdx - trench::kNumBaseShapes + 1) % trench::kNumFuncGenPatterns;
+            idx = trench::kNumBaseShapes + pat;
+        }
+        if (idx >= trench::kNumBaseShapes)
+            lastPattern = idx - trench::kNumBaseShapes;
+        setChoice (ParamID::modShape, idx, kChoices);
+        refresh();
+    }
+    // Wheel over the PHRASE cell (or the plot while in phrase mode) scrolls
+    // through the 56 factory patterns - the cull gesture.
+    void mouseWheelMove (const juce::MouseEvent& e, const juce::MouseWheelDetails& w) override
+    {
+        const bool phraseActive = shapeIdx >= trench::kNumBaseShapes;
+        if (! phraseActive && ! shapeRow().contains (e.position))
+            return;
+        const int dir = w.deltaY < 0 ? 1 : -1;
+        const int cur = phraseActive ? shapeIdx - trench::kNumBaseShapes : lastPattern;
+        const int pat = (cur + dir + trench::kNumFuncGenPatterns) % trench::kNumFuncGenPatterns;
+        lastPattern = pat;
+        setChoice (ParamID::modShape, trench::kNumBaseShapes + pat, kChoices);
         refresh();
     }
     void paint (juce::Graphics& g) override
@@ -47,6 +72,8 @@ public:
         drawShapeSilhouettes (g, shapeRow());
     }
 private:
+    static constexpr int kCells = 7;   // 6 base shapes + PHRASE
+    static constexpr int kChoices = trench::kNumBaseShapes + trench::kNumFuncGenPatterns;
     juce::Rectangle<float> shapeRow() const
     {
         return getLocalBounds().toFloat().removeFromTop (37.0f).reduced (8.0f, 5.0f);
@@ -64,6 +91,18 @@ private:
     static float shapeValue (int shape, float phase) noexcept
     {
         constexpr float kTwoPi = 6.28318530718f;
+        if (shape >= trench::kNumBaseShapes)
+        {
+            // Phrase preview: the authored table over one full pass.
+            const auto& p = trench::kFuncGenPatterns[
+                juce::jlimit (0, trench::kNumFuncGenPatterns - 1, shape - trench::kNumBaseShapes)];
+            const float ph = juce::jlimit (0.0f, 0.9999f, phase) * (float) p.steps;
+            const int st = (int) ph;
+            if (! p.smooth)
+                return p.values[st];
+            const int nx = juce::jmin (st + 1, p.steps - 1);
+            return p.values[st] + (p.values[nx] - p.values[st]) * (ph - (float) st);
+        }
         switch ((trench::ModShape) shape)
         {
             case trench::ModShape::Sine:   return std::sin (kTwoPi * phase);
@@ -100,6 +139,19 @@ private:
         g.strokePath (path, { 4.5f, juce::PathStrokeType::curved, juce::PathStrokeType::rounded });
         g.setColour (phos.withAlpha (on ? 1.0f : 0.35f));
         g.strokePath (path, { 2.0f, juce::PathStrokeType::curved, juce::PathStrokeType::rounded });
+        if (shapeIdx >= trench::kNumBaseShapes)
+        {
+            // Name the phrase; the engine steps the table live, so the preview
+            // dot (one-cycle phase) would lie here - skip it.
+            const auto& p = trench::kFuncGenPatterns[shapeIdx - trench::kNumBaseShapes];
+            auto nameRow = plot.toNearestInt();
+            g.setFont (telemetryFont (11.0f, false));
+            g.setColour (phos.withAlpha (0.85f));
+            g.drawText (juce::String (p.name).toUpperCase(),
+                        nameRow.removeFromTop (14),
+                        juce::Justification::centredRight, false);
+            return;
+        }
         if (on)
         {
             const float v = shapeValue (shapeIdx, phase);
@@ -113,11 +165,18 @@ private:
     }
     void drawShapeSilhouettes (juce::Graphics& g, juce::Rectangle<float> row)
     {
-        const int n = 6; // Sine,Tri,Ramp,Stair,Square,Random
-        const float cw = row.getWidth() / (float) n;
-        for (int i = 0; i < n; ++i)
+        const float cw = row.getWidth() / (float) kCells;
+        for (int i = 0; i < kCells; ++i)
         {
-            const bool active = (i == shapeIdx);
+            const bool phraseCell = (i == kCells - 1);
+            const bool active = phraseCell ? (shapeIdx >= trench::kNumBaseShapes)
+                                           : (i == shapeIdx);
+            // The PHRASE cell previews whichever factory pattern is current.
+            const int silhouette = phraseCell
+                ? trench::kNumBaseShapes
+                      + (shapeIdx >= trench::kNumBaseShapes ? shapeIdx - trench::kNumBaseShapes
+                                                            : lastPattern)
+                : i;
             auto cell = row.withX (row.getX() + i * cw).withWidth (cw).reduced (3.0f, 0.0f);
             if (active)
             {
@@ -136,7 +195,7 @@ private:
             for (int s = 0; s < N; ++s)
             {
                 const float ph = (float) s / (float) (N - 1);
-                const float v = shapeValue (i, ph);
+                const float v = shapeValue (silhouette, ph);
                 const float x = cell.getX() + ph * cell.getWidth();
                 const float y = cell.getCentreY() - v * cell.getHeight() * 0.42f;
                 if (s == 0) p.startNewSubPath (x, y); else p.lineTo (x, y);
@@ -161,6 +220,7 @@ private:
     juce::AudioProcessorValueTreeState& apvts;
     Theme t;
     int shapeIdx = 0;
+    int lastPattern = 0;
     bool on = false;
     float phase = 0.0f;
 };

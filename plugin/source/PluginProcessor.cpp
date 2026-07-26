@@ -205,7 +205,7 @@ void PluginProcessor::processBlock (juce::AudioBuffer<float>& buffer, juce::Midi
         params.amount = 1.0f;
         params.slamDrive = 0.0f;
         params.fiveD = 0.0f;
-        params.bite = 0.0f;
+        params.poleDistortion = 0.0f;
         fixedRateIsland.process (buffer, dspBridge, params);
         dspBridge.publishUiSnapshot();
         return;
@@ -310,7 +310,8 @@ void PluginProcessor::processBlock (juce::AudioBuffer<float>& buffer, juce::Midi
     const auto modResult = morphMod.apply (
         apvts.getRawParameterValue (ParamID::modOn)->load() > 0.5f,
         kTriggerForParam[triggerIdx],
-        (trench::ModShape) juce::jlimit (0, 5, (int) apvts.getRawParameterValue (ParamID::modShape)->load()),
+        juce::jlimit (0, trench::kNumBaseShapes + trench::kNumFuncGenPatterns - 1,
+                      (int) apvts.getRawParameterValue (ParamID::modShape)->load()),
         (int) apvts.getRawParameterValue (ParamID::modSync)->load() == 0,
         (int) apvts.getRawParameterValue (ParamID::modNote)->load(),
         (trench::ModFeel) juce::jlimit (0, 2, (int) apvts.getRawParameterValue (ParamID::modFeel)->load()),
@@ -329,13 +330,39 @@ void PluginProcessor::processBlock (juce::AudioBuffer<float>& buffer, juce::Midi
     params.morph = mapMorphForLoadedBody (modResult.morph);
     params.q     = mapSecondaryForLoadedBody (modResult.q);
     params.slamDrive = apvts.getRawParameterValue (ParamID::slamDrive)->load();
-    params.bite = juce::jlimit (0.0f, 1.0f, apvts.getRawParameterValue (ParamID::clip)->load());
-    // BITE law (Tyson 2026-07-25): nothing baked - the 20% base was too
-    // strong. SLAM carries bite in quietly: quadratic, so low slam adds
-    // nothing and full slam lands a tasteful ~22%.
-    params.interstageDrive = juce::jlimit (0.0f, 1.0f,
+    // CHEW law (2026-07-26): RESONANCE carries the chew, not SLAM.
+    // E-MU precedent: BassOMatic 12 REZ drives the filter into distortion at max Q,
+    // and the Mackie desk slam happened OUTSIDE the machine, after deliberately
+    // clean outputs - so SLAM driving internal character was backwards twice over.
+    //
+    // Interstage clipping fires when the signal inside the cascade runs hot, and
+    // what makes it hot is resonance - a high-Q section builds a peak that slams
+    // the next stage. That is how real analog filters snarl. SLAM sits AFTER the
+    // cascade and has no causal relationship to what happens inside it, so
+    // driving bite from SLAM welded internal character to output level: no grit
+    // at low output, no clean at high output.
+    //
+    // Quadratic: low Q adds nothing, full Q lands 55%. The old 0.22 ceiling was
+    // ear-tuned for the INTERSTAGE SATURATOR; under pole-radius distortion the
+    // offline sweep puts 0.22 at the bottom of the range (+21% RMS) and the useful
+    // span running to ~0.6 (+87%) before it saturates.
+    // full Q lands the same tasteful ~22%. Q here is the MODULATED value, so a
+    // resonance sweep is a character gesture, not just a shape change.
+    // CHEW now drives the AUTHENTIC E-MU mechanism: dynamic pole radius per section
+    // (US 10,514,883), not the interstage saturator. E-MU deliberately used a 67-bit
+    // accumulator so spikes pass BETWEEN sections unclipped - the nonlinearity lives
+    // in the pole math, which is why the resonance blooms and wanders instead of
+    // merely getting dirty. The old saturator path stays wired at 0 for A/B.
+    const float qForChew = juce::jlimit (0.0f, 1.0f, modResult.q);
+    const float chewAmount = juce::jlimit (0.0f, 1.0f,
         apvts.getRawParameterValue (ParamID::bite)->load()
-        + 0.22f * params.slamDrive * params.slamDrive);
+        + 0.55f * qForChew * qForChew);
+    // CHEW is the FILTER destabilising itself, so it needs poles and is correctly
+    // silent at No Filter. It is NOT a general distortion: E-MU kept the internal
+    // path pristine (20-bit resampling exists to avoid internal grit) and generated
+    // character outside the machine. SLAM is that outside - it owns all grit that
+    // is not the filter's own, and works with or without a body loaded.
+    params.poleDistortion  = chewAmount;
     auto* inputModeParam = apvts.getRawParameterValue (ParamID::inputMode);
     const bool slamIntoFilter = (inputModeParam != nullptr && inputModeParam->load() > 0.5f);
     if (slamIntoFilter)
@@ -418,10 +445,8 @@ void PluginProcessor::processBlock (juce::AudioBuffer<float>& buffer, juce::Midi
         (int) apvts.getRawParameterValue (ParamID::keySnap)->load());
     punchBlend.captureDry (buffer.getArrayOfReadPointers(), buffer.getNumChannels(), buffer.getNumSamples());
     fixedRateIsland.process (buffer, dspBridge, params);
-    punchBlend.blend (buffer.getArrayOfWritePointers(), buffer.getNumChannels(), buffer.getNumSamples(), mixTarget);
-    const float outDb = apvts.getRawParameterValue (ParamID::output)->load();
-    outputGain.setTargetValue (juce::Decibels::decibelsToGain (outDb));
-    outputGain.applyGain (buffer, buffer.getNumSamples());
+    // SLAM is part of the WET voice: it runs before the MIX blend so MIX 0
+    // returns the untouched signal no matter how hard the desk is driven.
     // The desk stage reports the TRUE limit amount: the fraction of samples
     // pushed past the pressure knee. That (not raw output peak) is the meter.
     float limitFrac = 0.0f;
@@ -435,6 +460,10 @@ void PluginProcessor::processBlock (juce::AudioBuffer<float>& buffer, juce::Midi
             limitFrac = trench::slamOutputPressureBlock (buffer.getWritePointer (0),
                                              buffer.getNumSamples(), params.slamDrive);
     }
+    punchBlend.blend (buffer.getArrayOfWritePointers(), buffer.getNumChannels(), buffer.getNumSamples(), mixTarget);
+    const float outDb = apvts.getRawParameterValue (ParamID::output)->load();
+    outputGain.setTargetValue (juce::Decibels::decibelsToGain (outDb));
+    outputGain.applyGain (buffer, buffer.getNumSamples());
     dspBridge.publishUiSnapshot();
     if (auto* ph = getPlayHead())
         if (auto pos = ph->getPosition())
@@ -586,10 +615,9 @@ void PluginProcessor::handleAsyncUpdate()
     }
     if (trench::bodyIsAudition (want))
         auditionSlotMtime = trench::auditionSlotFile().getLastModificationTime();
-    // MIX law: every body arrives at 100% mix
-    if (ok)
-        if (auto* amount = apvts.getParameter (ParamID::amount))
-            amount->setValueNotifyingHost (1.0f);
+    // Settings survive a body switch (Tyson 2026-07-27): MORPH, Q, MIX, SLAM
+    // and modulation all stay where the hands left them - switching filters
+    // changes the FILTER, nothing else.
     juce::Logger::writeToLog (juce::String ("body switch -> ")
                                + trench::bodyDisplayName (want)
                                + (ok ? " ok" : " FAIL"));

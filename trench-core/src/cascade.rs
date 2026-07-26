@@ -3,12 +3,17 @@ pub const NUM_STAGES: usize = 6;
 pub const NUM_COEFFS: usize = 5;
 pub const PASSTHROUGH_COEFFS: [f64; NUM_COEFFS] = [1.0, 0.0, 0.0, 0.0, 0.0];
 pub const BLOCK_SIZE: usize = 32;
+/// Full-scale reference for pole-radius distortion (patent's |V_p|).
+const V_PEAK: f64 = 1.0;
 #[derive(Clone)]
 struct BiquadState {
     coeffs: [f64; NUM_COEFFS],
     deltas: [f64; NUM_COEFFS],
     w1: f64,
     w2: f64,
+    /// Previous real output of this section. The pole-radius distortion detector
+    /// reads the n-1 sample of the section it controls (US 10,514,883).
+    y_prev: f64,
 }
 impl BiquadState {
     fn new() -> Self {
@@ -17,6 +22,7 @@ impl BiquadState {
             deltas: [0.0; NUM_COEFFS],
             w1: 0.0,
             w2: 0.0,
+            y_prev: 0.0,
         }
     }
     fn set_target(&mut self, target: &[f64; NUM_COEFFS], ramp_samples: usize) {
@@ -24,6 +30,73 @@ impl BiquadState {
         for (i, &t) in target.iter().enumerate() {
             self.deltas[i] = (t - self.coeffs[i]) / ramp_samples;
         }
+    }
+    /// E-MU dynamic pole-radius distortion (US 10,514,883), applied PER SECTION.
+    ///
+    /// When this section's previous real output exceeds the threshold, its pole is
+    /// pushed toward the unit circle:
+    ///     R_new = R + R(1-R) * (|Vg| - Vt) / |Vp|
+    /// The (1-R) term is an asymptotic brake - as R approaches 1 the increase chokes
+    /// to zero, so the filter is unconditionally stable and can never reach radius 1.
+    ///
+    /// This is NOT interstage clipping. E-MU deliberately used a 67-bit accumulator so
+    /// spikes pass BETWEEN sections unclipped; the nonlinearity lives in the pole math.
+    /// Because the radius moves, the resonant frequency and Q move with it - the peak
+    /// blooms and wanders rather than merely getting dirty. A saturator cannot do that.
+    #[inline(always)]
+    fn process_sample_pole_distort(&mut self, x: f64, vt: f64) -> (f64, bool) {
+        self.coeffs[0] += self.deltas[0];
+        self.coeffs[1] += self.deltas[1];
+        self.coeffs[2] += self.deltas[2];
+        self.coeffs[3] += self.deltas[3];
+        self.coeffs[4] += self.deltas[4];
+
+        let (mut a1, mut a2) = (self.coeffs[3], self.coeffs[4]);
+        let (b0, b1, b2) = (self.coeffs[0], self.coeffs[1], self.coeffs[2]);
+        let vg = self.y_prev.abs();
+        if vg > vt && a2 > 1.0e-9 {
+            let r = a2.sqrt();
+            if r > 1.0e-6 && r < 1.0 {
+                let cos_theta = -a1 / (2.0 * r);
+                if cos_theta.abs() <= 1.0 {
+                    // |Vp| is a FULL-SCALE PEAK REFERENCE, not the pole's own level.
+                    // The push scales with how far over threshold the section is; the
+                    // (1-R) brake guarantees it can never reach radius 1.
+                    let ratio = ((vg - vt) / V_PEAK).clamp(0.0, 4.0);
+                    let r_new = (r + r * (1.0 - r) * ratio).clamp(0.0, 0.999_9);
+                    a1 = -2.0 * r_new * cos_theta;
+                    a2 = r_new * r_new;
+                }
+            }
+        }
+        // NOT IMPLEMENTED, deliberately: DC gain stabilisation and zero-side
+        // distortion. Both are in the patent, both were tried 2026-07-26, and
+        // together they turned CHEW into a volume effect (+114% RMS at 22%,
+        // saturating by 10%). The zero direction is unspecified in the patent and
+        // shrinking the zero radius removes notches and dumps energy back in.
+        // Revisit ONE at a time, with the offline sweep, against a heard reference.
+
+        let mut y = b0 * x + self.w1;
+        if !y.is_finite() {
+            y = 0.0;
+            self.w1 = 0.0;
+            self.w2 = 0.0;
+            self.y_prev = 0.0;
+            self.deltas = [0.0; NUM_COEFFS];
+            return (y, true);
+        }
+        self.w1 = b1 * x - a1 * y + self.w2;
+        self.w2 = b2 * x - a2 * y;
+        let unstable = !self.w1.is_finite() || !self.w2.is_finite();
+        if unstable {
+            self.w1 = 0.0;
+            self.w2 = 0.0;
+            self.y_prev = 0.0;
+            self.deltas = [0.0; NUM_COEFFS];
+        } else {
+            self.y_prev = y;
+        }
+        (y, unstable)
     }
     #[inline(always)]
     fn process_sample(&mut self, x: f64) -> (f64, bool) {
@@ -47,6 +120,8 @@ impl BiquadState {
             self.w1 = 0.0;
             self.w2 = 0.0;
             self.deltas = [0.0; NUM_COEFFS];
+        } else {
+            self.y_prev = y;
         }
         (y, unstable)
     }
@@ -57,6 +132,9 @@ pub struct Cascade {
     boost_delta: f64,
     interstage_drive: f32,
     interstage_delta: f32,
+    /// 0 = off. Higher lowers the distortion threshold Vt, so more sections tip in.
+    pole_distort: f32,
+    pole_delta: f32,
     instability_detected: bool,
 }
 impl Cascade {
@@ -67,6 +145,8 @@ impl Cascade {
             boost_delta: 0.0,
             interstage_drive: 0.0,
             interstage_delta: 0.0,
+            pole_distort: 0.0,
+            pole_delta: 0.0,
             instability_detected: false,
         }
     }
@@ -76,8 +156,12 @@ impl Cascade {
             stage.w2 = 0.0;
             stage.deltas = [0.0; NUM_COEFFS];
         }
+        for stage in &mut self.stages {
+            stage.y_prev = 0.0;
+        }
         self.boost_delta = 0.0;
         self.interstage_delta = 0.0;
+        self.pole_delta = 0.0;
         self.instability_detected = false;
     }
     pub fn set_boost(&mut self, target: f64, ramp_samples: usize) {
@@ -87,6 +171,12 @@ impl Cascade {
     pub fn set_interstage_drive(&mut self, target: f32, ramp_samples: usize) {
         let target = target.clamp(0.0, 1.0);
         self.interstage_delta = (target - self.interstage_drive) / ramp_samples.max(1) as f32;
+    }
+    /// The patent's controlled parameter is the THRESHOLD, not a drive amount: you
+    /// lower the bar at which the filter's own resonance destabilises itself.
+    pub fn set_pole_distortion(&mut self, target: f32, ramp_samples: usize) {
+        let target = target.clamp(0.0, 1.0);
+        self.pole_delta = (target - self.pole_distort) / ramp_samples.max(1) as f32;
     }
     pub fn snap_targets(&mut self, interpolated: &CornerData) {
         for (stage, coeffs) in self.stages.iter_mut().zip(interpolated.iter()) {
@@ -102,7 +192,23 @@ impl Cascade {
     #[inline(always)]
     pub fn tick(&mut self, x: f32) -> f32 {
         let mut v = x as f64;
-        if self.interstage_drive <= 0.0 && self.interstage_delta == 0.0 {
+        if self.pole_distort > 0.0 || self.pole_delta != 0.0 {
+            self.pole_distort = (self.pole_distort + self.pole_delta).clamp(0.0, 1.0);
+            // Threshold mapping, calibrated against measured section levels (a power
+            // curve put the whole useful range above 0.6 and CHEW never got there).
+            //   0.00 -> 1.50  off      0.22 -> 0.28  mid (CHEW at full Q)
+            //   0.40 -> 0.08  hard     1.00 -> 0.02  always biting
+            let amt = self.pole_distort as f64;
+            let vt = 1.48 * (-8.0 * amt).exp() + 0.02;
+            for stage in &mut self.stages {
+                let (next, unstable) = stage.process_sample_pole_distort(v, vt);
+                if unstable {
+                    self.instability_detected = true;
+                    return 0.0;
+                }
+                v = next;
+            }
+        } else if self.interstage_drive <= 0.0 && self.interstage_delta == 0.0 {
             for stage in &mut self.stages {
                 let (next, unstable) = stage.process_sample(v);
                 if unstable {
