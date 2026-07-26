@@ -15,7 +15,6 @@ PluginEditor::PluginEditor (PluginProcessor& p)
     faceplate    = std::make_unique<FaceplateView> (panel, theme);
     faceplate->setBufferedToImage (true);
     graph        = std::make_unique<GraphDisplay> (theme, processor.apvts, ParamID::slamDrive);
-    slotPad      = std::make_unique<SlotPad> (theme);
     moveChip = std::make_unique<MoveChip> (processor.apvts, theme);
     keySnapBox = std::make_unique<KeySnapBox> (processor.apvts, theme);
     keySnapBox->setSuggestionProviders (
@@ -27,36 +26,6 @@ PluginEditor::PluginEditor (PluginProcessor& p)
                            processor.getInputMeterRightForUi().load (std::memory_order_relaxed))
                > 0.0015f;
     });
-    takeView     = std::make_unique<TakeView> (theme);
-    moveView     = std::make_unique<MoveView> (processor, theme);
-    slotPad->onSelect = [this] (int p)
-    {
-        setPage (p == 1 ? 1 : 0);
-    };
-    takeView->onAudition = [this] (int idx)
-    {
-        if (idx < 0 || idx >= (int) tray.size())
-            return;
-        const auto& v = tray[(size_t) idx];
-        processor.installBodyBytes (v.bytes.data(), 240);
-        const auto setNorm = [this] (const char* id, float norm)
-        {
-            if (auto* p = processor.apvts.getParameter (id))
-                p->setValueNotifyingHost (juce::jlimit (0.0f, 1.0f, norm));
-        };
-        setNorm (ParamID::morph, v.morph);
-        setNorm (ParamID::q, v.q);
-        setNorm (ParamID::slamDrive, v.slam);
-        setNorm (ParamID::fiveD, v.qsound ? 1.0f : 0.0f);
-    };
-    takeView->onConfirm = [] (int) {};
-    takeView->onKeep = [this] (int, juce::Component* source)
-    {
-        const auto f = processor.captureSmartTake();
-        if (f.existsAsFile())
-            juce::DragAndDropContainer::performExternalDragDropOfFiles (
-                { f.getFullPathName() }, false, source, nullptr);
-    };
     typeSelector = std::make_unique<TypeSelectorView> (processor.apvts, theme);
     const auto runSeed = [this]
     {
@@ -142,15 +111,12 @@ PluginEditor::PluginEditor (PluginProcessor& p)
         loadTourDemoBody();
         onboarding->replay();
     };
-    fiveDButton  = std::make_unique<FiveDButton> (processor.apvts, theme);
     labels       = std::make_unique<LabelsLayer> (theme);
+    labels->setRailLabels ("MORPH (%)", "Q (%)");
     decalsLayer  = std::make_unique<DecalsLayer> (theme);
     decalsLayer->setBufferedToImage (true);
     addAndMakeVisible (*faceplate);
     addAndMakeVisible (*graph);
-    addAndMakeVisible (*takeView);
-    addChildComponent (*moveView);
-    addChildComponent (*slotPad);
     addAndMakeVisible (*moveChip);
     addAndMakeVisible (*typeSelector);
     addAndMakeVisible (*keySnapBox);   // after typeSelector: it sits on the bar
@@ -167,7 +133,6 @@ PluginEditor::PluginEditor (PluginProcessor& p)
         onboarding->setVisible (true);
         onboarding->toFront (false);
     }
-    addChildComponent (*fiveDButton);
     addAndMakeVisible (*labels);
     addAndMakeVisible (*decalsLayer);
     // Click the TRENCH badge to replay the tour. No new faceplate furniture.
@@ -184,7 +149,6 @@ PluginEditor::PluginEditor (PluginProcessor& p)
     setSize (kEditorWidth, kEditorHeight);
     setWantsKeyboardFocus (false);
     vblank = std::make_unique<juce::VBlankAttachment> (this, [this] { onFrame(); });
-    setPage (0);
    #ifdef TRENCH_PLAYER_DIAGNOSTICS
     startTimer (350);
     rigPanel = std::make_unique<trench::ui::RigPanel> (processor, theme);
@@ -301,9 +265,6 @@ void PluginEditor::layoutComponents()
     decalsLayer->toFront (false);
     const auto rectOf = [this] (const char* id) { return theme.rect (id).getSmallestIntegerContainer(); };
     graph->setBounds (rectOf ("spectrumGrid"));
-    takeView->setBounds (rectOf ("spectrumGrid"));
-    moveView->setBounds (rectOf ("spectrumGrid"));
-    slotPad->setBounds (rectOf ("slotPad"));
     {
         const auto scr = rectOf ("spectrumGrid");
         moveChip->setBounds (scr.getX() + 14, scr.getBottom() - 28, scr.getWidth() - 28, 18);
@@ -321,7 +282,6 @@ void PluginEditor::layoutComponents()
     amountWheel->setBounds (rectOf ("amountWheel"));
     onboarding->setBounds (base);   // full face: the tour spotlights each control
     onboardingReplayHotspot.setBounds (rectOf ("brandLabel"));
-    fiveDButton->setBounds ({});
     decalsLayer->setBounds (base);
    #ifdef TRENCH_PLAYER_DIAGNOSTICS
     if (rigPanel != nullptr)
@@ -361,8 +321,6 @@ void PluginEditor::onFrame()
         graph->updateFromCoeffs (coeffs, boost, TrenchRates::emuInternalRate);
     }
     graph->setSlamMeter (processor.getOutClipForUi());
-    if (currentPage == 1)
-        moveView->refresh();
     const bool moving = processor.isMorphModulatedForUi();
     const float morphValue = moving ? processor.getEffectiveMorphForUi() : read (ParamID::morph);
     morphWheel->setDisplayOverride (moving, morphValue);
@@ -375,23 +333,4 @@ void PluginEditor::onFrame()
     const bool secondaryActive = secondaryWheel->isMouseOverOrDragging (true) || secondaryReadout->isMouseOverOrDragging (true);
     morphReadout->setActive (morphActive);
     secondaryReadout->setActive (secondaryActive);
-}
-void PluginEditor::setPage (int page)
-{
-    currentPage = juce::jlimit (0, 1, page);
-    const bool move = (currentPage == 1);
-    graph->setVisible (! move);
-    moveView->setVisible (move);
-    takeView->setVisible (false);
-    moveChip->setVisible (true);
-    slotPad->setActive (currentPage);
-    labels->setRailLabels ("MORPH (%)", "Q (%)");
-    if (move)
-        moveView->refresh();
-}
-void PluginEditor::refreshTake()
-{
-    tray = processor.buildTakeTray (12);
-    takeView->setSlots (tray);
-    takeView->setSelected (0);
 }

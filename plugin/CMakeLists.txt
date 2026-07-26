@@ -104,18 +104,14 @@ set(TRENCH_PLUGIN_SOURCES
     source/dsp/TrenchDspBridge.h
     source/ui/DecalsLayer.h
     source/ui/FaceplateView.h
-    source/ui/FiveDButton.h
     source/ui/GraphDisplay.h
     source/ui/KeySnapBox.h
     source/ui/LabelsLayer.h
     source/ui/MoveChip.h
-    source/ui/MoveView.h
     source/ui/ParamInteraction.h
     source/ui/ResponseCurve.h
     source/ui/SelectorLookAndFeel.h
-    source/ui/SlotPad.h
     source/ui/Onboarding.h
-    source/ui/TakeView.h
     source/ui/Theme.h
     source/ui/TypeSelectorView.h
     source/ui/ValueReadout.h

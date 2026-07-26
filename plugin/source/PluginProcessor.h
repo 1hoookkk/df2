@@ -62,27 +62,12 @@ public:
     // UI thread: the user re-placed the Morph wheel — restart the mod cycle.
     void restartModCycleFromUi() noexcept { modRestartRequest.store (true, std::memory_order_relaxed); }
     bool isQModulatedForUi() const noexcept       { return qModulatedForUi.load (std::memory_order_relaxed); }
-    float getEffectiveSpaceForUi() const noexcept { return lastSpaceSent.load (std::memory_order_relaxed); }
     float getModPhaseForUi() const noexcept       { return modPhaseForUi.load (std::memory_order_relaxed); }
     bool seedCurrentBody();
     void exportCurrentBody();
     void forgeAuditionTyped (const std::vector<double>& cards);
     juce::File forgeSaveBody (const juce::String& name, bool overwrite = false);
     enum Axis { AxisFamily = 0, AxisMorph, AxisQ, AxisQSound, AxisSlam };
-    static constexpr int kTakeWaveN = 56;
-    struct VariantPreview
-    {
-        std::array<unsigned char, 240> bytes {};
-        float morph = 0.0f, q = 0.0f, slam = 0.0f;
-        bool  qsound = false;
-        int   axis = AxisFamily;
-        float wmin[kTakeWaveN] {};
-        float wmax[kTakeWaveN] {};
-        float bright = 0.0f;
-        bool  valid = false;
-        bool  asHeard = false;
-    };
-    std::vector<VariantPreview> buildTakeTray (int n);
     bool installBodyBytes (const void* bytes, size_t len);
     bool copyCurrentBodyBytes (void* out, size_t len);
     bool probeCurrentBodyForUi (float morph, float q, float outCoeffs[30], float& outBoost);
@@ -102,7 +87,6 @@ public:
     juce::File getLastTakeFile() const { return lastTakeFile; }
     void setCaptureFrozen (bool f) noexcept { captureFrozen.store (f, std::memory_order_relaxed); }
     juce::File captureSmartTake();
-    int getTakePreview (float* out, int count);
 private:
     void parameterChanged (const juce::String& parameterID, float newValue) override;
     void handleAsyncUpdate() override;
@@ -126,7 +110,6 @@ private:
     juce::Time        auditionSlotMtime;
     juce::String      watchedBodyPath;      // in-place reload of a disk-loaded body
     juce::Time        watchedBodyMtime;
-    juce::LinearSmoothedValue<float> outputGain { 1.0f };
     float smoothedMorph = 0.0f;
     float smoothedQ = 0.0f;
     float motionInputEnv = 0.0f;
@@ -149,11 +132,7 @@ private:
     std::array<std::atomic<float>, kScopeLen> scopeR {};
     std::atomic<int> scopeWritePos { 0 };
 public:
-    std::atomic<float> rigPan { 0.0f };
 private:
-    float lastRigPanSent = -999.0f;
-    std::atomic<float> lastSpaceSent { 0.0f };
-    double spatialOrbitPhase = 0.0;
     std::atomic<bool> demoMode { false };
     juce::uint64  demoSample = 0;
     double        demoSawPhase = 0.0;
@@ -169,8 +148,6 @@ private:
     trench::CaptureRing dryRing;
     trench::PunchBlend punchBlend;
     std::atomic<bool> captureFrozen { false };
-    bool renderRecipe (const unsigned char* body, float morph, float q, float slam,
-                       bool qsound, double seconds, juce::AudioBuffer<float>& out);
     std::atomic<double> hostBpm { 0.0 };
     juce::File lastTakeFile;
     juce::File writeTake (double seconds, bool oneShot, int beats);

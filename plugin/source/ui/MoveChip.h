@@ -31,7 +31,6 @@ public:
         modOnParam      = apvts.getParameter (ParamID::modOn);
         modTriggerParam = apvts.getParameter (ParamID::modTrigger);
         modNoteParam    = apvts.getParameter (ParamID::modNote);
-        modSyncParam    = apvts.getParameter (ParamID::modSync);
         modFeelParam    = apvts.getParameter (ParamID::modFeel);
         modShapeParam   = apvts.getParameter (ParamID::modShape);
         auto repaintOnChange = [this] (float) { repaint(); };
@@ -201,14 +200,12 @@ private:
         {
             write (modOnParam, 1.0f);
             write (modTriggerParam, 1.0f);   // SYNC
-            write (modSyncParam, 0.0f);      // host-locked
             write (modNoteParam, (float) kTimes[(size_t) (id - kIdTimeBase)].noteIdx);
         }
         else if (id >= kIdPhraseBase && id < kIdPhraseBase + kNumFuncGenPatterns)
         {
             write (modOnParam, 1.0f);
             write (modTriggerParam, 1.0f);   // SYNC
-            write (modSyncParam, 0.0f);      // host-locked
             write (modShapeParam, (float) (kNumBaseShapes + (id - kIdPhraseBase)));
         }
         repaint();
@@ -265,7 +262,6 @@ private:
     juce::RangedAudioParameter* modOnParam = nullptr;
     juce::RangedAudioParameter* modTriggerParam = nullptr;
     juce::RangedAudioParameter* modNoteParam = nullptr;
-    juce::RangedAudioParameter* modSyncParam = nullptr;
     juce::RangedAudioParameter* modFeelParam = nullptr;
     juce::RangedAudioParameter* modShapeParam = nullptr;
     std::vector<std::unique_ptr<juce::ParameterAttachment>> atts;

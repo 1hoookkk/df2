@@ -29,11 +29,6 @@ juce::AudioProcessorValueTreeState::ParameterLayout createParameterLayout()
         trench::kBodyParamMaxIndex,
         trench::kDefaultBodyIndex));
     layout.add (std::make_unique<juce::AudioParameterFloat> (
-        juce::ParameterID { ParamID::output, 1 },
-        "Output",
-        juce::NormalisableRange<float> { -24.0f, 24.0f, 0.1f },
-        0.0f));
-    layout.add (std::make_unique<juce::AudioParameterFloat> (
         juce::ParameterID { ParamID::amount, 1 },
         "MIX",
         juce::NormalisableRange<float> { 0.0f, 1.0f, 0.001f },
@@ -43,11 +38,6 @@ juce::AudioProcessorValueTreeState::ParameterLayout createParameterLayout()
         "Slam",
         juce::NormalisableRange<float> { 0.0f, 1.0f, 0.001f },
         0.1f));
-    layout.add (std::make_unique<juce::AudioParameterFloat> (
-        juce::ParameterID { ParamID::fiveD, 1 },
-        "Space",
-        juce::NormalisableRange<float> { 0.0f, 1.0f, 0.001f },
-        0.0f));
     layout.add (std::make_unique<juce::AudioParameterBool> (
         juce::ParameterID { ParamID::modOn, 1 },
         "Mod",
@@ -76,16 +66,6 @@ juce::AudioProcessorValueTreeState::ParameterLayout createParameterLayout()
         "Mod Feel",
         juce::StringArray { "STRAIGHT", "TRIPLET", "DOTTED" },
         0));
-    layout.add (std::make_unique<juce::AudioParameterChoice> (
-        juce::ParameterID { ParamID::modSync, 1 },
-        "Mod Sync",
-        juce::StringArray { "SYNC", "FREE" },
-        0));
-    layout.add (std::make_unique<juce::AudioParameterFloat> (
-        juce::ParameterID { ParamID::modRate, 1 },
-        "Mod Rate",
-        juce::NormalisableRange<float> { 0.05f, 20.0f, 0.001f, 0.5f },
-        2.0f));
     layout.add (std::make_unique<juce::AudioParameterFloat> (
         juce::ParameterID { ParamID::modDepth, 1 },
         "Mod Depth",

@@ -4,16 +4,12 @@
 #include "ui/Theme.h"
 #include "ui/FaceplateView.h"
 #include "ui/GraphDisplay.h"
-#include "ui/SlotPad.h"
 #include "ui/MoveChip.h"
 #include "ui/KeySnapBox.h"
-#include "ui/TakeView.h"
 #include "ui/Onboarding.h"
-#include "ui/MoveView.h"
 #include "ui/WheelControl.h"
 #include "ui/ValueReadout.h"
 #include "ui/ThinWheel.h"
-#include "ui/FiveDButton.h"
 #include "ui/TypeSelectorView.h"
 #include "ui/LabelsLayer.h"
 #include "ui/DecalsLayer.h"
@@ -36,8 +32,6 @@ private:
     juce::Time layoutMtime;
     void layoutComponents();
     void onFrame();
-    void setPage (int page);
-    void refreshTake();
     PluginProcessor& processor;
     trench::UiLayout currentLayout { trench::UiLayout::defaults() };
     trench::ui::Theme theme { currentLayout };
@@ -45,13 +39,8 @@ private:
     juce::TooltipWindow tooltipWindow { this, 650 };
     std::unique_ptr<trench::ui::FaceplateView>    faceplate;
     std::unique_ptr<trench::ui::GraphDisplay>     graph;
-    std::unique_ptr<trench::ui::SlotPad>          slotPad;
     std::unique_ptr<trench::ui::MoveChip>         moveChip;
     std::unique_ptr<trench::ui::KeySnapBox>       keySnapBox;
-    std::unique_ptr<trench::ui::TakeView>         takeView;
-    std::unique_ptr<trench::ui::MoveView>         moveView;
-    int currentPage = 0;
-    std::vector<PluginProcessor::VariantPreview>  tray;
     std::unique_ptr<trench::ui::TypeSelectorView> typeSelector;
     std::unique_ptr<trench::ui::WheelControl>     morphWheel;
     std::unique_ptr<trench::ui::WheelControl>     secondaryWheel;
@@ -61,7 +50,6 @@ private:
     std::unique_ptr<trench::ui::Onboarding>       onboarding;
     trench::ui::Onboarding::ReplayHotspot         onboardingReplayHotspot;
     float onboardingDemoStart = -1.0f;
-    std::unique_ptr<trench::ui::FiveDButton>      fiveDButton;
     std::unique_ptr<trench::ui::LabelsLayer>      labels;
 #if TRENCH_TABLE_STITCH_PANEL
     void openTableStitcher();
