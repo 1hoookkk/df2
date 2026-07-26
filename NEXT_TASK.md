@@ -6,7 +6,18 @@ The stress test is MENTAL, not mechanical: we are not hunting bugs, we are
 arguing each function's reason to exist against the use case. We have a full
 stack of sauce — the question is which of it belongs on the plate.
 
-Product frame: **TRENCH turns existing audio into a playable resonant
+CORE (final form, 2026-07-27): **The product is the authored filter journey
+created by the Morph interpolation. Don't sweep a filter — move through one.**
+Every function either reveals that journey or gets out of its way; every tenant
+is guilty until Morph is provably more expressive because it exists. The bodies
+are the actual product inventory. A body earns the roster only when:
+endpoints meaningfully differ · the interior holds desirable poses (better than
+a transition) · fast AND slow travel sound intentional · direction and speed
+phrase expressively · Q opens a second coherent path · the source stays
+recognisable enough to feel causally connected.
+The killer demo: one source, one body, one uninterrupted Morph ride. Nothing else.
+
+Supporting frame: **TRENCH turns existing audio into a playable resonant
 instrument — make any sound speak, sing, move or hit differently.** The input
 is the exciter; BODY is the resonating object; MORPH articulates; Q is energy
 and instability; KEY gives resonances tonal gravity; MOVE performs it; MIX
