@@ -10,6 +10,7 @@ namespace ParamID
     inline constexpr auto output    = "output";
     inline constexpr auto amount    = "amount";
     inline constexpr auto keySnap     = "keySnap";
+    inline constexpr auto hdMode      = "hdMode";   // 78125 vs 39062.5 Hz island — a sound choice, kept by Tyson's verdict
     // MOD — the one modulation engine (trench::MorphMod). Produces an
     // additive morph/Q offset around the wheel positions each block.
     inline constexpr auto modOn      = "modOn";

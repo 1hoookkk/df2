@@ -35,8 +35,10 @@ Omit anything at default. `mod:` is `OFF` | `AUTO d<depth>` | `RISE <rate> d<dep
 | TRENCH badge | — | click | — | replays the onboarding tour (5 steps, demo body, lands on NO FILTER) |
 
 Buried 07-27 (decision-bandwidth pass): `clip`, `bite`, `inputMode`
-(slam-into-filter), `hdMode` (HD rate fixed on), `keyTrack`. HD/AGC/routing are
-implementation choices, not parameters. Controls live in the UI, not host lists.
+(slam-into-filter), `keyTrack`. AGC/routing are implementation choices, not
+parameters. `hdMode` SURVIVES by Tyson's verdict — 78125 clean vs 39062.5
+vintage island rate is a sound choice (host-only for now; needs a home story).
+Controls live in the UI, not host lists.
 
 ## Gestures on THE SCREEN
 

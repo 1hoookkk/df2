@@ -102,6 +102,10 @@ juce::AudioProcessorValueTreeState::ParameterLayout createParameterLayout()
             "F# M", "G M", "G# M", "A M", "A# M", "B M"
         },
         0));
+    layout.add (std::make_unique<juce::AudioParameterBool> (
+        juce::ParameterID { ParamID::hdMode, 1 },
+        "HD",
+        true));
     return layout;
 }
 }

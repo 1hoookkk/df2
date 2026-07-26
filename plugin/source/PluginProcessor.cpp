@@ -60,6 +60,7 @@ PluginProcessor::PluginProcessor()
         juce::Logger::writeToLog (juce::String ("key model -> ") + (modelReady ? "ready" : "FAILED"));
     }
     apvts.addParameterListener (ParamID::body, this);
+    apvts.addParameterListener (ParamID::hdMode, this);
     morphParamForGesture = apvts.getParameter (ParamID::morph);
     slamParamForGesture  = apvts.getParameter (ParamID::slamDrive);
     startTimer (400);
@@ -68,6 +69,7 @@ PluginProcessor::~PluginProcessor()
 {
     stopTimer();
     apvts.removeParameterListener (ParamID::body, this);
+    apvts.removeParameterListener (ParamID::hdMode, this);
     cancelPendingUpdate();
 }
 const juce::String PluginProcessor::getName() const { return JucePlugin_Name; }
@@ -126,9 +128,11 @@ void PluginProcessor::storeLoadedBodyBehavior (int bodyIndex, const juce::String
 }
 void PluginProcessor::prepareToPlay (double sampleRate, int samplesPerBlock)
 {
-    // HD internal rate is a fixed implementation choice, not a parameter.
+    // HD is a SOUND choice (Tyson): 78125 clean vs 39062.5 vintage island rate.
+    const bool hd = apvts.getRawParameterValue (ParamID::hdMode)->load() > 0.5f;
+    hdModeApplied = hd;
     fixedRateIsland.prepare (sampleRate, samplesPerBlock, dspBridge,
-                             TrenchRates::emuInternalRateHd);
+                             hd ? TrenchRates::emuInternalRateHd : TrenchRates::emuInternalRate);
     setLatencySamples (fixedRateIsland.getLatencySamples());
     dspBridge.setInputMode (kCleanInputMode);
     dspBridge.setSpatialMode (kSpatialOff);
@@ -543,6 +547,24 @@ void PluginProcessor::parameterChanged (const juce::String& parameterID, float n
         const int wanted = (raw >= 0 && raw < trench::bodyCount()) ? raw : trench::kNoFilterIndex;
         pendingBodyIndex.store (wanted, std::memory_order_relaxed);
         triggerAsyncUpdate();
+    }
+    else if (parameterID == ParamID::hdMode)
+    {
+        // HD picks the island's internal rate, which is only read in
+        // prepareToPlay - re-prepare ourselves, with audio suspended.
+        const bool hd = newValue > 0.5f;
+        if (hd == hdModeApplied)
+            return;
+        const double sr = getSampleRate();
+        if (sr <= 0.0)
+            return;                 // not prepared yet; prepareToPlay will read it
+        juce::ScopedLock audioLock (getCallbackLock());
+        fixedRateIsland.prepare (sr, getBlockSize(), dspBridge,
+                                 hd ? TrenchRates::emuInternalRateHd : TrenchRates::emuInternalRate);
+        setLatencySamples (fixedRateIsland.getLatencySamples());
+        punchBlend.prepare (sr, fixedRateIsland.getLatencySamples(), getBlockSize());
+        punchBlend.setLatency (fixedRateIsland.getLatencySamples());
+        hdModeApplied = hd;
     }
 }
 void PluginProcessor::handleAsyncUpdate()

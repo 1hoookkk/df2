@@ -114,6 +114,7 @@ private:
     trench::MorphMod              morphMod;
     trench::KeyDetector           keyDetector;
     int currentProgram = 0;
+    bool hdModeApplied = true;      // mirrors the HD param's last APPLIED state
     std::atomic<int>  pendingBodyIndex { trench::kNoFilterIndex };
     std::atomic<int>  loadedBodyIndex { trench::kNoFilterIndex };
     std::atomic<int>   bakedReactMode { 0 };

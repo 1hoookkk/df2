@@ -6,8 +6,10 @@ The stress test is MENTAL, not mechanical: we are not hunting bugs, we are
 arguing each function's reason to exist against the use case. We have a full
 stack of sauce — the question is which of it belongs on the plate.
 
-Use case, one sentence: an FL producer puts a drum loop through it and plays
-the wheel until the loop becomes something they grin at, then drags it out.
+Use case, Tyson's sentence: **an FL producer inserts TRENCH on a drum loop and
+rides the filter until the loop sits, moves or becomes something they grin at.**
+TRENCH is an INSERT EFFECT — the resample loop runs through the playlist
+(process → TAKE → drop → process again), never inside the plugin.
 
 ## The work: one function at a time → reason → verdict → keep lean or delete
 
