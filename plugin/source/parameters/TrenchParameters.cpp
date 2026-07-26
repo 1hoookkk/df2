@@ -38,11 +38,6 @@ juce::AudioProcessorValueTreeState::ParameterLayout createParameterLayout()
         "MIX",
         juce::NormalisableRange<float> { 0.0f, 1.0f, 0.001f },
         1.0f, pctAttribs()));
-    layout.add (std::make_unique<juce::AudioParameterChoice> (
-        juce::ParameterID { ParamID::inputMode, 1 },
-        "Input",
-        juce::StringArray { "OFF", "SLAM" },
-        0));
     layout.add (std::make_unique<juce::AudioParameterFloat> (
         juce::ParameterID { ParamID::slamDrive, 1 },
         "Slam",
@@ -96,10 +91,6 @@ juce::AudioProcessorValueTreeState::ParameterLayout createParameterLayout()
         "Mod Depth",
         juce::NormalisableRange<float> { 0.0f, 1.0f, 0.001f },
         0.5f, pctAttribs()));
-    layout.add (std::make_unique<juce::AudioParameterBool> (
-        juce::ParameterID { ParamID::keyTrack, 1 },
-        "Key Track",
-        false));
     layout.add (std::make_unique<juce::AudioParameterChoice> (
         juce::ParameterID { ParamID::keySnap, 1 },
         "Key Snap",
@@ -111,15 +102,6 @@ juce::AudioProcessorValueTreeState::ParameterLayout createParameterLayout()
             "F# M", "G M", "G# M", "A M", "A# M", "B M"
         },
         0));
-    layout.add (std::make_unique<juce::AudioParameterBool> (
-        juce::ParameterID { ParamID::hdMode, 1 },
-        "HD",
-        true));
-    layout.add (std::make_unique<juce::AudioParameterFloat> (
-        juce::ParameterID { ParamID::bite, 1 },
-        "Chew",
-        juce::NormalisableRange<float> { 0.0f, 1.0f, 0.001f },
-        0.0f, pctAttribs()));   // CHEW: interstage clipping, driven by Q (see PluginProcessor)
     return layout;
 }
 }

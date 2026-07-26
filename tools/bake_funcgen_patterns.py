@@ -40,12 +40,26 @@ def parse(path):
         "trigs": trigs,
     }
 
+# Decision-bandwidth cull (2026-07-27): one representative per movement
+# grammar, shipped under the grammar's name. Git archives the full 58.
+# Chosen by data (steps/smooth/direction/contour), preferring the shortest,
+# clearest, most predictable downbeat.
+SHIP = {
+    "16StepShaker":     "BREATHE",   # smooth continuous motion
+    "EightEightRhythm": "RHYTHM",    # clean stepped groove, no rests
+    "UpToPitchFUN":     "RISE",      # one-shot climb, lands and holds
+    "OctaveBrownFUN":   "WANDER",    # brownian adjacent-step noodle
+    "Shark Tooth":      "ANSWER",    # decaying pendulum call-and-response
+    "Simple Boogaloo":  "STABS",     # 81% rest, downbeat-sacred hits
+}
+
 def main():
     pats = []
     for f in sorted(SRC.glob("*.xml")):
         p = parse(f)
-        if p["name"].lower() == "all off":
+        if p["name"] not in SHIP:
             continue
+        p["name"] = SHIP[p["name"]]
         vals = p["values"][: p["steps"]]
         peak = max(abs(v) for v in vals) if vals else 0.0
         if peak < 1e-6:

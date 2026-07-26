@@ -60,7 +60,6 @@ PluginProcessor::PluginProcessor()
         juce::Logger::writeToLog (juce::String ("key model -> ") + (modelReady ? "ready" : "FAILED"));
     }
     apvts.addParameterListener (ParamID::body, this);
-    apvts.addParameterListener (ParamID::hdMode, this);
     morphParamForGesture = apvts.getParameter (ParamID::morph);
     slamParamForGesture  = apvts.getParameter (ParamID::slamDrive);
     startTimer (400);
@@ -69,7 +68,6 @@ PluginProcessor::~PluginProcessor()
 {
     stopTimer();
     apvts.removeParameterListener (ParamID::body, this);
-    apvts.removeParameterListener (ParamID::hdMode, this);
     cancelPendingUpdate();
 }
 const juce::String PluginProcessor::getName() const { return JucePlugin_Name; }
@@ -128,15 +126,13 @@ void PluginProcessor::storeLoadedBodyBehavior (int bodyIndex, const juce::String
 }
 void PluginProcessor::prepareToPlay (double sampleRate, int samplesPerBlock)
 {
-    const bool hd = apvts.getRawParameterValue (ParamID::hdMode)->load() > 0.5f;
-    hdModeApplied = hd;
+    // HD internal rate is a fixed implementation choice, not a parameter.
     fixedRateIsland.prepare (sampleRate, samplesPerBlock, dspBridge,
-                             hd ? TrenchRates::emuInternalRateHd : TrenchRates::emuInternalRate);
+                             TrenchRates::emuInternalRateHd);
     setLatencySamples (fixedRateIsland.getLatencySamples());
     dspBridge.setInputMode (kCleanInputMode);
     dspBridge.setSpatialMode (kSpatialOff);
     dspBridge.setQSoundFallbackPan (1.0f);
-    lastInputModeSent = kCleanInputMode;
     morphMod.prepare (sampleRate);
     outputGain.reset (sampleRate, 0.02);
     const float outDb = apvts.getRawParameterValue (ParamID::output)->load();
@@ -191,7 +187,6 @@ void PluginProcessor::processBlock (juce::AudioBuffer<float>& buffer, juce::Midi
     if (bodySolo != lastWorkstationBodySolo)
     {
         dspBridge.setInputMode (kCleanInputMode);
-        lastInputModeSent = kCleanInputMode;
         dspBridge.setSpatialMode (kSpatialOff);
         dspBridge.setAgcEnabled (! bodySolo);
         dspBridge.setSaturationEnabled (! bodySolo);
@@ -354,25 +349,14 @@ void PluginProcessor::processBlock (juce::AudioBuffer<float>& buffer, juce::Midi
     // in the pole math, which is why the resonance blooms and wanders instead of
     // merely getting dirty. The old saturator path stays wired at 0 for A/B.
     const float qForChew = juce::jlimit (0.0f, 1.0f, modResult.q);
-    const float chewAmount = juce::jlimit (0.0f, 1.0f,
-        apvts.getRawParameterValue (ParamID::bite)->load()
-        + 0.55f * qForChew * qForChew);
+    // CHEW is Q's law, never a separate decision: the only dial is Q.
+    const float chewAmount = juce::jlimit (0.0f, 1.0f, 0.55f * qForChew * qForChew);
     // CHEW is the FILTER destabilising itself, so it needs poles and is correctly
     // silent at No Filter. It is NOT a general distortion: E-MU kept the internal
     // path pristine (20-bit resampling exists to avoid internal grit) and generated
     // character outside the machine. SLAM is that outside - it owns all grit that
     // is not the filter's own, and works with or without a body loaded.
     params.poleDistortion  = chewAmount;
-    auto* inputModeParam = apvts.getRawParameterValue (ParamID::inputMode);
-    const bool slamIntoFilter = (inputModeParam != nullptr && inputModeParam->load() > 0.5f);
-    if (slamIntoFilter)
-        params.slamDrive *= kIntoFilterDriveScale;
-    const int desiredInputMode = slamIntoFilter ? kMackieDeskSlam : kCleanInputMode;
-    if (desiredInputMode != lastInputModeSent)
-    {
-        dspBridge.setInputMode (desiredInputMode);
-        lastInputModeSent = desiredInputMode;
-    }
     const float fiveDBase = juce::jlimit (0.0f, 1.0f, apvts.getRawParameterValue (ParamID::fiveD)->load());
     float space = fiveDBase;
     params.fiveD = space;
@@ -450,16 +434,13 @@ void PluginProcessor::processBlock (juce::AudioBuffer<float>& buffer, juce::Midi
     // The desk stage reports the TRUE limit amount: the fraction of samples
     // pushed past the pressure knee. That (not raw output peak) is the meter.
     float limitFrac = 0.0f;
-    if (! slamIntoFilter)
-    {
-        if (buffer.getNumChannels() >= 2)
-            limitFrac = trench::slamOutputPressureBlockStereo (buffer.getWritePointer (0),
-                                                    buffer.getWritePointer (1),
-                                                    buffer.getNumSamples(), params.slamDrive);
-        else if (buffer.getNumChannels() == 1)
-            limitFrac = trench::slamOutputPressureBlock (buffer.getWritePointer (0),
-                                             buffer.getNumSamples(), params.slamDrive);
-    }
+    if (buffer.getNumChannels() >= 2)
+        limitFrac = trench::slamOutputPressureBlockStereo (buffer.getWritePointer (0),
+                                                buffer.getWritePointer (1),
+                                                buffer.getNumSamples(), params.slamDrive);
+    else if (buffer.getNumChannels() == 1)
+        limitFrac = trench::slamOutputPressureBlock (buffer.getWritePointer (0),
+                                         buffer.getNumSamples(), params.slamDrive);
     punchBlend.blend (buffer.getArrayOfWritePointers(), buffer.getNumChannels(), buffer.getNumSamples(), mixTarget);
     const float outDb = apvts.getRawParameterValue (ParamID::output)->load();
     outputGain.setTargetValue (juce::Decibels::decibelsToGain (outDb));
@@ -562,25 +543,6 @@ void PluginProcessor::parameterChanged (const juce::String& parameterID, float n
         const int wanted = (raw >= 0 && raw < trench::bodyCount()) ? raw : trench::kNoFilterIndex;
         pendingBodyIndex.store (wanted, std::memory_order_relaxed);
         triggerAsyncUpdate();
-    }
-    else if (parameterID == ParamID::hdMode)
-    {
-        // HD picks the island's internal rate, which is only read in
-        // prepareToPlay - so flipping it did nothing until the host happened to
-        // re-prepare. Re-prepare the island ourselves, with audio suspended.
-        const bool hd = newValue > 0.5f;
-        if (hd == hdModeApplied)
-            return;
-        const double sr = getSampleRate();
-        if (sr <= 0.0)
-            return;                 // not prepared yet; prepareToPlay will read it
-        juce::ScopedLock audioLock (getCallbackLock());
-        fixedRateIsland.prepare (sr, getBlockSize(), dspBridge,
-                                 hd ? TrenchRates::emuInternalRateHd : TrenchRates::emuInternalRate);
-        setLatencySamples (fixedRateIsland.getLatencySamples());
-        punchBlend.prepare (sr, fixedRateIsland.getLatencySamples(), getBlockSize());
-        punchBlend.setLatency (fixedRateIsland.getLatencySamples());
-        hdModeApplied = hd;
     }
 }
 void PluginProcessor::handleAsyncUpdate()
@@ -1179,7 +1141,6 @@ void PluginProcessor::setParameterDenormalized (const char* parameterID, float v
 void PluginProcessor::forceCleanAudioUiState()
 {
     setParameterDenormalized (ParamID::body, (float) trench::kNoFilterIndex);
-    setParameterDenormalized (ParamID::inputMode, 0.0f);
     setParameterDenormalized (ParamID::output, 0.0f);
     setParameterDenormalized (ParamID::slamDrive, 0.0f);
     setParameterDenormalized (ParamID::fiveD, 0.0f);

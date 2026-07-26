@@ -47,12 +47,7 @@ public:
             canvasDefault = canvasParam->getDefaultValue();
             setMouseCursor (juce::MouseCursor::UpDownResizeCursor);
         }
-        biteParam  = apvts.getParameter (ParamID::bite);
         qParam     = apvts.getParameter (ParamID::q);
-        routeParam = apvts.getParameter (ParamID::inputMode);
-        if (routeParam != nullptr)
-            routeAtt = std::make_unique<juce::ParameterAttachment> (*routeParam,
-                                                                    [this] (float) { repaint(); });
         setInterceptsMouseClicks (canvasParam != nullptr, false);
     }
     void showAmountCue (float norm)
@@ -106,7 +101,7 @@ public:
         if (plot.isEmpty())
             return;
         const float qn   = qParam    != nullptr ? qParam->getValue()    : 0.0f;
-        const float bBase = biteParam != nullptr ? biteParam->getValue() : 0.0f;
+        const float bBase = 0.0f;   // CHEW is Q's law; no separate dial
         const float biteAmt = juce::jlimit (0.0f, 1.0f, bBase + 0.55f * qn * qn);
         const double dbTop = t.curveDbTop(), dbBot = t.curveDbBottom();
         const double fLo = 20.0, fHi = juce::jmin (20000.0, sr * 0.5 - 1.0);
@@ -432,7 +427,7 @@ private:
         // NO bloom. The curve is a solid line on matte ink-black glass - any glow
         // reads as a screen effect and breaks the "clean, contained" read.
         const float qn    = qParam    != nullptr ? qParam->getValue()    : 0.0f;
-        const float bBase = biteParam != nullptr ? biteParam->getValue() : 0.0f;
+        const float bBase = 0.0f;   // CHEW is Q's law; no separate dial
         const float biteAmt = juce::jlimit (0.0f, 1.0f, bBase + 0.55f * qn * qn);
         if (biteAmt > 0.004f)
         {
@@ -480,7 +475,7 @@ private:
     float chewAmount() const noexcept
     {
         const float qn = qParam    != nullptr ? qParam->getValue()    : 0.0f;
-        const float b  = biteParam != nullptr ? biteParam->getValue() : 0.0f;
+        const float b  = 0.0f;
         return juce::jlimit (0.0f, 1.0f, b + 0.55f * qn * qn);
     }
     void drawSlamHoverCue (juce::Graphics& g, juce::Rectangle<float> screen) const
@@ -498,10 +493,7 @@ private:
                                            93.0f * compact, 16.0f * compact)
                        .withTrimmedRight (16.0f * compact);
         };
-        const bool intoFilter = routeParam != nullptr && routeParam->getValue() > 0.5f;
-        const auto slamText = intoFilter
-                             ? "SLAM IN " + juce::String (juce::roundToInt (slamNorm() * 100.0f)) + "%"
-                             : "SLAM +" + juce::String (trench::slamOutputGainDb (slamNorm()), 1) + " dB";
+        const auto slamText = "SLAM +" + juce::String (trench::slamOutputGainDb (slamNorm()), 1) + " dB";
         const auto chewText = "CHEW " + juce::String (juce::roundToInt (chew * 100.0f)) + "%";
         // CHEW takes the prime slot whenever it is doing something - it is the
         // thing changing the sound. SLAM drops to second. They swap back when
@@ -547,7 +539,7 @@ private:
         if (plot.isEmpty())
             return;
         const float qn   = qParam    != nullptr ? qParam->getValue()    : 0.0f;
-        const float bBase = biteParam != nullptr ? biteParam->getValue() : 0.0f;
+        const float bBase = 0.0f;   // CHEW is Q's law; no separate dial
         const float biteAmt = juce::jlimit (0.0f, 1.0f, bBase + 0.55f * qn * qn);
         const double dbTop = t.curveDbTop(), dbBot = t.curveDbBottom();
         const float centreY = plot.getY() + plot.getHeight() * 0.5f;
@@ -605,11 +597,8 @@ private:
     bool haveCurve = false;
     juce::RangedAudioParameter* canvasParam = nullptr;
     std::unique_ptr<juce::ParameterAttachment> canvasAtt;
-    juce::RangedAudioParameter* biteParam  = nullptr;
     juce::RangedAudioParameter* qParam     = nullptr;
     float lastQ = -1.0f;
-    juce::RangedAudioParameter* routeParam = nullptr;
-    std::unique_ptr<juce::ParameterAttachment> routeAtt;
     float canvasDefault = 0.0f;
     enum PulsePhase { PulseIdle, PulseCompress, PulseStatic, PulseRedraw };
     PulsePhase pulsePhase = PulseIdle;

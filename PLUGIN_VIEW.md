@@ -23,19 +23,20 @@ Omit anything at default. `mod:` is `OFF` | `AUTO d<depth>` | `RISE <rate> d<dep
 | MORPH wheel | `morph` | 0–100 % | 0 | drags on X. Every position is a real filter (pose). Re-placing restarts modulation cycle |
 | Q wheel | `q` | 0–100 % | 30 | drives CHEW: chew = bite + 0.55·Q² |
 | MIX thin wheel | `amount` | 0–100 % | 100 | master dry/wet over EVERYTHING (filter+CHEW+SLAM). 0 = bit-dry (−300 dB proven). Reports on screen only while dragged |
-| SLAM (screen drag UP) | `slamDrive` | 0–100 % | 0 | wet-voice desk pressure, +12 dB into rounded limit, knee 0.72. 0 = hard bypass. Alt: `inputMode` 1 = slam INTO filter |
+| SLAM (screen drag UP) | `slamDrive` | 0–100 % | 0 | wet-voice desk pressure, +12 dB into rounded limit, knee 0.72. 0 = hard bypass |
 | TAKE (drag OFF screen) | — | gesture | — | resamples last 0.6–8 s to `Documents\TRENCH\takes`, external drag-drop. 12 px sideways, 1.8:1 vs vertical |
-| OUTPUT | `output` | −24..+24 dB | 0 | post-blend trim |
+| OUTPUT | `output` | −24..+24 dB | 0 | post-blend trim. TAKE captures AFTER it (verified), so it shapes exported WAVs — but it has no faceplate home: per the ship rule it must displace something or die. OPEN |
 | KEY selector | `keySnap` | OFF + 24 keys | OFF | detector suggests; **functionality story currently OPEN** |
 | MODULATION chip | `modOn`,`modTrigger` | OFF / AUTO(env) / SYNC / RISE | OFF | dropdown on the chip |
 | rate (in chip menu) | `modNote`,`modFeel`,`modSync` | 4 BAR..1/16 (+feel) | 1/16 | for phrases: one rate unit = ONE pattern STEP |
-| PHRASE (in chip menu) | `modShape` | 6 waves + 56 E-MU phrases | SINE | WAVE returns to plain shapes. Page 2: shape row + PHRASE cell, wheel-scrolls |
+| PHRASE (in chip menu) | `modShape` | 6 waves + 6 grammars: BREATHE, RHYTHM, RISE, WANDER, ANSWER, STABS | SINE | one representative per movement grammar (E-MU factory tables; git archives all 58). WAVE returns to plain shapes |
 | depth (page 2) | `modDepth` | 0–100 % | 0 | travel from home (wheel). Patterns peak-normalised |
-| CHEW amount | `bite` | 0–100 % | 0 | added to the Q² floor; ceiling 55% (unheard) |
+| CHEW | — | — | — | CHEW is Q's law: 0.55·Q², no separate dial anywhere |
 | TRENCH badge | — | click | — | replays the onboarding tour (5 steps, demo body, lands on NO FILTER) |
 
-Hidden/host-only params that should NOT exist: none (clip deleted 07-27).
-Controls live in the UI, not host lists.
+Buried 07-27 (decision-bandwidth pass): `clip`, `bite`, `inputMode`
+(slam-into-filter), `hdMode` (HD rate fixed on), `keyTrack`. HD/AGC/routing are
+implementation choices, not parameters. Controls live in the UI, not host lists.
 
 ## Gestures on THE SCREEN
 

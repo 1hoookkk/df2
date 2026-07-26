@@ -6,14 +6,10 @@ namespace ParamID
     inline constexpr auto q         = "q";
     inline constexpr auto body      = "body";
     inline constexpr auto slamDrive = "slamDrive";
-    inline constexpr auto inputMode = "inputMode";
     inline constexpr auto fiveD     = "fiveD";
     inline constexpr auto output    = "output";
     inline constexpr auto amount    = "amount";
-    inline constexpr auto keyTrack    = "keyTrack";
     inline constexpr auto keySnap     = "keySnap";
-    inline constexpr auto bite        = "bite";
-    inline constexpr auto hdMode      = "hdMode";
     // MOD — the one modulation engine (trench::MorphMod). Produces an
     // additive morph/Q offset around the wheel positions each block.
     inline constexpr auto modOn      = "modOn";
