@@ -27,9 +27,9 @@ Omit anything at default. `mod:` is `OFF` | `AUTO d<depth>` | `RISE <rate> d<dep
 | TAKE (drag OFF screen) | — | gesture | — | resamples last 0.6–8 s to `Documents\TRENCH\takes`, external drag-drop. 12 px sideways, 1.8:1 vs vertical |
 | KEY selector | `keySnap` | OFF + 24 keys | OFF | detector suggests; **functionality story currently OPEN** |
 | MODULATION chip | `modOn`,`modTrigger` | OFF / AUTO(env) / SYNC / RISE | OFF | dropdown on the chip |
-| rate (in chip menu) | `modNote`,`modFeel`,`modSync` | 4 BAR..1/16 (+feel) | 1/16 | for phrases: one rate unit = ONE pattern STEP |
+| rate (in chip menu) | `modNote`,`modFeel` | 4 BAR..1/16 (+feel), host-locked | 1/16 | for phrases: one rate unit = ONE pattern STEP |
 | PHRASE (in chip menu) | `modShape` | 6 waves + 6 grammars: BREATHE, RHYTHM, RISE, WANDER, ANSWER, STABS | SINE | one representative per movement grammar (E-MU factory tables; git archives all 58). WAVE returns to plain shapes |
-| depth (page 2) | `modDepth` | 0–100 % | 0 | travel from home (wheel). Patterns peak-normalised |
+| depth | `modDepth` | 0–100 % | 50 | travel from home (wheel); patterns peak-normalised. **Lost its UI with page 2 — needs a home or a baked default. OPEN** |
 | CHEW | — | — | — | CHEW is Q's law: 0.55·Q², no separate dial anywhere |
 | TRENCH badge | — | click | — | replays the onboarding tour (5 steps, demo body, lands on NO FILTER) |
 
