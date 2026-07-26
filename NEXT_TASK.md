@@ -6,10 +6,25 @@ The stress test is MENTAL, not mechanical: we are not hunting bugs, we are
 arguing each function's reason to exist against the use case. We have a full
 stack of sauce — the question is which of it belongs on the plate.
 
-Use case, Tyson's sentence: **an FL producer inserts TRENCH on a drum loop and
-rides the filter until the loop sits, moves or becomes something they grin at.**
-TRENCH is an INSERT EFFECT — the resample loop runs through the playlist
-(process → TAKE → drop → process again), never inside the plugin.
+Product frame: **TRENCH turns existing audio into a playable resonant
+instrument — make any sound speak, sing, move or hit differently.** The input
+is the exciter; BODY is the resonating object; MORPH articulates; Q is energy
+and instability; KEY gives resonances tonal gravity; MOVE performs it; MIX
+preserves the original identity; SLAM finishes it. Honest limitation: it rings
+energy already present — transients/noise/rich harmonics excite it, a sparse
+sine doesn't; it never slices or stretches time.
+
+First-contact case, Tyson's sentence: an FL producer inserts TRENCH on a drum
+loop and rides the filter until the loop sits, moves or grins. TRENCH is an
+INSERT EFFECT — the resample loop runs through the playlist (process → TAKE →
+drop → process again), never inside the plugin. Every TAKE commits through the
+E-MU Ultra 20-bit dithered resample: pristine capture, grit only by choice, so
+generational reprocessing stacks character, not mud.
+
+Standing upgrades under this frame: KEY = "make it sing" (possible defining
+power, judge there). MOVE = performance articulation, not modulation presets.
+TAKE = asset creation (one sound → sample family), verdict tied to whether
+instant asset creation is part of the product promise.
 
 ## The work: one function at a time → reason → verdict → keep lean or delete
 
