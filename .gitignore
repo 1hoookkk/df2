@@ -42,3 +42,11 @@ plugin/libs/
 # exhaust quarantine (2026-07-19): dev/tmp is scratch, never authority
 /dev/tmp/
 recipes/
+
+# proof exhaust (2026-07-27): FaceShot/sweep/plot outputs, never authority
+/tmp/
+plugin/qsweep_*.png
+plugin/assets/*.bak_*
+/pole_proof*.csv
+/trench_onboard_step*.png
+/ws_live.json

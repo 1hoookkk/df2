@@ -58,5 +58,6 @@ Controls live in the UI, not host lists.
 
 KEY's job undefined · preset cycling sometimes jarring (re-judge post
 settings-persistence) · CHEW 55% ceiling + morph unevenness unheard · AGC −24 dB
-null at full scale on NO FILTER · 56 phrases awaiting ear cull · DEPTH vs
+null at full scale on NO FILTER · six grammar representatives awaiting ear
+verdict (BREATHE/RHYTHM/RISE/WANDER/ANSWER/STABS; 58 archived in git) · DEPTH vs
 TARGET-pose decision.
