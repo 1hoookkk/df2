@@ -58,13 +58,17 @@ public:
         layout.colours["accent"]             = juce::Colour (0xffc96a54);
         layout.colours["curveColour"]        = juce::Colour (0xffc96a54);
         layout.colours["curveHighlight"]     = juce::Colour (0xffe0865e);
-        layout.colours["telemetry"]          = juce::Colour (0xff9db8ae);
+        // GLASS = the only cool in the face. Violet trial 2026-07-27: hue moved,
+        // VALUE held (phosphor L 9.4% -> 9.6%, telemetry L 67% -> 67%) so the
+        // verdict is violet-vs-green, not a brightness change. Coral untouched:
+        // one signal colour, everything else is field.
+        layout.colours["telemetry"]          = juce::Colour (0xffa39ac0);  // was 9db8ae
         layout.colours["rollerIllumination"] = juce::Colour (0xffc96a54);
         layout.colours["modulationLamp"]     = juce::Colour (0xffc96a54);
-        layout.colours["phosphor"]           = juce::Colour (0xff1b1715);
+        layout.colours["phosphor"]           = juce::Colour (0xff1a1624);  // was 1b1715
         layout.colours["amber"]              = juce::Colour (0xffc96a54);
-        layout.colours["dashed"]             = juce::Colour (0xff9db8ae);
-        layout.colours["screenEdge"]         = juce::Colour (0xff131b1a);
+        layout.colours["dashed"]             = juce::Colour (0xffa39ac0);  // was 9db8ae
+        layout.colours["screenEdge"]         = juce::Colour (0xff171325);  // was 131b1a
         layout.colours["labelInk"]    = juce::Colour (0xff24231f);
         layout.params["wellRadius"]        = 9.0;
         layout.params["readoutAliasScale"] = 0.95;
