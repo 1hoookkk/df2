@@ -74,6 +74,32 @@ Order (performance core first, tenants last):
 9. **fiveD/QSound** — real thing, no home. In (needs a well and Tyson's art) or out.
 10. **Onboarding** — five steps at true scale, live; trim anything that doesn't teach.
 
+## Verdicts (recorded as spoken)
+
+- **2026-07-27, tameness/saturation probe** (shipv2_303_cavity_acid, Q85, level-matched
+  A/B set in tmp/agc_probe): Tyson picks **E** — untouched cascade is the direction;
+  but raw E ride is "way too crazy". Measured: output tanh confiscates ~11 dB crest /
+  ~15 dB resonance prominence (2× the AGC); AGC 16-number curve is heritage and
+  PROTECTIVE (bypassing it makes the tanh crush worse); AGC_DRIVE moves opposite
+  intuition (harder = livelier). Target = between A and E: keep AGC stock, rework
+  output tanh into a safety net, not a tone stage. SLAM 100 flattens all upstream
+  differences (separate question, unjudged). Side finds: &0xF wrap never fires;
+  roster gain staging uneven (+14..+167 dB raw peak); cleanroom_lucifers_q max
+  radius 0.877 — not actually a Q body, its level is all SCALE.
+- **Follow-up diagnosis (same day):** tanh delta = almost pure transient (94–99% of
+  removed energy in loudest 5%); "bizarre" F ride = AGC's unsmoothed tooth-jumps
+  exposed (single-sample drops to 12.9 dB @ 39k / 15.9 dB @ 78k, ~25/s in bursts at
+  specific morph regions) — the tanh was MASKING the zipper. All conclusions hold
+  stronger at shipping 78125 rate. Fix must be paired: smooth AGC gain application
+  (16 numbers stay; the jump becomes a glide — CHECK RE-vault behavioral contract
+  first) + demote tanh to pure safety headroom. Neither alone is shippable.
+- **Phasor CHEW topology (US 10,514,883): TRIED AND REVERTED** — "apples to apples"
+  (Tyson): no audible gain over shipped CHEW at fair calibration, so it dies (reverts
+  7dda48fb + 873c3767; implementation archived at a9900a30 + d7a0e3f1). Facts kept:
+  linear-identical static (4e-12) but a different filter under motion — ~5.4 dB
+  quieter floor, prominence 32 vs 51-58 dB: the complex-state limit SPENDS resonance
+  where shipped CHEW sharpens it. Shipped pole-radius CHEW confirmed as the sound.
+
 ## Standing rules
 
 - One live function at a time; verdicts recorded HERE the moment they're spoken.
