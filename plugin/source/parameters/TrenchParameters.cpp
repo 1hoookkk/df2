@@ -22,6 +22,11 @@ juce::AudioProcessorValueTreeState::ParameterLayout createParameterLayout()
         "Q",
         juce::NormalisableRange<float> { 0.0f, 1.0f, 0.001f },
         0.0f, pctAttribs()));
+    layout.add (std::make_unique<juce::AudioParameterFloat> (
+        juce::ParameterID { ParamID::chew, 1 },
+        "CHEW",
+        juce::NormalisableRange<float> { 0.0f, 1.0f, 0.001f },
+        0.0f, pctAttribs()));
     layout.add (std::make_unique<juce::AudioParameterInt> (
         juce::ParameterID { ParamID::body, 1 },
         "Body",
@@ -82,10 +87,6 @@ juce::AudioProcessorValueTreeState::ParameterLayout createParameterLayout()
             "F# M", "G M", "G# M", "A M", "A# M", "B M"
         },
         0));
-    layout.add (std::make_unique<juce::AudioParameterBool> (
-        juce::ParameterID { ParamID::hdMode, 1 },
-        "HD",
-        true));
     return layout;
 }
 }

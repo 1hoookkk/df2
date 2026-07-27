@@ -45,8 +45,13 @@ The runtime interpolates words, then decodes.
 ## Signal chain after the cascade
 
 - **AGC leveller** owns output level.
-- **SLAM** — final output saturation stage — sits at the end of the chain.
-- Inside the cascade there are two Q-driven distortions, both in `trench-core/src/cascade.rs`: **BITE** (interstage saturator) and **CHEW** (E-MU dynamic pole-radius distortion). There is no user-facing drive knob in the filter path.
+- **SLAM off is exact unity.** The driven SLAM path uses −6 dB internal
+  headroom with compensating output gain, preserving all body/pose differences.
+- **SLAM** — final output saturation stage — sits after that calibration.
+- A final sample-safety ceiling sits after MIX: identity below −0.5 dBFS,
+  softly bounded to an exact −0.1 dBFS ceiling for abusive combinations.
+- **CHEW** is the user-facing dynamic pole-radius distortion amount. **Q does not drive CHEW**; Q selects the authored body coordinate, while the resulting section levels naturally affect how strongly CHEW reacts.
+- The legacy **BITE** interstage-saturator path remains in `trench-core/src/cascade.rs`, but the plugin leaves its drive at zero.
 
 Constants: `trench-core/src/engine.rs` (AGC, SLAM) and `trench-core/src/desk_drive.rs`.
 

@@ -5,6 +5,27 @@ pub const PASSTHROUGH_COEFFS: [f64; NUM_COEFFS] = [1.0, 0.0, 0.0, 0.0, 0.0];
 pub const BLOCK_SIZE: usize = 32;
 /// Full-scale reference for pole-radius distortion (patent's |V_p|).
 const V_PEAK: f64 = 1.0;
+const CHEW_THRESHOLD_OFF: f64 = 1.5;
+const CHEW_THRESHOLD_FULL: f64 = 0.02;
+
+#[inline(always)]
+fn chew_threshold(amount: f64) -> f64 {
+    // Keep the detector entering the measured section-level range early enough
+    // to expose several stages across the knob. Smoothness is owned separately
+    // by chew_push_strength, so threshold crossings no longer receive the full
+    // pole movement at once.
+    let amount = amount.clamp(0.0, 1.0);
+    (CHEW_THRESHOLD_OFF - CHEW_THRESHOLD_FULL) * (-8.0 * amount).exp() + CHEW_THRESHOLD_FULL
+}
+
+#[inline(always)]
+fn chew_push_strength(amount: f64) -> f64 {
+    // Crossing a threshold must not immediately receive the full patent push.
+    // Square law retains the authentic full pole-radius movement at CHEW 100%
+    // while keeping the feedback build in the middle of the knob controllable.
+    let amount = amount.clamp(0.0, 1.0);
+    amount * amount
+}
 #[derive(Clone)]
 struct BiquadState {
     coeffs: [f64; NUM_COEFFS],
@@ -44,7 +65,7 @@ impl BiquadState {
     /// Because the radius moves, the resonant frequency and Q move with it - the peak
     /// blooms and wanders rather than merely getting dirty. A saturator cannot do that.
     #[inline(always)]
-    fn process_sample_pole_distort(&mut self, x: f64, vt: f64) -> (f64, bool) {
+    fn process_sample_pole_distort(&mut self, x: f64, vt: f64, push_strength: f64) -> (f64, bool) {
         self.coeffs[0] += self.deltas[0];
         self.coeffs[1] += self.deltas[1];
         self.coeffs[2] += self.deltas[2];
@@ -62,7 +83,12 @@ impl BiquadState {
                     // |Vp| is a FULL-SCALE PEAK REFERENCE, not the pole's own level.
                     // The push scales with how far over threshold the section is; the
                     // (1-R) brake guarantees it can never reach radius 1.
-                    let ratio = ((vg - vt) / V_PEAK).clamp(0.0, 4.0);
+                    // The patent's full-scale reference defines the useful
+                    // detector span. Let small excursions remain linear, but
+                    // compress overdrive smoothly instead of allowing a 4x
+                    // feedback shove that makes the cascade tip as a switch.
+                    let over = ((vg - vt) / V_PEAK).max(0.0);
+                    let ratio = over.tanh() * push_strength;
                     let r_new = (r + r * (1.0 - r) * ratio).clamp(0.0, 0.999_9);
                     a1 = -2.0 * r_new * cos_theta;
                     a2 = r_new * r_new;
@@ -194,14 +220,11 @@ impl Cascade {
         let mut v = x as f64;
         if self.pole_distort > 0.0 || self.pole_delta != 0.0 {
             self.pole_distort = (self.pole_distort + self.pole_delta).clamp(0.0, 1.0);
-            // Threshold mapping, calibrated against measured section levels (a power
-            // curve put the whole useful range above 0.6 and CHEW never got there).
-            //   0.00 -> 1.50  off      0.22 -> 0.28  mid (CHEW at full Q)
-            //   0.40 -> 0.08  hard     1.00 -> 0.02  always biting
             let amt = self.pole_distort as f64;
-            let vt = 1.48 * (-8.0 * amt).exp() + 0.02;
+            let vt = chew_threshold(amt);
+            let push_strength = chew_push_strength(amt);
             for stage in &mut self.stages {
-                let (next, unstable) = stage.process_sample_pole_distort(v, vt);
+                let (next, unstable) = stage.process_sample_pole_distort(v, vt, push_strength);
                 if unstable {
                     self.instability_detected = true;
                     return 0.0;
@@ -396,5 +419,29 @@ mod tests {
             );
         }
         assert!(!cascade.take_instability_flag());
+    }
+    #[test]
+    fn chew_control_law_is_smooth_monotonic_and_keeps_its_endpoints() {
+        assert!((chew_threshold(0.0) - CHEW_THRESHOLD_OFF).abs() < 1.0e-12);
+        assert!(chew_threshold(1.0) < CHEW_THRESHOLD_FULL + 0.000_5);
+        assert_eq!(chew_push_strength(0.0), 0.0);
+        assert_eq!(chew_push_strength(1.0), 1.0);
+
+        let mut previous_threshold = chew_threshold(0.0);
+        let mut previous_push = chew_push_strength(0.0);
+        for step in 1..=100 {
+            let amount = step as f64 / 100.0;
+            let threshold = chew_threshold(amount);
+            let push = chew_push_strength(amount);
+            assert!(threshold < previous_threshold);
+            assert!(push > previous_push);
+            previous_threshold = threshold;
+            previous_push = push;
+        }
+
+        // Low CHEW cannot jump directly to a large pole movement even if an
+        // unusually hot section has already crossed its threshold.
+        assert!(chew_push_strength(0.1) <= 0.010_001);
+        assert!(chew_push_strength(0.25) <= 0.062_501);
     }
 }

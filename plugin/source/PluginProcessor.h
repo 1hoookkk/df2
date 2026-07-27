@@ -7,10 +7,7 @@
 #include "dsp/MorphMod.h"
 #include "dsp/KeyDetector.h"
 #include "dsp/TrenchCleanBody.h"
-#include "dsp/CaptureRing.h"
 #include "dsp/PunchBlend.h"
-#include "dsp/CapturePlan.h"
-#include "dsp/TakeWriter.h"
 #include <array>
 #include <atomic>
 #include <vector>
@@ -51,6 +48,18 @@ public:
     int getDetectedKeyForUi() const noexcept { return detectedKeyForUi.load (std::memory_order_relaxed); }
     int getDetectedAltKeyForUi() const noexcept { return detectedAltKeyForUi.load (std::memory_order_relaxed); }
     float getKeyConfidenceForUi() const noexcept { return keyConfidenceForUi.load (std::memory_order_relaxed); }
+    void setKeyDetectionEnabled (bool enabled) noexcept
+    {
+        keyDetectionEnabled.store (enabled, std::memory_order_relaxed);
+        if (! enabled)
+        {
+            detectedKeyForUi.store (-1, std::memory_order_relaxed);
+            detectedAltKeyForUi.store (-1, std::memory_order_relaxed);
+            keyConfidenceForUi.store (0.0f, std::memory_order_relaxed);
+            keyProbabilitySum.fill (0.0f);
+            keyProbabilityWindows = 0;
+        }
+    }
     int  getLoadedBodyIndex() const noexcept { return loadedBodyIndex.load (std::memory_order_relaxed); }
     bool getLastLoadOk()      const noexcept { return lastLoadOk.load (std::memory_order_relaxed); }
     bool isCleanGroundTruthAudio() const noexcept { return trench::clean_audio::kEnabled(); }
@@ -83,10 +92,6 @@ public:
     {
         return "trench-plugin-processor-v1";
     }
-    juce::File captureTake (trench::CaptureRange range);
-    juce::File getLastTakeFile() const { return lastTakeFile; }
-    void setCaptureFrozen (bool f) noexcept { captureFrozen.store (f, std::memory_order_relaxed); }
-    juce::File captureSmartTake();
 private:
     void parameterChanged (const juce::String& parameterID, float newValue) override;
     void handleAsyncUpdate() override;
@@ -126,6 +131,7 @@ private:
     std::atomic<int> detectedKeyForUi { -1 };
     std::atomic<int> detectedAltKeyForUi { -1 };
     std::atomic<float> keyConfidenceForUi { 0.0f };
+    std::atomic<bool> keyDetectionEnabled { false };
     std::array<float, 24> keyProbabilitySum {};
     int keyProbabilityWindows = 0;
     std::array<std::atomic<float>, kScopeLen> scopeL {};
@@ -143,26 +149,8 @@ private:
     uint64_t seedCounter = 0;
     uint64_t variantBankCursor = 0;
     void captureCurrentBodyBytes (const juce::String& cartridgeJson);
-    static constexpr double kCaptureMaxSeconds = 24.0;
-    trench::CaptureRing captureRing;
-    trench::CaptureRing dryRing;
     trench::PunchBlend punchBlend;
-    std::atomic<bool> captureFrozen { false };
-    std::atomic<double> hostBpm { 0.0 };
-    juce::File lastTakeFile;
-    juce::File writeTake (double seconds, bool oneShot, int beats);
-    double smartTakeSeconds() const;
-    juce::RangedAudioParameter* morphParamForGesture = nullptr;
-    juce::RangedAudioParameter* slamParamForGesture = nullptr;
-    std::atomic<juce::uint64> processedFrames { 0 };
-    std::atomic<juce::uint64> lastMoveFrame { 0 };
-    std::atomic<juce::uint64> gestureAnchorFrame { 0 };
-    std::atomic<bool> haveGesture { false };
-    float prevGestureMorph = 0.0f;
-    float prevGestureSlam = 0.0f;
-    bool gestureTrackPrimed = false;
     std::atomic<bool> workstationBodySolo { false };
     bool lastWorkstationBodySolo = false;
-    bool hdModeApplied = true;      // mirrors the HD param's last APPLIED state
     JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR (PluginProcessor)
 };

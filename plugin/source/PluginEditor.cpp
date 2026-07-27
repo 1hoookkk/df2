@@ -7,6 +7,7 @@ PluginEditor::PluginEditor (PluginProcessor& p)
     : AudioProcessorEditor (&p),
       processor (p)
 {
+    processor.setKeyDetectionEnabled (true);
     reloadLayoutFromDisk();
     auto panel = juce::ImageCache::getFromMemory (BinaryData::df2_panel_beige_png,
                                                   BinaryData::df2_panel_beige_pngSize);
@@ -49,13 +50,6 @@ PluginEditor::PluginEditor (PluginProcessor& p)
     amountWheel = std::make_unique<ThinWheel> (processor.apvts, ParamID::amount);
     amountWheel->onValueGesture = [this] (float v) { graph->showAmountCue (v); };
     moveChip->onAnnounce = [this] (const juce::String& s) { graph->announce (s); };
-    graph->onDragTake = [this] (juce::Component* source)
-    {
-        const auto f = processor.captureSmartTake();
-        if (f.existsAsFile())
-            juce::DragAndDropContainer::performExternalDragDropOfFiles (
-                { f.getFullPathName() }, false, source, nullptr);
-    };
     onboarding = std::make_unique<Onboarding> (theme);
     // The tour teaches over a REAL curve: it loads a demo body while it is up
     // (NO FILTER is the default and shows nothing), then lands on NO FILTER.
@@ -170,6 +164,7 @@ void PluginEditor::showOnboardingStep (int step)
 }
 PluginEditor::~PluginEditor()
 {
+    processor.setKeyDetectionEnabled (false);
 #if TRENCH_TABLE_STITCH_PANEL
     if (tableStitchProcess != nullptr && tableStitchProcess->isRunning())
         tableStitchProcess->kill();

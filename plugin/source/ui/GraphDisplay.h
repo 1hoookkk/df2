@@ -48,6 +48,15 @@ public:
             setMouseCursor (juce::MouseCursor::UpDownResizeCursor);
         }
         qParam     = apvts.getParameter (ParamID::q);
+        chewParam  = apvts.getParameter (ParamID::chew);
+        if (chewParam != nullptr)
+        {
+            chewAtt = std::make_unique<juce::ParameterAttachment> (*chewParam, [this] (float)
+            {
+                startTimer (30);
+                repaint();
+            });
+        }
         setInterceptsMouseClicks (canvasParam != nullptr, false);
     }
     void showAmountCue (float norm)
@@ -100,9 +109,6 @@ public:
         const auto plot = plotBounds();
         if (plot.isEmpty())
             return;
-        const float qn   = qParam    != nullptr ? qParam->getValue()    : 0.0f;
-        const float bBase = 0.0f;   // CHEW is Q's law; no separate dial
-        const float biteAmt = juce::jlimit (0.0f, 1.0f, bBase + 0.55f * qn * qn);
         const double dbTop = t.curveDbTop(), dbBot = t.curveDbBottom();
         const double fLo = 20.0, fHi = juce::jmin (20000.0, sr * 0.5 - 1.0);
         const int N = juce::jmax (768, juce::roundToInt (plot.getWidth() * 4.0f));
@@ -169,8 +175,6 @@ public:
     {
         if (canvasParam == nullptr) return;
         pressing = true;
-        takeArmed = false;
-        draggingSlam = false;
         stopTimer();
         meterAlpha = 1.0f;
         dragStartY = e.position.y;
@@ -179,36 +183,8 @@ public:
         if (canvasAtt != nullptr) canvasAtt->beginGesture();
         repaint();
     }
-    /// Drag the SCREEN sideways to resample what you just heard straight into the
-    /// host. The display IS the take, so no new control is needed - and resampling
-    /// is meant to be done repeatedly, so it has to be one cheap gesture.
-    /// SLAM owns vertical drags; a decisively horizontal drag means "take".
-    std::function<void (juce::Component*)> onDragTake;
     void mouseDrag (const juce::MouseEvent& e) override
     {
-        if (! takeArmed && onDragTake != nullptr && ! draggingSlam)
-        {
-            const auto d = e.getPosition() - e.getMouseDownPosition();
-            if (std::abs (d.x) > 12 && std::abs (d.x) > std::abs (d.y) * 1.8)
-            {
-                takeArmed = true;
-                pressing = false;
-                if (canvasAtt != nullptr)
-                {
-                    // The wobble before classification already nudged SLAM;
-                    // put it back or every take drifts the drive a little.
-                    canvasAtt->setValueAsPartOfGesture (canvasParam->convertFrom0to1 (canvasAtStart));
-                    canvasAtt->endGesture();
-                }
-                repaint();
-                onDragTake (this);
-                return;
-            }
-            // 10px, not 6: a sideways resample drag with hand wobble was
-            // locking SLAM before it travelled far enough horizontally.
-            if (std::abs (d.y) > 10) draggingSlam = true;
-        }
-        if (takeArmed) return;
         if (canvasParam == nullptr || canvasAtt == nullptr) return;
         dragPos = e.position;
         const float h = juce::jmax (1.0f, (float) getHeight());
@@ -220,8 +196,6 @@ public:
     }
     void mouseUp (const juce::MouseEvent&) override
     {
-        takeArmed = false;
-        draggingSlam = false;
         if (canvasParam == nullptr) return;
         pressing = false;
         if (canvasAtt != nullptr) canvasAtt->endGesture();
@@ -426,15 +400,12 @@ private:
         g.setOpacity (1.0f);
         // NO bloom. The curve is a solid line on matte ink-black glass - any glow
         // reads as a screen effect and breaks the "clean, contained" read.
-        const float qn    = qParam    != nullptr ? qParam->getValue()    : 0.0f;
-        const float bBase = 0.0f;   // CHEW is Q's law; no separate dial
-        const float biteAmt = juce::jlimit (0.0f, 1.0f, bBase + 0.55f * qn * qn);
-        if (biteAmt > 0.004f)
+        const float chew = chewAmount();
+        if (chew > 0.004f)
         {
-            // BITE does not flatten the resonance - it DIRTIES it. Interstage
-            // clipping throws harmonics and intermodulation around the peak, so the
-            // pole shakes and aliases. Amplitude stays; stability does not. The
-            // perturbation is weighted by how far above unity the response is, so
+            // CHEW does not flatten the resonance: the dynamic pole radius makes
+            // the peak bloom and wander. The visual perturbation is weighted by
+            // how far above unity the response is, so
             // the passband stays glass-smooth and only the poles misbehave.
             const double dbTop = t.curveDbTop(), dbBot = t.curveDbBottom();
             const auto plotR = plotBounds();
@@ -452,7 +423,7 @@ private:
                     const float ph = (float) i * 0.9f + shakePhase;
                     // two incommensurate rates = aliasing chatter, not a clean wobble
                     dev = (std::sin (ph) * 0.6f + std::sin (ph * 2.37f + 1.7f) * 0.4f)
-                          * heat * heat * biteAmt * 26.0f;
+                          * heat * heat * chew * 26.0f;
                 }
                 const double yt = juce::jlimit (0.015, 0.985, (dbTop - (db + dev)) / (dbTop - dbBot));
                 const float x = plotR.getX() + ((float) i / (float) juce::jmax<size_t> (1, N - 1)) * plotR.getWidth();
@@ -474,9 +445,7 @@ private:
     }
     float chewAmount() const noexcept
     {
-        const float qn = qParam    != nullptr ? qParam->getValue()    : 0.0f;
-        const float b  = 0.0f;
-        return juce::jlimit (0.0f, 1.0f, b + 0.55f * qn * qn);
+        return chewParam != nullptr ? juce::jlimit (0.0f, 1.0f, chewParam->getValue()) : 0.0f;
     }
     void drawSlamHoverCue (juce::Graphics& g, juce::Rectangle<float> screen) const
     {
@@ -538,9 +507,6 @@ private:
         const auto plot = plotBounds();
         if (plot.isEmpty())
             return;
-        const float qn   = qParam    != nullptr ? qParam->getValue()    : 0.0f;
-        const float bBase = 0.0f;   // CHEW is Q's law; no separate dial
-        const float biteAmt = juce::jlimit (0.0f, 1.0f, bBase + 0.55f * qn * qn);
         const double dbTop = t.curveDbTop(), dbBot = t.curveDbBottom();
         const float centreY = plot.getY() + plot.getHeight() * 0.5f;
         const size_t N = traceXs.size();
@@ -598,6 +564,8 @@ private:
     juce::RangedAudioParameter* canvasParam = nullptr;
     std::unique_ptr<juce::ParameterAttachment> canvasAtt;
     juce::RangedAudioParameter* qParam     = nullptr;
+    juce::RangedAudioParameter* chewParam  = nullptr;
+    std::unique_ptr<juce::ParameterAttachment> chewAtt;
     float lastQ = -1.0f;
     float canvasDefault = 0.0f;
     enum PulsePhase { PulseIdle, PulseCompress, PulseStatic, PulseRedraw };
@@ -635,16 +603,13 @@ private:
                 pulseOldDbs.clear();
             }
         }
-        const float qn_ = qParam != nullptr ? qParam->getValue() : 0.0f;
-        const bool biting = (0.22f * qn_ * qn_) > 0.004f;
-        if (! biting && meterAlpha <= 0.01f && amountCueAlpha <= 0.01f && pulsePhase == PulseIdle)
+        const bool chewing = chewAmount() > 0.004f;
+        if (! chewing && meterAlpha <= 0.01f && amountCueAlpha <= 0.01f && pulsePhase == PulseIdle)
             stopTimer();
         repaint();
     }
     bool pressing = false;
     bool hovering = false;
-    bool takeArmed = false;
-    bool draggingSlam = false;
     float dragStartY = 0.0f;
     float meterAlpha = 0.0f;
     float slamOutClip = 0.0f;

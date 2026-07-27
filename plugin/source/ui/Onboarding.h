@@ -7,11 +7,11 @@ namespace trench::ui
 {
 /// First-run guided tour across the WHOLE face.
 ///
-/// The panel is deliberately sparse and its two most valuable gestures (drag the
-/// screen UP for SLAM, SIDEWAYS to resample) are invisible. Painting instructions
-/// onto the artwork fought the trace; stock JUCE tooltips are host-dependent and
-/// off-brand. So the face is dimmed, one control is spotlit per step, and the
-/// card sits clear of it. NEXT to advance, SKIP to leave, never shown again.
+/// The panel is deliberately sparse and its screen-UP SLAM gesture is invisible.
+/// Painting instructions onto the artwork fought the trace; stock JUCE tooltips
+/// are host-dependent and off-brand. So the face is dimmed, one control is
+/// spotlit per step, and the card sits clear of it. NEXT to advance, SKIP to
+/// leave, never shown again.
 class Onboarding final : public juce::Component,
                          private juce::Timer
 {
@@ -83,7 +83,7 @@ public:
     void paint (juce::Graphics& g) override
     {
         const auto full = getLocalBounds().toFloat();
-        const auto spot = spotlight().expanded (7.0f, 6.0f);
+        const auto spot = spotlight().expanded (4.0f, 4.0f);
 
         // Scrim over the whole face with the spotlit control punched out, so the
         // user's eye goes to the one thing the step is talking about. Warm and
@@ -111,30 +111,31 @@ public:
 
         const auto ink = t.curveColour();
         const auto& s = steps()[(size_t) step];
-        const float lh = juce::jmax (12.0f, card.getHeight() / 4.4f);
-        auto body = card.reduced (11.0f, 8.0f);
+        auto content = card.reduced (9.0f, 6.0f);
+        auto footer = content.removeFromBottom (13.0f);
+        auto title = content.removeFromTop (14.0f);
 
         // Whole-pixel font sizes and no horizontal squeeze: fitted text at this
         // size condenses the glyphs into artifacts. Wrap, never squash.
-        g.setFont (telemetryFont (std::floor (lh * 0.74f), false));
+        g.setFont (telemetryFont (11.0f, false));
         g.setColour (ink.withAlpha (0.95f * alpha));
-        g.drawText (s.title, body.removeFromTop (lh).toNearestInt(),
+        g.drawText (s.title, title.toNearestInt(),
                     juce::Justification::centredLeft, false);
 
-        g.setFont (telemetryFont (std::floor (lh * 0.64f), false));
+        g.setFont (telemetryFont (9.0f, false));
         g.setColour (ink.withAlpha (0.72f * alpha));
-        g.drawFittedText (s.body, body.removeFromTop (lh * 2.5f).toNearestInt(),
-                          juce::Justification::topLeft, 3, 1.0f);
+        g.drawFittedText (s.body, content.toNearestInt(),
+                          juce::Justification::centredLeft, 4, 1.0f);
 
         for (int i = 0; i < numSteps(); ++i)
         {
-            const float cx = card.getX() + 14.0f + (float) i * 8.0f;
-            const float r  = (i == step) ? 2.6f : 1.7f;
+            const float cx = footer.getX() + 3.0f + (float) i * 7.0f;
+            const float r  = (i == step) ? 2.2f : 1.4f;
             g.setColour (ink.withAlpha ((i == step ? 0.90f : 0.30f) * alpha));
-            g.fillEllipse (cx - r, card.getBottom() - 12.0f - r, r * 2.0f, r * 2.0f);
+            g.fillEllipse (cx - r, footer.getCentreY() - r, r * 2.0f, r * 2.0f);
         }
 
-        g.setFont (telemetryFont (lh * 0.56f, false));
+        g.setFont (telemetryFont (9.0f, false));
         const bool last = (step + 1 >= numSteps());
         g.setColour (ink.withAlpha ((hoverNext ? 1.0f : 0.82f) * alpha));
         g.drawText (last ? "START" : "NEXT", nextBounds().toNearestInt(),
@@ -148,7 +149,7 @@ public:
     }
 
 private:
-    enum Anim { animNone, animWheel, animUp, animOff };
+    enum Anim { animNone, animWheel, animUp };
     struct Step { const char* rectId; const char* title; const char* body; Anim anim; };
     static const Step* steps()
     {
@@ -162,20 +163,16 @@ private:
               "between is a real filter. This is where you build the instrument.",
               animWheel },
             { "qWheel", "Q",
-              "Q feeds the filter its own resonance. Push it and it starts to "
-              "chew. Nasty clipped distortion is the intended result.",
+              "Q travels the body's authored second axis. Push it to sharpen or "
+              "transform the response.",
               animWheel },
             { "spectrumGrid", "SLAM",
               "Drag up on the screen to give your sound massive density and balls.",
               animUp },
-            { "spectrumGrid", "TAKE",
-              "Grab the screen and drag out of the plugin. The last thing you "
-              "heard comes with you. Drop it anywhere in your project.",
-              animOff },
         };
         return s;
     }
-    static int numSteps() { return 5; }
+    static int numSteps() { return 4; }
 
     juce::Rectangle<float> spotlight() const
     {
@@ -188,19 +185,18 @@ private:
     juce::Rectangle<float> cardBounds() const
     {
         const auto full = getLocalBounds().toFloat();
-        const auto spot = spotlight().expanded (7.0f, 6.0f);
-        const float w = juce::jmin (full.getWidth() - 16.0f, 246.0f);
-        const float h = 92.0f;
+        const auto spot = spotlight().expanded (4.0f, 4.0f);
+        const float w = juce::jmin (full.getWidth() - 12.0f, 222.0f);
+        const float h = 74.0f;
         float x = spot.getCentreX() - w * 0.5f;
-        x = juce::jlimit (full.getX() + 8.0f, full.getRight() - w - 8.0f, x);
-        const bool below = (spot.getBottom() + 10.0f + h) <= (full.getBottom() - 8.0f);
-        const float y = below ? spot.getBottom() + 10.0f
-                              : juce::jmax (full.getY() + 8.0f, spot.getY() - h - 10.0f);
+        x = juce::jlimit (full.getX() + 6.0f, full.getRight() - w - 6.0f, x);
+        const bool below = (spot.getBottom() + 7.0f + h) <= (full.getBottom() - 6.0f);
+        const float y = below ? spot.getBottom() + 7.0f
+                              : juce::jmax (full.getY() + 6.0f, spot.getY() - h - 7.0f);
         return { x, y, w, h };
     }
     /// Crude little arrows showing which way the gesture goes: wheels get a
-    /// chevron ping-ponging along the roller, SLAM gets chevrons drifting up
-    /// the screen, TAKE gets chevrons walking off its right edge.
+    /// chevron ping-ponging along the roller; SLAM gets chevrons drifting up.
     void paintGestureHint (juce::Graphics& g, juce::Rectangle<float> spot) const
     {
         const auto anim = steps()[(size_t) step].anim;
@@ -233,19 +229,15 @@ private:
         {
             const float ph = std::fmod (animPhase + (float) i / 3.0f, 1.0f);
             const float fade = std::sin (juce::MathConstants<float>::pi * ph) * 0.85f;
-            if (anim == animUp)
-                chevron ({ spot.getCentreX(),
-                           spot.getBottom() - 14.0f - ph * (spot.getHeight() - 28.0f) },
-                         0.0f, -1.0f, fade);
-            else // animOff: out through the right edge and gone
-                chevron ({ spot.getRight() - 40.0f + ph * 64.0f,
-                           spot.getCentreY() }, 1.0f, 0.0f, fade);
+            chevron ({ spot.getCentreX(),
+                       spot.getBottom() - 14.0f - ph * (spot.getHeight() - 28.0f) },
+                     0.0f, -1.0f, fade);
         }
     }
     /// Little pointer from the card back to the control it describes.
     void paintTail (juce::Graphics& g, float a) const
     {
-        const auto spot = spotlight().expanded (7.0f, 6.0f);
+        const auto spot = spotlight().expanded (4.0f, 4.0f);
         const auto c = cardBounds();
         const bool below = c.getY() > spot.getCentreY();
         const float tx = juce::jlimit (c.getX() + 14.0f, c.getRight() - 14.0f, spot.getCentreX());
@@ -262,12 +254,12 @@ private:
     juce::Rectangle<float> nextBounds() const
     {
         const auto c = cardBounds();
-        return { c.getRight() - 60.0f, c.getBottom() - 20.0f, 48.0f, 16.0f };
+        return { c.getRight() - 53.0f, c.getBottom() - 17.0f, 44.0f, 13.0f };
     }
     juce::Rectangle<float> skipBounds() const
     {
         const auto c = cardBounds();
-        return { c.getRight() - 110.0f, c.getBottom() - 20.0f, 42.0f, 16.0f };
+        return { c.getRight() - 98.0f, c.getBottom() - 17.0f, 38.0f, 13.0f };
     }
     static constexpr int kDemoStep = 1;   // MORPH
     void beginDemo()

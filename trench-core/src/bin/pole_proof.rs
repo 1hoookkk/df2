@@ -51,7 +51,9 @@ fn render(body: &[u8], mode: &str, amount: f32, n: usize) -> Vec<f32> {
 }
 
 fn main() {
-    let path = std::env::args().nth(1).expect("usage: pole_proof <body240>");
+    let path = std::env::args()
+        .nth(1)
+        .expect("usage: pole_proof <body240>");
     let body = std::fs::read(&path).expect("read body");
     let n = (SR * 1.2) as usize;
 
@@ -59,12 +61,18 @@ fn main() {
     let inter = render(&body, "inter", 0.22, n);
     // sweep to find where the pole path actually starts biting
     let pk = |v: &Vec<f32>| v.iter().fold(0.0f32, |m, x| m.max(x.abs()));
-    let rms = |v: &Vec<f32>| (v.iter().map(|x| (x * x) as f64).sum::<f64>() / v.len() as f64).sqrt();
+    let rms =
+        |v: &Vec<f32>| (v.iter().map(|x| (x * x) as f64).sum::<f64>() / v.len() as f64).sqrt();
     println!("amount   peak     rms      vs-clean-rms");
-    for a in [0.0f32, 0.1, 0.22, 0.4, 0.6, 0.8, 1.0] {
+    for a in [0.0f32, 0.1, 0.2, 0.3, 0.4, 0.5, 0.6, 0.7, 0.8, 0.9, 1.0] {
         let o = render(&body, "pole", a, n);
-        println!("{:5.2}   {:.4}   {:.5}   {:+.2}%", a, pk(&o), rms(&o),
-                 (rms(&o) / rms(&clean) - 1.0) * 100.0);
+        println!(
+            "{:5.2}   {:.4}   {:.5}   {:+.2}%",
+            a,
+            pk(&o),
+            rms(&o),
+            (rms(&o) / rms(&clean) - 1.0) * 100.0
+        );
     }
     // Does CHEW engagement vary with MORPH position? If so, modulating morph
     // already makes the chew breathe and no new control is needed.
@@ -74,8 +82,13 @@ fn main() {
         MORPH.with(|c| *c.borrow_mut() = m);
         let c0 = render(&body, "none", 0.0, n);
         let c1 = render(&body, "pole", 0.22, n);
-        println!("{:5.2}   {:.5}     {:.5}    {:+.1}%", m, rms(&c0), rms(&c1),
-                 (rms(&c1) / rms(&c0) - 1.0) * 100.0);
+        println!(
+            "{:5.2}   {:.5}     {:.5}    {:+.1}%",
+            m,
+            rms(&c0),
+            rms(&c1),
+            (rms(&c1) / rms(&c0) - 1.0) * 100.0
+        );
     }
     MORPH.with(|c| *c.borrow_mut() = 0.62);
     let pole = render(&body, "pole", 1.0, n);

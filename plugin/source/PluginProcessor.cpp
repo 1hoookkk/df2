@@ -60,16 +60,12 @@ PluginProcessor::PluginProcessor()
         juce::Logger::writeToLog (juce::String ("key model -> ") + (modelReady ? "ready" : "FAILED"));
     }
     apvts.addParameterListener (ParamID::body, this);
-    apvts.addParameterListener (ParamID::hdMode, this);
-    morphParamForGesture = apvts.getParameter (ParamID::morph);
-    slamParamForGesture  = apvts.getParameter (ParamID::slamDrive);
     startTimer (400);
 }
 PluginProcessor::~PluginProcessor()
 {
     stopTimer();
     apvts.removeParameterListener (ParamID::body, this);
-    apvts.removeParameterListener (ParamID::hdMode, this);
     cancelPendingUpdate();
 }
 const juce::String PluginProcessor::getName() const { return JucePlugin_Name; }
@@ -128,11 +124,8 @@ void PluginProcessor::storeLoadedBodyBehavior (int bodyIndex, const juce::String
 }
 void PluginProcessor::prepareToPlay (double sampleRate, int samplesPerBlock)
 {
-    // HD is a SOUND choice (Tyson): 78125 clean vs 39062.5 vintage island rate.
-    const bool hd = apvts.getRawParameterValue (ParamID::hdMode)->load() > 0.5f;
-    hdModeApplied = hd;
     fixedRateIsland.prepare (sampleRate, samplesPerBlock, dspBridge,
-                             hd ? TrenchRates::emuInternalRateHd : TrenchRates::emuInternalRate);
+                             TrenchRates::emuInternalRate);
     setLatencySamples (fixedRateIsland.getLatencySamples());
     dspBridge.setInputMode (kCleanInputMode);
     dspBridge.setSpatialMode (kSpatialOff);
@@ -146,8 +139,6 @@ void PluginProcessor::prepareToPlay (double sampleRate, int samplesPerBlock)
     qModulatedForUi.store (false, std::memory_order_relaxed);
     motionInputEnv = 0.0f;
     controlSmoothersPrimed = true;
-    captureRing.prepare (sampleRate, kCaptureMaxSeconds);
-    dryRing.prepare (sampleRate, kCaptureMaxSeconds);
     punchBlend.prepare (sampleRate, fixedRateIsland.getLatencySamples(), samplesPerBlock);
     punchBlend.setLatency (fixedRateIsland.getLatencySamples());
     keyDetector.prepare (sampleRate);
@@ -218,13 +209,8 @@ void PluginProcessor::processBlock (juce::AudioBuffer<float>& buffer, juce::Midi
         if (inPk < 1.0e-4f)
             generateDemoBlock (buffer);
     }
-    keyDetector.pushAudio (buffer);
-    if (buffer.getNumSamples() > 0 && ! captureFrozen.load (std::memory_order_relaxed))
-    {
-        const auto* inL = buffer.getReadPointer (0);
-        const auto* inR = buffer.getNumChannels() > 1 ? buffer.getReadPointer (1) : inL;
-        dryRing.write (inL, inR, buffer.getNumSamples());
-    }
+    if (keyDetectionEnabled.load (std::memory_order_relaxed))
+        keyDetector.pushAudio (buffer);
     TrenchParams params;
     const float morphTarget = apvts.getRawParameterValue (ParamID::morph)->load();
     const float qTarget = apvts.getRawParameterValue (ParamID::q)->load();
@@ -326,38 +312,11 @@ void PluginProcessor::processBlock (juce::AudioBuffer<float>& buffer, juce::Midi
     params.morph = mapMorphForLoadedBody (modResult.morph);
     params.q     = mapSecondaryForLoadedBody (modResult.q);
     params.slamDrive = apvts.getRawParameterValue (ParamID::slamDrive)->load();
-    // CHEW law (2026-07-26): RESONANCE carries the chew, not SLAM.
-    // E-MU precedent: BassOMatic 12 REZ drives the filter into distortion at max Q,
-    // and the Mackie desk slam happened OUTSIDE the machine, after deliberately
-    // clean outputs - so SLAM driving internal character was backwards twice over.
-    //
-    // Interstage clipping fires when the signal inside the cascade runs hot, and
-    // what makes it hot is resonance - a high-Q section builds a peak that slams
-    // the next stage. That is how real analog filters snarl. SLAM sits AFTER the
-    // cascade and has no causal relationship to what happens inside it, so
-    // driving bite from SLAM welded internal character to output level: no grit
-    // at low output, no clean at high output.
-    //
-    // Quadratic: low Q adds nothing, full Q lands 55%. The old 0.22 ceiling was
-    // ear-tuned for the INTERSTAGE SATURATOR; under pole-radius distortion the
-    // offline sweep puts 0.22 at the bottom of the range (+21% RMS) and the useful
-    // span running to ~0.6 (+87%) before it saturates.
-    // full Q lands the same tasteful ~22%. Q here is the MODULATED value, so a
-    // resonance sweep is a character gesture, not just a shape change.
-    // CHEW now drives the AUTHENTIC E-MU mechanism: dynamic pole radius per section
-    // (US 10,514,883), not the interstage saturator. E-MU deliberately used a 67-bit
-    // accumulator so spikes pass BETWEEN sections unclipped - the nonlinearity lives
-    // in the pole math, which is why the resonance blooms and wanders instead of
-    // merely getting dirty. The old saturator path stays wired at 0 for A/B.
-    const float qForChew = juce::jlimit (0.0f, 1.0f, modResult.q);
-    // CHEW is Q's law, never a separate decision: the only dial is Q.
-    const float chewAmount = juce::jlimit (0.0f, 1.0f, 0.55f * qForChew * qForChew);
-    // CHEW is the FILTER destabilising itself, so it needs poles and is correctly
-    // silent at No Filter. It is NOT a general distortion: E-MU kept the internal
-    // path pristine (20-bit resampling exists to avoid internal grit) and generated
-    // character outside the machine. SLAM is that outside - it owns all grit that
-    // is not the filter's own, and works with or without a body loaded.
-    params.poleDistortion  = chewAmount;
+    // CHEW directly controls the cascade's dynamic pole-radius distortion.
+    // Q still changes the authored filter and therefore the internal section
+    // levels that excite CHEW, but it no longer changes the CHEW parameter.
+    params.poleDistortion = juce::jlimit (
+        0.0f, 1.0f, apvts.getRawParameterValue (ParamID::chew)->load());
     params.fiveD = 0.0f;   // fiveD/QSound buried 2026-07-27: no home, no product function
     auto channelPeak = [&buffer] (int channel)
     {
@@ -406,11 +365,12 @@ void PluginProcessor::processBlock (juce::AudioBuffer<float>& buffer, juce::Midi
         limitFrac = trench::slamOutputPressureBlock (buffer.getWritePointer (0),
                                          buffer.getNumSamples(), params.slamDrive);
     punchBlend.blend (buffer.getArrayOfWritePointers(), buffer.getNumChannels(), buffer.getNumSamples(), mixTarget);
+    const float safetyFrac = trench::finalSafetyCeilingBlockStereo (
+        buffer.getNumChannels() > 0 ? buffer.getWritePointer (0) : nullptr,
+        buffer.getNumChannels() > 1 ? buffer.getWritePointer (1) : nullptr,
+        buffer.getNumSamples());
+    limitFrac = juce::jmax (limitFrac, safetyFrac);
     dspBridge.publishUiSnapshot();
-    if (auto* ph = getPlayHead())
-        if (auto pos = ph->getPosition())
-            if (auto b = pos->getBpm())
-                hostBpm.store (*b, std::memory_order_relaxed);
     if (buffer.getNumSamples() > 0)
     {
         const auto* postL = buffer.getReadPointer (0);
@@ -425,29 +385,6 @@ void PluginProcessor::processBlock (juce::AudioBuffer<float>& buffer, juce::Midi
         scopeWritePos.store (wp, std::memory_order_relaxed);
         const float prevClip = outClipForUi.load (std::memory_order_relaxed);
         outClipForUi.store (juce::jmax (limitFrac, prevClip * 0.90f), std::memory_order_relaxed);
-        if (! captureFrozen.load (std::memory_order_relaxed))
-            captureRing.write (postL, postR, buffer.getNumSamples());
-    }
-    {
-        const juce::uint64 cur = processedFrames.load (std::memory_order_relaxed);
-        const float mNow = morphParamForGesture != nullptr ? morphParamForGesture->getValue() : 0.0f;
-        const float sNow = slamParamForGesture  != nullptr ? slamParamForGesture->getValue()  : 0.0f;
-        if (! gestureTrackPrimed)
-        {
-            prevGestureMorph = mNow; prevGestureSlam = sNow; gestureTrackPrimed = true;
-        }
-        if (std::abs (mNow - prevGestureMorph) > 0.02f || std::abs (sNow - prevGestureSlam) > 0.02f)
-        {
-            const juce::uint64 lastMove = lastMoveFrame.load (std::memory_order_relaxed);
-            const double idleGapFrames = 0.4 * sampleRate;
-            if (! haveGesture.load (std::memory_order_relaxed)
-                || (double) (cur - lastMove) > idleGapFrames)
-                gestureAnchorFrame.store (cur, std::memory_order_relaxed);
-            lastMoveFrame.store (cur, std::memory_order_relaxed);
-            haveGesture.store (true, std::memory_order_relaxed);
-        }
-        prevGestureMorph = mNow; prevGestureSlam = sNow;
-        processedFrames.store (cur + (juce::uint64) buffer.getNumSamples(), std::memory_order_relaxed);
     }
 }
 void PluginProcessor::generateDemoBlock (juce::AudioBuffer<float>& buffer)
@@ -504,24 +441,6 @@ void PluginProcessor::parameterChanged (const juce::String& parameterID, float n
         const int wanted = (raw >= 0 && raw < trench::bodyCount()) ? raw : trench::kNoFilterIndex;
         pendingBodyIndex.store (wanted, std::memory_order_relaxed);
         triggerAsyncUpdate();
-    }
-    else if (parameterID == ParamID::hdMode)
-    {
-        // HD picks the island's internal rate, which is only read in
-        // prepareToPlay - re-prepare ourselves, with audio suspended.
-        const bool hd = newValue > 0.5f;
-        if (hd == hdModeApplied)
-            return;
-        const double sr = getSampleRate();
-        if (sr <= 0.0)
-            return;                 // not prepared yet; prepareToPlay will read it
-        juce::ScopedLock audioLock (getCallbackLock());
-        fixedRateIsland.prepare (sr, getBlockSize(), dspBridge,
-                                 hd ? TrenchRates::emuInternalRateHd : TrenchRates::emuInternalRate);
-        setLatencySamples (fixedRateIsland.getLatencySamples());
-        punchBlend.prepare (sr, fixedRateIsland.getLatencySamples(), getBlockSize());
-        punchBlend.setLatency (fixedRateIsland.getLatencySamples());
-        hdModeApplied = hd;
     }
 }
 void PluginProcessor::handleAsyncUpdate()
@@ -655,77 +574,6 @@ juce::File PluginProcessor::forgeSaveBody (const juce::String& name, bool overwr
     }
     return {};
 }
-juce::File PluginProcessor::writeTake (double seconds, bool oneShot, int beats)
-{
-    const double sr = juce::jmax (1.0, getSampleRate());
-    const double bpm = hostBpm.load (std::memory_order_relaxed);
-    const int maxFrames = (int) std::ceil (seconds * sr);
-    if (maxFrames <= 0)
-        return {};
-    juce::AudioBuffer<float> take (2, maxFrames);
-    const int frames = captureRing.snapshotLast (seconds,
-                                                 take.getWritePointer (0),
-                                                 take.getWritePointer (1),
-                                                 maxFrames);
-    if (frames <= 0)
-        return {};
-    take.setSize (2, frames, true, true, true);
-    auto dir = juce::File::getSpecialLocation (juce::File::userDocumentsDirectory)
-                   .getChildFile ("TRENCH")
-                   .getChildFile ("takes");
-    dir.createDirectory();
-    auto base = trench::bodyDisplayName (loadedBodyIndex.load (std::memory_order_relaxed))
-                    .retainCharacters ("abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789_- ")
-                    .replaceCharacter (' ', '_');
-    if (base.isEmpty())
-        base = "take";
-    juce::File f;
-    for (int i = 1; i < 10000; ++i)
-    {
-        f = dir.getChildFile (base + "_take_" + juce::String (i).paddedLeft ('0', 3) + ".wav");
-        if (! f.existsAsFile())
-            break;
-    }
-    trench::TakeTags tags;
-    tags.description = "TRENCH take";
-    tags.oneShot = oneShot;
-    tags.bpm = bpm;
-    tags.beats = beats;
-    if (! trench::writeTakeWav (f, take, sr, tags))
-        return {};
-    lastTakeFile = f;
-    juce::Logger::writeToLog ("CAPTURE take -> " + f.getFullPathName());
-    return f;
-}
-juce::File PluginProcessor::captureTake (trench::CaptureRange range)
-{
-    const double bpm = hostBpm.load (std::memory_order_relaxed);
-    const auto plan = trench::planCapture (range, bpm);
-    return writeTake (plan.seconds, plan.oneShot, plan.beats);
-}
-double PluginProcessor::smartTakeSeconds() const
-{
-    const double sr = juce::jmax (1.0, getSampleRate());
-    constexpr double fallback = 4.0, minSec = 0.6, maxSec = 8.0;
-    constexpr double recentWindowSec = 8.0;
-    constexpr double prerollSec = 0.15;
-    const juce::uint64 cur      = processedFrames.load (std::memory_order_relaxed);
-    const juce::uint64 lastMove = lastMoveFrame.load (std::memory_order_relaxed);
-    const juce::uint64 anchor   = gestureAnchorFrame.load (std::memory_order_relaxed);
-    if (! haveGesture.load (std::memory_order_relaxed)
-        || cur <= lastMove
-        || (double) (cur - lastMove) / sr > recentWindowSec
-        || anchor > cur)
-        return juce::jlimit (minSec, maxSec, fallback);
-    const juce::uint64 prerollFrames = (juce::uint64) (prerollSec * sr);
-    const juce::uint64 start = anchor > prerollFrames ? anchor - prerollFrames : 0;
-    const double secs = (double) (cur - start) / sr;
-    return juce::jlimit (minSec, maxSec, secs);
-}
-juce::File PluginProcessor::captureSmartTake()
-{
-    return writeTake (smartTakeSeconds(), true, 0);
-}
 bool PluginProcessor::installBodyBytes (const void* bytes, size_t len)
 {
     if (bytes == nullptr || len != 240)
@@ -762,7 +610,8 @@ void PluginProcessor::timerCallback()
 {
     dspBridge.reclaim();
     trench::KeyDetector::Result keyResult;
-    if (keyDetector.analyse (keyResult))
+    if (keyDetectionEnabled.load (std::memory_order_relaxed)
+        && keyDetector.analyse (keyResult))
     {
         for (size_t index = 0; index < keyProbabilitySum.size(); ++index)
             keyProbabilitySum[index] += keyResult.probabilities[index];
@@ -889,11 +738,16 @@ void PluginProcessor::setStateInformation (const void* data, int sizeInBytes)
     {
         auto tree = juce::ValueTree::fromXml (*xmlState);
         const auto bodyId = tree.getProperty ("bodyId").toString();
+        const bool stateHasChew = tree.getChildWithProperty ("id", ParamID::chew).isValid();
 #ifdef TRENCH_PLAYER_EXTRAS
         if (tree.hasProperty ("clean_audio_enabled"))
             trench::clean_audio::setEnabled (static_cast<bool> (tree.getProperty ("clean_audio_enabled")));
 #endif
         apvts.replaceState (std::move (tree));
+        // Projects saved before CHEW became independent must load clean instead
+        // of inheriting whatever CHEW value happened to be live beforehand.
+        if (! stateHasChew)
+            setParameterDenormalized (ParamID::chew, 0.0f);
         if (bodyId.isNotEmpty())
         {
             int index = trench::bodyIndexForBase (bodyId);
@@ -923,6 +777,7 @@ void PluginProcessor::setParameterDenormalized (const char* parameterID, float v
 void PluginProcessor::forceCleanAudioUiState()
 {
     setParameterDenormalized (ParamID::body, (float) trench::kNoFilterIndex);
+    setParameterDenormalized (ParamID::chew, 0.0f);
     setParameterDenormalized (ParamID::slamDrive, 0.0f);
     setParameterDenormalized (ParamID::modOn, 0.0f);
     setParameterDenormalized (ParamID::modDepth, 0.0f);

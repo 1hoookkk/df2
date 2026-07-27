@@ -91,15 +91,12 @@ set(TRENCH_PLUGIN_SOURCES
     source/parameters/TrenchParameters.h
     source/parameters/TrenchParameters.cpp
     presets/PresetRoster.inc
-    source/dsp/CapturePlan.h
-    source/dsp/CaptureRing.h
     source/dsp/FixedRateTrenchIsland.h
     source/dsp/FixedRateTrenchIsland.cpp
     source/dsp/KeyDetector.h
     source/dsp/KeyDetector.cpp
     source/dsp/MorphMod.h
     source/dsp/SlamStage.h
-    source/dsp/TakeWriter.h
     source/dsp/TrenchCleanBody.h
     source/dsp/TrenchDspBridge.h
     source/ui/DecalsLayer.h
@@ -260,6 +257,7 @@ target_link_libraries(TRENCH_FaceShot PRIVATE
     TRENCHPluginCommon
     "${TRENCH_CORE_LIB}"
     ${TRENCH_WINDOWS_LIBS}
+    juce::juce_audio_formats
     juce::juce_recommended_config_flags
     juce::juce_recommended_warning_flags)
 add_dependencies(TRENCH_FaceShot trench_core_build)

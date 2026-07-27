@@ -128,17 +128,10 @@ impl GuardBiquad {
 // its knee. That made the tanh a tone stage. Default is now unity; set_agc_drive()
 // survives as the authoring/audition hook (still clamped to >= 1.0).
 pub const AGC_DRIVE: f32 = 1.0;
-// Post-AGC broadband trim. Same law as SCALE: pure level, no spectral contrast.
-// At unity drive the leveller only shaves the very top of the signal, so the wet
-// path runs ~6.3 dB (pose 50) / ~7.0 dB (0->100 ride) hotter than the old
-// drive-2.2222 + tanh chain. -6.5 dB lands the reference render
-// (shipv2_303_cavity_acid, Q 0.85, CHEW 0.397, 39062.5 Hz) within 0.5 dB of the old
-// integrated loudness (-10.66 / -9.21 LUFS) while leaving the crest intact.
-const POST_AGC_TRIM: f32 = 0.472_063_4; // -6.5 dB
-// saturate() is a SAFETY NET, not a tone stage. After the trim the reference render
-// peaks at about +4.4 dBFS (pose) / +5.5 dBFS (ride); the knee sits ~6.5 dB above
-// that, so musical signal never reaches it (measured: zero samples engaged at both
-// 39062.5 Hz and 78125 Hz). Its only job is bounding a runaway body.
+// No fixed broadband trim lives here. SCALE owns the body's authored level and
+// the AGC may reduce only genuinely hot signal. A former -6.5 dB reference-match
+// trim made every body quiet before the plugin's separately calibrated SLAM stage.
+// saturate() is a SAFETY NET, not a tone stage.
 const SATURATE_KNEE: f32 = 4.0; // +12.0 dBFS
 const SATURATE_CEILING: f32 = 8.0; // +18.1 dBFS asymptote
 pub const COEFF_RAMP_SECONDS: f64 = 0.080;
@@ -539,9 +532,6 @@ impl FilterEngine {
                 sr += (agc_r - sr) * self.agc_mix;
             }
         }
-        // fixed broadband trim (level only) — see POST_AGC_TRIM
-        sl *= POST_AGC_TRIM;
-        sr *= POST_AGC_TRIM;
         self.output_gain += self.delta_output_gain;
         sl *= self.output_gain;
         sr *= self.output_gain;
@@ -829,12 +819,11 @@ mod tests {
         engine.process_block(&mut l, &mut r, 0.5, 0.5);
         let output_sum_sq: f32 =
             l.iter().map(|&s| s * s).sum::<f32>() + r.iter().map(|&s| s * s).sum::<f32>();
-        // the chain's one fixed level law is POST_AGC_TRIM; nothing else may move energy
-        let expected = input_sum_sq * POST_AGC_TRIM * POST_AGC_TRIM;
+        let expected = input_sum_sq;
         assert!(
-            (output_sum_sq - expected).abs() < 0.1 * POST_AGC_TRIM * POST_AGC_TRIM,
+            (output_sum_sq - expected).abs() < 0.1,
             "impulse energy drifted: in={input_sum_sq} out={output_sum_sq} \
-             expected={expected} (input x POST_AGC_TRIM^2)"
+             expected={expected}"
         );
         assert!(!engine.take_instability_flag());
     }
@@ -991,13 +980,12 @@ mod tests {
         }
         let unity = run(1.0);
         let driven = run(8.0);
-        // unity is now the shipped default: the AGC is asleep, so all that remains is
-        // the fixed POST_AGC_TRIM.
-        let expected = 0.7 * POST_AGC_TRIM;
+        // Unity is the shipped default: the AGC is asleep and the core is
+        // broadband-unity for a passthrough body.
+        let expected = 0.7;
         assert!(
-            (unity - expected).abs() < 0.02 * POST_AGC_TRIM,
-            "unity drive must pass 0.7 x POST_AGC_TRIM = {expected} untouched \
-             (AGC asleep in float domain), got {unity}"
+            (unity - expected).abs() < 0.02,
+            "unity drive must pass {expected} untouched (AGC asleep in float domain), got {unity}"
         );
         assert!(
             driven < unity * 0.85,
@@ -1161,9 +1149,8 @@ mod tests {
         println!("\n=== who is limiting? (real body, q=1, island rate) ===");
         println!(
             "AGC first tooth = |x| >= 2.0 (+6.0 dBFS)   saturate() knee = {SATURATE_KNEE} \
-             (+{:.1} dBFS, safety net)   post-AGC trim = {:.1} dB",
-            20.0 * SATURATE_KNEE.log10(),
-            20.0 * POST_AGC_TRIM.log10()
+             (+{:.1} dBFS, safety net)   fixed post-AGC trim = none",
+            20.0 * SATURATE_KNEE.log10()
         );
         println!(
             "body resonance at {:.0} Hz: full-scale input -> raw peak {:.3} (+{:.1} dBFS)\n",

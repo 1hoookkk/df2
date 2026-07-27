@@ -6,6 +6,7 @@
 #include "TrenchBodyRoster.h"
 #include "ui/TypeSelectorView.h"
 
+#include <juce_audio_formats/juce_audio_formats.h>
 #include <juce_gui_basics/juce_gui_basics.h>
 
 #include <algorithm>
@@ -56,6 +57,126 @@ int main()
     // face proof exercises the restored trace treatment. This changes only
     // the screenshot harness, never the plug-in's default state.
     trench::rescanBodyRoster();   // pull in Documents/TRENCH/bodies (incl. Filters/)
+
+    // Exact dry A/B path for the real plug-in processor. It reads the same
+    // bypassed-pink-noise WAV used in Emulator X, loads the on-glass HEDZ body,
+    // and uses BODY SOLO so no product post stage can contaminate the filter.
+    if (std::getenv ("TRENCH_HEADLESS_HEDZ") != nullptr)
+    {
+        processor.setWorkstationBodySolo (true);
+        const auto inputFile = juce::File::getCurrentWorkingDirectory()
+                                   .getChildFile ("ref/inputs/bypassed-pinknoise.wav");
+        juce::AudioFormatManager formats;
+        formats.registerBasicFormats();
+        auto reader = std::unique_ptr<juce::AudioFormatReader> (
+            formats.createReaderFor (inputFile));
+        if (reader == nullptr || reader->sampleRate != 44100.0)
+        {
+            std::printf ("HEADLESS failed to read 44.1 kHz input: %s\n",
+                         inputFile.getFullPathName().toRawUTF8());
+            return 1;
+        }
+
+        juce::AudioBuffer<float> input (2, (int) reader->lengthInSamples);
+        reader->read (&input, 0, input.getNumSamples(), 0, true, true);
+
+        const auto bodyFile = juce::File (
+            "C:/Users/hooki/df2-workstation/ref/presets/P2k_013_talking_hedz.bin");
+        juce::MemoryBlock bodyBytes;
+        if (! bodyFile.loadFileAsData (bodyBytes) || bodyBytes.getSize() != 240)
+        {
+            std::printf ("HEADLESS failed to read canonical 240-byte HEDZ bin: %s\n",
+                         bodyFile.getFullPathName().toRawUTF8());
+            return 1;
+        }
+
+        const auto setParam = [&processor] (const char* id, float denorm)
+        {
+            if (auto* p = processor.apvts.getParameter (id))
+                p->setValueNotifyingHost (p->convertTo0to1 (denorm));
+        };
+        const auto outputDir = juce::File::getCurrentWorkingDirectory()
+                                   .getChildFile ("dev/tmp/headless_x3_compare");
+        outputDir.createDirectory();
+
+        const auto renderPose = [&] (float morph, const char* stem)
+        {
+            constexpr int block = 512;
+            constexpr double sampleRate = 44100.0;
+            processor.releaseResources();
+            processor.prepareToPlay (sampleRate, block);
+            if (! processor.installBodyBytes (bodyBytes.getData(), bodyBytes.getSize()))
+                return false;
+            setParam (ParamID::morph, morph);
+            setParam (ParamID::q, 1.0f);
+            setParam (ParamID::chew, 0.0f);
+            setParam (ParamID::amount, 1.0f);
+            setParam (ParamID::slamDrive, 0.0f);
+            setParam (ParamID::modOn, 0.0f);
+
+            juce::MidiBuffer midi;
+            juce::AudioBuffer<float> warmup (2, block);
+            for (int pass = 0; pass < 40; ++pass)
+            {
+                warmup.clear();
+                processor.processBlock (warmup, midi);
+            }
+
+            const int latency = processor.getLatencySamples();
+            const int wanted = input.getNumSamples() + (int) sampleRate;
+            const int total = ((wanted + latency + block - 1) / block) * block;
+            juce::AudioBuffer<float> run (2, total);
+            run.clear();
+            for (int ch = 0; ch < 2; ++ch)
+                run.copyFrom (ch, 0, input, ch, 0, input.getNumSamples());
+            for (int off = 0; off < total; off += block)
+            {
+                juce::AudioBuffer<float> chunk (
+                    run.getArrayOfWritePointers(), 2, off, block);
+                processor.processBlock (chunk, midi);
+            }
+
+            juce::AudioBuffer<float> rendered (2, wanted);
+            for (int ch = 0; ch < 2; ++ch)
+                rendered.copyFrom (ch, 0, run, ch, latency, wanted);
+
+            const auto dst = outputDir.getChildFile (stem);
+            dst.deleteFile();
+            juce::WavAudioFormat wav;
+            std::unique_ptr<juce::FileOutputStream> stream (dst.createOutputStream());
+            std::unique_ptr<juce::AudioFormatWriter> writer (
+                wav.createWriterFor (stream.release(), sampleRate, 2, 32, {}, 0));
+            if (writer == nullptr
+                || ! writer->writeFromAudioSampleBuffer (
+                    rendered, 0, rendered.getNumSamples()))
+                return false;
+
+            double sumSq = 0.0;
+            float peak = 0.0f;
+            for (int ch = 0; ch < 2; ++ch)
+                for (int i = 0; i < input.getNumSamples(); ++i)
+                {
+                    const float v = rendered.getSample (ch, i);
+                    peak = juce::jmax (peak, std::abs (v));
+                    sumSq += (double) v * v;
+                }
+            const double rms = std::sqrt (
+                sumSq / (2.0 * (double) input.getNumSamples()));
+            std::printf (
+                "HEADLESS %s body=P2k_013_talking_hedz.bin morph=%.2f q=1 "
+                "peak=%.7f (%.2f dBFS) "
+                "rms=%.7f (%.2f dBFS) latency=%d\n",
+                dst.getFullPathName().toRawUTF8(), morph, peak,
+                20.0 * std::log10 (juce::jmax (1.0e-15f, peak)), rms,
+                20.0 * std::log10 (juce::jmax (1.0e-15, rms)), latency);
+            return true;
+        };
+
+        const bool m0 = renderPose (0.0f, "trench_HEDZ_M0_Q100.wav");
+        const bool m47 = renderPose (0.47f, "trench_HEDZ_M47_Q100.wav");
+        return m0 && m47 ? 0 : 1;
+    }
+
     int rosterCount = 0;
     const auto* roster = trench::bodyRoster (rosterCount);
     int proofBody = juce::jmin (1, rosterCount - 1);
@@ -97,7 +218,7 @@ int main()
             os.flush();
             std::printf ("ONBOARD wrote %s\n", f.getFullPathName().toRawUTF8());
         };
-        for (int step = 0; step < 5; ++step)
+        for (int step = 0; step < 4; ++step)
         {
             static_cast<PluginEditor*> (editor)->showOnboardingStep (step);
             juce::MessageManager::getInstance()->runDispatchLoopUntil (step == 1 ? 900 : 150);
@@ -149,8 +270,8 @@ int main()
         return nullDb < -100.0 ? 0 : 1;
     }
 
-    // RATE proof: the fixed-rate island resamples the host into the 39062.5 /
-    // 78125 Hz coefficient domain. Every host rate must come back finite, and
+    // RATE proof: the fixed-rate island resamples every host into the one
+    // 39062.5 Hz coefficient domain. Every host rate must come back finite, and
     // the latency we REPORT must match the latency we actually add, or every
     // user's parallel routing is smeared and nobody can hear why.
     if (std::getenv ("TRENCH_RATE_ITER") != nullptr)
@@ -481,14 +602,45 @@ int main()
             return processor.getOutClipForUi();
         };
         setSlam (0.0f);
-        const float noSlam = runLevel (0.8f);      // hot input, desk idle
+        const float noSlam = runLevel (0.2f);      // nominal input, desk idle
         setSlam (1.0f);
-        const float slammed = runLevel (0.8f);     // same input, desk floored
+        const float slammed = runLevel (0.2f);     // same input, desk floored
         setSlam (0.0f);
         const float cleared = runLevel (0.0f);     // silence decays the meter
         std::printf ("LIMIT  no-slam=%.0f%%   slammed=%.0f%%   cleared=%.0f%%   %s\n",
                      noSlam * 100.0f, slammed * 100.0f, cleared * 100.0f,
                      (noSlam < 0.05f && slammed > 0.08f && cleared < 0.02f) ? "PASS" : "FAIL");
+    }
+
+    // LEVEL/CEILING contract: SLAM off is exact unity. Its driven path retains
+    // -6 dB internal headroom with compensating output gain, so body differences
+    // survive; the terminal guard is an identity below its knee and cannot
+    // exceed the declared sample ceiling.
+    {
+        float bodyLevels[2] { 0.2f, 0.5f };
+        trench::slamOutputPressureBlock (bodyLevels, 2, 0.0f);
+        const float retainedRatio = bodyLevels[1] / bodyLevels[0];
+        const bool levelPass = std::abs (retainedRatio - 2.5f) < 1.0e-5f
+                            && std::abs (bodyLevels[0] - 0.2f) < 1.0e-6f
+                            && std::abs (trench::slamInputGainLinear()
+                                         * trench::slamOutputMakeupLinear() - 1.0f) < 1.0e-6f;
+
+        float safeL[4] { 0.25f, trench::kFinalSafetyKnee, 1.2f, -20.0f };
+        float safeR[4] { -0.5f, 0.75f, -2.0f, 20.0f };
+        const float untouchedL = safeL[0], untouchedR = safeR[0];
+        const float ceilingFrac = trench::finalSafetyCeilingBlockStereo (safeL, safeR, 4);
+        float safetyPeak = 0.0f;
+        for (int i = 0; i < 4; ++i)
+            safetyPeak = juce::jmax (safetyPeak,
+                                     juce::jmax (std::abs (safeL[i]), std::abs (safeR[i])));
+        const bool ceilingPass = safeL[0] == untouchedL && safeR[0] == untouchedR
+                              && safetyPeak <= trench::kFinalSafetyCeiling + 1.0e-7f
+                              && ceilingFrac >= 0.5f;
+        std::printf ("SLAM BYPASS unity, internal -6 dB compensated, body ratio %.3f  %s\n",
+                      retainedRatio, levelPass ? "PASS" : "FAIL");
+        std::printf ("FINAL CEILING peak %.7f <= %.7f  %s\n",
+                     safetyPeak, trench::kFinalSafetyCeiling,
+                     ceilingPass ? "PASS" : "FAIL");
     }
 
     // MOD proof — the trench::MorphMod law end-to-end through the real
@@ -816,31 +968,29 @@ int main()
     juce::PNGImageFormat().writeImageToStream (img, os);
     os.flush();
 
-    // Q SWEEP: CHEW is quadratic in Q, so a sweep is the only way to see it arrive.
-    // Frames assemble into a GIF for judging the pole shake and the readout in motion.
+    // CHEW SWEEP: CHEW is independent of Q. These frames judge the pole shake
+    // and readout without moving the authored filter position.
     {
         for (int i = 0; i <= 24; ++i)
         {
-            const float qv = (float) i / 24.0f;
-            if (auto* q = processor.apvts.getParameter (ParamID::q))
-                q->setValueNotifyingHost (qv);
+            const float chewValue = (float) i / 24.0f;
+            if (auto* chew = processor.apvts.getParameter (ParamID::chew))
+                chew->setValueNotifyingHost (chewValue);
             juce::MessageManager::getInstance()->runDispatchLoopUntil (120);
             const auto im = holder.createComponentSnapshot (holder.getLocalBounds());
             auto f = juce::File::getCurrentWorkingDirectory()
-                         .getChildFile ("qsweep_" + juce::String (i).paddedLeft ('0', 2) + ".png");
+                         .getChildFile ("chewsweep_" + juce::String (i).paddedLeft ('0', 2) + ".png");
             f.deleteFile();
             juce::FileOutputStream o (f);
             juce::PNGImageFormat().writeImageToStream (im, o);
             o.flush();
         }
-        if (auto* q = processor.apvts.getParameter (ParamID::q))
-            q->setValueNotifyingHost (0.30f);
+        if (auto* chew = processor.apvts.getParameter (ParamID::chew))
+            chew->setValueNotifyingHost (0.0f);
         juce::MessageManager::getInstance()->runDispatchLoopUntil (250);
     }
 
-    // Q at 100%: the only pose where BITE is meaningfully engaged (the law is
-    // quadratic, so Q 0.30 gives ~2% and shows nothing). This is the shot to judge
-    // pole shake / aliasing on.
+    // Q at 100% with CHEW at zero proves that Q changes only the authored body.
     {
         if (auto* q = processor.apvts.getParameter (ParamID::q))
             q->setValueNotifyingHost (1.0f);
