@@ -93,6 +93,12 @@ Order (performance core first, tenants last):
   stronger at shipping 78125 rate. Fix must be paired: smooth AGC gain application
   (16 numbers stay; the jump becomes a glide — CHECK RE-vault behavioral contract
   first) + demote tanh to pure safety headroom. Neither alone is shippable.
+- **SHIPPED 639472e4 — vault-authentic AGC chain** (Tyson: "ship it", G approved by
+  ear): AGC_DRIVE 1.0 (Ghidra: the 2.22 pre-scale was never in the DLL path);
+  POST_AGC_TRIM −6.5 dB keeps session level (±0.5 dB of old); saturate knee +12 dBFS
+  = pure safety, 0 samples engaged both islands; character ≡ G (−125 dBc). NO FILTER
+  null −24 → −6.5 dB (AGC never engages at unity on clean). OPEN: wet path now peaks
+  ~+5 dBFS into SLAM — ear-pass SLAM at high drive on the new chain.
 - **Phasor CHEW topology (US 10,514,883): TRIED AND REVERTED** — "apples to apples"
   (Tyson): no audible gain over shipped CHEW at fair calibration, so it dies (reverts
   7dda48fb + 873c3767; implementation archived at a9900a30 + d7a0e3f1). Facts kept:
