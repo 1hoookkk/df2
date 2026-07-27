@@ -1,6 +1,6 @@
 use crate::agc::{active_agc_table, agc_step_stereo};
 use crate::cartridge::{Cartridge, CornerData};
-use crate::cascade::{Cascade, ChewTopology, BLOCK_SIZE, NUM_COEFFS};
+use crate::cascade::{Cascade, BLOCK_SIZE, NUM_COEFFS};
 use crate::cvsd_input::CvsdInput;
 use crate::desk_drive::{DeskDrive, SUPPORTED_MODEL as DESK_SLAM_MODEL};
 use crate::qsound_spatial::QSoundSpatial;
@@ -363,17 +363,6 @@ impl FilterEngine {
     /// circle. Distinct from interstage drive, which is a modern saturator.
     pub fn set_pole_distortion(&mut self, amount: f32) {
         self.target_pole_distortion = if amount.is_finite() { amount.clamp(0.0, 1.0) } else { 0.0 };
-    }
-    /// A/B hook: 0 = shipped pole-radius biquad, 1 = US 10,514,883 phasor section
-    /// with complex-state saturation. Engine-side only; default is 0.
-    pub fn set_chew_topology(&mut self, topology: i32) {
-        let topology = if topology == 1 {
-            ChewTopology::Phasor
-        } else {
-            ChewTopology::PoleRadius
-        };
-        self.cascade_l.set_chew_topology(topology);
-        self.cascade_r.set_chew_topology(topology);
     }
     pub fn set_interstage_drive(&mut self, drive: f32) {
         self.target_interstage_drive = if drive.is_finite() { drive.clamp(0.0, 1.0) } else { 0.0 };

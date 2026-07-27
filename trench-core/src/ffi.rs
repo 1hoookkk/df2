@@ -702,15 +702,6 @@ pub unsafe extern "C" fn trench_engine_set_pole_distortion(engine: *mut c_void, 
 }
 
 #[no_mangle]
-pub unsafe extern "C" fn trench_engine_set_chew_topology(engine: *mut c_void, topology: i32) {
-    ffi_guard((), || {
-        if let Some(eng) = unsafe { engine_mut(engine) } {
-            eng.set_chew_topology(topology);
-        }
-    })
-}
-
-#[no_mangle]
 pub unsafe extern "C" fn trench_engine_set_interstage_drive(engine: *mut c_void, drive: f32) {
     ffi_guard((), || {
         if let Some(eng) = unsafe { engine_mut(engine) } {
