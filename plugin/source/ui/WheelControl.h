@@ -61,14 +61,6 @@ public:
         tuneFile().replaceWithText (juce::JSON::toString (juce::var (obj)));
     }
 
-    /// Skin swap: the roller's LED packet is baked into the filmstrip, so a
-    /// new face means a new strip.
-    void setFilmstrip (juce::Image filmstrip)
-    {
-        strip = std::move (filmstrip);
-        numFrames = juce::jmax (1, strip.getWidth() / kStripFrameWidth);
-        repaint();
-    }
     WheelControl (juce::AudioProcessorValueTreeState& apvts, juce::String paramID,
                   juce::Image filmstrip, const Theme& theme)
         : strip (std::move (filmstrip)), t (theme)

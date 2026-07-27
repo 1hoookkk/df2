@@ -31,7 +31,7 @@ Omit anything at default. `mod:` is `OFF` | `AUTO d<depth>` | `RISE <rate> d<dep
 | PHRASE (in chip menu) | `modShape` | 6 waves + 6 grammars: BREATHE, RHYTHM, RISE, WANDER, ANSWER, STABS | SINE | one representative per movement grammar (E-MU factory tables; git archives all 58). WAVE returns to plain shapes |
 | depth | `modDepth` | 0–100 % | 50 | travel from home (wheel); patterns peak-normalised. **Lost its UI with page 2 — needs a home or a baked default. OPEN** |
 | CHEW | — | — | — | CHEW is Q's law: 0.55·Q², no separate dial anywhere |
-| TRENCH badge | — | click / shift-click | — | click cycles the face: CORAL BOUTIQUE (ships) ⇄ SAGE LCD — signal tokens + both baked bitmaps swap live. Shift-click replays the onboarding tour (5 steps, demo body, lands on NO FILTER). The pick is a UI setting (`uiSkin` on the APVTS state tree), not a host parameter |
+| TRENCH badge | — | click | — | replays the onboarding tour (5 steps, demo body, lands on NO FILTER) |
 
 Buried 07-27 (decision-bandwidth pass): `clip`, `bite`, `inputMode`
 (slam-into-filter), `keyTrack`, `output`, `fiveD`, `modSync`, `modRate`, and the whole page-2 system (TakeView tray / MoveView / SlotPad — one face, no pages). AGC/routing are implementation choices, not

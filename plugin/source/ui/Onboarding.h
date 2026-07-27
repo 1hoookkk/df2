@@ -57,16 +57,7 @@ public:
     {
         ReplayHotspot() { setMouseCursor (juce::MouseCursor::PointingHandCursor); }
         std::function<void()> onClick;
-        std::function<void()> onShiftClick;
-        void mouseDown (const juce::MouseEvent& e) override
-        {
-            if (e.mods.isShiftDown())
-            {
-                if (onShiftClick) onShiftClick();
-                return;
-            }
-            if (onClick) onClick();
-        }
+        void mouseDown (const juce::MouseEvent&) override { if (onClick) onClick(); }
     };
 
     void mouseMove (const juce::MouseEvent& e) override

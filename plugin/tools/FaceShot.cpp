@@ -107,28 +107,6 @@ int main()
         return 0;
     }
 
-    // SKIN proof: both shipped faces, same pose (MORPH 68 / Q 100), so the
-    // glass bed, trace and wheel lamps can be measured per skin.
-    if (std::getenv ("TRENCH_SKIN_ITER") != nullptr)
-    {
-        if (auto* q = processor.apvts.getParameter (ParamID::q))
-            q->setValueNotifyingHost (1.0f);
-        for (int skin = 0; skin < 2; ++skin)
-        {
-            static_cast<PluginEditor*> (editor)->setSkin (skin);
-            juce::MessageManager::getInstance()->runDispatchLoopUntil (700);
-            auto f = juce::File::getCurrentWorkingDirectory().getChildFile (
-                "trench_face_skin" + juce::String (skin) + "_q100.png");
-            f.deleteFile();
-            juce::FileOutputStream os (f);
-            juce::PNGImageFormat().writeImageToStream (
-                holder.createComponentSnapshot (holder.getLocalBounds()), os);
-            os.flush();
-            std::printf ("SKIN wrote %s\n", f.getFullPathName().toRawUTF8());
-        }
-        return 0;
-    }
-
     // MIX proof: MIX 0 must return the untouched signal even with SLAM at
     // full - SLAM is part of the WET voice and must not escape the blend.
     if (std::getenv ("TRENCH_MIX_ITER") != nullptr)

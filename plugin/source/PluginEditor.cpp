@@ -106,9 +106,7 @@ PluginEditor::PluginEditor (PluginProcessor& p)
         }
         onboardingDemoStart = -1.0f;
     };
-    // The badge is the skin switch; shift-click is the way back to the tour.
-    badgeHotspot.onClick = [this] { setSkin (skinIndex + 1); };
-    badgeHotspot.onShiftClick = [this, loadTourDemoBody]
+    onboardingReplayHotspot.onClick = [this, loadTourDemoBody]
     {
         loadTourDemoBody();
         onboarding->replay();
@@ -137,11 +135,8 @@ PluginEditor::PluginEditor (PluginProcessor& p)
     }
     addAndMakeVisible (*labels);
     addAndMakeVisible (*decalsLayer);
-    // Click the TRENCH badge to cycle the face; shift-click replays the tour.
-    // No new faceplate furniture.
-    addAndMakeVisible (badgeHotspot);
-    // The face the user last chose, restored from the saved UI state.
-    setSkin ((int) processor.apvts.state.getProperty ("uiSkin", 0));
+    // Click the TRENCH badge to replay the tour. No new faceplate furniture.
+    addAndMakeVisible (onboardingReplayHotspot);
 #if TRENCH_TABLE_STITCH_PANEL
     tableStitchButton = std::make_unique<juce::TextButton> ("TABLES");
     tableStitchButton->setTooltip ("Open the external raw-table stitcher");
@@ -168,27 +163,6 @@ PluginEditor::PluginEditor (PluginProcessor& p)
     };
     resized();
    #endif
-}
-void PluginEditor::setSkin (int skin)
-{
-    constexpr int n = trench::UiLayout::kNumSkins;
-    skinIndex = ((skin % n) + n) % n;
-    trench::UiLayout::applySkin (currentLayout, skinIndex);
-    const bool sage = skinIndex == 1;
-    graph->setDisplayPlate (juce::ImageCache::getFromMemory (
-        sage ? BinaryData::display_bitmap4613_sage_png : BinaryData::display_bitmap4613_png,
-        sage ? BinaryData::display_bitmap4613_sage_pngSize : BinaryData::display_bitmap4613_pngSize));
-    const auto strip = juce::ImageCache::getFromMemory (
-        sage ? BinaryData::trench_roller_strip_sage_png : BinaryData::trench_roller_strip_png,
-        sage ? BinaryData::trench_roller_strip_sage_pngSize : BinaryData::trench_roller_strip_pngSize);
-    morphWheel->setFilmstrip (strip);
-    secondaryWheel->setFilmstrip (strip);
-    // Not a host parameter: the face is a UI choice, saved with the UI state.
-    processor.apvts.state.setProperty ("uiSkin", skinIndex, nullptr);
-    // The faceplate and decal layers are buffered, so they need telling.
-    for (auto* child : getChildren())
-        child->repaint();
-    repaint();
 }
 void PluginEditor::showOnboardingStep (int step)
 {
@@ -307,7 +281,7 @@ void PluginEditor::layoutComponents()
     secondaryReadout->setBounds (rectOf ("qReadout"));
     amountWheel->setBounds (rectOf ("amountWheel"));
     onboarding->setBounds (base);   // full face: the tour spotlights each control
-    badgeHotspot.setBounds (rectOf ("brandLabel"));
+    onboardingReplayHotspot.setBounds (rectOf ("brandLabel"));
     decalsLayer->setBounds (base);
    #ifdef TRENCH_PLAYER_DIAGNOSTICS
     if (rigPanel != nullptr)

@@ -55,9 +55,17 @@ public:
                                              16.0f, juce::Colour (0xff17130e) };
         layout.elements["amountLabel"].text = "MIX";
         layout.elements["amountWheel"] = { { 872.0f, 700.0f, 26.0f, 214.0f }, {}, {} };
+        layout.colours["accent"]             = juce::Colour (0xff3D0814);
+        layout.colours["curveColour"]        = juce::Colour (0xff3D0814);
+        layout.colours["curveHighlight"]     = juce::Colour (0xff4E1420);
+        layout.colours["telemetry"]          = juce::Colour (0xffffffff);
+        layout.colours["rollerIllumination"] = juce::Colour (0xff722028);
+        layout.colours["modulationLamp"]     = juce::Colour (0xff722028);
         layout.colours["phosphor"]           = juce::Colour (0xff1b1715);
+        layout.colours["amber"]              = juce::Colour (0xff3D0814);
+        layout.colours["dashed"]             = juce::Colour (0xffffffff);
+        layout.colours["screenEdge"]         = juce::Colour (0xff414437);
         layout.colours["labelInk"]    = juce::Colour (0xff24231f);
-        applySkin (layout, 0);
         layout.params["wellRadius"]        = 9.0;
         layout.params["readoutAliasScale"] = 0.95;
         layout.params["typeArrowExtra"]    = 6.0;
@@ -67,28 +75,6 @@ public:
         layout.strings["fontFamily"] = "Arial";
         layout.strings["fontFamilyEmphasis"] = "Arial";
         return layout;
-    }
-    /// The two shipped faces. Skin 0 CORAL BOUTIQUE ships; skin 1 SAGE LCD
-    /// rides along on the TRENCH badge. The signal family and the two baked
-    /// bitmaps move together — nothing else on the face changes.
-    static constexpr int kNumSkins = 2;
-    static void applySkin (UiLayout& layout, int skin)
-    {
-        const bool sage = skin == 1;
-        const auto trace     = sage ? juce::Colour (0xff1B4A5A) : juce::Colour (0xffFFB491);
-        const auto highlight = sage ? juce::Colour (0xff2A5E6E) : juce::Colour (0xffFFD2BA);
-        const auto lamp      = sage ? juce::Colour (0xff4a8f6a) : juce::Colour (0xffc96a54);
-        const auto grid      = sage ? juce::Colour (0xffffffff) : juce::Colour (0xff4a6b69);
-        layout.colours["accent"]             = trace;
-        layout.colours["curveColour"]        = trace;
-        layout.colours["amber"]              = trace;
-        layout.colours["curveHighlight"]     = highlight;
-        layout.colours["rollerIllumination"] = lamp;
-        layout.colours["modulationLamp"]     = lamp;
-        layout.colours["telemetry"]          = grid;
-        layout.colours["dashed"]             = grid;
-        layout.colours["screenEdge"]         = sage ? juce::Colour (0xff414c37)
-                                                    : juce::Colour (0xff0a1c1e);
     }
     static UiLayout fromJson (const juce::String& jsonText)
     {
