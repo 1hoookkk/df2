@@ -62,6 +62,12 @@ public:
         startTimer (30);
         repaint();
     }
+    /// Skin swap: the baked glass bed for the face currently worn.
+    void setDisplayPlate (juce::Image plate)
+    {
+        displayPlate = std::move (plate);
+        repaint();
+    }
     void setSlamMeter (float outClipFrac) noexcept
     {
         const float v = juce::jlimit (0.0f, 1.0f, outClipFrac);

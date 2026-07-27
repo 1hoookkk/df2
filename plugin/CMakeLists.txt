@@ -74,6 +74,8 @@ juce_add_binary_data(TRENCHAssets
         assets/display_log_grid.png
         assets/display_log_grid_rules.png
         assets/display_bitmap4613.png
+        assets/display_bitmap4613_sage.png
+        assets/trench_roller_strip_sage.png
         assets/thin_wheel_strip.png
         assets/thin_wheel_panel_shadow.png
         assets/key_model_rtneural.json

@@ -26,7 +26,11 @@ public:
     void resized() override;
     /// FaceShot hook: force the tour visible at a given step for judging.
     void showOnboardingStep (int step);
+    /// Wear one of the shipped faces (0 = CORAL BOUTIQUE, 1 = SAGE LCD).
+    /// Swaps the colour tokens and both baked bitmaps, and remembers the pick.
+    void setSkin (int skin);
 private:
+    int skinIndex = 0;
     void timerCallback() override;
     void reloadLayoutFromDisk();
     juce::Time layoutMtime;
@@ -48,7 +52,7 @@ private:
     std::unique_ptr<trench::ui::ValueReadout>     secondaryReadout;
     std::unique_ptr<trench::ui::ThinWheel>        amountWheel;
     std::unique_ptr<trench::ui::Onboarding>       onboarding;
-    trench::ui::Onboarding::ReplayHotspot         onboardingReplayHotspot;
+    trench::ui::Onboarding::ReplayHotspot         badgeHotspot;
     float onboardingDemoStart = -1.0f;
     std::unique_ptr<trench::ui::LabelsLayer>      labels;
 #if TRENCH_TABLE_STITCH_PANEL
