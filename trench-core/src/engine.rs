@@ -117,9 +117,30 @@ impl GuardBiquad {
     }
     fn reset(&mut self) { self.w1 = 0.0; self.w2 = 0.0; }
 }
-const SATURATE_KNEE: f32 = 0.9;
-const AGC_FIRST_TOOTH: f32 = 2.0;
-pub const AGC_DRIVE: f32 = AGC_FIRST_TOOTH / SATURATE_KNEE;
+// ---- output stage, reworked 2026-07-27 (RE-vault-authentic chain, probe cond G) ----
+//
+// AGC drive. The reverse-engineered DLL path (ref/ghidra_extracts/runtime_hacks.md,
+// "AGC Processing") feeds the leveller the raw sample magnitude: there is no
+// pre-scale, and the extract says so explicitly ("the repo's agc_drive pre-scale is
+// an authoring and audition control, not part of the observed DLL path"). The old
+// default was AGC_FIRST_TOOTH (2.0) / old SATURATE_KNEE (0.9) = 2.2222 — a number we
+// invented so the leveller would hand the output tanh a signal already sitting on
+// its knee. That made the tanh a tone stage. Default is now unity; set_agc_drive()
+// survives as the authoring/audition hook (still clamped to >= 1.0).
+pub const AGC_DRIVE: f32 = 1.0;
+// Post-AGC broadband trim. Same law as SCALE: pure level, no spectral contrast.
+// At unity drive the leveller only shaves the very top of the signal, so the wet
+// path runs ~6.3 dB (pose 50) / ~7.0 dB (0->100 ride) hotter than the old
+// drive-2.2222 + tanh chain. -6.5 dB lands the reference render
+// (shipv2_303_cavity_acid, Q 0.85, CHEW 0.397, 39062.5 Hz) within 0.5 dB of the old
+// integrated loudness (-10.66 / -9.21 LUFS) while leaving the crest intact.
+const POST_AGC_TRIM: f32 = 0.472_063_4; // -6.5 dB
+// saturate() is a SAFETY NET, not a tone stage. After the trim the reference render
+// peaks at about +4.4 dBFS (pose) / +5.5 dBFS (ride); the knee sits ~6.5 dB above
+// that, so musical signal never reaches it (measured: zero samples engaged at both
+// 39062.5 Hz and 78125 Hz). Its only job is bounding a runaway body.
+const SATURATE_KNEE: f32 = 4.0; // +12.0 dBFS
+const SATURATE_CEILING: f32 = 8.0; // +18.1 dBFS asymptote
 pub const COEFF_RAMP_SECONDS: f64 = 0.080;
 const KEY_SNAP_MINOR_DEGREES: [i32; 7] = [0, 2, 3, 5, 7, 8, 10];
 const KEY_SNAP_MAJOR_DEGREES: [i32; 7] = [0, 2, 4, 5, 7, 9, 11];
@@ -188,9 +209,8 @@ pub(crate) fn saturate(x: f32) -> f32 {
     if a <= SATURATE_KNEE {
         x
     } else {
-        x.signum()
-            * (SATURATE_KNEE
-                + (1.0 - SATURATE_KNEE) * ((a - SATURATE_KNEE) / (1.0 - SATURATE_KNEE)).tanh())
+        let span = SATURATE_CEILING - SATURATE_KNEE;
+        x.signum() * (SATURATE_KNEE + span * ((a - SATURATE_KNEE) / span).tanh())
     }
 }
 pub struct FilterEngine {
@@ -519,6 +539,9 @@ impl FilterEngine {
                 sr += (agc_r - sr) * self.agc_mix;
             }
         }
+        // fixed broadband trim (level only) — see POST_AGC_TRIM
+        sl *= POST_AGC_TRIM;
+        sr *= POST_AGC_TRIM;
         self.output_gain += self.delta_output_gain;
         sl *= self.output_gain;
         sr *= self.output_gain;
@@ -806,9 +829,12 @@ mod tests {
         engine.process_block(&mut l, &mut r, 0.5, 0.5);
         let output_sum_sq: f32 =
             l.iter().map(|&s| s * s).sum::<f32>() + r.iter().map(|&s| s * s).sum::<f32>();
+        // the chain's one fixed level law is POST_AGC_TRIM; nothing else may move energy
+        let expected = input_sum_sq * POST_AGC_TRIM * POST_AGC_TRIM;
         assert!(
-            (output_sum_sq - input_sum_sq).abs() < 0.1,
-            "impulse energy drifted: in={input_sum_sq} out={output_sum_sq}"
+            (output_sum_sq - expected).abs() < 0.1 * POST_AGC_TRIM * POST_AGC_TRIM,
+            "impulse energy drifted: in={input_sum_sq} out={output_sum_sq} \
+             expected={expected} (input x POST_AGC_TRIM^2)"
         );
         assert!(!engine.take_instability_flag());
     }
@@ -965,9 +991,13 @@ mod tests {
         }
         let unity = run(1.0);
         let driven = run(8.0);
+        // unity is now the shipped default: the AGC is asleep, so all that remains is
+        // the fixed POST_AGC_TRIM.
+        let expected = 0.7 * POST_AGC_TRIM;
         assert!(
-            (unity - 0.7).abs() < 0.02,
-            "unity drive must pass 0.7 ~untouched (AGC asleep in float domain), got {unity}"
+            (unity - expected).abs() < 0.02 * POST_AGC_TRIM,
+            "unity drive must pass 0.7 x POST_AGC_TRIM = {expected} untouched \
+             (AGC asleep in float domain), got {unity}"
         );
         assert!(
             driven < unity * 0.85,
@@ -1129,7 +1159,12 @@ mod tests {
         }
         let (cyc, hot_peak) = best;
         println!("\n=== who is limiting? (real body, q=1, island rate) ===");
-        println!("AGC first tooth = |x| >= 2.0 (+6.0 dBFS)   saturate() knee = 0.9 (-0.9 dBFS)");
+        println!(
+            "AGC first tooth = |x| >= 2.0 (+6.0 dBFS)   saturate() knee = {SATURATE_KNEE} \
+             (+{:.1} dBFS, safety net)   post-AGC trim = {:.1} dB",
+            20.0 * SATURATE_KNEE.log10(),
+            20.0 * POST_AGC_TRIM.log10()
+        );
         println!(
             "body resonance at {:.0} Hz: full-scale input -> raw peak {:.3} (+{:.1} dBFS)\n",
             SR * cyc / TAIL as f64,
@@ -1176,10 +1211,14 @@ mod tests {
             println!("  [{i:2}] {v:.4}   {tag}");
         }
         println!("\nindex = (agc_gain * |x| * AGC_DRIVE) as int & 0xF");
-        println!("AGC_DRIVE = AGC_FIRST_TOOTH / SATURATE_KNEE = {AGC_FIRST_TOOTH} / {SATURATE_KNEE} = {AGC_DRIVE:.4}\n");
+        println!(
+            "AGC_DRIVE = {AGC_DRIVE:.4} (RE-vault: the DLL path has no pre-scale; the old \
+             2.0/0.9 = 2.2222 default was ours)\n"
+        );
         const HOT_CYCLES: f64 = 964.0;
-        println!("what the leveler hands to the saturator (knee = {SATURATE_KNEE}):");
-        for &(label, drive) in &[("OLD  (drive 1.0)", 1.0f32), ("SHIPPED", AGC_DRIVE)] {
+        println!("what the leveler hands to the saturator (safety-net knee = {SATURATE_KNEE}):");
+        for &(label, drive) in &[("SHIPPED (unity)", AGC_DRIVE), ("OLD  (drive 2.2222)", 2.0f32 / 0.9)]
+        {
             let leveller = probe_body(HOT_CYCLES, Some(drive), true, false, 1.0);
             let shipped = probe_body(HOT_CYCLES, Some(drive), true, true, 1.0);
             let verdict = if shipped.resid_dbc > leveller.resid_dbc + 1.0 {
